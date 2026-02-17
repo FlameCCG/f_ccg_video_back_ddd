@@ -1,0 +1,57 @@
+// Package middlewares 提供 Gin 中间件。
+//
+// 有依赖的中间件是 *Middlewares 的方法，通过 Wire 注入依赖；
+// 无状态的泛型绑定与工具保留为包级函数。
+package middlewares
+
+import (
+	identityapp "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
+	"f_ccg_video_back_ddd/internal/infrastructure/config"
+
+	"github.com/casbin/casbin/v2"
+	"go.uber.org/zap"
+)
+
+// Middlewares 聚合所有需要依赖注入的 gin 中间件。
+type Middlewares struct {
+	cfgProvider *config.Provider
+	enforcer    *casbin.SyncedEnforcer
+	userStatus  *identityapp.UserStatusService
+	bans        *identityapp.BanService
+	banRecords  *identityapp.BanRecordService
+	captcha     *identityapp.CaptchaService
+	limiter     *ratelimit.Limiter
+	logger      *zap.Logger
+}
+
+// New 构造中间件集合。
+func New(
+	cfgProvider *config.Provider,
+	enforcer *casbin.SyncedEnforcer,
+	userStatus *identityapp.UserStatusService,
+	bans *identityapp.BanService,
+	banRecords *identityapp.BanRecordService,
+	captcha *identityapp.CaptchaService,
+	limiter *ratelimit.Limiter,
+	logger *zap.Logger,
+) *Middlewares {
+	return &Middlewares{
+		cfgProvider: cfgProvider,
+		enforcer:    enforcer,
+		userStatus:  userStatus,
+		bans:        bans,
+		banRecords:  banRecords,
+		captcha:     captcha,
+		limiter:     limiter,
+		logger:      loggerOrNop(logger),
+	}
+}
+
+func (m *Middlewares) log() *zap.Logger {
+	if m == nil {
+		return zap.NewNop()
+	}
+
+	return loggerOrNop(m.logger)
+}
