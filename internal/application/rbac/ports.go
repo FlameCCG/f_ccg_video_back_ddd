@@ -1,0 +1,69 @@
+package rbac
+
+import (
+	"context"
+
+	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+)
+
+// MenuSuggestionGenerator AI 菜单字段生成端口。
+//
+// 接口由消费方 rbac 定义；AI 上下文的应用服务实现它，基础设施聊天模型仍经
+// AI 自己的 TextGenerator 端口调用。
+type MenuSuggestionGenerator interface {
+	GenerateMenuSuggestion(
+		ctx context.Context,
+		title string,
+		parentID *uint,
+		menuTableJSON []byte,
+	) (*domain.MenuSuggestion, error)
+}
+
+// Enforcer Casbin 策略端口，实现在 infrastructure/persistence/rbac/enforcer.go。
+//
+// 应用层不直接依赖 casbin，SavePolicy 会重写完整策略集。
+type Enforcer interface {
+	// GetPermissionsForUser 读取主体的直接 p 策略。
+	GetPermissionsForUser(user string) ([][]string, error)
+	// GetImplicitPermissionsForUser 读取主体的有效 p 策略（含继承）。
+	GetImplicitPermissionsForUser(user string) ([][]string, error)
+	// GetPolicy 读取全部 p 策略。
+	GetPolicy() ([][]string, error)
+	// GetNamedGroupingPolicy 读取指定名称的分组策略（角色继承关系）。
+	GetNamedGroupingPolicy(ptype string) ([][]string, error)
+	// GetRolesForUser 读取主体的直接父角色。
+	GetRolesForUser(name string) ([]string, error)
+	// GetImplicitRolesForUser 读取主体的全部隐式父角色（含间接，不含自身）。
+	GetImplicitRolesForUser(name string) ([]string, error)
+	// GetUsersForRole 读取直接继承该角色的主体（用户或子角色）。
+	GetUsersForRole(name string) ([]string, error)
+	// AddPolicy 新增一条 p 策略。
+	AddPolicy(sub, obj, act string) (bool, error)
+	// RemovePolicy 移除一条 p 策略。
+	RemovePolicy(sub, obj, act string) (bool, error)
+	// RemoveFilteredPolicy 按字段过滤批量移除 p 策略。
+	RemoveFilteredPolicy(fieldIndex int, fieldValues ...string) (bool, error)
+	// AddRoleForUser 建立「user 继承 role」的分组策略。
+	AddRoleForUser(user, role string) (bool, error)
+	// DeleteRoleForUser 解除「user 继承 role」的分组策略。
+	DeleteRoleForUser(user, role string) (bool, error)
+	// DeleteRole 删除角色及其全部策略与分组关系。
+	DeleteRole(role string) (bool, error)
+	// SavePolicy 将内存策略整体落库。
+	SavePolicy() error
+}
+
+// RouteLister 返回 HTTP 引擎注册的 method+path 清单。
+//
+// 端口由应用层声明，适配器位于 interfaces，由 bootstrap 绑定，保持 interfaces → application 的依赖方向。
+type RouteLister interface {
+	// Routes 返回引擎注册的全部路由。
+	Routes() []domain.RouteInfo
+}
+
+// ResourceMetaLoader OpenAPI 资源说明加载端口（文件 IO + YAML 解析属基础设施关注点）。
+type ResourceMetaLoader interface {
+	// Load 读取并解析 OpenAPI 文档，返回以「METHOD path」为键的说明表。
+	// 失败时返回空表与错误，调用方降级为默认说明。
+	Load() (map[string]domain.ResourceMeta, error)
+}
