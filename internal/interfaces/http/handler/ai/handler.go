@@ -1,0 +1,42 @@
+// Package ai 是 AI 上下文的 HTTP 处理器。
+package ai
+
+import (
+	aiapp "f_ccg_video_back_ddd/internal/application/ai"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+)
+
+// Handler 是 AI HTTP 处理器，应用服务通过 Wire 注入。
+type Handler struct {
+	service *aiapp.Service
+	logger  *zap.Logger
+}
+
+// NewHandler 构造 AI HTTP 处理器。
+func NewHandler(service *aiapp.Service, logger *zap.Logger) *Handler {
+	return &Handler{service: service, logger: loggerOrNop(logger)}
+}
+
+func (h *Handler) log() *zap.Logger {
+	if h == nil {
+		return zap.NewNop()
+	}
+
+	return loggerOrNop(h.logger)
+}
+
+func loggerOrNop(logger *zap.Logger) *zap.Logger {
+	if logger == nil {
+		return zap.NewNop()
+	}
+
+	return logger
+}
+
+// bound 读取中间件已绑定的请求参数。
+func bound[T any](c *gin.Context) T {
+	return middlewares.GetBound[T](c)
+}
