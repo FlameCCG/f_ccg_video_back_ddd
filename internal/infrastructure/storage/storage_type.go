@@ -1,0 +1,126 @@
+package storage
+
+import (
+	"errors"
+
+	media "f_ccg_video_back_ddd/internal/domain/media"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+
+	"go.uber.org/zap"
+)
+
+// Resolver 依据站点配置选择存储驱动。
+//
+// 每次解析均从 *config.Provider 捕获当前配置，以支持热更新。
+type Resolver struct {
+	cfgProvider *config.Provider
+	clients     *MinIOClientPool
+	detached    *ctxutil.DetachedTaskGroup
+	logger      *zap.Logger
+}
+
+// 编译期断言：满足领域侧存储解析端口。
+var _ media.StorageResolver = (*Resolver)(nil)
+
+// NewResolver 构造存储驱动解析器。
+func NewResolver(
+	cfgProvider *config.Provider,
+	clients *MinIOClientPool,
+	detached *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
+) *Resolver {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &Resolver{cfgProvider: cfgProvider, clients: clients, detached: detached, logger: logger}
+}
+
+// storageConfig 读取当前站点存储配置。
+func (r *Resolver) storageConfig() (*site.Storage, error) {
+	if r == nil || r.cfgProvider == nil {
+		return nil, errors.New("未找到存储配置")
+	}
+
+	cfg := r.cfgProvider.Get()
+	if cfg == nil || cfg.Site == nil || cfg.Site.Storage == nil {
+		return nil, errors.New("未找到存储配置")
+	}
+
+	return cfg.Site.Storage, nil
+}
+
+// Resolve 按站点配置选择本地或 MinIO 存储驱动。
+func (r *Resolver) Resolve() (media.StorageDriver, error) {
+	cfg, err := r.storageConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.Local != nil && cfg.Local.Enable {
+		return NewLocalStorage(cfg, r.logger), nil
+	}
+
+	if cfg.MinIO != nil && cfg.MinIO.Enable {
+		return NewMinIOStorage(cfg, r.clients, r.detached, r.logger)
+	}
+
+	return nil, errors.New("未配置可用的存储驱动")
+}
+
+// ResolveByType 按显式存储类型选择驱动；未知类型退回按站点配置解析。
+func (r *Resolver) ResolveByType(storageType enum.VideoStorageType) (media.StorageDriver, error) {
+	cfg, err := r.storageConfig()
+	if err != nil {
+		// 返回约定的驱动解析错误文案。
+		return nil, errors.New("storage config missing")
+	}
+
+	switch storageType {
+	case enum.StorageTypeLocal:
+		if cfg.Local == nil || !cfg.Local.Enable {
+			return nil, errors.New("local storage disabled")
+		}
+
+		return NewLocalStorage(cfg, r.logger), nil
+	case enum.StorageTypeMinio:
+		if cfg.MinIO == nil || !cfg.MinIO.Enable {
+			return nil, errors.New("minio storage disabled")
+		}
+
+		return NewMinIOStorage(cfg, r.clients, r.detached, r.logger)
+	default:
+		return r.Resolve()
+	}
+}
+
+// CheckStorageTyped 返回当前站点启用的存储类型（本地优先，两者都未开启时回落本地）。
+func (r *Resolver) CheckStorageTyped() enum.VideoStorageType {
+	cfg, err := r.storageConfig()
+	if err != nil {
+		return enum.StorageTypeLocal
+	}
+
+	if cfg.Local != nil && cfg.Local.Enable {
+		return enum.StorageTypeLocal
+	}
+
+	if cfg.MinIO != nil && cfg.MinIO.Enable {
+		return enum.StorageTypeMinio
+	}
+
+	return enum.StorageTypeLocal
+}
+
+// ValidateUploadID 校验上传标识（供其它上下文经端口复用，实现与包级函数一致）。
+func (r *Resolver) ValidateUploadID(uploadID string) error {
+	return ValidateUploadID(uploadID)
+}
+
+// ValidateChunkIndex 校验分片索引（供其它上下文经端口复用）。
+func (r *Resolver) ValidateChunkIndex(index string) error {
+	return ValidateChunkIndex(index)
+}
