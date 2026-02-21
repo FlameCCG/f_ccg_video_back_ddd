@@ -69,11 +69,16 @@ func (s *MenuService) Create(ctx context.Context, params CreateMenuParams) error
 		return domain.ErrMenuTitleEmpty
 	}
 
+	icon := strings.TrimSpace(params.Icon)
+	if err := domain.ValidateMenuIcon(icon); err != nil {
+		return err
+	}
+
 	menu := domain.NewMenu(
 		title,
 		strings.TrimSpace(params.TitleEn),
 		strings.TrimSpace(params.TitleJa),
-		strings.TrimSpace(params.Icon),
+		icon,
 		strings.TrimSpace(params.Path),
 		strings.TrimSpace(params.Name),
 		strings.TrimSpace(params.Component),
@@ -119,6 +124,12 @@ func (s *MenuService) Update(ctx context.Context, params UpdateMenuParams) error
 		params.Path == nil && params.Name == nil && params.Component == nil && params.KeepAlive == nil &&
 		!params.ParentProvided && params.SortOrder == nil {
 		return domain.ErrNoUpdatableFields
+	}
+
+	if params.Icon != nil {
+		if err := domain.ValidateMenuIcon(strings.TrimSpace(*params.Icon)); err != nil {
+			return err
+		}
 	}
 
 	update, err := menuFieldUpdate(params)
