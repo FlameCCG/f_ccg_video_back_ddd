@@ -1,0 +1,125 @@
+{
+  "settings": {
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "analysis": {
+      "filter": {
+        "pinyin_filter": {
+          "type": "pinyin",
+          "keep_first_letter": true,
+          "keep_separate_first_letter": true,
+          "keep_full_pinyin": true,
+          "keep_original": true,
+          "limit_first_letter_length": 16,
+          "lowercase": true
+        }
+      },
+      "analyzer": {
+        "ik_pinyin": {
+          "type": "custom",
+          "tokenizer": "ik_max_word",
+          "filter": [
+            "lowercase",
+            "pinyin_filter"
+          ]
+        }
+      },
+      "normalizer": {
+        "lowercase_normalizer": {
+          "type": "custom",
+          "filter": [
+            "lowercase"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": true,
+    "properties": {
+      "id": {
+        "type": "long"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "pinyin": {
+            "type": "text",
+            "analyzer": "ik_pinyin",
+            "search_analyzer": "ik_smart"
+          }
+        }
+      },
+      "cover": {
+        "type": "keyword"
+      },
+      "author_username": {
+        "type": "text",
+        "analyzer": "ik_smart",
+        "search_analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "pinyin": {
+            "type": "text",
+            "analyzer": "ik_pinyin",
+            "search_analyzer": "ik_smart"
+          }
+        }
+      },
+      "tags": {
+        "type": "text",
+        "analyzer": "ik_max_word",
+        "search_analyzer": "ik_smart",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "pinyin": {
+            "type": "text",
+            "analyzer": "ik_pinyin",
+            "search_analyzer": "ik_smart"
+          }
+        }
+      },
+      "title_suggest": {
+        "type": "completion",
+        "analyzer": "ik_pinyin",
+        "search_analyzer": "ik_pinyin",
+        "preserve_separators": false,
+        "max_input_length": 50
+      },
+      "tag_suggest": {
+        "type": "completion",
+        "analyzer": "ik_pinyin",
+        "search_analyzer": "ik_pinyin",
+        "preserve_separators": false,
+        "max_input_length": 50
+      },
+      "views": {
+        "type": "long"
+      },
+      "danmu_count": {
+        "type": "long"
+      },
+      "duration": {
+        "type": "integer"
+      },
+      "created_at": {
+        "type": "date"
+      },
+      "status": {
+        "type": "integer"
+      }
+    }
+  }
+}
