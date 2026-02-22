@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -157,7 +158,7 @@ func (l *LocalStorage) ListUploadedChunks(_ context.Context, fileHash string) ([
 	return chunks, nil
 }
 
-// GetCompletedFile 检查本地最终文件是否已存在，并返回路径。
+// GetCompletedFile 检查本地最终文件是否已存在，并返回根相对访问路径。
 func (l *LocalStorage) GetCompletedFile(_ context.Context, fileHash string) (string, bool, error) {
 	if l.cfg == nil || l.cfg.Local == nil || strings.TrimSpace(l.cfg.Local.Path) == "" {
 		return "", false, errors.New("未配置本地文件存储路径")
@@ -167,14 +168,16 @@ func (l *LocalStorage) GetCompletedFile(_ context.Context, fileHash string) (str
 		return "", false, err
 	}
 
-	finalPath, err := safeJoinLocal(l.cfg.Local.Path, "videos", fileHash, "_source_"+fileHash+".mp4")
+	rel := path.Join("videos", fileHash, "_source_"+fileHash+".mp4")
+
+	finalPath, err := safeJoinLocal(l.cfg.Local.Path, rel)
 	if err != nil {
 		return "", false, err
 	}
 
 	_, err = os.Stat(finalPath)
 	if err == nil {
-		return finalPath, true, nil
+		return l.publicPath(rel), true, nil
 	}
 
 	if errors.Is(err, os.ErrNotExist) {
@@ -203,6 +206,8 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		return "", errors.New("未配置本地文件存储路径")
 	}
 
+	rel := path.Join("videos", fileHash, "_source_"+fileHash+".mp4")
+
 	finalDir, err := safeJoinLocal(l.cfg.Local.Path, "videos", fileHash)
 	if err != nil {
 		return "", err
@@ -224,7 +229,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 			}
 		}()
 
-		return finalPath, nil
+		return l.publicPath(rel), nil
 	}
 
 	out, err := os.Create(tmpFinalPath)
@@ -287,7 +292,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		}
 	}()
 
-	return finalPath, nil
+	return l.publicPath(rel), nil
 }
 
 // SaveFile 将任意文件写入本地存储。
@@ -330,7 +335,7 @@ func (l *LocalStorage) SaveFile(
 		return "", fmt.Errorf("落盘失败: %w", err)
 	}
 
-	return destPath, nil
+	return l.publicPath(relativePath), nil
 }
 
 // SaveTranscodeVideo 本地存储实现：
@@ -406,7 +411,7 @@ func (l *LocalStorage) SaveTranscodeVideo(
 		return "", 0, fmt.Errorf("落盘失败: %w", err)
 	}
 
-	return destPath, written, nil
+	return l.publicPath(relativePath), written, nil
 }
 
 // resolveStoredFilePath 把存储路径/URL 解析为 base 目录内的绝对路径（含目录穿越防护）。
@@ -426,6 +431,15 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 	}
 	// 去掉开头的 /
 	trimmed = strings.TrimPrefix(trimmed, "/")
+
+	// 根相对路径含存储根前缀（/uploads/...）时剥掉，避免与 base 重复拼接。
+	if root := strings.Trim(filepath.ToSlash(strings.TrimSpace(l.cfg.Local.Path)), "/"); root != "" {
+		if rest, ok := strings.CutPrefix(trimmed, root+"/"); ok {
+			trimmed = rest
+		} else if trimmed == root {
+			trimmed = ""
+		}
+	}
 
 	cleaned := filepath.Clean(trimmed)
 	if cleaned == "" || cleaned == "." {
@@ -453,6 +467,37 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 	}
 
 	return fullPath, nil
+}
+
+// ResolveSource 把根相对路径解析为本地绝对路径；已是绝对路径时原样返回。
+func (l *LocalStorage) ResolveSource(_ context.Context, storedPath string) (string, error) {
+	trimmed := strings.TrimSpace(storedPath)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	if filepath.IsAbs(trimmed) {
+		return trimmed, nil
+	}
+
+	return l.resolveStoredFilePath(trimmed)
+}
+
+// publicPath 生成根相对访问路径：/<Local.Path>/<relativePath>（host 由前端按环境拼接）。
+func (l *LocalStorage) publicPath(relativePath string) string {
+	rel := path.Clean("/" + filepath.ToSlash(strings.TrimSpace(relativePath)))
+	rel = strings.TrimPrefix(rel, "/")
+
+	if l.cfg == nil || l.cfg.Local == nil {
+		return "/" + rel
+	}
+
+	root := strings.Trim(filepath.ToSlash(strings.TrimSpace(l.cfg.Local.Path)), "/")
+	if root == "" {
+		return "/" + rel
+	}
+
+	return "/" + path.Join(root, rel)
 }
 
 // StatStoredFile 返回本地存储文件的字节数；文件缺失时返回 error（转码断点续传用它校验历史产物）。
