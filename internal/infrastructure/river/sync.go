@@ -752,8 +752,8 @@ func (r *River) reindexVideosByIDs(ids map[uint64]struct{}) { // 批量重建视
 		return
 	}
 
-	if err := r.doBulk(reqs); err != nil { // 注意：这里直接调用 doBulk（不走 syncLoop），会阻塞 canal 回调
-		log.Errorf("reindex videos failed: %v", err) // 如果失败，仅日志，不会影响位点保存逻辑
+	if err := r.doBulkWithRetry(reqs); err != nil { // 瞬时 ES 错误（408/425/429/5xx）指数退避重试；会阻塞 canal 回调
+		log.Errorf("reindex videos failed: %v", err) // 仍失败仅记日志，不会影响位点保存逻辑
 	}
 }
 
