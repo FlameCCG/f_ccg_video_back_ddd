@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/olivere/elastic/v7"

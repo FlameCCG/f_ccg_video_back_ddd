@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	"f_ccg_video_back_ddd/internal/config/site"
 )
 
 // testStorageConfig 构造一份本地 + MinIO 双驱动配置（不连接真实服务）。

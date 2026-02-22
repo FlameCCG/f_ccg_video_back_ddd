@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -51,7 +52,7 @@ func newExpFixture(t *testing.T) (*app.ExpService, *gorm.DB, uint) {
 
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
-	cfgProvider := config.NewProvider(&config.Config{})
+	cfgProvider := infraconfig.NewProvider(&config.Config{})
 	svc := app.NewExpService(
 		gormx.NewTxManager(db),
 		infra.NewUserRepository(db, cfgProvider),

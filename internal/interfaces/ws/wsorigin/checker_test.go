@@ -4,8 +4,9 @@ import (
 	"net/http"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	third_login "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	"f_ccg_video_back_ddd/internal/config"
+	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 // Origin 校验提供 WebSocket 跨站防护，Checker 使用构造函数注入的配置。判定结果属于安全契约。
@@ -22,7 +23,7 @@ func newRequest(origin, host string) *http.Request {
 
 // newChecker 用给定三方登录配置构造校验器。
 func newChecker(third *config.ThirdLogin) *Checker {
-	return NewChecker(config.NewProvider(&config.Config{ThirdLogin: third}))
+	return NewChecker(infraconfig.NewProvider(&config.Config{ThirdLogin: third}))
 }
 
 func TestCheckRejectsMissingOrMalformedOrigin(t *testing.T) {
@@ -157,7 +158,7 @@ func TestCheckRejectsWhenConfigMissing(t *testing.T) {
 	t.Parallel()
 
 	for _, checker := range []*Checker{
-		NewChecker(config.NewProvider(nil)),
+		NewChecker(infraconfig.NewProvider(nil)),
 		newChecker(nil),
 		newChecker(&config.ThirdLogin{}),
 	} {

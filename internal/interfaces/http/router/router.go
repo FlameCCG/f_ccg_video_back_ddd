@@ -13,7 +13,7 @@ import (
 	socialhandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/social"
 	videohandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/video"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/validate"
 
@@ -30,7 +30,7 @@ const (
 //
 // 依赖全部由 wire 在 bootstrap 注入；本类型只做路由声明，不含业务逻辑。
 type Router struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	mw          *middlewares.Middlewares
 	validator   *validate.Translator
 
@@ -51,7 +51,7 @@ type Router struct {
 
 // New 按 common 与 admin 分组的依赖顺序构造路由装配器。
 func New(
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	mw *middlewares.Middlewares,
 	validator *validate.Translator,
 	identity *identityhandler.Handler,

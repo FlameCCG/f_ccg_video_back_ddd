@@ -4,7 +4,8 @@ import (
 	"strconv"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 )
 
@@ -12,11 +13,11 @@ import (
 //
 // JWT claims（uid/username/exp）、有效期的天数换算、cookie 与响应字段均属于外部契约。
 type TokenService struct {
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 }
 
 // NewTokenService 构造令牌服务。
-func NewTokenService(cfgProvider *config.Provider) *TokenService {
+func NewTokenService(cfgProvider shared.ConfigReader) *TokenService {
 	return &TokenService{cfgProvider: cfgProvider}
 }
 

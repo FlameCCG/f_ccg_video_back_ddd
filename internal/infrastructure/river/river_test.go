@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/river/rule"
 )
 

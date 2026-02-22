@@ -3,7 +3,7 @@ package middlewares
 import (
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 
 	"github.com/gin-gonic/gin"

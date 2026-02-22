@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 
 	"github.com/cloudwego/eino/schema"
 )

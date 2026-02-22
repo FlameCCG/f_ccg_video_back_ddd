@@ -9,6 +9,7 @@ import (
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 type userInfoAccountRepository struct {
@@ -158,7 +159,7 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 	banners := &concurrentBannerCatalog{started: started, release: release}
 	relations := &concurrentRelationQuery{started: started, release: release}
 	service := NewProfileService(
-		nil,
+		infraconfig.NewProvider(nil),
 		nil,
 		accounts,
 		confs,
@@ -255,7 +256,7 @@ func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
 	banners := &concurrentBannerCatalog{}
 	relations := &concurrentRelationQuery{}
 	service := NewProfileService(
-		nil,
+		infraconfig.NewProvider(nil),
 		nil,
 		accounts,
 		confs,
@@ -286,7 +287,7 @@ func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
 	accounts := &userInfoAccountRepository{user: &domain.User{ID: 7, Username: "joined-user"}}
 	confs := &userInfoConfRepository{err: errors.New("database unavailable")}
 	service := NewProfileService(
-		nil,
+		infraconfig.NewProvider(nil),
 		nil,
 		accounts,
 		confs,

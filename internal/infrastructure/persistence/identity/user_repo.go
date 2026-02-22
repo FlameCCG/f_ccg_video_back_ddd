@@ -6,7 +6,7 @@ import (
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -17,7 +17,7 @@ import (
 // UserRepository 用户仓储的 GORM 实现。
 type UserRepository struct {
 	db          *gorm.DB
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 }
 
 // 编译期断言：满足领域侧仓储接口。
@@ -26,7 +26,7 @@ var _ domain.UserRepository = (*UserRepository)(nil)
 // NewUserRepository 构造用户仓储。
 //
 // cfgProvider 将注册默认横幅 ID 写入 context，供 po.User.AfterCreate 钩子读取。
-func NewUserRepository(db *gorm.DB, cfgProvider *config.Provider) *UserRepository {
+func NewUserRepository(db *gorm.DB, cfgProvider *infraconfig.Provider) *UserRepository {
 	return &UserRepository{db: db, cfgProvider: cfgProvider}
 }
 

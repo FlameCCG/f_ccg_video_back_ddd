@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	thirdlogin "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	"f_ccg_video_back_ddd/internal/config"
+	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"

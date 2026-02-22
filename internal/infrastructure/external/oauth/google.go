@@ -12,8 +12,8 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	third_login "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -50,7 +50,7 @@ type UserGoogleInfo struct {
 
 // GoogleClient Google OAuth 客户端。
 type GoogleClient struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	httpClient  *http.Client
 	logger      *zap.Logger
 }
@@ -58,7 +58,7 @@ type GoogleClient struct {
 var _ app.GoogleOAuthClient = (*GoogleClient)(nil)
 
 // NewGoogleClient 构造 Google OAuth 客户端。
-func NewGoogleClient(cfgProvider *config.Provider, logger *zap.Logger) *GoogleClient {
+func NewGoogleClient(cfgProvider *infraconfig.Provider, logger *zap.Logger) *GoogleClient {
 	return &GoogleClient{
 		cfgProvider: cfgProvider,
 		httpClient:  &http.Client{Timeout: googleHTTPTimeout},

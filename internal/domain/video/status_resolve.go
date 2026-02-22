@@ -15,7 +15,7 @@ import (
 //   - 立即公开 + 关闭审核 → Published
 //   - 立即公开 + 开启审核 → Review
 //
-// 内容审核开关由应用层从注入的配置 Provider 读取后传入。
+// 内容审核开关由应用层经配置端口读取后传入。
 func ResolvePublishVideoStatus(
 	now time.Time,
 	publishTime *time.Time,

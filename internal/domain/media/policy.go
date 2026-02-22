@@ -1,6 +1,6 @@
 package media
 
-// TranscodePolicy 将画质、码率和编码器配置转换为领域决策输入，避免分辨率与码率规则依赖 infrastructure/config。
+// TranscodePolicy 是转码编码策略值对象，将画质、码率与编码器配置转换为领域决策输入，避免领域规则依赖配置包。
 //
 // 所有方法对 nil 接收者安全，配置缺失时使用默认回落值。
 type TranscodePolicy struct {

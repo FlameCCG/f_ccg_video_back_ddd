@@ -6,14 +6,15 @@ import (
 	"net/http"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 )
 
 type snapshotTextGenerator struct {
-	provider    *config.Provider
+	provider    *infraconfig.Provider
 	next        *config.Config
 	invocations []TextInvocation
 }
@@ -40,7 +41,7 @@ func (*snapshotTextGenerator) OpenStream(
 }
 
 type snapshotImageGenerator struct {
-	provider    *config.Provider
+	provider    *infraconfig.Provider
 	next        *config.Config
 	invocations []ImageInvocation
 }
@@ -60,7 +61,7 @@ func (g *snapshotImageGenerator) Generate(
 }
 
 type snapshotVideoClient struct {
-	provider  *config.Provider
+	provider  *infraconfig.Provider
 	next      *config.Config
 	runtime   RuntimeConfig
 	requestID string
@@ -83,7 +84,7 @@ func (c *snapshotVideoClient) Get(
 }
 
 type snapshotAssetFetcher struct {
-	provider *config.Provider
+	provider *infraconfig.Provider
 	next     *config.Config
 	runtime  RuntimeConfig
 	assetURL string
@@ -141,7 +142,7 @@ func TestCreateResponseKeepsRuntimeSnapshotAcrossHotReload(t *testing.T) {
 		ChatModel:         "old-chat-model",
 		TimeoutSec:        17,
 	}
-	provider := config.NewProvider(&config.Config{AI: oldAI})
+	provider := infraconfig.NewProvider(&config.Config{AI: oldAI})
 	text := &snapshotTextGenerator{
 		provider: provider,
 		next: &config.Config{AI: &config.AI{
@@ -188,7 +189,7 @@ func TestGenerateImageKeepsRuntimeSnapshotForSupplementRequests(t *testing.T) {
 		ImageModel:        "old-image-model",
 		TimeoutSec:        23,
 	}
-	provider := config.NewProvider(&config.Config{AI: oldAI})
+	provider := infraconfig.NewProvider(&config.Config{AI: oldAI})
 	images := &snapshotImageGenerator{
 		provider: provider,
 		next: &config.Config{AI: &config.AI{
@@ -237,7 +238,7 @@ func TestGenerateImageKeepsRuntimeSnapshotForSupplementRequests(t *testing.T) {
 }
 
 func TestGetVideoPassesCapturedRuntimeConfig(t *testing.T) {
-	provider := config.NewProvider(&config.Config{AI: &config.AI{
+	provider := infraconfig.NewProvider(&config.Config{AI: &config.AI{
 		ChatModelBaseURL:  "https://old-chat.example/v1",
 		ChatModelAPIKey:   "old-chat-key",
 		DoubaoModelAPIKey: "old-doubao-key",
@@ -267,7 +268,7 @@ func TestGetVideoPassesCapturedRuntimeConfig(t *testing.T) {
 }
 
 func TestOpenAssetStreamPassesCapturedRuntimeConfig(t *testing.T) {
-	provider := config.NewProvider(&config.Config{AI: &config.AI{
+	provider := infraconfig.NewProvider(&config.Config{AI: &config.AI{
 		ChatModelBaseURL:  "https://old-chat.example/v1",
 		ChatModelAPIKey:   "old-chat-key",
 		DoubaoModelAPIKey: "old-doubao-key",

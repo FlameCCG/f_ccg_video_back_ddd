@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	"f_ccg_video_back_ddd/internal/config/site"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"

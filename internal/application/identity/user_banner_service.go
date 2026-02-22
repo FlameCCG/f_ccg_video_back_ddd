@@ -6,9 +6,10 @@ import (
 	"slices"
 	"strings"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
 	"f_ccg_video_back_ddd/pkg/uploadcheck"
 
 	"go.uber.org/zap"
@@ -19,7 +20,7 @@ const siteConfigSection = "site"
 
 // UserBannerService 用户主页横幅用例服务。
 type UserBannerService struct {
-	cfgProvider  *config.Provider
+	cfgProvider  shared.ConfigStore
 	confs        domain.UserConfRepository
 	banners      UserBannerCatalog
 	configWriter ConfigFileWriter
@@ -29,7 +30,7 @@ type UserBannerService struct {
 
 // NewUserBannerService 构造用户横幅服务。
 func NewUserBannerService(
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigStore,
 	confs domain.UserConfRepository,
 	banners UserBannerCatalog,
 	configWriter ConfigFileWriter,

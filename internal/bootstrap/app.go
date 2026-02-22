@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	"f_ccg_video_back_ddd/internal/infrastructure/cache"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongodb"
@@ -72,7 +72,7 @@ func (i *Infrastructure) Stop() {
 
 // App 是应用运行期聚合体：HTTP 服务 + 后台组件 + 基础设施生命周期。
 type App struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	lg          *logger.Logger
 	router      *router.Router
 	detached    *ctxutil.DetachedTaskGroup
@@ -85,7 +85,7 @@ type App struct {
 // infra 位于首位，使 Wire 先建立基础设施连接，再创建仓储、应用服务与 HTTP 处理器。
 func NewApp(
 	infra *Infrastructure,
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	lg *logger.Logger,
 	httpRouter *router.Router,
 	detached *ctxutil.DetachedTaskGroup,

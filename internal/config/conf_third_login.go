@@ -1,6 +1,6 @@
 package config
 
-import "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+import "f_ccg_video_back_ddd/internal/config/thirdlogin"
 
 // ThirdLogin 类型.
 type ThirdLogin struct {

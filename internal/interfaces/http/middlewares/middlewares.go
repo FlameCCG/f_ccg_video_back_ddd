@@ -7,7 +7,7 @@ package middlewares
 import (
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/casbin/casbin/v2"
 	"go.uber.org/zap"
@@ -15,7 +15,7 @@ import (
 
 // Middlewares 聚合所有需要依赖注入的 gin 中间件。
 type Middlewares struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	enforcer    *casbin.SyncedEnforcer
 	userStatus  *identityapp.UserStatusService
 	bans        *identityapp.BanService
@@ -27,7 +27,7 @@ type Middlewares struct {
 
 // New 构造中间件集合。
 func New(
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	enforcer *casbin.SyncedEnforcer,
 	userStatus *identityapp.UserStatusService,
 	bans *identityapp.BanService,

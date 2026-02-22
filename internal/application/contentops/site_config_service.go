@@ -5,9 +5,10 @@ import (
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
-	thirdlogin "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
 )
 
 // maskedSecretValue 管理端脱敏占位符：提交该值表示「不修改原密钥」。
@@ -35,15 +36,15 @@ const (
 
 // SiteConfigService 站点配置用例服务。
 //
-// 配置快照由注入的 config.Provider 持有；先浅拷贝顶层并替换目标配置段，再原子发布，避免与热更新或并发读取发生 data race。
+// 配置快照由 shared.ConfigStore 持有；先浅拷贝顶层并替换目标配置段，再原子发布，避免与热更新或并发读取发生 data race。
 // 发布成功后写回对应配置段。
 type SiteConfigService struct {
-	provider *config.Provider
+	provider shared.ConfigStore
 	files    ConfigFileWriter
 }
 
 // NewSiteConfigService 构造站点配置用例服务。
-func NewSiteConfigService(provider *config.Provider, files ConfigFileWriter) *SiteConfigService {
+func NewSiteConfigService(provider shared.ConfigStore, files ConfigFileWriter) *SiteConfigService {
 	return &SiteConfigService{provider: provider, files: files}
 }
 

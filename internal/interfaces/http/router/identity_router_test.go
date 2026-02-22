@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 	"f_ccg_video_back_ddd/pkg/validate"
@@ -22,11 +23,11 @@ import (
 
 // TestRegisterEmailRouteDoesNotRequireSlideCaptcha 验证注册邮箱路由不挂滑块验证码中间件。
 //
-// 测试通过 *config.Provider 启用滑块验证码；误挂中间件时请求会在 JSON 绑定前被拒绝。
+// 测试通过 *infraconfig.Provider 启用滑块验证码；误挂中间件时请求会在 JSON 绑定前被拒绝。
 func TestRegisterEmailRouteDoesNotRequireSlideCaptcha(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	provider := config.NewProvider(&config.Config{
+	provider := infraconfig.NewProvider(&config.Config{
 		Site: &site.Site{
 			Register: &site.Register{
 				EmailCaptcha: false,
@@ -86,7 +87,7 @@ func TestRegisterEmailRouteDoesNotRequireSlideCaptcha(t *testing.T) {
 func TestAdminLoginRouteRequiresSlideCaptcha(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	provider := config.NewProvider(&config.Config{
+	provider := infraconfig.NewProvider(&config.Config{
 		Site: &site.Site{
 			Register: &site.Register{SlideCaptcha: true},
 		},

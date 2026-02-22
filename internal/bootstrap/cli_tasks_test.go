@@ -3,7 +3,8 @@ package bootstrap
 import (
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/validate"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +12,7 @@ import (
 )
 
 func TestRouterRouteListerUsesRealRouter(t *testing.T) {
-	provider := config.NewProvider(&config.Config{
+	provider := infraconfig.NewProvider(&config.Config{
 		Server: &config.Server{Mode: gin.TestMode},
 	})
 	httpRouter := NewCLIRouter(provider, nil, zap.NewNop(), validate.New())

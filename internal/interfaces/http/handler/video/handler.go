@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	wsdanmu "f_ccg_video_back_ddd/internal/interfaces/ws/danmu"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
@@ -35,7 +35,7 @@ type Handler struct {
 	search      app.VideoSearcher
 	dynamics    app.DynamicReadMarker
 	hub         *wsdanmu.Hub
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	resolver    ipUtils.RegionResolver
 	logger      *zap.Logger
 }
@@ -59,7 +59,7 @@ func NewHandler(
 	search app.VideoSearcher,
 	dynamics app.DynamicReadMarker,
 	hub *wsdanmu.Hub,
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	resolver ipUtils.RegionResolver,
 	logger *zap.Logger,
 ) *Handler {

@@ -6,14 +6,15 @@ import (
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/gin-gonic/gin"
 )
 
 // Cors 按配置白名单设置跨域头，未配置时仅允许同源与 loopback，debug 模式额外允许本机。
-// 配置由注入的 *config.Provider 提供，支持热更新。
-func Cors(cfgProvider *config.Provider) gin.HandlerFunc {
+// 配置由注入的 *infraconfig.Provider 提供，支持热更新。
+func Cors(cfgProvider *infraconfig.Provider) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("X-Frame-Options", "DENY")

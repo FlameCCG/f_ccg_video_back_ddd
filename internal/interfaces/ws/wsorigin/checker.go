@@ -1,6 +1,6 @@
 // Package wsorigin 校验浏览器 WebSocket 的 Origin 头。
 //
-// Checker 通过构造函数接收 *config.Provider，Origin 校验由 WebSocket 接口层执行。
+// Checker 通过构造函数接收 *infraconfig.Provider，Origin 校验由 WebSocket 接口层执行。
 package wsorigin
 
 import (
@@ -9,17 +9,17 @@ import (
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	third_login "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 // Checker 基于当前配置快照校验 WebSocket Origin。
 type Checker struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 }
 
 // NewChecker 构造 Origin 校验器。
-func NewChecker(cfgProvider *config.Provider) *Checker {
+func NewChecker(cfgProvider *infraconfig.Provider) *Checker {
 	return &Checker{cfgProvider: cfgProvider}
 }
 

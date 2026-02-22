@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
