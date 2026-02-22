@@ -49,10 +49,6 @@ func NewTranscodeConsumer(
 	producers *ProducerPool,
 	logger *zap.Logger,
 ) (*TranscodeConsumer, error) {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	if service == nil {
 		return nil, errors.New("application config not initialized")
 	}

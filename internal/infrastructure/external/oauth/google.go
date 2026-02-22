@@ -59,10 +59,6 @@ var _ app.GoogleOAuthClient = (*GoogleClient)(nil)
 
 // NewGoogleClient 构造 Google OAuth 客户端。
 func NewGoogleClient(cfgProvider *config.Provider, logger *zap.Logger) *GoogleClient {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &GoogleClient{
 		cfgProvider: cfgProvider,
 		httpClient:  &http.Client{Timeout: googleHTTPTimeout},

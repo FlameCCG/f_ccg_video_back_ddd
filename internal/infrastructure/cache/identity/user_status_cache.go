@@ -57,10 +57,6 @@ var _ domain.UserStatusCache = (*UserStatusCache)(nil)
 
 // NewUserStatusCache 构造用户状态缓存适配器。
 func NewUserStatusCache(redisClient *redis.Client, logger *zap.Logger) *UserStatusCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &UserStatusCache{redis: redisClient, logger: logger}
 }
 

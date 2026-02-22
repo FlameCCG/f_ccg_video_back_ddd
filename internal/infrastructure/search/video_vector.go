@@ -76,10 +76,6 @@ var _ app.VideoVectorIndexLifecycle = (*VideoVectorIndex)(nil)
 
 // NewVideoVectorIndex 构造视频向量索引适配器（client 允许为 nil）。
 func NewVideoVectorIndex(client *elasticsearch8.Client, logger *zap.Logger) *VideoVectorIndex {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &VideoVectorIndex{
 		client:      client,
 		coverClient: &http.Client{Timeout: coverFetchTimeout},

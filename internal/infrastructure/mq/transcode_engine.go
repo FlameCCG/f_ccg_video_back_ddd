@@ -45,10 +45,6 @@ func NewTranscodeEngine(
 	resources media.TranscodeResourceRepository,
 	logger *zap.Logger,
 ) *TranscodeEngine {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &TranscodeEngine{
 		checkpoints: newCheckpointManager(cfgProvider, logger),
 		resources:   resources,

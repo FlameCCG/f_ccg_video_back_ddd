@@ -36,10 +36,6 @@ var _ app.FolderListCache = (*FolderListCache)(nil)
 
 // NewFolderListCache 构造收藏夹列表缓存适配器；redisClient 允许为 nil。
 func NewFolderListCache(redisClient *redis.Client, logger *zap.Logger) *FolderListCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &FolderListCache{redis: redisClient, logger: logger}
 }
 

@@ -49,10 +49,6 @@ func (m *Mongo) Database() *mongo.Database {
 //
 // 聊天集合索引由 chat 上下文的 IndexInitializer 在后台组件启动时创建。
 func New(cfg *config.Mongo, logger *zap.Logger) *Mongo {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	if cfg == nil {
 		logger.Warn("Mongo 配置为空，跳过初始化")
 

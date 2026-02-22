@@ -66,10 +66,6 @@ func NewCronComponent(
 	autoUnban AutoUnbanJob,
 	logger *zap.Logger,
 ) *CronComponent {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &CronComponent{
 		commentLike: commentLike,
 		videoStat:   videoStat,

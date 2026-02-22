@@ -34,10 +34,6 @@ var _ domain.VideoDetailCacheInvalidator = (*VideoDetailCache)(nil)
 
 // NewVideoDetailCache 构造视频详情缓存失效适配器。
 func NewVideoDetailCache(redisClient *redis.Client, logger *zap.Logger) *VideoDetailCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &VideoDetailCache{redis: redisClient, logger: logger}
 }
 

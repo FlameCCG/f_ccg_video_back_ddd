@@ -32,10 +32,6 @@ func NewResolver(
 	detached *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,
 ) *Resolver {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &Resolver{cfgProvider: cfgProvider, clients: clients, detached: detached, logger: logger}
 }
 
