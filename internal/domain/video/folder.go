@@ -26,6 +26,21 @@ func (f *FavoriteFolder) CanDelete() error {
 	return nil
 }
 
+// Rename 重命名收藏夹：校验新名称后更新实体。
+func (f *FavoriteFolder) Rename(name string) error {
+	if f == nil {
+		return ErrRecordNotFound
+	}
+
+	if err := ValidateFolderName(name); err != nil {
+		return err
+	}
+
+	f.Name = name
+
+	return nil
+}
+
 // ValidateFolderName 校验收藏夹名称，只判断空串，不做 TrimSpace。
 func ValidateFolderName(name string) error {
 	if name == "" {

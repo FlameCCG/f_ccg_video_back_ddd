@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"errors"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
@@ -83,6 +84,34 @@ func (s *FolderService) CreateFolder(ctx context.Context, userID uint, name stri
 
 	folder := &domain.FavoriteFolder{UserID: userID, Name: name}
 	if err := s.folders.Create(ctx, folder); err != nil {
+		return nil, err
+	}
+
+	s.cache.Invalidate(userID)
+
+	return folder, nil
+}
+
+// UpdateFolder 更新收藏夹信息（目前仅名称）。
+func (s *FolderService) UpdateFolder(ctx context.Context, userID, folderID uint, name string) (*domain.FavoriteFolder, error) {
+	if userID == 0 {
+		return nil, domain.ErrUserNotLogin
+	}
+
+	folder, err := s.folders.FindByIDAndUser(ctx, userID, folderID)
+	if err != nil {
+		if errors.Is(err, domain.ErrRecordNotFound) {
+			return nil, domain.ErrFolderNotFoundOrForbidden
+		}
+
+		return nil, err
+	}
+
+	if err := folder.Rename(name); err != nil {
+		return nil, err
+	}
+
+	if err := s.folders.Update(ctx, folder); err != nil {
 		return nil, err
 	}
 

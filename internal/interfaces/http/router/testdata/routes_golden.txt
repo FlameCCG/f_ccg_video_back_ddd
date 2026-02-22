@@ -186,4 +186,5 @@ PUT     /v1/common/notification/read
 PUT     /v1/common/user/info
 PUT     /v1/common/user/info/conf
 PUT     /v1/common/user/password/change
+PUT     /v1/common/video/folder
 PUT     /v1/common/video/publish

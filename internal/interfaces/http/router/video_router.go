@@ -69,6 +69,7 @@ func registerVideoCommonRoutes(
 		authGroup.GET("history/list", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.HistoryListReq], h.GetVideoHistoryView)
 		authGroup.DELETE("history", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.DeleteHistoryReq], h.DeleteHistoryView)
 		authGroup.POST("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.CreateFolderReq], h.CreateFolderView)
+		authGroup.PUT("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.UpdateFolderReq], h.UpdateFolderView)
 		authGroup.DELETE("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.DeleteFolderReq], h.DeleteFolderView)
 		authGroup.GET("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.FolderListReq], h.FolderListView)
 		authGroup.GET("folder/videos", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.FolderVideosReq], h.FolderVideosView)
