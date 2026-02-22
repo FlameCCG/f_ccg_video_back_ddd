@@ -108,8 +108,13 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 	}
 
 	user, err := s.users.FindByID(ctx, userID)
-	if err != nil || user == nil {
-		// 查询失败与用户不存在均返回「用户不存在」。
+	if err != nil {
+		s.logger.Error("query refresh-token user error", zap.Uint("user_id", userID), zap.Error(err))
+
+		return nil, ErrQueryUserFailed
+	}
+
+	if user == nil {
 		return nil, domain.ErrUserNotFound
 	}
 
