@@ -12,6 +12,7 @@ import ( // 依赖导入：二进制序列化、反射、时间、ES/canal/mysql
 	"strings"          // 字符串处理
 	"time"             // 时间处理
 
+	"f_ccg_video_back_ddd/internal/config"                    // MySQL 显式时区
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"        // 业务枚举
 	"f_ccg_video_back_ddd/internal/infrastructure/river/rule" // 规则模块（字段映射、过滤、主键等）
 	"f_ccg_video_back_ddd/pkg/constants"                      // 统一索引名常量等
@@ -24,6 +25,7 @@ import ( // 依赖导入：二进制序列化、反射、时间、ES/canal/mysql
 	"github.com/siddontang/go-mysql/mysql"                 // MySQL 工具：位点、时间格式等
 	"github.com/siddontang/go-mysql/replication"           // 复制层事件定义（Rotate/DDl 等）
 	"github.com/siddontang/go-mysql/schema"                // 表结构描述（列类型、主键、取值）
+	"gorm.io/gorm"                                         // ErrRecordNotFound：区分行删除与查询故障
 )
 
 const ( // 字段映射时的“目标类型”标识：在配置 field 映射中通过 ",date"/",list" 指定
@@ -33,6 +35,7 @@ const ( // 字段映射时的“目标类型”标识：在配置 field 映射�
 	fieldTypeDate = "date" // 将整型时间戳转为 RFC3339 日期字符串（ES 可解析）
 
 	tableVideoTags = "video_tags"
+	tableUsers     = "users"
 )
 
 const mysqlDateFormat = "2006-01-02" // 仅日期（不含时分秒）的解析/输出格式
@@ -52,6 +55,8 @@ const (
 	riverBulkInitialBackoff = 200 * time.Millisecond
 	// riverBulkMaxBackoff 限制可重试失败的最大退避，避免恢复后响应过慢.
 	riverBulkMaxBackoff = 5 * time.Second
+	// riverBulkMaxAttempts 单批 ES 写入的最大尝试次数，避免长时间故障永久卡住 canal 回调.
+	riverBulkMaxAttempts = 5
 )
 
 type riverBulkError struct {
@@ -114,13 +119,27 @@ func (h *eventHandler) OnRow(e *canal.RowsEvent) error { // 核心：行变更�
 	switch tableName {
 	case tableVideoTags: // 维护 videos 与 tags 的反范式：标签变更要“回写视频文档”
 		ids := h.r.collectIDsFromRows(e.Rows, e.Table, "video_id") // 收集受影响的视频ID
-		h.r.reindexVideosByIDs(ids)                                // 直接重建这些视频的 ES 文档（同步调用 doBulk）
+		if err := h.r.reindexVideosByIDs(ids); err != nil {        // 直接重建这些视频的 ES 文档
+			h.r.cancel()
+
+			return errors.Errorf("reindex videos for %s failed: %v", tableName, err)
+		}
 
 		return nil // 不走默认规则（这张表只是桥表）
 	case "tags":
 		tagIDs := h.r.collectIDsFromRows(e.Rows, e.Table, "id") // 收集变更的 tag IDs
-		videoIDs := h.r.videoIDsByTagIDs(tagIDs)                // 反查受影响的视频
-		h.r.reindexVideosByIDs(videoIDs)                        // 重建视频文档
+		videoIDs, err := h.r.videoIDsByTagIDs(tagIDs)           // 反查受影响的视频
+		if err != nil {
+			h.r.cancel()
+
+			return errors.Errorf("load affected videos for tags failed: %v", err)
+		}
+
+		if err := h.r.reindexVideosByIDs(videoIDs); err != nil { // 重建视频文档
+			h.r.cancel()
+
+			return errors.Errorf("reindex videos for tags failed: %v", err)
+		}
 
 		return nil
 	}
@@ -255,7 +274,9 @@ func (r *River) makeRequest(rule *rule.Rule, action string, rows [][]any) ([]*el
 		if action == canal.DeleteAction { // 删除场景
 			req.Action = elastic.ActionDelete // 生成 delete 操作
 		} else { // 插入场景
-			r.makeInsertReqData(req, rule, values) // 构建 index 数据体（含字段映射/过滤/类型转换/富化）
+			if err := r.makeInsertReqData(req, rule, values); err != nil { // 构建 index 数据体（含字段映射/过滤/类型转换/富化）
+				return nil, errors.Trace(err)
+			}
 		}
 
 		reqs = append(reqs, req) // 收集
@@ -301,6 +322,13 @@ func (r *River) makeUpdateRequest(rule *rule.Rule, rows [][]any) ([]*elastic.Bul
 			}
 		}
 
+		// 只有未变更索引字段的 UPDATE（例如 users.coin_count）无需重建全文档，
+		// 也不应触发标签/关系等派生查询。主键或 Parent 变化仍必须执行删旧建新。
+		if beforeID == afterID && beforeParentID == afterParentID &&
+			!hasIndexRelevantChange(rule, rows[i], rows[i+1]) {
+			continue
+		}
+
 		req := &elastic.BulkRequest{Index: rule.Index, Type: rule.Type, ID: beforeID, Parent: beforeParentID} // 先以 before 作为目标
 
 		if beforeID != afterID || beforeParentID != afterParentID { // 主键或父子关系变动
@@ -308,23 +336,65 @@ func (r *River) makeUpdateRequest(rule *rule.Rule, rows [][]any) ([]*elastic.Bul
 			reqs = append(reqs, req)
 
 			req = &elastic.BulkRequest{Index: rule.Index, Type: rule.Type, ID: afterID, Parent: afterParentID, Pipeline: rule.Pipeline} // 再插新文档
-			r.makeInsertReqData(req, rule, rows[i+1])                                                                                   // 重建完整文档（可走 pipeline）
-		} else { // ID 与 Parent 未变：做部分更新或“强制 index”
-			if len(rule.Pipeline) > 0 { // ES pipeline 只能绑定在 index 操作
-				// Pipelines can only be specified on index action
-				r.makeInsertReqData(req, rule, rows[i+1]) // 构造完整数据（等价于 upsert）
-				// Make sure action is index, not create
-				req.Action = elastic.ActionIndex // 设置为 index（不是 create）
-				req.Pipeline = rule.Pipeline     // 挂上 pipeline 做预处理
-			} else {
-				r.makeUpdateReqData(req, rule, rows[i], rows[i+1]) // 对比前后值，仅更新变化字段，节省写放大
-			}
+		} else { // ID 与 Parent 未变：使用 after-image 做全文档覆盖式 index
+			req.Pipeline = rule.Pipeline
+		}
+
+		if err := r.makeInsertReqData(req, rule, rows[i+1]); err != nil {
+			return nil, errors.Trace(err)
 		}
 
 		reqs = append(reqs, req) // 收集本次的 update（或 index 新文档）
 	}
 
 	return reqs, nil // 返回所有构造请求
+}
+
+// hasIndexRelevantChange 判断 UPDATE 是否改变 ES 文档。
+// 除规则 filter 中的字段外，也要包含 enrich 逻辑直接依赖的源列。
+func hasIndexRelevantChange(rule *rule.Rule, before, after []any) bool {
+	for i, column := range rule.TableInfo.Columns {
+		if i >= len(before) || i >= len(after) {
+			return true // 行图像与表结构不一致时保守重建，让后续构造器暴露错误
+		}
+
+		columnName := strings.ToLower(column.Name)
+		if isIgnoredBookkeepingColumn(rule.TableInfo.Name, columnName) {
+			continue
+		}
+
+		if !rule.CheckFilter(columnName) && !isEnrichmentSourceColumn(rule.TableInfo.Name, columnName) {
+			continue
+		}
+
+		if !reflect.DeepEqual(before[i], after[i]) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// users.updated_at 会被硬币/经验等任意行更新自动触发，不能单独作为重建搜索文档的理由。
+// 当描述、头像等真正索引字段变化时，updated_at 仍会随全文档一起写入。
+func isIgnoredBookkeepingColumn(table, column string) bool {
+	return strings.EqualFold(table, tableUsers) && column == "updated_at"
+}
+
+func isEnrichmentSourceColumn(table, column string) bool {
+	switch strings.ToLower(table) {
+	case "videos":
+		switch column {
+		case "title", "author_username", "created_at", "status", "danmu_count", "duration":
+			return true
+		}
+	case tableUsers:
+		return column == "username"
+	case "tags":
+		return column == "name"
+	}
+
+	return false
 }
 
 func (r *River) makeReqColumnData(col *schema.TableColumn, value any) any { // 将 MySQL 列值转换为 ES 友好值（按列类型）
@@ -393,8 +463,8 @@ func (r *River) makeReqColumnData(col *schema.TableColumn, value any) any { // �
 	case schema.TYPE_DATETIME, schema.TYPE_TIMESTAMP: // 日期时间，字符串解析为 RFC3339 输出
 		switch v := value.(type) {
 		case string:
-			vt, err := time.ParseInLocation(mysql.TimeFormat, v, time.Local) // 按本地时区解析
-			if err != nil || vt.IsZero() {                                   // 解析失败或零日期
+			vt, err := time.ParseInLocation(mysql.TimeFormat, v, r.mysqlTimeLocation()) // 按 MySQL 业务时区解析
+			if err != nil || vt.IsZero() {                                              // 解析失败或零日期
 				return nil
 			}
 
@@ -413,6 +483,20 @@ func (r *River) makeReqColumnData(col *schema.TableColumn, value any) any { // �
 	}
 
 	return value // 默认原样返回（数字/布尔等）
+}
+
+func (r *River) mysqlTimeLocation() *time.Location {
+	if r != nil && r.mysqlLoc != nil {
+		return r.mysqlLoc
+	}
+
+	location, err := time.LoadLocation(config.DefaultMysqlTimezone)
+	if err == nil && location != nil {
+		return location
+	}
+
+	// 只在运行时缺失 tzdata 且 River 不是由 NewRiver 构造时命中；保持 UTC+8 而非回退 time.Local。
+	return time.FixedZone(config.DefaultMysqlTimezone, 8*60*60)
 }
 
 func (r *River) getFieldParts(k, v string) (string, string, string) { // 解析字段映射项：k=MySQL列名，v="esName[,type]"
@@ -436,7 +520,7 @@ func (r *River) getFieldParts(k, v string) (string, string, string) { // 解析�
 	return mysql, elastic, fieldType // 返回三元组
 }
 
-func (r *River) makeInsertReqData(req *elastic.BulkRequest, rule *rule.Rule, values []any) { // 构造 index 操作的数据体
+func (r *River) makeInsertReqData(req *elastic.BulkRequest, rule *rule.Rule, values []any) error { // 构造 index 操作的数据体
 	req.Data = make(map[string]any, len(values)) // 初始化文档数据
 	req.Action = elastic.ActionIndex             // 插入/覆盖（幂等）
 
@@ -463,50 +547,17 @@ func (r *River) makeInsertReqData(req *elastic.BulkRequest, rule *rule.Rule, val
 		}
 	}
 
-	r.enrichVideoDocument(req, rule, values) // 针对 videos：补充 tags、suggester、计数字段
-	r.enrichUserDocument(req, rule, values)  // 针对 users：补充 follower_count、username_suggest
-	r.enrichTagDocument(req, rule, values)   // 针对 tags：补充 name_suggest
-}
-
-func (r *River) makeUpdateReqData(req *elastic.BulkRequest, rule *rule.Rule,
-	beforeValues, afterValues []any,
-) { // UPDATE 的部分更新：仅包含“有变化”的字段
-	req.Data = make(map[string]any, len(beforeValues)) // 初始化更新字段集合
-
-	// maybe dangerous if something wrong delete before?
-	req.Action = elastic.ActionUpdate // 使用 ES 的“局部更新”语义
-
-	for i, c := range rule.TableInfo.Columns { // 遍历列
-		columnName := strings.ToLower(c.Name)
-		mapped := false
-
-		if !rule.CheckFilter(columnName) { // 过滤不需要同步的列
-			continue
-		}
-
-		if reflect.DeepEqual(beforeValues[i], afterValues[i]) { // 值未变则跳过（节省写放大）
-			// nothing changed
-			continue
-		}
-
-		for k, v := range rule.FieldMapping { // 优先看是否有重命名/类型映射
-			mysql, elastic, fieldType := r.getFieldParts(k, v)
-			if mysql == columnName {
-				mapped = true
-				req.Data[elastic] = r.getFieldValue(&c, fieldType, afterValues[i]) // 用“新值”
-
-				break
-			}
-		}
-
-		if !mapped { // 否则默认“同名 + 类型感知转换”
-			req.Data[c.Name] = r.makeReqColumnData(&c, afterValues[i])
-		}
+	if err := r.enrichVideoDocument(req, rule, values); err != nil { // 针对 videos：补充 tags、suggester、计数字段
+		return errors.Trace(err)
 	}
 
-	r.enrichVideoDocument(req, rule, afterValues) // UPDATE 同样需要按 after 补充冗余字段
-	r.enrichUserDocument(req, rule, afterValues)
-	r.enrichTagDocument(req, rule, afterValues)
+	if err := r.enrichUserDocument(req, rule, values); err != nil { // 针对 users：补充 follower_count、username_suggest
+		return errors.Trace(err)
+	}
+
+	r.enrichTagDocument(req, rule, values) // 针对 tags：补充 name_suggest
+
+	return nil
 }
 
 // getDocID 生成 ES 文档 _id（幂等关键）。
@@ -571,20 +622,24 @@ func (r *River) getParentID(rule *rule.Rule, row []any, columnName string) (stri
 	return fmt.Sprint(row[index]), nil // 转字符串（与 _id 拼接逻辑保持统一）
 }
 
-func (r *River) enrichVideoDocument(req *elastic.BulkRequest, rule *rule.Rule, row []any) { // 针对 videos 表的冗余补充
+func (r *River) enrichVideoDocument(req *elastic.BulkRequest, rule *rule.Rule, row []any) error { // 针对 videos 表的冗余补充
 	if !strings.EqualFold(rule.TableInfo.Name, "videos") {
-		return
+		return nil
 	}
 
 	videoID, ok := getPrimaryKeyUint(rule, row) // 提取主键（uint）
 	if !ok {
-		return
+		return errors.Errorf("cannot extract video primary key from %s row", rule.TableInfo.Name)
 	}
 
 	status := r.getColumnData(rule, row, "status")
 	title := r.getStringColumn(rule, row, "title") // 取标题
 
-	tags := r.loadVideoTagsByID(videoID) // 通过桥表加载视频标签（保持冗余）
+	tags, err := r.loadVideoTagsByID(videoID) // 通过桥表加载视频标签（保持冗余）
+	if err != nil {
+		return errors.Trace(err)
+	}
+
 	if len(tags) > 0 {
 		req.Data["tags"] = tags
 	}
@@ -607,24 +662,42 @@ func (r *River) enrichVideoDocument(req *elastic.BulkRequest, rule *rule.Rule, r
 	req.Data["status"] = status
 	req.Data["danmu_count"] = r.getNumericColumn(rule, row, "danmu_count") // 直接冗余写入，便于检索/排序
 	req.Data["duration"] = r.getNumericColumn(rule, row, "duration")
+
+	return nil
 }
 
-func (r *River) enrichUserDocument(req *elastic.BulkRequest, rule *rule.Rule, row []any) { // 针对 users 表的冗余补充
-	if !strings.EqualFold(rule.TableInfo.Name, "users") {
-		return
+func (r *River) enrichUserDocument(req *elastic.BulkRequest, rule *rule.Rule, row []any) error { // 针对 users 表的冗余补充
+	if !strings.EqualFold(rule.TableInfo.Name, tableUsers) {
+		return nil
 	}
 
 	userID, ok := getPrimaryKeyUint(rule, row)
 	if !ok {
-		return
+		return errors.Errorf("cannot extract user primary key from %s row", rule.TableInfo.Name)
 	}
-
-	req.Data["follower_count"] = r.loadUserFollowerCount(userID) // 反查粉丝数（聚合写入，避免查询时 join）
 
 	username := r.getStringColumn(rule, row, "username")
-	if sugg := buildCompletionPayload([]string{username}); sugg != nil {
-		req.Data["username_suggest"] = sugg // 用户名补全字段
+
+	return r.attachUserRelationFields(req.Data, userID, username)
+}
+
+// attachUserRelationFields 写入关系冗余字段（粉丝数/关注列表/互关好友）与用户名补全，
+// 供 binlog 富化（INSERT）与 DB 全量重建两条路径共用，保证文档形状一致。
+func (r *River) attachUserRelationFields(data map[string]any, userID uint64, username string) error {
+	count, followNames, friendNames, err := r.loadUserRelationStats(userID)
+	if err != nil {
+		return errors.Trace(err)
 	}
+
+	data["follower_count"] = count
+	data["follow_usernames"] = followNames
+	data["friend_usernames"] = friendNames
+
+	if sugg := buildCompletionPayload([]string{username}); sugg != nil {
+		data["username_suggest"] = sugg // 用户名补全字段
+	}
+
+	return nil
 }
 
 func (r *River) enrichTagDocument(req *elastic.BulkRequest, rule *rule.Rule, row []any) { // 针对 tags 表的冗余补充
@@ -736,28 +809,35 @@ func isPublishedStatusValue(value any) bool {
 	}
 }
 
-func (r *River) reindexVideosByIDs(ids map[uint64]struct{}) { // 批量重建视频文档：用于 tags 或 video_tags 变化后的“派生修复”
+func (r *River) reindexVideosByIDs(ids map[uint64]struct{}) error { // 批量重建视频文档：用于 tags 或 video_tags 变化后的“派生修复”
 	if len(ids) == 0 {
-		return
+		return nil
 	}
 
 	reqs := make([]*elastic.BulkRequest, 0, len(ids))
 	for id := range ids {
-		if req := r.buildVideoBulkRequest(id); req != nil { // 针对每个视频，拉全量字段并构建 index
+		req, err := r.buildVideoBulkRequest(id)
+		if err != nil {
+			return errors.Trace(err)
+		}
+
+		if req != nil { // 针对每个视频，拉全量字段并构建 index
 			reqs = append(reqs, req)
 		}
 	}
 
 	if len(reqs) == 0 {
-		return
+		return nil
 	}
 
-	if err := r.doBulkWithRetry(reqs); err != nil { // 瞬时 ES 错误（408/425/429/5xx）指数退避重试；会阻塞 canal 回调
-		log.Errorf("reindex videos failed: %v", err) // 仍失败仅记日志，不会影响位点保存逻辑
+	if err := r.doBulkWithRetry(reqs); err != nil { // 瞬时 ES 错误有限次指数退避；耗尽后向上传播并停止同步
+		return errors.Trace(err)
 	}
+
+	return nil
 }
 
-func (r *River) buildVideoBulkRequest(videoID uint64) *elastic.BulkRequest { // 从 DB 读出视频行并构建完整文档
+func (r *River) buildVideoBulkRequest(videoID uint64) (*elastic.BulkRequest, error) { // 从 DB 读出视频行并构建完整文档
 	var video struct {
 		ID             uint64
 		Title          string
@@ -774,12 +854,18 @@ func (r *River) buildVideoBulkRequest(videoID uint64) *elastic.BulkRequest { // 
 						Select("id, title, cover, author_username, created_at, status, views, danmu_count, duration").
 						Where("id = ?", videoID).
 						First(&video).Error; err != nil {
-		log.Errorf("reload video failed (id=%d): %v", videoID, err)
+		if stderrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 
-		return nil
+		return nil, errors.Errorf("reload video failed (id=%d): %v", videoID, err)
 	}
 
-	tags := r.loadVideoTagsByID(videoID) // 读标签列表
+	tags, err := r.loadVideoTagsByID(videoID) // 读标签列表
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
 	data := map[string]any{
 		"id":              video.ID,
 		"title":           video.Title,
@@ -813,7 +899,7 @@ func (r *River) buildVideoBulkRequest(videoID uint64) *elastic.BulkRequest { // 
 		ID:     fmt.Sprintf("videos:%d", videoID), // 与普通逻辑一致的 _id 前缀
 		Action: elastic.ActionIndex,
 		Data:   data,
-	}
+	}, nil
 }
 
 func (r *River) collectIDsFromRows(rows [][]any, table *schema.Table, column string) map[uint64]struct{} { // 从行集合按列名提取 uint ID 集
@@ -833,9 +919,9 @@ func (r *River) collectIDsFromRows(rows [][]any, table *schema.Table, column str
 	return ids
 }
 
-func (r *River) videoIDsByTagIDs(tagIDs map[uint64]struct{}) map[uint64]struct{} { // 由 tagID 反查视频ID 集合
+func (r *River) videoIDsByTagIDs(tagIDs map[uint64]struct{}) (map[uint64]struct{}, error) { // 由 tagID 反查视频ID 集合
 	if len(tagIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	ids := make([]uint64, 0, len(tagIDs))
@@ -849,9 +935,7 @@ func (r *River) videoIDsByTagIDs(tagIDs map[uint64]struct{}) map[uint64]struct{}
 						Select("video_id").
 						Where("tag_id IN ?", ids).
 						Scan(&videoIDs).Error; err != nil {
-		log.Errorf("load video_ids by tag failed: %v", err)
-
-		return nil
+		return nil, errors.Errorf("load video_ids by tag failed: %v", err)
 	}
 
 	result := make(map[uint64]struct{}, len(videoIDs))
@@ -859,10 +943,10 @@ func (r *River) videoIDsByTagIDs(tagIDs map[uint64]struct{}) map[uint64]struct{}
 		result[vid] = struct{}{}
 	}
 
-	return result
+	return result, nil
 }
 
-func (r *River) loadVideoTagsByID(videoID uint64) []string { // 按视频ID加载标签名（排序后返回）
+func (r *River) loadVideoTagsByID(videoID uint64) ([]string, error) { // 按视频ID加载标签名（排序后返回）
 	var names []string
 	if err := r.db.WithContext(r.ctx).
 		Table(tableVideoTags+" AS vt").
@@ -871,12 +955,10 @@ func (r *River) loadVideoTagsByID(videoID uint64) []string { // 按视频ID加�
 		Where("vt.video_id = ?", videoID).
 		Order("t.name ASC").
 		Scan(&names).Error; err != nil {
-		log.Errorf("load video tags failed (video_id=%d): %v", videoID, err)
-
-		return nil
+		return nil, errors.Errorf("load video tags failed (video_id=%d): %v", videoID, err)
 	}
 
-	return names
+	return names, nil
 }
 
 // convertInterfaceToUint 将各种可能类型（string/[]byte/intX/uintX）转为 uint64。
@@ -933,20 +1015,6 @@ func convertInterfaceToUint(value any) (uint64, bool) {
 	}
 }
 
-func (r *River) loadUserFollowerCount(userID uint64) int64 { // 统计被关注用户的粉丝数（写入 users 文档）
-	var count int64
-	if err := r.db.WithContext(r.ctx).
-		Table("user_focus").
-		Where("focus_user_id = ?", userID).
-		Count(&count).Error; err != nil {
-		log.Errorf("load follower count failed (user_id=%d): %v", userID, err)
-
-		return 0
-	}
-
-	return count
-}
-
 // makeUserFocusFollowerRequests 处理 user_focus 变更 → 批量重建被影响用户的完整文档。
 func (r *River) makeUserFocusFollowerRequests(rule *rule.Rule, rows [][]any) ([]*elastic.BulkRequest, error) {
 	userIdx := rule.TableInfo.FindColumn("user_id")
@@ -980,7 +1048,11 @@ func (r *River) makeUserFocusFollowerRequests(rule *rule.Rule, rows [][]any) ([]
 
 	reqs := make([]*elastic.BulkRequest, 0, len(affected))
 	for userID := range affected {
-		req := r.buildUserBulkRequest(userID)
+		req, err := r.buildUserBulkRequest(userID)
+		if err != nil {
+			return nil, errors.Trace(err)
+		}
+
 		if req == nil {
 			continue
 		}
@@ -991,8 +1063,8 @@ func (r *River) makeUserFocusFollowerRequests(rule *rule.Rule, rows [][]any) ([]
 	return reqs, nil
 }
 
-// buildUserBulkRequest 从 DB 读出用户行并构建完整文档，避免 update 在文档缺失时丢失关系字段。
-func (r *River) buildUserBulkRequest(userID uint64) *elastic.BulkRequest {
+// buildUserBulkRequest 从 DB 读出用户行并构建完整文档，用于 user_focus 变更的派生修复。
+func (r *River) buildUserBulkRequest(userID uint64) (*elastic.BulkRequest, error) {
 	var user struct {
 		ID          uint64
 		Username    string
@@ -1007,27 +1079,24 @@ func (r *River) buildUserBulkRequest(userID uint64) *elastic.BulkRequest {
 		Select("id, username, description, avatar, level, created_at, updated_at").
 		Where("id = ?", userID).
 		First(&user).Error; err != nil {
-		log.Errorf("reload user failed (id=%d): %v", userID, err)
+		if stderrors.Is(err, gorm.ErrRecordNotFound) { // 行已删除属正常场景
+			return nil, nil
+		}
 
-		return nil
+		return nil, errors.Errorf("reload user failed (id=%d): %v", userID, err)
 	}
-
-	count, followNames, friendNames := r.loadUserRelationStats(userID)
 
 	data := map[string]any{
-		"id":               user.ID,
-		"username":         user.Username,
-		"description":      user.Description,
-		"avatar":           user.Avatar,
-		"level":            user.Level,
-		"created_at":       user.CreatedAt,
-		"updated_at":       user.UpdatedAt,
-		"follower_count":   count,
-		"follow_usernames": followNames,
-		"friend_usernames": friendNames,
+		"id":          user.ID,
+		"username":    user.Username,
+		"description": user.Description,
+		"avatar":      user.Avatar,
+		"level":       user.Level,
+		"created_at":  user.CreatedAt,
+		"updated_at":  user.UpdatedAt,
 	}
-	if sugg := buildCompletionPayload([]string{user.Username}); sugg != nil {
-		data["username_suggest"] = sugg
+	if err := r.attachUserRelationFields(data, userID, user.Username); err != nil {
+		return nil, errors.Trace(err)
 	}
 
 	return &elastic.BulkRequest{
@@ -1036,17 +1105,17 @@ func (r *River) buildUserBulkRequest(userID uint64) *elastic.BulkRequest {
 		ID:     fmt.Sprintf("users:%d", userID),
 		Action: elastic.ActionIndex,
 		Data:   data,
-	}
+	}, nil
 }
 
 // loadUserRelationStats 统计粉丝数、单向关注用户名、互关好友用户名。
-func (r *River) loadUserRelationStats(userID uint64) (int64, []string, []string) {
+func (r *River) loadUserRelationStats(userID uint64) (int64, []string, []string, error) {
 	var followerCount int64
 	if err := r.db.WithContext(r.ctx).
 		Table("user_focus").
 		Where("focus_user_id = ?", userID).
 		Count(&followerCount).Error; err != nil {
-		log.Errorf("load follower count failed (user_id=%d): %v", userID, err)
+		return 0, nil, nil, errors.Errorf("load follower count failed (user_id=%d): %v", userID, err)
 	}
 
 	// 互相关注（好友）：当前用户关注别人，且对方也关注当前用户
@@ -1058,9 +1127,7 @@ func (r *River) loadUserRelationStats(userID uint64) (int64, []string, []string)
 		JOIN users u ON u.id = f.focus_user_id
 		WHERE f.user_id = ?
 		ORDER BY u.username ASC`, userID).Pluck("username", &friendNames).Error; err != nil {
-		log.Errorf("load friend usernames failed (user_id=%d): %v", userID, err)
-
-		friendNames = nil
+		return 0, nil, nil, errors.Errorf("load friend usernames failed (user_id=%d): %v", userID, err)
 	}
 
 	// 单向关注（未互关）：当前用户关注的列表里排除已互关的
@@ -1074,18 +1141,16 @@ func (r *River) loadUserRelationStats(userID uint64) (int64, []string, []string)
 		    SELECT 1 FROM user_focus r WHERE r.user_id = f.focus_user_id AND r.focus_user_id = f.user_id
 		  )
 		ORDER BY u.username ASC`, userID).Pluck("username", &followingNames).Error; err != nil {
-		log.Errorf("load following usernames failed (user_id=%d): %v", userID, err)
-
-		followingNames = nil
+		return 0, nil, nil, errors.Errorf("load following usernames failed (user_id=%d): %v", userID, err)
 	}
 
-	return followerCount, followingNames, friendNames
+	return followerCount, followingNames, friendNames, nil
 }
 
 func (r *River) doBulkWithRetry(reqs []*elastic.BulkRequest) error {
 	backoff := riverBulkInitialBackoff
 
-	for attempt := 1; ; attempt++ {
+	for attempt := 1; attempt <= riverBulkMaxAttempts; attempt++ {
 		err := r.doBulk(reqs)
 		if err == nil {
 			return nil
@@ -1098,6 +1163,10 @@ func (r *River) doBulkWithRetry(reqs []*elastic.BulkRequest) error {
 		var bulkErr *riverBulkError
 		if !stderrors.As(err, &bulkErr) || !bulkErr.retryable {
 			return err
+		}
+
+		if attempt == riverBulkMaxAttempts {
+			return fmt.Errorf("ES bulk still failing after %d attempts: %w", attempt, err)
 		}
 
 		log.Errorf(
@@ -1123,9 +1192,14 @@ func (r *River) doBulkWithRetry(reqs []*elastic.BulkRequest) error {
 
 		backoff = min(backoff*2, riverBulkMaxBackoff)
 	}
+
+	return errors.New("unreachable ES bulk retry state")
 }
 
 // doBulk 执行 ES 批量请求，并把总体失败与逐项失败统一分类为可重试或永久失败。
+//
+// 所有写请求均为 index/delete（UPDATE 也使用 after-image 走全文档覆盖写），
+// 因此不存在「局部更新命中缺失文档」导致的确定性 404。
 func (r *River) doBulk(reqs []*elastic.BulkRequest) error {
 	if len(reqs) == 0 {
 		return nil
@@ -1136,50 +1210,9 @@ func (r *River) doBulk(reqs []*elastic.BulkRequest) error {
 	}
 
 	bulk := r.es.Bulk()
-	for _, req := range reqs {
-		if req == nil {
-			return &riverBulkError{err: errors.New("nil ES bulk request")}
-		}
 
-		switch req.Action {
-		case elastic.ActionCreate:
-			item := elastic7.NewBulkCreateRequest().
-				Index(req.Index).
-				Type(req.Type).
-				Id(req.ID).
-				Parent(req.Parent).
-				Pipeline(req.Pipeline).
-				Doc(req.Data)
-			bulk.Add(item)
-		case elastic.ActionIndex:
-			item := elastic7.NewBulkIndexRequest().
-				Index(req.Index).
-				Type(req.Type).
-				Id(req.ID).
-				Parent(req.Parent).
-				Pipeline(req.Pipeline).
-				Doc(req.Data)
-			bulk.Add(item)
-		case elastic.ActionUpdate:
-			item := elastic7.NewBulkUpdateRequest().
-				Index(req.Index).
-				Type(req.Type).
-				Id(req.ID).
-				Parent(req.Parent).
-				Doc(req.Data)
-			bulk.Add(item)
-		case elastic.ActionDelete:
-			item := elastic7.NewBulkDeleteRequest().
-				Index(req.Index).
-				Type(req.Type).
-				Id(req.ID).
-				Parent(req.Parent)
-			bulk.Add(item)
-		default:
-			return &riverBulkError{
-				err: fmt.Errorf("unsupported ES bulk action %q", req.Action),
-			}
-		}
+	if err := addBulkRequests(bulk, reqs); err != nil {
+		return err
 	}
 
 	requestCtx, cancel := context.WithTimeout(r.ctx, riverBulkRequestTimeout)
@@ -1207,29 +1240,9 @@ func (r *River) doBulk(reqs []*elastic.BulkRequest) error {
 		}
 	}
 
-	var retryableItemErr error
-	for _, items := range resp.Items {
-		for action, item := range items {
-			if item == nil || item.Error == nil {
-				continue
-			}
-
-			itemErr := fmt.Errorf(
-				"%s index=%s id=%s status=%d: %s",
-				action,
-				item.Index,
-				item.Id,
-				item.Status,
-				item.Error.Reason,
-			)
-			if !isRetryableESStatus(item.Status) {
-				return &riverBulkError{err: itemErr}
-			}
-
-			if retryableItemErr == nil {
-				retryableItemErr = itemErr
-			}
-		}
+	retryableItemErr, permanentItemErr := classifyBulkItems(resp)
+	if permanentItemErr != nil {
+		return &riverBulkError{err: permanentItemErr}
 	}
 
 	if retryableItemErr != nil {
@@ -1246,6 +1259,87 @@ func (r *River) doBulk(reqs []*elastic.BulkRequest) error {
 	}
 
 	return nil
+}
+
+// addBulkRequests 把内部批量请求翻译为 ES 客户端的 bulk item。
+func addBulkRequests(bulk *elastic7.BulkService, reqs []*elastic.BulkRequest) error {
+	for _, req := range reqs {
+		if req == nil {
+			return &riverBulkError{err: errors.New("nil ES bulk request")}
+		}
+
+		var item elastic7.BulkableRequest
+
+		switch req.Action {
+		case elastic.ActionCreate:
+			item = elastic7.NewBulkCreateRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent).
+				Pipeline(req.Pipeline).
+				Doc(req.Data)
+		case elastic.ActionIndex:
+			item = elastic7.NewBulkIndexRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent).
+				Pipeline(req.Pipeline).
+				Doc(req.Data)
+		case elastic.ActionUpdate:
+			item = elastic7.NewBulkUpdateRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent).
+				Doc(req.Data)
+		case elastic.ActionDelete:
+			item = elastic7.NewBulkDeleteRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent)
+		default:
+			return &riverBulkError{
+				err: fmt.Errorf("unsupported ES bulk action %q", req.Action),
+			}
+		}
+
+		bulk.Add(item)
+	}
+
+	return nil
+}
+
+// classifyBulkItems 把 bulk 响应里的逐项错误分为可重试与永久两类。
+func classifyBulkItems(resp *elastic7.BulkResponse) (retryable, permanent error) {
+	for _, items := range resp.Items {
+		for action, item := range items {
+			if item == nil || item.Error == nil {
+				continue
+			}
+
+			itemErr := fmt.Errorf(
+				"ES bulk item error (action=%s index=%s id=%s status=%d): %s",
+				action,
+				item.Index,
+				item.Id,
+				item.Status,
+				item.Error.Reason,
+			)
+
+			if !isRetryableESStatus(item.Status) {
+				return retryable, itemErr
+			}
+
+			if retryable == nil {
+				retryable = itemErr
+			}
+		}
+	}
+
+	return retryable, nil
 }
 
 func isRetryableESStatus(status int) bool {

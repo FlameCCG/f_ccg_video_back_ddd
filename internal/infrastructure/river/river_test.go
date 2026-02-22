@@ -3,9 +3,12 @@ package river
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/river/rule"
+
+	"github.com/siddontang/go-mysql/schema"
 )
 
 // validateRiverSchemas 接收 *config.River 与 *config.Mysql，
@@ -205,6 +208,31 @@ func TestBuildTable(t *testing.T) {
 
 	if got := buildTable(testTableVideos); got != testTableVideos {
 		t.Fatalf("buildTable(%q) = %q", testTableVideos, got)
+	}
+}
+
+func TestMysqlUTF8LiteralDoesNotExposeQuotes(t *testing.T) {
+	t.Parallel()
+
+	literal := mysqlUTF8Literal(`video".*' OR 1=1 --`)
+	if strings.ContainsAny(literal, `"'`) {
+		t.Fatalf("literal contains raw quote: %s", literal)
+	}
+
+	if !strings.HasPrefix(literal, "CONVERT(0x") || !strings.HasSuffix(literal, " USING utf8mb4)") {
+		t.Fatalf("unexpected literal encoding: %s", literal)
+	}
+}
+
+func TestRiverDatetimeUsesMysqlLocation(t *testing.T) {
+	t.Parallel()
+
+	r := &River{mysqlLoc: time.FixedZone("database", 9*60*60)}
+	column := &schema.TableColumn{Type: schema.TYPE_DATETIME}
+
+	got := r.makeReqColumnData(column, "2024-01-02 03:04:05")
+	if got != "2024-01-02T03:04:05+09:00" {
+		t.Fatalf("datetime = %v, want explicit database offset", got)
 	}
 }
 
