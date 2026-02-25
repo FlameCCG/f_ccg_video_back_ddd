@@ -7,6 +7,7 @@ import (
 	"time"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
+	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
@@ -28,6 +29,7 @@ const (
 // 间隔为 2s、4s、8s、16s、30s 封顶，总窗口 15 分钟。
 // 配置错误视为永久失败。Stop 取消在途重试并优雅关闭消费者。
 type TranscodeConsumerComponent struct {
+	configs    shared.ConfigReader
 	cfg        *config.Kafka
 	service    *mediaapp.TranscodeService
 	registry   *media.TaskRegistry
@@ -43,6 +45,7 @@ type TranscodeConsumerComponent struct {
 
 // NewTranscodeConsumerComponent 构造转码消费者后台组件。
 func NewTranscodeConsumerComponent(
+	configs shared.ConfigReader,
 	cfg *config.Kafka,
 	service *mediaapp.TranscodeService,
 	registry *media.TaskRegistry,
@@ -51,6 +54,7 @@ func NewTranscodeConsumerComponent(
 	logger *zap.Logger,
 ) *TranscodeConsumerComponent {
 	return &TranscodeConsumerComponent{
+		configs:    configs,
 		cfg:        cfg,
 		service:    service,
 		registry:   registry,
@@ -73,6 +77,14 @@ func (c *TranscodeConsumerComponent) Start(_ context.Context) error {
 	}
 
 	c.started = true
+
+	// 本机角色只在启动时读取；关闭消费仍保留 Kafka 生产者供投稿投递任务。
+	if cfg := c.configs.Get(); cfg != nil && cfg.Transcode != nil && cfg.Transcode.LocalConsumerDisabled {
+		c.mu.Unlock()
+		c.logger.Info("local transcode consumer disabled, skip transcode consumer")
+
+		return nil
+	}
 
 	if c.cfg == nil || !c.cfg.Enable {
 		c.mu.Unlock()

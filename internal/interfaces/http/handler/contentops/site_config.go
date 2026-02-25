@@ -106,9 +106,12 @@ func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 			err = h.siteCfg.UpdateAI(ai)
 		}
 	case app.ConfigNameTranscode:
-		var transcode *config.Transcode
-		if err = c.ShouldBindJSON(&transcode); err == nil {
-			err = h.siteCfg.UpdateTranscode(transcode)
+		var body struct {
+			config.Transcode
+			LocalConsumerDisabled *bool `json:"localConsumerDisabled"`
+		}
+		if err = c.ShouldBindJSON(&body); err == nil {
+			err = h.siteCfg.UpdateTranscode(&body.Transcode, body.LocalConsumerDisabled)
 		}
 	case configNameThirdLogin:
 		var thirdLogin *config.ThirdLogin

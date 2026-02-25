@@ -114,6 +114,25 @@ transcode:
 	}
 }
 
+func TestConfigLoadLocalTranscodeConsumer(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{"legacy config participates", "transcode:\n  cpuMode: true\n", false},
+		{"explicitly participates", "transcode:\n  localConsumerDisabled: false\n", false},
+		{"disabled locally", "transcode:\n  localConsumerDisabled: true\n", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := loadConfigForTest(t, tt.raw)
+			if cfg.Transcode == nil || cfg.Transcode.LocalConsumerDisabled != tt.want {
+				t.Fatalf("unexpected local consumer config: %+v", cfg.Transcode)
+			}
+		})
+	}
+}
+
 func loadConfigForTest(t *testing.T, raw string) *Config {
 	t.Helper()
 
