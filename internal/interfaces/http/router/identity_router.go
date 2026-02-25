@@ -71,15 +71,16 @@ func registerIdentityCommonRoutes(
 	{
 		loginGroup.POST("/pwd",
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
+			mw.LoginRateLimit(),
 			mw.ClickCaptchaVerify(),
 			middlewares.JsonBindParams[identityhandler.PwdLoginReq],
 			h.PwdLoginView,
 		)
-		loginGroup.POST("/qq", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), middlewares.JsonBindParams[identityhandler.QQLoginReq], h.QQLoginView)
-		loginGroup.POST("/google", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), middlewares.JsonBindParams[identityhandler.GoogleLoginReq], h.GoogleLoginView)
-		loginGroup.POST("/github", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), middlewares.JsonBindParams[identityhandler.GitHubLoginReq], h.GitHubLoginView)
-		loginGroup.POST("/linuxdo", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), middlewares.JsonBindParams[identityhandler.LinuxDoLoginReq], h.LinuxDoLoginView)
-		loginGroup.POST("/x", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), middlewares.JsonBindParams[identityhandler.XLoginReq], h.XLoginView)
+		loginGroup.POST("/qq", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.QQLoginReq], h.QQLoginView)
+		loginGroup.POST("/google", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.GoogleLoginReq], h.GoogleLoginView)
+		loginGroup.POST("/github", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.GitHubLoginReq], h.GitHubLoginView)
+		loginGroup.POST("/linuxdo", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.LinuxDoLoginReq], h.LinuxDoLoginView)
+		loginGroup.POST("/x", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.XLoginReq], h.XLoginView)
 		loginGroup.POST("/refresh", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.JsonBindParams[identityhandler.RefreshTokenReq], h.RefreshTokenView)
 	}
 
@@ -130,6 +131,7 @@ func registerIdentityAdminRoutes(
 	{
 		loginGroup.POST("pwd",
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
+			mw.LoginRateLimit(),
 			mw.SlideCaptchaVerify(),
 			middlewares.JsonBindParams[identityhandler.AdminPwdLoginReq],
 			h.AdminPwdLoginView,
