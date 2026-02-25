@@ -1,0 +1,299 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "视频站后端：投稿、转码与搜索的运行链路",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "request",
+        "label": "① 上传与投稿",
+        "focus": [
+          "browser",
+          "api",
+          "mysql",
+          "storage"
+        ],
+        "note": "先上传源文件，再提交稿件。MySQL 事务保存稿件、分P和源资源；文件存在、稿件已保存、公众可见是三个不同事实。"
+      },
+      {
+        "id": "transcode",
+        "label": "② 异步转码",
+        "focus": [
+          "api",
+          "kafka",
+          "worker",
+          "storage"
+        ],
+        "note": "数据库提交后启动异步派发，响应不等待 Kafka。消费者与 HTTP 同进程；入队、转码完成、可播放各有边界。"
+      },
+      {
+        "id": "search",
+        "label": "③ 搜索读模型",
+        "focus": [
+          "mysql",
+          "river",
+          "es",
+          "api"
+        ],
+        "note": "关键词索引来自 MySQL binlog，经 River 写入 ES；应用查询 ES。向量索引另行维护，搜索可能晚于投稿可见。"
+      },
+      {
+        "id": "realtime",
+        "label": "④ 缓存与私信",
+        "focus": [
+          "browser",
+          "api",
+          "redis",
+          "mongo"
+        ],
+        "note": "Redis 负责缓存、原子配额和实时协作；MongoDB 保存私信。缓存快照、在线推送与持久化消息分别判断。"
+      },
+      {
+        "id": "interview",
+        "label": "⑤ 面试：一致性边界",
+        "focus": [
+          "mysql",
+          "api",
+          "kafka",
+          "worker",
+          "storage"
+        ],
+        "note": "用故障点解释设计：MySQL 提交后投递失败，稿件仍存在；当前没有 Outbox。对象落盘和消费位点也不在 MySQL 事务内。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "浏览器 / 管理端",
+      "sublabel": "HTTP · WebSocket",
+      "pos": [
+        40,
+        310
+      ],
+      "size": [
+        172,
+        76
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Gin 应用",
+      "sublabel": "接口 · 用例 · 后台装配",
+      "pos": [
+        300,
+        296
+      ],
+      "size": [
+        195,
+        104
+      ]
+    },
+    {
+      "id": "mysql",
+      "type": "database",
+      "label": "MySQL",
+      "sublabel": "稿件 · 关系 · 账本",
+      "pos": [
+        590,
+        310
+      ],
+      "size": [
+        174,
+        76
+      ]
+    },
+    {
+      "id": "river",
+      "type": "backend",
+      "label": "River",
+      "sublabel": "binlog → 关键词索引",
+      "pos": [
+        850,
+        310
+      ],
+      "size": [
+        180,
+        76
+      ]
+    },
+    {
+      "id": "es",
+      "type": "database",
+      "label": "Elasticsearch",
+      "sublabel": "关键词 / 向量读模型",
+      "pos": [
+        1115,
+        310
+      ],
+      "size": [
+        192,
+        76
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "配额 · 热计数 · Pub/Sub",
+      "pos": [
+        300,
+        72
+      ],
+      "size": [
+        195,
+        76
+      ]
+    },
+    {
+      "id": "mongo",
+      "type": "database",
+      "label": "MongoDB",
+      "sublabel": "私信消息与会话",
+      "pos": [
+        590,
+        72
+      ],
+      "size": [
+        174,
+        76
+      ]
+    },
+    {
+      "id": "kafka",
+      "type": "messagebus",
+      "label": "Kafka",
+      "sublabel": "video_transcode_tasks",
+      "pos": [
+        300,
+        548
+      ],
+      "size": [
+        195,
+        76
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "转码消费者",
+      "sublabel": "同进程 · FFmpeg",
+      "pos": [
+        590,
+        542
+      ],
+      "size": [
+        190,
+        88
+      ]
+    },
+    {
+      "id": "storage",
+      "type": "cloud",
+      "label": "MinIO / 本地存储",
+      "sublabel": "源对象 · MP4 · MPD",
+      "pos": [
+        865,
+        548
+      ],
+      "size": [
+        198,
+        76
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "browser-api",
+      "from": "browser",
+      "to": "api",
+      "label": "HTTP / WS",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-mysql",
+      "from": "api",
+      "to": "mysql",
+      "label": "事务写入",
+      "variant": "emphasis",
+      "labelDy": 24
+    },
+    {
+      "id": "mysql-river",
+      "from": "mysql",
+      "to": "river",
+      "label": "binlog"
+    },
+    {
+      "id": "river-es",
+      "from": "river",
+      "to": "es",
+      "label": "Bulk 写入"
+    },
+    {
+      "id": "api-redis",
+      "from": "api",
+      "to": "redis",
+      "label": "缓存 / 限额"
+    },
+    {
+      "id": "api-mongo",
+      "from": "api",
+      "to": "mongo",
+      "label": "私信读写"
+    },
+    {
+      "id": "api-kafka",
+      "from": "api",
+      "to": "kafka",
+      "label": "异步投递",
+      "variant": "dashed",
+      "labelAt": [
+        398,
+        414
+      ]
+    },
+    {
+      "id": "kafka-worker",
+      "from": "kafka",
+      "to": "worker",
+      "label": "消费组"
+    },
+    {
+      "id": "worker-storage",
+      "from": "worker",
+      "to": "storage",
+      "label": "上传成片"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "先分清：文件、稿件、状态",
+      "items": [
+        "源文件在 MinIO / 本地；稿件、分P和源资源在 MySQL。",
+        "公开状态不等于转码完成；上传箭头在总览中省略。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "再分清：提交与异步成功",
+      "items": [
+        "MySQL 提交后异步投 Kafka；响应不等待投递，当前无 Outbox。",
+        "成功或永久错误入 DLQ 后标记位点；重投核验对象与检查点。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "最后分清：查询与运行边界",
+      "items": [
+        "River 派生关键词索引；向量另行维护，应用查询 ES。",
+        "HTTP、River、转码、Cron 同进程；跨存储没有统一事务。"
+      ]
+    }
+  ]
+}

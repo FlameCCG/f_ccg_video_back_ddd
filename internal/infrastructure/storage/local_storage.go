@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
@@ -71,7 +72,8 @@ func (l *LocalStorage) SaveChunk(
 	chunkPath := filepath.Join(dir, index+".part")
 	if stat, statErr := os.Stat(chunkPath); statErr == nil {
 		if stat.Size() == size {
-			return nil
+			// 同大小续传虽无需重写内容，仍视为一次成功分片请求。
+			return os.Chtimes(chunkPath, time.Now(), time.Now())
 		}
 
 		if err := os.Remove(chunkPath); err != nil {
@@ -86,10 +88,14 @@ func (l *LocalStorage) SaveChunk(
 		return fmt.Errorf("创建分块文件失败: %w", err)
 	}
 
+	closed := false
 	defer func() {
-		if err := out.Close(); err != nil {
-			l.logger.Warn("close temp chunk file failed", zap.Error(err), zap.String("path", tmpPath))
+		if !closed {
+			if err := out.Close(); err != nil {
+				l.logger.Warn("close temp chunk file failed", zap.Error(err), zap.String("path", tmpPath))
+			}
 		}
+		_ = os.Remove(tmpPath)
 	}()
 
 	if _, err = io.Copy(out, reader); err != nil {
@@ -104,6 +110,12 @@ func (l *LocalStorage) SaveChunk(
 		_ = os.Remove(tmpPath)
 
 		return fmt.Errorf("同步分块数据失败: %w", err)
+	}
+	closeErr := out.Close()
+	closed = true
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("关闭分块文件失败: %w", closeErr)
 	}
 
 	if err = os.Rename(tmpPath, chunkPath); err != nil {
@@ -237,10 +249,14 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		return "", fmt.Errorf("创建最终文件失败: %w", err)
 	}
 
+	closed := false
 	defer func() {
-		if err := out.Close(); err != nil {
-			l.logger.Warn("close final file failed", zap.Error(err), zap.String("path", tmpFinalPath))
+		if !closed {
+			if err := out.Close(); err != nil {
+				l.logger.Warn("close final file failed", zap.Error(err), zap.String("path", tmpFinalPath))
+			}
 		}
+		_ = os.Remove(tmpFinalPath)
 	}()
 
 	for i := range totalChunks {
@@ -278,6 +294,12 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		_ = os.Remove(tmpFinalPath)
 
 		return "", fmt.Errorf("合并最终文件落盘失败%w", err)
+	}
+	closeErr := out.Close()
+	closed = true
+	if closeErr != nil {
+		_ = os.Remove(tmpFinalPath)
+		return "", fmt.Errorf("关闭最终文件失败: %w", closeErr)
 	}
 
 	if err = os.Rename(tmpFinalPath, finalPath); err != nil {

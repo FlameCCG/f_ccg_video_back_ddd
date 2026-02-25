@@ -3,9 +3,10 @@ package cli
 
 import "flag"
 
-// Options 表示命令行选项。
+// Options 命令行选项。
 type Options struct {
 	File            string
+	All             bool
 	DB              bool
 	Index           bool
 	RBAC            bool
@@ -17,11 +18,12 @@ type Options struct {
 	Args []string
 }
 
-// ParseOptions 解析命令行参数并返回 Options 实例，供 Wire 注入。
+// ParseOptions 解析命令行参数，返回实例交由 wire 注入。
 func ParseOptions() *Options {
 	opts := new(Options)
 
 	flag.StringVar(&opts.File, "f", "config_dev.yaml", "配置文件")
+	flag.BoolVar(&opts.All, "all", false, "初始化全部资源及超级管理员（db、vp、br、es、rs、rbac、su；可追加用户名和密码）")
 	flag.BoolVar(&opts.DB, "db", false, "迁移数据库")
 	flag.BoolVar(&opts.Index, "es", false, "es创建索引")
 	flag.BoolVar(&opts.RBAC, "rbac", false, "初始化RBAC默认数据")

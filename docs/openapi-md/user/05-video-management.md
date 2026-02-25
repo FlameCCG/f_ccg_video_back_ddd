@@ -1809,3 +1809,29 @@ Base URL：/v1
 
 响应示例:
 - 无
+
+## 投稿权限限制
+
+当公开站点配置 `data.site.disableUserSubmission=true` 时，以下接口仅管理员可调用：
+
+| 方法 | 接口 | 用途 |
+| --- | --- | --- |
+| POST | `/common/user/video/tag` | 创建投稿标签 |
+| POST | `/common/video/image/upload` | 投稿封面上传 |
+| POST | `/common/video/upload/chunk` | 上传分片 |
+| GET | `/common/video/upload/status` | 查询续传状态 |
+| POST | `/common/video/upload/complete` | 合并上传 |
+| POST | `/common/video/publish` | 单文件、分 P、私密及定时投稿 |
+| PUT | `/common/video/publish` | 改稿 |
+
+普通用户请求返回业务码 `1`，提示“网站已暂停用户投稿，仅管理员可上传、发布或修改视频”。管理员仍需登录并通过封禁校验。
+
+通用图片上传改用 `POST /common/image/upload`，请求和响应与原图片上传接口一致（multipart 字段 `fileHash`、`cover`，返回 `data.imageUrl`）。该入口供头像、评论、动态和私信使用，不受视频投稿开关影响。
+
+## [PUT] 更新收藏夹
+
+- 接口路径: PUT /common/video/folder
+- Tag: 视频管理
+- 认证: 需要登录，只允许修改当前用户自己的收藏夹
+- 请求体: `folderId` 必填正整数；`name` 必填字符串，长度为 `1` 至 `50`
+- 响应: HTTP 200，`code=0` 时 `data` 包含更新后的 `id`、`userId`、`name`、`isDefault`；失败时 `code=1`，原因见 `msg`

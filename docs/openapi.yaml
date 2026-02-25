@@ -53,6 +53,29 @@ tags:
     description: 动态管理
 components:
   schemas:
+    VectorRebuildStatus:
+      type: object
+      description: 当前进程中的视频向量索引重建任务状态
+      properties:
+        running:
+          type: boolean
+        total:
+          type: integer
+          format: int64
+        succeeded:
+          type: integer
+          format: int64
+        failed:
+          type: integer
+          format: int64
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        lastError:
+          type: string
     Response:
       type: object
       description: 通用响应结构（HTTP 200 + 业务码 code）
@@ -124,6 +147,10 @@ components:
       type: object
       description: 当前登录用户信息
       properties:
+        isAdmin:
+          type: boolean
+          default: false
+          description: 是否拥有管理员角色（由服务端判断）
         id:
           type: integer
           format: uint
@@ -1662,6 +1689,10 @@ components:
       type: object
       description: 管理后台站点配置
       properties:
+        disableUserSubmission:
+          type: boolean
+          default: false
+          description: 禁止普通用户上传、投稿及改稿；开启后仅管理员可操作，缺省为 false
         defaultUserBannerID:
           type: integer
           format: uint
@@ -1684,6 +1715,10 @@ components:
       type: object
       description: 普通用户可见的站点公开配置
       properties:
+        disableUserSubmission:
+          type: boolean
+          default: false
+          description: 禁止普通用户上传、投稿及改稿；开启后仅管理员可操作，缺省为 false
         defaultUserBannerID:
           type: integer
           format: uint
@@ -1778,7 +1813,16 @@ components:
           description: 最大上传大小(MB)
         maxUploadNum:
           type: integer
-          description: 最大上传文件数量
+          description: 单个作品的分P上限
+        dailyUploadLimit:
+          type: integer
+          description: 普通用户北京时间自然日最多上传的不同源视频文件数，默认10
+        unmergedChunkRetentionHours:
+          type: integer
+          description: 未合并分片按最近成功写入时间保留的小时数，默认2
+        unpublishedSourceRetentionHours:
+          type: integer
+          description: 未投稿源视频保留的小时数，默认1；有视频资源引用时不会删除
         chunkDir:
           type: string
           description: 分块上传临时目录
@@ -5882,7 +5926,7 @@ paths:
       tags:
         - 视频管理
       summary: 查询上传状态
-      description: 查询文件上传状态，支持断点续传与秒传判断（需登录）
+      description: 查询文件上传状态，支持断点续传与秒传判断（需登录）。仅确认 completed=true 时为普通用户占用当日额度；响应禁止缓存。
       parameters:
         - name: fileHash
           in: query
@@ -5965,6 +6009,45 @@ paths:
         - 视频管理
       summary: 上传图片
       description: 上传图片（需登录）
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - fileHash
+                - cover
+              properties:
+                fileHash:
+                  type: string
+                  description: 文件哈希值
+                cover:
+                  type: string
+                  format: binary
+                  description: 图片文件
+      responses:
+        "200":
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          imageUrl:
+                            type: string
+                            description: 封面图片URL
+  /common/image/upload:
+    post:
+      tags:
+        - 视频管理
+      summary: 上传通用图片（头像、评论、动态及私信）
+      description: 上传通用图片（头像、评论、动态及私信）（需登录）
       requestBody:
         required: true
         content:
@@ -6116,6 +6199,39 @@ paths:
                             items:
                               $ref: "#/components/schemas/HistoryItem"
   /common/video/folder:
+    put:
+      tags:
+        - 视频管理
+      summary: 更新收藏夹
+      description: 修改当前登录用户的收藏夹名称。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [folderId, name]
+              properties:
+                folderId:
+                  type: integer
+                  format: uint
+                  minimum: 1
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+      responses:
+        "200":
+          description: 业务成功时返回更新后的收藏夹
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/FolderItem"
     post:
       tags:
         - 视频管理
@@ -8552,6 +8668,171 @@ paths:
                             type: array
                             items:
                               $ref: "#/components/schemas/Menu"
+  /admin/rbac/menu/move:
+    put:
+      tags:
+        - 权限管理
+      summary: 菜单拖拽排序
+      description: 将菜单移动到同层目标菜单之前或之后；需登录并通过 RBAC 权限校验。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, targetId, position]
+              properties:
+                id:
+                  type: integer
+                  format: uint
+                  minimum: 1
+                targetId:
+                  type: integer
+                  format: uint
+                  minimum: 1
+                position:
+                  type: string
+                  enum: [before, after]
+      responses:
+        "200":
+          description: 排序结果（code=0 成功，code=1 失败）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+  /admin/rbac/menu/generate:
+    post:
+      tags:
+        - 权限管理
+      summary: AI 生成菜单字段
+      description: 根据中文标题、父菜单及现有菜单生成可编辑建议，不直接创建菜单；需登录并通过 RBAC 权限校验。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+                  minLength: 1
+                  description: 中文菜单标题
+                parentId:
+                  type: integer
+                  format: uint
+                  nullable: true
+                  description: 父菜单ID，省略或为空时生成顶层菜单建议
+      responses:
+        "200":
+          description: 菜单字段建议（code=0 成功，code=1 失败）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          titleEn:
+                            type: string
+                          titleJa:
+                            type: string
+                          icon:
+                            type: string
+                          path:
+                            type: string
+                          name:
+                            type: string
+                          component:
+                            type: string
+                          keepAlive:
+                            type: boolean
+                          sortOrder:
+                            type: integer
+                            minimum: 0
+  /admin/rbac/permission/wildcards:
+    get:
+      tags:
+        - 权限管理
+      summary: 系统通配符权限列表
+      description: 返回系统已有的通配符权限，跨角色去重；需登录并通过 RBAC 权限校验。
+      responses:
+        "200":
+          description: 通配符权限列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            resource:
+                              type: string
+                              example: /v1/admin/*
+                            action:
+                              type: string
+                              example: "*"
+  /admin/video/vector/rebuild:
+    post:
+      tags:
+        - 后台-视频管理
+      summary: 重建视频向量索引
+      description: 异步启动全量向量回填并返回状态，已有任务运行时返回 code=1；需登录并通过 RBAC 权限校验。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recreate:
+                  type: boolean
+                  default: false
+                  description: 是否删除并重建向量索引
+                workers:
+                  type: integer
+                  minimum: 0
+                  maximum: 16
+                  default: 0
+                  description: 并发数，省略或传0时使用默认值4，否则为1至16
+      responses:
+        "200":
+          description: 当前重建任务状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/VectorRebuildStatus"
+  /admin/video/vector/status:
+    get:
+      tags:
+        - 后台-视频管理
+      summary: 视频向量索引重建状态
+      description: 获取当前进程的重建状态快照；需登录并通过 RBAC 权限校验。
+      responses:
+        "200":
+          description: 当前重建任务状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/VectorRebuildStatus"
   /admin/rbac/menu/remove:
     delete:
       tags:
@@ -10461,6 +10742,7 @@ paths:
                       defaultUserBannerIDs:
                         - 19
                         - 21
+                      disableUserSubmission: false
                       contentReview:
                         enable: false
                       login:
@@ -10481,6 +10763,9 @@ paths:
                         chunkSize: 10
                         maxFileSize: 100
                         maxUploadNum: 10
+                        dailyUploadLimit: 10
+                        unmergedChunkRetentionHours: 2
+                        unpublishedSourceRetentionHours: 1
                         chunkDir: "./runtime/chunks"
                         local:
                           enable: false
@@ -10649,6 +10934,7 @@ paths:
                   defaultUserBannerIDs:
                     - 19
                     - 21
+                  disableUserSubmission: false
                   contentReview:
                     enable: false
                   login:
@@ -10669,6 +10955,9 @@ paths:
                     chunkSize: 10
                     maxFileSize: 100
                     maxUploadNum: 10
+                    dailyUploadLimit: 10
+                    unmergedChunkRetentionHours: 2
+                    unpublishedSourceRetentionHours: 1
                     chunkDir: "./runtime/chunks"
                     local:
                       enable: false

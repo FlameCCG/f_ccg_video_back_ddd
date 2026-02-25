@@ -79,9 +79,16 @@ func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 	// 绑定停留在 interfaces 层；应用层负责浅拷贝顶层、保留密钥、原子发布并写回文件。
 	switch name {
 	case configNameSite:
-		var siteCfg *site.Site
+		var siteCfg *struct {
+			site.Site
+			DisableUserSubmission *bool `json:"disableUserSubmission"`
+		}
 		if err = c.ShouldBindJSON(&siteCfg); err == nil {
-			err = h.siteCfg.UpdateSite(siteCfg)
+			if siteCfg == nil {
+				err = h.siteCfg.UpdateSite(nil, nil)
+			} else {
+				err = h.siteCfg.UpdateSite(&siteCfg.Site, siteCfg.DisableUserSubmission)
+			}
 		}
 	case app.ConfigNameLogger:
 		var logger *config.Logger

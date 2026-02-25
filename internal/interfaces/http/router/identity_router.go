@@ -28,7 +28,7 @@ func registerIdentityCommonRoutes(
 		userVideoGroup.GET("/recent/liked", h.RecentLikedView)
 		userVideoGroup.GET("/recent/coined", h.RecentCoinedView)
 		userVideoGroup.DELETE("/delete", middlewares.JsonBindParams[identityhandler.DeleteVideoReq], mw.JwtAuth(), h.DeleteVideoView)
-		userVideoGroup.POST("/tag", middlewares.JsonBindParams[identityhandler.CreateTagReq], mw.JwtAuth(), h.CreateTag)
+		userVideoGroup.POST("/tag", mw.JwtAuth(), mw.VideoSubmissionCheck(), mw.UserBanCheck(), middlewares.JsonBindParams[identityhandler.CreateTagReq], h.CreateTag)
 	}
 
 	// @ 联想（需登录）

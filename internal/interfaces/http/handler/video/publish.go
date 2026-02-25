@@ -46,6 +46,11 @@ type PublishVideoResp struct {
 // PublishVideoView handles the corresponding HTTP request.
 func (h *Handler) PublishVideoView(c *gin.Context) {
 	req := middlewares.GetBound[PublishVideoReq](c)
+	uid, loggedIn := getUID(c)
+	if !loggedIn {
+		res.FailWithMsg("用户未登录", c)
+		return
+	}
 
 	username, ok := c.Get("username")
 	if !ok {
@@ -67,6 +72,7 @@ func (h *Handler) PublishVideoView(c *gin.Context) {
 	}
 
 	result, err := h.publish.PublishVideo(c.Request.Context(), app.PublishVideoCommand{
+		AuthorID:       uid,
 		Title:          req.Title,
 		Description:    req.Description,
 		PartitionID:    req.PartitionID,

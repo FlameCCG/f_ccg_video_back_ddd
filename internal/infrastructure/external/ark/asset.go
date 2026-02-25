@@ -2,12 +2,14 @@ package ark
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
+	domain "f_ccg_video_back_ddd/internal/domain/ai"
 )
 
 // AssetProxy 上游资源流代理适配器。
@@ -43,7 +45,9 @@ func (p *AssetProxy) Open(
 		}
 	}
 
-	resp, err := httpClientFor(runtime, false).Do(req)
+	client := httpClientFor(runtime, false)
+	client.CheckRedirect = validateAssetRedirect
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("请求 AI 资源失败: %w", err)
 	}
@@ -60,4 +64,19 @@ func (p *AssetProxy) Open(
 	}
 
 	return resp, nil
+}
+
+// 重定向后的地址也必须经过白名单，避免可信图床把代理引向内网。
+func validateAssetRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return errors.New("AI 资源重定向次数过多")
+	}
+	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+		return domain.ErrUnsupportedAssetScheme
+	}
+	if !domain.IsAllowedAssetHost(req.URL.Hostname()) {
+		return domain.ErrAssetHostNotAllowed
+	}
+
+	return nil
 }

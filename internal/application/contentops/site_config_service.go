@@ -90,8 +90,17 @@ func (s *SiteConfigService) AdminConfigByName(name string) (any, error) {
 }
 
 // UpdateSite 更新站点配置段（空/脱敏的 MinIO 密钥保留原值）。
-func (s *SiteConfigService) UpdateSite(siteCfg *site.Site) error {
+func (s *SiteConfigService) UpdateSite(siteCfg *site.Site, disableUserSubmission *bool) error {
 	next := config.Clone(s.provider.Get())
+	if siteCfg == nil {
+		return fmt.Errorf("站点配置不能为空")
+	}
+	// 请求未提交投稿权限字段时保留当前策略，避免意外重新开放投稿。
+	if disableUserSubmission != nil {
+		siteCfg.DisableUserSubmission = *disableUserSubmission
+	} else if next.Site != nil {
+		siteCfg.DisableUserSubmission = next.Site.DisableUserSubmission
+	}
 	preserveSiteSecrets(siteCfg, next.Site)
 	next.Site = siteCfg
 

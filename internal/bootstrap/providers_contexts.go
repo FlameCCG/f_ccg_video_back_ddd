@@ -275,6 +275,7 @@ var MediaProviderSet = wire.NewSet(
 	// internal/infrastructure/storage
 	infrastructureStorage.ProviderSet,
 	wire.Bind(new(domainMedia.StorageResolver), new(*infrastructureStorage.Resolver)),
+	wire.Bind(new(applicationVideo.UploadGarbageScanner), new(*infrastructureStorage.UploadGarbageScanner)),
 )
 
 // VideoProviderSet Video 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
@@ -322,6 +323,10 @@ var VideoProviderSet = wire.NewSet(
 	wire.Bind(new(applicationVideo.UserVideoQuery), new(*infrastructurePersistenceVideo.UserVideoQuery)),
 	wire.Bind(new(domainVideo.VideoRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
 	// internal/infrastructure/cache/video
+	infrastructureCacheVideo.NewUploadQuotaStore,
+	infrastructureCacheVideo.NewUploadHashGuard,
+	wire.Bind(new(applicationVideo.UploadQuotaStore), new(*infrastructureCacheVideo.UploadQuotaStore)),
+	wire.Bind(new(applicationVideo.UploadHashGuard), new(*infrastructureCacheVideo.UploadHashGuard)),
 	infrastructureCacheVideo.NewAuthorIDCache,
 	infrastructureCacheVideo.NewAuthorStatsCache,
 	infrastructureCacheVideo.NewDanmuEventBus,

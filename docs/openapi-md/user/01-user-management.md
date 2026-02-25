@@ -1277,3 +1277,7 @@ Base URL：/v1
   "msg": "创建成功"
 }
 ```
+
+## 当前用户管理员标识
+
+`GET /common/user/info` 新增 `data.isAdmin`（boolean），由服务端根据已分配的管理员角色返回。用于站点禁止用户投稿时的界面提示和管理员放行展示。

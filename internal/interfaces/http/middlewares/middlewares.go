@@ -18,6 +18,7 @@ type Middlewares struct {
 	cfgProvider *infraconfig.Provider
 	enforcer    *casbin.SyncedEnforcer
 	userStatus  *identityapp.UserStatusService
+	userRoles   identityapp.UserRoleQuery
 	bans        *identityapp.BanService
 	banRecords  *identityapp.BanRecordService
 	captcha     *identityapp.CaptchaService
@@ -30,6 +31,7 @@ func New(
 	cfgProvider *infraconfig.Provider,
 	enforcer *casbin.SyncedEnforcer,
 	userStatus *identityapp.UserStatusService,
+	userRoles identityapp.UserRoleQuery,
 	bans *identityapp.BanService,
 	banRecords *identityapp.BanRecordService,
 	captcha *identityapp.CaptchaService,
@@ -40,6 +42,7 @@ func New(
 		cfgProvider: cfgProvider,
 		enforcer:    enforcer,
 		userStatus:  userStatus,
+		userRoles:   userRoles,
 		bans:        bans,
 		banRecords:  banRecords,
 		captcha:     captcha,

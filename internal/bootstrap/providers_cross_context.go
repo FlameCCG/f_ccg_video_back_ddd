@@ -18,6 +18,7 @@ import (
 	ipregioninfra "f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	commentrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/comment"
 	videorepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
+	schedulerinfra "f_ccg_video_back_ddd/internal/infrastructure/scheduler"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 
 	"github.com/google/wire"
@@ -45,6 +46,7 @@ var CrossContextProviderSet = wire.NewSet(
 	VideoProviderSet,
 	PlatformProviderSet,
 	WebSocketProviderSet,
+	wire.Bind(new(schedulerinfra.UploadCleanupJob), new(*videoapp.UploadCleanupService)),
 
 	wire.Bind(new(identityapp.RateLimiter), new(*ratelimitinfra.Limiter)),
 	adapters.NewBadgeInvalidator,

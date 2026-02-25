@@ -21,7 +21,7 @@ func newLoginRateTestEngine(t *testing.T, limiter *ratelimit.Limiter) *gin.Engin
 
 	gin.SetMode(gin.TestMode)
 
-	mw := New(nil, nil, nil, nil, nil, nil, limiter, zap.NewNop())
+	mw := New(nil, nil, nil, nil, nil, nil, nil, limiter, zap.NewNop())
 
 	engine := gin.New()
 

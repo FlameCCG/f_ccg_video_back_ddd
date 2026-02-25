@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
 
@@ -162,4 +163,29 @@ func requireMapField(t *testing.T, payload map[string]any, field string) map[str
 	}
 
 	return value
+}
+
+func TestOpenStreamReturnsProviderErrorWithoutWaitingForCancellation(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid API key"}}`)
+	}))
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	stream, err := NewChatModel().OpenStream(ctx, aiapp.TextInvocation{
+		Runtime: aiapp.RuntimeConfig{ChatModelBaseURL: server.URL, ChatModelAPIKey: "test-key"},
+		Model:   "test-model", Messages: []*schema.Message{schema.UserMessage("你好")},
+	})
+	if stream != nil {
+		stream.Close()
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("OpenStream waited for cancellation instead of returning provider error: %v", err)
+	}
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Fatalf("OpenStream() error = %v, want provider authentication error", err)
+	}
 }

@@ -9,6 +9,7 @@ import (
 
 // UserInfoRes 请求/响应结构体.
 type UserInfoRes struct {
+	IsAdmin        bool     `json:"isAdmin"`
 	ID             uint     `json:"id"`
 	Username       string   `json:"username"`
 	Email          string   `json:"email"`
@@ -49,6 +50,7 @@ func (h *Handler) UserInfoView(c *gin.Context) {
 	}
 
 	res.OkWithData(UserInfoRes{
+		IsAdmin:        info.IsAdmin,
 		ID:             info.ID,
 		Username:       info.Username,
 		Email:          info.Email,

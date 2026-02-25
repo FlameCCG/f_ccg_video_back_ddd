@@ -188,3 +188,6 @@ PUT     /v1/common/user/info/conf
 PUT     /v1/common/user/password/change
 PUT     /v1/common/video/folder
 PUT     /v1/common/video/publish
+
+# 2026-09: General image upload is separate from video submission.
+POST    /v1/common/image/upload

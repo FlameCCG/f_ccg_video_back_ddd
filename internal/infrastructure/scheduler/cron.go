@@ -29,6 +29,7 @@ const (
 	SpecDecayVideoHotScore = "0 */10 * * * ?"
 	// SpecAutoUnbanUsers 每 5 分钟检查一次自动解封。
 	SpecAutoUnbanUsers = "0 */5 * * * ?"
+	SpecCleanupUploads = "0 */5 * * * ?"
 )
 
 // cronJob 一条定时任务注册项。
@@ -46,11 +47,12 @@ type cronJob struct {
 // 生命周期方法 Start / Stop 与 App 的其它后台组件一致；
 // Stop 幂等，且会尽量等待在途任务结束。
 type CronComponent struct {
-	commentLike CommentLikeSyncJob
-	videoStat   VideoStatSyncJob
-	hotRank     HotRankDecayJob
-	autoUnban   AutoUnbanJob
-	logger      *zap.Logger
+	commentLike   CommentLikeSyncJob
+	videoStat     VideoStatSyncJob
+	hotRank       HotRankDecayJob
+	autoUnban     AutoUnbanJob
+	uploadCleanup UploadCleanupJob
+	logger        *zap.Logger
 
 	mu      sync.Mutex
 	crontab *cron.Cron
@@ -58,35 +60,38 @@ type CronComponent struct {
 
 // NewCronComponent 构造定时任务调度组件。
 //
-// 四个任务端口分别由 application/platform 的用例服务实现，由 bootstrap 注入。
+// 既有四个任务由 application/platform 实现，上传清理由 application/video 实现。
 func NewCronComponent(
 	commentLike CommentLikeSyncJob,
 	videoStat VideoStatSyncJob,
 	hotRank HotRankDecayJob,
 	autoUnban AutoUnbanJob,
+	uploadCleanup UploadCleanupJob,
 	logger *zap.Logger,
 ) *CronComponent {
 	return &CronComponent{
-		commentLike: commentLike,
-		videoStat:   videoStat,
-		hotRank:     hotRank,
-		autoUnban:   autoUnban,
-		logger:      logger,
+		commentLike:   commentLike,
+		videoStat:     videoStat,
+		hotRank:       hotRank,
+		autoUnban:     autoUnban,
+		uploadCleanup: uploadCleanup,
+		logger:        logger,
 	}
 }
 
 // Start 注册并启动全部定时任务。
 //
-// 单项注册失败仅记录错误，其余任务继续，因此始终返回 nil；error 返回值与 App 生命周期接口统一。
-// 重复调用已启动的组件时直接返回，避免遗留调度器。
+// 单个任务注册失败只记录错误日志、不阻断其余任务，因此始终返回 nil；
+// 返回 error 是为了与 App 的后台组件启动签名保持一致。
+// 重复调用在已启动状态下直接返回，避免遗留一个无人持有的调度器。
 func (c *CronComponent) Start(_ context.Context) error {
 	return c.startJobs(c.jobs())
 }
 
-// jobs 按调度依赖顺序返回全部注册项。
+// jobs 按注册顺序提供四个业务任务及上传清理任务。
 func (c *CronComponent) jobs() []cronJob {
 	// 定时任务是调度 root 场景，没有请求上下文，每次触发从 Background 派生。
-	return []cronJob{
+	jobs := []cronJob{
 		{
 			name: "SyncCommentLike",
 			spec: SpecSyncCommentLike,
@@ -108,6 +113,17 @@ func (c *CronComponent) jobs() []cronJob {
 			run:  func() { c.autoUnban.Run(context.Background()) },
 		},
 	}
+	if c.uploadCleanup != nil {
+		jobs = append(jobs, cronJob{
+			name: "CleanupUploads", spec: SpecCleanupUploads,
+			run: func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+				defer cancel()
+				c.uploadCleanup.Run(ctx)
+			},
+		})
+	}
+	return jobs
 }
 
 // startJobs 用给定注册项构建并启动调度器。

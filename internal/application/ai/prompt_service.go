@@ -35,6 +35,10 @@ func (s *Service) buildResponsesSystemPrompt(
 	if !conv.HasMessages() {
 		return basePrompt, nil
 	}
+	// 无法加载站内候选时，意图分析也无法影响回答；省掉一次额外模型调用。
+	if s.prompts == nil || !s.prompts.Available() {
+		return basePrompt, nil
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}

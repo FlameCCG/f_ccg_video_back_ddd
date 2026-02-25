@@ -189,7 +189,8 @@ func (t *responseReadGateTransport) RoundTrip(request *http.Request) (*http.Resp
 	if err != nil {
 		return nil, err
 	}
-	if response.Body == nil {
+	// SDK 会在 Stream 返回前同步读取非 2xx 错误体；给它加闸门会互相等待。
+	if response.Body == nil || response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return response, nil
 	}
 
