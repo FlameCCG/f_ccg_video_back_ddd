@@ -49,8 +49,8 @@ const (
 	posSaveThrottle = 3 * time.Second
 	// syncReqsInitCap 批量请求聚合切片的初始容量.
 	syncReqsInitCap = 1024
-	// riverBulkRequestTimeout 单次 ES bulk 的独立超时.
-	riverBulkRequestTimeout = 3 * time.Second
+	// riverBulkRequestTimeout 给本地 ES 冷启动、GC 和磁盘慢写留出时间，仍受 River 取消控制。
+	riverBulkRequestTimeout = 30 * time.Second
 	// riverBulkInitialBackoff 可重试失败后的初始退避.
 	riverBulkInitialBackoff = 200 * time.Millisecond
 	// riverBulkMaxBackoff 限制可重试失败的最大退避，避免恢复后响应过慢.
