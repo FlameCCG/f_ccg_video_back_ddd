@@ -18,6 +18,11 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	panic(wire.Build(AppProviderSet))
 }
 
+// InitializeTranscodeWorker 构造独立转码消费者，不装配 HTTP 与其他后台组件。
+func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), error) {
+	panic(wire.Build(TranscodeWorkerProviderSet))
+}
+
 // InitializeMigrateDBTask 构造 -db 运维任务（配置 + 日志 + MySQL）。
 func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	panic(wire.Build(MigrateDBTaskProviderSet))
