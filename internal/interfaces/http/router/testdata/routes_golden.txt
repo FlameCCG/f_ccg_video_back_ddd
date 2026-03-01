@@ -94,6 +94,7 @@ GET     /v1/common/user/video/recent/coined
 GET     /v1/common/user/video/recent/liked
 GET     /v1/common/video/danmu/creator/list
 GET     /v1/common/video/danmu/history
+GET     /v1/common/video/danmu/month-dates
 GET     /v1/common/video/danmu/room/list
 GET     /v1/common/video/danmu/ws
 GET     /v1/common/video/detail

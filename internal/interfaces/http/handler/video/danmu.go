@@ -169,6 +169,36 @@ func (h *Handler) DanmuRoomListView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
+// DanmuMonthDatesReq 查询浏览器本地月份里有哪些弹幕。
+type DanmuMonthDatesReq struct {
+	VideoID uint   `form:"videoId" binding:"required,gt=0"`
+	PartID  uint   `form:"partId" binding:"omitempty,gt=0"`
+	Month   string `form:"month" binding:"required"`
+	Start   string `form:"start" binding:"required"`
+	End     string `form:"end" binding:"required"`
+}
+
+// DanmuMonthDatesView 返回该时间窗内每条弹幕的发送时刻（库内 Asia/Shanghai）。
+func (h *Handler) DanmuMonthDatesView(c *gin.Context) {
+	req := middlewares.GetBound[DanmuMonthDatesReq](c)
+
+	result, err := h.danmu.MonthDates(
+		c.Request.Context(),
+		req.VideoID,
+		req.PartID,
+		req.Month,
+		req.Start,
+		req.End,
+	)
+	if err != nil {
+		res.FailWithMsg(err.Error(), c)
+
+		return
+	}
+
+	res.OkWithData(result, c)
+}
+
 // DanmuLikeReq is an exported API type.
 type DanmuLikeReq struct {
 	DanmuID uint `json:"danmuId" binding:"required,gt=0"`

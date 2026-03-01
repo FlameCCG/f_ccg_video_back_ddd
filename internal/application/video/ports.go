@@ -84,6 +84,8 @@ type DanmuQuery interface {
 	AdminList(ctx context.Context, params AdminDanmuListParams) ([]AdminDanmuItem, int64, error)
 	// CreatorList 创作中心弹幕列表（按作者用户名过滤）。
 	CreatorList(ctx context.Context, authorUsername string, page, pageSize, sort int, keyword string) ([]CreatorDanmuItem, int64, error)
+	// MonthInstants 返回 [start, end) 内每条弹幕的 created_at。时间点带数据库时区。
+	MonthInstants(ctx context.Context, videoID, partID uint, start, end time.Time) ([]time.Time, error)
 }
 
 // AdminVideoQuery 管理端视频列表读模型查询端口。

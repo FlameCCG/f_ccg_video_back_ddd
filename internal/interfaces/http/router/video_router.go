@@ -39,6 +39,11 @@ func registerVideoCommonRoutes(
 			mw.JwtOptional(),
 			middlewares.BindQueryParams[videohandler.DanmuRoomListReq],
 			h.DanmuRoomListView)
+		videoGroup.GET("danmu/month-dates",
+			middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
+			mw.JwtOptional(),
+			middlewares.BindQueryParams[videohandler.DanmuMonthDatesReq],
+			h.DanmuMonthDatesView)
 		videoGroup.GET("danmu/ws", middlewares.BindQueryParams[videohandler.DanmuWSReq], h.DanmuWSView)
 	}
 
