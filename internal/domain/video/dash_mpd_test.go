@@ -87,6 +87,16 @@ func TestResolutionLabelFromSize(t *testing.T) {
 	if !strings.Contains(domain.ResolutionLabelFromSize(640, 360), "360") {
 		t.Fatal(domain.ResolutionLabelFromSize(640, 360))
 	}
+
+	// 电影宽银幕 4K：高度只有 1632，宽度达到 3840，仍是 4K 超高清。
+	got := domain.ResolutionLabelFromSize(3840, 1632)
+	if !strings.Contains(got, "4k") || strings.Contains(got, "1080") {
+		t.Fatalf("ultrawide 4k label = %q", got)
+	}
+
+	if got := domain.ResolutionLabelFromSize(3840, 2160); !strings.Contains(got, "4k") {
+		t.Fatalf("2160 label = %q", got)
+	}
 }
 
 // TestIsDASHResource 覆盖 DASH 资源判定（format=dash 或 .mpd 后缀）。
