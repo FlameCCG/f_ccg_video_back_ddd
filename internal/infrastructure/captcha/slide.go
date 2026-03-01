@@ -7,6 +7,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config/site"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -24,6 +25,8 @@ const (
 )
 
 type slideCaptchaStorePayload struct {
+	Scene string `json:"scene"`
+
 	X      int `json:"x"`      // 正确的 X 坐标
 	Y      int `json:"y"`      // 正确的 Y 坐标
 	ThumbY int `json:"thumbY"` // 拼图块固定 Y 坐标
@@ -54,7 +57,12 @@ func NewSlideCaptcha(
 }
 
 // Generate 生成滑块验证码，并把答案写入 Redis。
-func (c *SlideCaptcha) Generate(ctx context.Context) (*app.SlideCaptchaResult, error) {
+func (c *SlideCaptcha) Generate(ctx context.Context, scenes ...string) (*app.SlideCaptchaResult, error) {
+	scene := "register"
+	if len(scenes) > 0 {
+		scene = site.ResolveCaptchaScene(scenes[0], scene)
+	}
+
 	if err := c.ensure(); err != nil {
 		return nil, err
 	}
@@ -66,14 +74,14 @@ func (c *SlideCaptcha) Generate(ctx context.Context) (*app.SlideCaptchaResult, e
 
 	token := uuid.NewString()
 	block := captData.GetData()
-	payload := slideCaptchaStorePayload{X: block.X, Y: block.Y, ThumbY: block.Y}
+	payload := slideCaptchaStorePayload{Scene: scene, X: block.X, Y: block.Y, ThumbY: block.Y}
 
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
 
-	if err = c.store.store(ctx, constants.SlideCaptchaRedisKeyPrefix+token, data, c.ttl()); err != nil {
+	if err = c.store.store(ctx, constants.SlideCaptchaRedisKeyPrefix+token, data, c.ttl(scene)); err != nil {
 		return nil, err
 	}
 
@@ -96,7 +104,12 @@ func (c *SlideCaptcha) Generate(ctx context.Context) (*app.SlideCaptchaResult, e
 }
 
 // Verify 校验拖动落点是否在容错范围内（答案一次性消费）。
-func (c *SlideCaptcha) Verify(ctx context.Context, req app.SlideCaptchaVerifyReq) (bool, error) {
+func (c *SlideCaptcha) Verify(ctx context.Context, req app.SlideCaptchaVerifyReq, scenes ...string) (bool, error) {
+	scene := "register"
+	if len(scenes) > 0 {
+		scene = site.ResolveCaptchaScene(scenes[0], scene)
+	}
+
 	if req.Token == "" {
 		return false, ErrCaptchaExpired
 	}
@@ -112,8 +125,11 @@ func (c *SlideCaptcha) Verify(ctx context.Context, req app.SlideCaptchaVerifyReq
 	var payload slideCaptchaStorePayload
 
 	_ = json.Unmarshal(raw, &payload)
+	if payload.Scene != scene {
+		return false, ErrCaptchaExpired
+	}
 
-	return slide.Validate(req.X, req.Y, payload.X, payload.Y, c.padding()), nil
+	return slide.Validate(req.X, req.Y, payload.X, payload.Y, c.padding(scene)), nil
 }
 
 func (c *SlideCaptcha) ensure() error {
@@ -154,20 +170,26 @@ func (c *SlideCaptcha) ensure() error {
 	return c.initErr
 }
 
-func (c *SlideCaptcha) ttl() time.Duration {
-	cfg := c.cfgProvider.Get()
-	if cfg != nil && cfg.Site != nil && cfg.Site.Register != nil && cfg.Site.Register.SlideCaptchaTTL > 0 {
-		return time.Duration(cfg.Site.Register.SlideCaptchaTTL) * time.Second
+func (c *SlideCaptcha) ttl(scenes ...string) time.Duration {
+	scene := "register"
+	if len(scenes) > 0 {
+		scene = scenes[0]
 	}
-
-	return defaultSlideCaptchaTTL
+	cfg := c.cfgProvider.Get()
+	if cfg == nil {
+		return defaultSlideCaptchaTTL
+	}
+	return time.Duration(cfg.Site.CaptchaSettings(scene, "slide").TTLSeconds) * time.Second
 }
 
-func (c *SlideCaptcha) padding() int {
-	cfg := c.cfgProvider.Get()
-	if cfg != nil && cfg.Site != nil && cfg.Site.Register != nil && cfg.Site.Register.SlideCaptchaPadding > 0 {
-		return cfg.Site.Register.SlideCaptchaPadding
+func (c *SlideCaptcha) padding(scenes ...string) int {
+	scene := "register"
+	if len(scenes) > 0 {
+		scene = scenes[0]
 	}
-
-	return defaultSlideCaptchaPadding
+	cfg := c.cfgProvider.Get()
+	if cfg == nil {
+		return defaultSlideCaptchaPadding
+	}
+	return cfg.Site.CaptchaSettings(scene, "slide").Padding
 }

@@ -10,6 +10,9 @@ type Login struct {
 	UsernamePwdLogin        bool `mapstructure:"usernamePwdLogin" json:"usernamePwdLogin"`
 	TextGraphicCaptcha      bool `mapstructure:"textGraphicCaptcha" json:"textGraphicCaptcha"`
 	TextClickCaptcha        bool `mapstructure:"textClickCaptcha" json:"textClickCaptcha"`
+	SlideCaptcha            bool `mapstructure:"slideCaptcha" json:"slideCaptcha"`
+	SlideCaptchaTTL         int  `mapstructure:"slideCaptchaTTL" json:"slideCaptchaTTL"`
+	SlideCaptchaPadding     int  `mapstructure:"slideCaptchaPadding" json:"slideCaptchaPadding"`
 	TextClickCaptchaTTL     int  `mapstructure:"textClickCaptchaTTL" json:"textClickCaptchaTTL"`
 	TextClickCaptchaPadding int  `mapstructure:"textClickCaptchaPadding" json:"textClickCaptchaPadding"`
 }

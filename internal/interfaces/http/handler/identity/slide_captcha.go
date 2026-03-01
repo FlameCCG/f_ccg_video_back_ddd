@@ -18,7 +18,12 @@ type SlideCaptchaResponse struct {
 
 // SlideCaptchaView 处理对应 HTTP 请求.
 func (h *CaptchaHandler) SlideCaptchaView(c *gin.Context) {
-	data, err := h.captcha.GenerateSlide(c.Request.Context())
+	scene := c.DefaultQuery("scene", "register")
+	if scene != "login" && scene != "register" {
+		res.FailWithMsg("invalid captcha scene", c)
+		return
+	}
+	data, err := h.captcha.GenerateSlide(c.Request.Context(), scene)
 	if err != nil {
 		h.log().Error("generate slide captcha failed", zap.Error(err))
 		res.FailWithMsg("生成验证码失败", c)

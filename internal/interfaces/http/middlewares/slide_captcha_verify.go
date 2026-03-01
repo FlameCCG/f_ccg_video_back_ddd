@@ -63,6 +63,7 @@ func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 				X:     req.X,
 				Y:     req.Y,
 			},
+			"login",
 		)
 		if verifyErr != nil || !ok {
 			switch {

@@ -72,7 +72,7 @@ func registerIdentityCommonRoutes(
 		loginGroup.POST("/pwd",
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 			mw.LoginRateLimit(),
-			mw.ClickCaptchaVerify(),
+			mw.InteractiveCaptchaVerify("login"),
 			middlewares.JsonBindParams[identityhandler.PwdLoginReq],
 			h.PwdLoginView,
 		)
@@ -132,7 +132,7 @@ func registerIdentityAdminRoutes(
 		loginGroup.POST("pwd",
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 			mw.LoginRateLimit(),
-			mw.SlideCaptchaVerify(),
+			mw.InteractiveCaptchaVerify("login"),
 			middlewares.JsonBindParams[identityhandler.AdminPwdLoginReq],
 			h.AdminPwdLoginView,
 		)
@@ -162,7 +162,7 @@ func registerCaptchaRoutes(
 	{
 		captchaGroup.POST("email",
 			middlewares.RequestTimeout(ctxutil.RequestLongTimeout),
-			mw.SlideCaptchaVerify(),
+			mw.InteractiveCaptchaVerify("register"),
 			mw.GraphicsTextCaptchaMiddleware(),
 			middlewares.BindParams[identityhandler.EmailCaptchaRequest],
 			h.EmailCaptchaView,
@@ -170,5 +170,6 @@ func registerCaptchaRoutes(
 		captchaGroup.GET("graphics-text", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindParams[identityhandler.GraphicsCaptchaRequest], h.GraphicsTextCaptchaView)
 		captchaGroup.GET("click", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.ClickCaptchaView)
 		captchaGroup.GET("slide", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.SlideCaptchaView)
+		captchaGroup.GET("type", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.CaptchaTypeView)
 	}
 }
