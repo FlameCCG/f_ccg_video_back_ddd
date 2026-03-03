@@ -25,7 +25,7 @@ func (g *fakeMenuGenerator) GenerateMenuSuggestion(
 	title string,
 	parentID *uint,
 	menuTableJSON []byte,
-) (*domain.MenuSuggestion, error) {
+) (string, error) {
 	g.title = title
 	if parentID == nil {
 		g.parentID = nil
@@ -35,7 +35,7 @@ func (g *fakeMenuGenerator) GenerateMenuSuggestion(
 	}
 	g.menuJSON = append([]byte(nil), menuTableJSON...)
 
-	return &domain.MenuSuggestion{
+	suggestion := &domain.MenuSuggestion{
 		TitleEn:   "Users",
 		TitleJa:   "ユーザー",
 		Icon:      "<svg></svg>",
@@ -43,7 +43,9 @@ func (g *fakeMenuGenerator) GenerateMenuSuggestion(
 		Name:      "Users",
 		Component: "views/users/index",
 		SortOrder: 1,
-	}, nil
+	}
+	data, err := json.Marshal(suggestion)
+	return string(data), err
 }
 
 func TestMenuServiceCreateOrdersAndGrantsCreatorRole(t *testing.T) {

@@ -282,7 +282,11 @@ func (s *MenuService) Generate(
 		return nil, domain.ErrMenuGeneratorUnavailable
 	}
 
-	return s.generator.GenerateMenuSuggestion(ctx, title, parentID, menuTableJSON)
+	text, err := s.generator.GenerateMenuSuggestion(ctx, title, parentID, menuTableJSON)
+	if err != nil {
+		return nil, err
+	}
+	return parseMenuSuggestion(text)
 }
 
 func menuFieldUpdate(params UpdateMenuParams) (domain.MenuFieldUpdate, error) {
