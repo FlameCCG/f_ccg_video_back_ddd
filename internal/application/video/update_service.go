@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
@@ -52,142 +53,83 @@ func (s *UpdateService) UpdateVideo(
 		return nil, domain.ErrVideoIDRequired
 	}
 
-	video, err := s.videos.FindByIDAndAuthor(ctx, opts.VideoID, username)
-	if err != nil {
-		return nil, err
-	}
-
-	existingTags, err := s.videos.TagsByVideoID(ctx, opts.VideoID)
-	if err != nil {
-		return nil, err
-	}
-
-	// 校验标签
 	var (
-		tags         []domain.Tag
-		tagsProvided bool
+		video     *domain.Video
+		tags      []domain.Tag
+		partition *domain.Partition
 	)
-
-	if len(opts.TagIDs) > 0 {
-		tagsProvided = true
-
-		tags, err = s.videos.FindTagsByIDs(ctx, opts.TagIDs)
-		if err != nil {
-			return nil, errQueryTagsFailed
-		}
+	now := time.Now()
+	change := domain.Revision{
+		Title: opts.Title, Description: opts.Description, Cover: opts.CoverURL,
+		PartitionID: opts.PartitionID, IsOriginal: opts.IsOriginal,
+		IsPrivate: opts.IsPrivate, PublishTime: opts.PublishTime,
 	}
 
-	var (
-		partition  *domain.Partition
-		nextStatus *enum.VideoStatus
-		now        = time.Now()
-	)
-
-	if opts.PartitionID != nil {
-		partition, err = s.partitions.FindByID(ctx, *opts.PartitionID)
-		if err != nil {
-			return nil, errPartitionMissing
-		}
-
-		if !partition.IsActive {
-			return nil, errPartitionDisabled
-		}
-
-		if !partition.IsSubmittable {
-			return nil, domain.ErrPartitionNotSubmittable
-		}
-	}
-
-	if opts.IsPrivate != nil {
-		status := domain.ResolvePublishVideoStatus(now, opts.PublishTime, *opts.IsPrivate, s.contentReviewEnabled())
-		nextStatus = &status
-	}
-
-	updates := map[string]any{}
-	if opts.Title != nil {
-		updates["title"] = *opts.Title
-	}
-
-	if opts.Description != nil {
-		updates["description"] = *opts.Description
-	}
-
-	if opts.PartitionID != nil {
-		updates["partition_id"] = *opts.PartitionID
-	}
-
-	if opts.IsOriginal != nil {
-		updates["is_original"] = *opts.IsOriginal
-	}
-
-	if opts.CoverURL != nil {
-		updates["cover"] = *opts.CoverURL
-	}
-
-	if nextStatus != nil {
-		updates["status"] = *nextStatus
-	}
-
+	// 锁定、领域校验、主体与标签保存共用同一事务。锁在读取快照前取得，
+	// 避免作者改稿按旧状态覆盖管理端的删除或审核结果。
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		if len(updates) > 0 {
-			if updateErr := s.videos.UpdateFields(txCtx, video.ID, updates); updateErr != nil {
-				return updateErr
+		var err error
+		video, err = s.videos.FindByIDAndAuthorForUpdate(txCtx, opts.VideoID, username)
+		if err != nil {
+			return err
+		}
+		if err := video.Revise(username, change, now, s.contentReviewEnabled()); err != nil {
+			return err
+		}
+
+		if opts.PartitionID != nil {
+			partition, err = s.partitions.FindByID(txCtx, *opts.PartitionID)
+			if err != nil {
+				return errPartitionMissing
+			}
+			if err := partition.EnsureSubmittable(); err != nil {
+				switch {
+				case errors.Is(err, domain.ErrPartitionNotFound):
+					return errPartitionMissing
+				case errors.Is(err, domain.ErrPartitionInactive):
+					return errPartitionDisabled
+				default:
+					return err
+				}
 			}
 		}
 
-		if tagsProvided {
-			if tagErr := s.videos.ReplaceTags(txCtx, video.ID, tags); tagErr != nil {
-				return tagErr
+		if opts.TagIDs != nil {
+			tags, err = s.videos.FindTagsByIDs(txCtx, opts.TagIDs)
+			if err != nil {
+				return errQueryTagsFailed
+			}
+		} else {
+			tags, err = s.videos.TagsByVideoID(txCtx, video.ID)
+			if err != nil {
+				return err
 			}
 		}
 
+		if err := s.videos.SaveRevision(txCtx, video); err != nil {
+			return err
+		}
+		if opts.TagIDs != nil {
+			return s.videos.ReplaceTags(txCtx, video.ID, tags)
+		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
-	if opts.Title != nil {
-		video.Title = *opts.Title
-	}
-
-	if opts.Description != nil {
-		video.Description = *opts.Description
-	}
-
-	if opts.PartitionID != nil {
-		video.PartitionID = *opts.PartitionID
-	}
-
-	if opts.IsOriginal != nil {
-		video.IsOriginal = *opts.IsOriginal
-	}
-
-	if opts.CoverURL != nil {
-		video.Cover = *opts.CoverURL
-	}
-
-	if nextStatus != nil {
-		video.Status = *nextStatus
-	}
-
-	responseTags := existingTags
-	if tagsProvided {
-		responseTags = tags
-	}
-
-	switch {
-	case opts.IsPrivate != nil && *opts.IsPrivate:
-		_ = s.schedule.Remove(ctx, video.ID)
-	case opts.PublishTime != nil && domain.ShouldScheduleVideoPublish(now, *opts.PublishTime, false):
-		_ = s.schedule.Add(ctx, video.ID, *opts.PublishTime)
-	case opts.PublishTime != nil:
-		_ = s.schedule.Remove(ctx, video.ID)
+	// 只在可见性或时间发生变更时调整调度；使用领域决策后的实际私密状态。
+	if opts.IsPrivate != nil || opts.PublishTime != nil {
+		if opts.PublishTime != nil && domain.ShouldScheduleVideoPublish(now, *opts.PublishTime, video.Status == enum.VideoStatusPrivate) {
+			_ = s.schedule.Add(ctx, video.ID, *opts.PublishTime)
+		} else {
+			_ = s.schedule.Remove(ctx, video.ID)
+		}
 	}
 
 	s.authors.InvalidateVideoAuthorCache(ctx, video.ID)
 	s.vectors.SyncAsync(ctx, video.ID, video.Status)
 
-	return buildUpdatedVideo(video, responseTags, partition), nil
+	return buildUpdatedVideo(video, tags, partition), nil
 }
 
 func (s *UpdateService) contentReviewEnabled() bool {

@@ -393,6 +393,8 @@ type ExpAwarder interface {
 //
 // ApplyChange 复用 context 中已有的事务，使三连和投币的硬币变更与视频侧写入处于同一事务。
 type CoinLedger interface {
+	// LockAccounts 在调用方事务中锁定账户；由 identity 负责排序与去重。
+	LockAccounts(ctx context.Context, userIDs []uint) error
 	// ApplyChange 增减用户硬币余额并写入流水。
 	ApplyChange(ctx context.Context, userID uint, delta float64, reason string, dedupKey *string) error
 	// IsInsufficient 判断错误是否为「硬币余额不足」。

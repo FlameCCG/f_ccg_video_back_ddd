@@ -11,8 +11,9 @@ import (
 type VideoRepository interface {
 	// FindByID 按主键读取视频；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, videoID uint) (*Video, error)
-	// FindByIDAndAuthor 按主键 + 作者用户名读取视频；不存在时返回 ErrRecordNotFound。
-	FindByIDAndAuthor(ctx context.Context, videoID uint, authorUsername string) (*Video, error)
+	// FindByIDAndAuthorForUpdate 在调用方事务内锁定视频，直到本次改稿提交或回滚。
+	// 不存在时返回 ErrRecordNotFound；调用方必须传入 tx.Manager 的事务 context。
+	FindByIDAndAuthorForUpdate(ctx context.Context, videoID uint, authorUsername string) (*Video, error)
 	// EnsurePublished 校验视频存在且处于已发布状态；否则返回 ErrRecordNotFound。
 	EnsurePublished(ctx context.Context, videoID uint) error
 	// Exists 判断视频行是否存在（不限状态）。
@@ -31,8 +32,6 @@ type VideoRepository interface {
 	UsernameByUserID(ctx context.Context, userID uint) (string, error)
 	// UserIDByUsername 读取用户 ID 与规范化后的用户名（读侧投影）。
 	UserIDByUsername(ctx context.Context, username string) (uint, string, error)
-	// LockUsers 按给定顺序对 users 行加写锁（要求在事务内调用）。
-	LockUsers(ctx context.Context, userIDs []uint) error
 	// UpdateStatus 无条件更新视频状态。
 	UpdateStatus(ctx context.Context, videoID uint, status enum.VideoStatus) error
 	// UpdateStatusFrom 仅当当前状态等于 from 时更新为 to，返回影响行数。
@@ -49,8 +48,8 @@ type VideoRepository interface {
 	IDsByPartition(ctx context.Context, partitionID uint) ([]uint, error)
 	// CountByPartition 统计某分区下的视频数量。
 	CountByPartition(ctx context.Context, partitionID uint) (int64, error)
-	// UpdateFields 更新视频的部分字段（列名 → 值）。
-	UpdateFields(ctx context.Context, videoID uint, updates map[string]any) error
+	// SaveRevision 保存已锁定、经 Video.Revise 校验的改稿快照；不覆盖计数与媒体资源。
+	SaveRevision(ctx context.Context, video *Video) error
 	// ReplaceTags 覆盖视频的标签关联（tags 为空表示清空关联）。
 	ReplaceTags(ctx context.Context, videoID uint, tags []Tag) error
 	// TagsByVideoID 读取视频当前关联的标签。
@@ -59,8 +58,6 @@ type VideoRepository interface {
 	FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]Tag, error)
 	// CreateOrGetTag 创建标签（若已存在同名标签则返回现有）。
 	CreateOrGetTag(ctx context.Context, name string) (*Tag, error)
-	// SoftDeleteWithComments 作者软删视频：置为已删除并清理评论与评论点赞，返回删除计数。
-	SoftDeleteWithComments(ctx context.Context, videoID uint) (comments, commentLikes int64, err error)
 	// Persist 在单事务内落库一次投稿（视频 + 标签 + 分P + 初始资源）。
 	Persist(ctx context.Context, draft *PublishDraft) error
 	// HardDelete 物理删除视频及其全部关联数据，返回各表删除计数与待清理的存储目标。

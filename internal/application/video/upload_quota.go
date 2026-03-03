@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	identity "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/application/shared"
 )
 
@@ -23,6 +22,11 @@ type UploadQuotaStore interface {
 	Claim(ctx context.Context, userID uint, fileHash string, limit int) (bool, error)
 }
 
+// UploadQuotaExemption 是本上下文需要的额度豁免判定，不暴露身份上下文的角色模型。
+type UploadQuotaExemption interface {
+	IsUploadQuotaExempt(ctx context.Context, userID uint) (bool, error)
+}
+
 // UploadHashGuard 在上传、投稿与清理间按哈希协调。TryRun 不等待在途操作。
 type UploadHashGuard interface {
 	Run(ctx context.Context, hashes []string, fn func(context.Context) error) error
@@ -30,21 +34,21 @@ type UploadHashGuard interface {
 }
 
 type UploadQuotaService struct {
-	store UploadQuotaStore
-	roles identity.UserRoleQuery
-	cfg   shared.ConfigReader
+	store     UploadQuotaStore
+	exemption UploadQuotaExemption
+	cfg       shared.ConfigReader
 }
 
-func NewUploadQuotaService(store UploadQuotaStore, roles identity.UserRoleQuery, cfg shared.ConfigReader) *UploadQuotaService {
-	return &UploadQuotaService{store: store, roles: roles, cfg: cfg}
+func NewUploadQuotaService(store UploadQuotaStore, exemption UploadQuotaExemption, cfg shared.ConfigReader) *UploadQuotaService {
+	return &UploadQuotaService{store: store, exemption: exemption, cfg: cfg}
 }
 
 func (s *UploadQuotaService) Claim(ctx context.Context, userID uint, fileHash string) error {
 	fileHash = strings.TrimSpace(fileHash)
-	if s == nil || s.store == nil || userID == 0 {
+	if s == nil || s.store == nil || s.exemption == nil || userID == 0 {
 		return ErrUploadQuotaUnavailable
 	}
-	admin, err := identity.IsAdminUser(ctx, s.roles, userID)
+	admin, err := s.exemption.IsUploadQuotaExempt(ctx, userID)
 	if err != nil {
 		return ErrUploadQuotaUnavailable
 	}
