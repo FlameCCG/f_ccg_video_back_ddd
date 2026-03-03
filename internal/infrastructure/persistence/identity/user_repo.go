@@ -3,6 +3,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"slices"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
@@ -22,6 +23,26 @@ type UserRepository struct {
 
 // 编译期断言：满足领域侧仓储接口。
 var _ domain.UserRepository = (*UserRepository)(nil)
+
+// LockAccounts 是账户所有者提供的锁定能力，不让视频仓储直接操作 users。
+func (r *UserRepository) LockAccounts(ctx context.Context, userIDs []uint) error {
+	ordered := slices.Clone(userIDs)
+	slices.Sort(ordered)
+	ordered = slices.Compact(ordered)
+	for _, id := range ordered {
+		if id == 0 {
+			continue
+		}
+		if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id").Take(&po.User{}, "id = ?", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrUserRecordNotFound
+			}
+			return err
+		}
+	}
+	return nil
+}
 
 // NewUserRepository 构造用户仓储。
 //

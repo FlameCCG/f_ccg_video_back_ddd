@@ -58,8 +58,12 @@ type XOAuthClient interface {
 	FetchUser(ctx context.Context, code, codeVerifier string) (*OAuthUserInfo, error)
 }
 
-// EmailCaptchaSender 邮箱验证码投递端口，可在测试中注入 fake。
-//
+// EmailCaptchaGenerator 提供随机标识和验证码；长度及字符集由用例策略指定。
+type EmailCaptchaGenerator interface {
+	Generate(length int, charset string) (id, code string)
+}
+
+// EmailCaptchaSender 邮箱验证码投递端口。
 // captchaType 与接口层一致：1 注册 / 2 重置密码 / 3 绑定邮箱。
 type EmailCaptchaSender interface {
 	SendEmailCaptcha(captchaType int, email, code string) error

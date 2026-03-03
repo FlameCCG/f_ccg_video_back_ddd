@@ -17,6 +17,8 @@ type UserRepository interface {
 	FindProfileByID(ctx context.Context, userID uint) (*User, error)
 	// UsernameByID 读取用户名；用户不存在时返回空串。
 	UsernameByID(ctx context.Context, userID uint) (string, error)
+	// LockAccounts 在调用方事务中按 ID 升序锁定账户，忽略重复及零 ID。
+	LockAccounts(ctx context.Context, userIDs []uint) error
 	// UpdateStatus 更新用户状态。
 	UpdateStatus(ctx context.Context, userID uint, status enum.UserStatus) error
 	// ActivateIfBanned 仅当用户仍处于限时封禁态时置为正常，返回是否更新成功。
