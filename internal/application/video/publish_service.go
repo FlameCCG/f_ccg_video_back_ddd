@@ -22,7 +22,6 @@ type PublishService struct {
 	uploads     *UploadService
 	transcode   TranscodeDispatcher
 	vectors     *VectorSyncService
-	scheduler   *Scheduler
 	cfgProvider shared.ConfigReader
 	tasks       *ctxutil.DetachedTaskGroup
 	logger      *zap.Logger
@@ -35,7 +34,6 @@ func NewPublishService(
 	uploads *UploadService,
 	transcode TranscodeDispatcher,
 	vectors *VectorSyncService,
-	scheduler *Scheduler,
 	cfgProvider shared.ConfigReader,
 	tasks *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,
@@ -46,7 +44,6 @@ func NewPublishService(
 		uploads:     uploads,
 		transcode:   transcode,
 		vectors:     vectors,
-		scheduler:   scheduler,
 		cfgProvider: cfgProvider,
 		tasks:       tasks,
 		logger:      logger,
@@ -69,6 +66,10 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	storageType := s.storageType()
 
 	initialStatus := domain.ResolvePublishVideoStatus(now, &publishTime, cmd.IsPrivate, contentReviewEnabled(s.cfgProvider))
+	var scheduledAt *time.Time
+	if domain.ShouldScheduleVideoPublish(now, publishTime, cmd.IsPrivate) {
+		scheduledAt = &publishTime
+	}
 
 	isMultiPart := len(cmd.Parts) > 0
 	if isMultiPart {
@@ -119,21 +120,14 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 				AuthorUsername: cmd.AuthorUsername, PartitionID: cmd.PartitionID,
 				IsOriginal: cmd.IsOriginal, Status: initialStatus, Duration: 0, StorageType: storageType,
 			}
-			return s.persistVideo(guardCtx, video, cmd, parts)
+			return s.persistVideo(guardCtx, video, cmd, parts, scheduledAt)
 		}); err != nil {
 		return nil, err
 	}
 
-	// 耗时的定时调度与 MQ 转码任务投递异步执行。
+	// 定时计划已随投稿提交；只有向量同步和转码投递在提交后异步执行。
 	s.tasks.Go(ctx, ctxutil.RequestLongTimeout, func(asyncCtx context.Context) {
 		s.vectors.SyncAsync(asyncCtx, video.ID, video.Status)
-
-		// 处理定时发布（开启审核时也会写入 ZSet，过审后按点发布）
-		if domain.ShouldScheduleVideoPublish(now, publishTime, cmd.IsPrivate) {
-			if err := s.scheduler.SchedulePublish(asyncCtx, video.ID, publishTime); err != nil {
-				s.logger.Error("schedule publish failed", zap.Error(err))
-			}
-		}
 
 		// 派发转码任务
 		if isMultiPart {
@@ -221,6 +215,7 @@ func (s *PublishService) persistVideo(
 	video *domain.Video,
 	cmd PublishVideoCommand,
 	parts []domain.VideoPart,
+	scheduledAt *time.Time,
 ) error {
 	var tags []domain.Tag
 
@@ -262,9 +257,10 @@ func (s *PublishService) persistVideo(
 	}
 
 	draft := &domain.PublishDraft{
-		Video:  video,
-		TagIDs: tagIDsOf(tags),
-		Parts:  parts,
+		Video:     video,
+		PublishAt: scheduledAt,
+		TagIDs:    tagIDsOf(tags),
+		Parts:     parts,
 	}
 
 	if len(parts) > 0 {

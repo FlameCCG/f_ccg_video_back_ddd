@@ -142,7 +142,7 @@ func TestPublishMissingSourceDoesNotClaim(t *testing.T) {
 
 func TestPublishKeepsPerWorkPartLimitSeparate(t *testing.T) {
 	provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{Storage: &site.Storage{MaxUploadNum: 2, DailyUploadLimit: 10}}})
-	svc := app.NewPublishService(nil, nil, nil, nil, nil, nil, provider, nil, zap.NewNop())
+	svc := app.NewPublishService(nil, nil, nil, nil, nil, provider, nil, zap.NewNop())
 	_, err := svc.PublishVideo(t.Context(), app.PublishVideoCommand{Parts: []app.PublishPartInput{{FileName: "a", FileHash: "a"}, {FileName: "b", FileHash: "b"}, {FileName: "c", FileHash: "c"}}})
 	if err == nil || err.Error() != "单个作品最多上传 2 个分P" {
 		t.Fatalf("per-work limit = %v", err)

@@ -89,7 +89,7 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 		deletedComments = comments
 		deletedCommentLikes = commentLikes
 
-		return nil
+		return s.schedule.Remove(txCtx, videoID)
 	}); err != nil {
 		return err
 	}
@@ -106,7 +106,6 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 		zap.Int64("commentDeleted", deletedComments),
 		zap.Int64("commentLikeDeleted", deletedCommentLikes),
 	)
-	_ = s.schedule.Remove(ctx, videoID)
 	s.authors.InvalidateVideoAuthorCache(ctx, videoID)
 
 	return nil

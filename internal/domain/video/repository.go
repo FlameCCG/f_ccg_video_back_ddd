@@ -11,6 +11,8 @@ import (
 type VideoRepository interface {
 	// FindByID 按主键读取视频；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, videoID uint) (*Video, error)
+	// FindByIDForUpdate 在调用方事务中锁定视频，供审核和到期发布协调状态与计划。
+	FindByIDForUpdate(ctx context.Context, videoID uint) (*Video, error)
 	// FindByIDAndAuthorForUpdate 在调用方事务内锁定视频，直到本次改稿提交或回滚。
 	// 不存在时返回 ErrRecordNotFound；调用方必须传入 tx.Manager 的事务 context。
 	FindByIDAndAuthorForUpdate(ctx context.Context, videoID uint, authorUsername string) (*Video, error)
