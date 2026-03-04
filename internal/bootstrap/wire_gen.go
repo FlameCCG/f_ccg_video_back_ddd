@@ -39,6 +39,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/external/ark"
 	"f_ccg_video_back_ddd/internal/infrastructure/external/email"
 	"f_ccg_video_back_ddd/internal/infrastructure/external/oauth"
+	video4 "f_ccg_video_back_ddd/internal/infrastructure/external/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
 	"f_ccg_video_back_ddd/internal/infrastructure/mq"
@@ -73,7 +74,7 @@ import (
 	notification4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/notification"
 	rbac3 "f_ccg_video_back_ddd/internal/interfaces/http/handler/rbac"
 	social3 "f_ccg_video_back_ddd/internal/interfaces/http/handler/social"
-	video4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/video"
+	video5 "f_ccg_video_back_ddd/internal/interfaces/http/handler/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/internal/interfaces/http/router"
 	chat4 "f_ccg_video_back_ddd/internal/interfaces/ws/chat"
@@ -224,7 +225,8 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	adminHandler := identity4.NewAdminHandler(loginService, adminUserService, accountService, profileService, userBannerService, banService, banRecordService, ipregionResolver)
 	addressVerifier := email.NewAddressVerifier()
 	sender := email.NewSender(provider, zapLogger)
-	emailCaptchaSendService := identity3.NewEmailCaptchaSendService(userRepository, captchaService, addressVerifier, sender, limiter, detachedTaskGroup, zapLogger)
+	emailGenerator := captcha.NewEmailGenerator()
+	emailCaptchaSendService := identity3.NewEmailCaptchaSendService(userRepository, captchaService, addressVerifier, sender, emailGenerator, limiter, detachedTaskGroup, zapLogger)
 	captchaHandler := identity4.NewCaptchaHandler(captchaService, emailCaptchaSendService, zapLogger)
 	bannerRepository := contentops.NewBannerRepository(gormDB)
 	bannerCache := contentops2.NewBannerCache(client, zapLogger)
@@ -263,7 +265,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	feedQuery := video.NewFeedQuery(gormDB)
 	feedService := video3.NewFeedService(feedQuery, historyRepository, hotRankCache, statsService)
 	detailQuery := video.NewDetailQuery(gormDB)
-	httpdashVariantResolver := video3.NewHTTPDASHVariantResolver(zapLogger)
+	httpdashVariantResolver := video4.NewHTTPDASHVariantResolver(zapLogger)
 	detailService := video3.NewDetailService(detailQuery, detailMetaCache, statsService, httpdashVariantResolver)
 	recommendQuery := video.NewRecommendQuery(gormDB)
 	recommendService := video3.NewRecommendService(recommendQuery, statsService)
@@ -284,7 +286,8 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	partitionService := video3.NewPartitionService(partitionRepository, videoRepository, partitionCache, authorService, zapLogger)
 	videoStorageResolver := adapters.NewVideoStorageResolver(resolver)
 	uploadQuotaStore := video2.NewUploadQuotaStore(client)
-	uploadQuotaService := video3.NewUploadQuotaService(uploadQuotaStore, userRoleQuery, provider)
+	uploadQuotaExemption := adapters.NewUploadQuotaExemption(userRoleQuery)
+	uploadQuotaService := video3.NewUploadQuotaService(uploadQuotaStore, uploadQuotaExemption, provider)
 	uploadHashGuard := video2.NewUploadHashGuard(client)
 	uploadService := video3.NewUploadService(videoStorageResolver, provider, uploadQuotaService, uploadHashGuard, zapLogger)
 	kafka := config.ProvideKafkaConf(provider)
@@ -321,12 +324,12 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	danmuEventBus := video2.NewDanmuEventBus(client, zapLogger)
 	checker := wsorigin.NewChecker(provider)
 	hub := NewDanmuHub(danmuService, danmuEventBus, checker, zapLogger)
-	videoHandler := video4.NewHandler(feedService, detailService, recommendService, interactionService, danmuService, historyService, folderService, partitionService, publishService, updateService, uploadService, reportService, videoSearcher, readService, hub, provider, ipregionResolver, zapLogger)
+	videoHandler := video5.NewHandler(feedService, detailService, recommendService, interactionService, danmuService, historyService, folderService, partitionService, publishService, updateService, uploadService, reportService, videoSearcher, readService, hub, provider, ipregionResolver, zapLogger)
 	adminVideoQuery := video.NewAdminVideoQuery(gormDB)
 	adminVideoService := video3.NewAdminVideoService(videoRepository, adminVideoQuery, statsService, authorService, detailMetaCache, hotRankCache, scheduleStore, vectorSyncService, purgeRepository, cancelService, videoStorageResolver, uploadService, zapLogger)
 	progressQueryService := media.NewProgressQueryService(progressCache)
 	videoTranscodeProgressReader := adapters.NewVideoTranscodeProgressReader(progressQueryService)
-	videoAdminHandler := video4.NewAdminHandler(adminVideoService, detailService, danmuService, reportService, partitionService, videoTranscodeProgressReader, vectorSyncService, zapLogger)
+	videoAdminHandler := video5.NewAdminHandler(adminVideoService, detailService, danmuService, reportService, partitionService, videoTranscodeProgressReader, vectorSyncService, zapLogger)
 	commentRepository := comment.NewRepository(gormDB)
 	commentLikeRepository := comment.NewLikeRepository(gormDB)
 	query := comment.NewQuery(gormDB)

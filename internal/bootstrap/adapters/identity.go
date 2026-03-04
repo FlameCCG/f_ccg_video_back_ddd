@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
@@ -97,6 +98,15 @@ var _ videoapp.CoinLedger = (*IdentityCoinLedger)(nil)
 // NewIdentityCoinLedger 构造硬币账本适配器。
 func NewIdentityCoinLedger(coins *identityapp.CoinService) *IdentityCoinLedger {
 	return &IdentityCoinLedger{coins: coins}
+}
+
+// LockAccounts 把账户不存在的错误翻译为 video 上下文的错误契约。
+func (a *IdentityCoinLedger) LockAccounts(ctx context.Context, userIDs []uint) error {
+	err := a.coins.LockAccounts(ctx, userIDs)
+	if errors.Is(err, identitydomain.ErrUserRecordNotFound) {
+		return videodomain.ErrRecordNotFound
+	}
+	return err
 }
 
 // ApplyChange 增减用户硬币余额并写入流水。
