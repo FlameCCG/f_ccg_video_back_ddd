@@ -132,29 +132,8 @@ func ResolveClientIP(c *gin.Context) string {
 		return ""
 	}
 
-	// 1) 优先使用显式转发头（开发 Vite 代理 / Nginx / CDN 应写入）
-	for _, header := range [...]string{
-		"CF-Connecting-IP", // Cloudflare
-		"True-Client-IP",   // Akamai / 部分 CDN
-		"X-Real-IP",        // Nginx 常用
-		"X-Forwarded-For",  // 标准转发链（取最左侧原始客户端）
-	} {
-		if candidate := firstValidIPFromHeader(c.GetHeader(header)); candidate != "" {
-			return candidate
-		}
-	}
-
-	// 2) 回退 gin.ClientIP（会结合 TrustedProxies 解析 X-Forwarded-For / X-Real-IP）
-	if candidate := normalizeIPString(c.ClientIP()); candidate != "" {
-		return candidate
-	}
-
-	// 3) 最后使用 RemoteAddr
-	if host, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr)); err == nil {
-		return normalizeIPString(host)
-	}
-
-	return normalizeIPString(c.Request.RemoteAddr)
+	// ClientIP applies Gin's configured TrustedProxies boundary.
+	return normalizeIPString(c.ClientIP())
 }
 
 // firstValidIPFromHeader 从单个 header 中解析第一个合法 IP。
