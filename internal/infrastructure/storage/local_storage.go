@@ -174,6 +174,61 @@ func (l *LocalStorage) ListUploadedChunks(_ context.Context, fileHash string) ([
 	return chunks, nil
 }
 
+// ChunkUploadBytes 统计已落盘 .part 的字节数。正在写入的 .uploading 临时文件不计入。
+func (l *LocalStorage) ChunkUploadBytes(_ context.Context, fileHash, index string) (int64, int64, error) {
+	if l.cfg == nil || l.cfg.ChunkDir == "" {
+		return 0, 0, errors.New("未设置本地分块目录")
+	}
+
+	if err := ValidateUploadID(fileHash); err != nil {
+		return 0, 0, err
+	}
+
+	dir, err := safeJoinLocal(l.cfg.ChunkDir, fileHash)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, 0, nil
+		}
+
+		return 0, 0, fmt.Errorf("读取分块目录失败: %w", err)
+	}
+
+	var total, current int64
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if filepath.Ext(name) != ".part" {
+			continue
+		}
+
+		partIndex := name[:len(name)-len(".part")]
+		if err := ValidateChunkIndex(partIndex); err != nil {
+			continue
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			return 0, 0, fmt.Errorf("读取分片大小失败: %w", err)
+		}
+
+		total += info.Size()
+		if partIndex == index {
+			current = info.Size()
+		}
+	}
+
+	return total, current, nil
+}
+
 // GetCompletedFile 检查本地最终文件是否已存在，并返回根相对访问路径。
 func (l *LocalStorage) GetCompletedFile(_ context.Context, fileHash string) (string, bool, error) {
 	if l.cfg == nil || l.cfg.Local == nil || strings.TrimSpace(l.cfg.Local.Path) == "" {

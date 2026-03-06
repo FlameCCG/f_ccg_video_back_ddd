@@ -17,6 +17,9 @@ type ChunkReader = io.Reader
 type StorageDriver interface {
 	// SaveChunk 写入一个上传分片。
 	SaveChunk(ctx context.Context, fileHash, index string, size int64, reader ChunkReader) error
+	// ChunkUploadBytes 返回该文件已落盘分片的总字节数，以及 index 这一片的字节数。
+	// index 还没有落盘时 current 为 0。
+	ChunkUploadBytes(ctx context.Context, fileHash, index string) (total, current int64, err error)
 	// ListUploadedChunks 列出指定文件 hash 已上传的分片索引。
 	ListUploadedChunks(ctx context.Context, fileHash string) ([]string, error)
 	// GetCompletedFile 检查最终合并文件是否已存在，并返回其路径/URL。

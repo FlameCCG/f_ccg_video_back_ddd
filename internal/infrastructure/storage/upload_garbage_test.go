@@ -58,6 +58,26 @@ func TestLocalMergeClosesSourceBeforeRename(t *testing.T) {
 	}
 }
 
+func TestLocalChunkUploadBytesSumsSavedParts(t *testing.T) {
+	root := t.TempDir()
+	driver := NewLocalStorage(&site.Storage{ChunkDir: root}, zap.NewNop())
+	if err := driver.SaveChunk(t.Context(), "hash", "0", 1, bytes.NewReader([]byte("x"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.SaveChunk(t.Context(), "hash", "1", 2, bytes.NewReader([]byte("yz"))); err != nil {
+		t.Fatal(err)
+	}
+
+	total, current, err := driver.ChunkUploadBytes(t.Context(), "hash", "0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if total != 3 || current != 1 {
+		t.Fatalf("total=%d current=%d, want 3 and 1", total, current)
+	}
+}
+
 func TestFailedLocalChunkRemovesTemporaryFile(t *testing.T) {
 	root := t.TempDir()
 	driver := NewLocalStorage(&site.Storage{ChunkDir: root}, zap.NewNop())

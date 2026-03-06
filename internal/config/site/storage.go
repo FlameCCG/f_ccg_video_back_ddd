@@ -3,9 +3,9 @@ package site
 // Storage 组合上传大小/分片限制、每日不同源文件配额、清理保留期与存储驱动配置。
 // 大小字段以 MB 配置，保留期以小时配置；上层用例负责换算，驱动方法中的 size 通常是字节数。
 type Storage struct {
-	MaxChunkSize                    int64  `mapstructure:"maxChunkSize" json:"maxChunkSize"`         // 单位：MB
-	ChunkSize                       int64  `mapstructure:"chunkSize" json:"chunkSize"`               // 单位：MB
-	MaxFileSize                     int64  `mapstructure:"maxFileSize" json:"maxFileSize"`           // 单位：MB
+	MaxChunkSize                    int64  `mapstructure:"maxChunkSize" json:"maxChunkSize"`         // 单分片上限，单位 MB
+	ChunkSize                       int64  `mapstructure:"chunkSize" json:"chunkSize"`               // 默认分片体积（MB）；maxChunkSize 为空时用作上限
+	MaxFileSize                     int64  `mapstructure:"maxFileSize" json:"maxFileSize"`           // 单文件上限（MB），上传和合并时校验
 	MaxUploadNum                    int    `mapstructure:"maxUploadNum" json:"maxUploadNum"`         // 单个作品的分P上限
 	DailyUploadLimit                int    `mapstructure:"dailyUploadLimit" json:"dailyUploadLimit"` // 普通用户每日不同源文件上限
 	UnmergedChunkRetentionHours     int    `mapstructure:"unmergedChunkRetentionHours" json:"unmergedChunkRetentionHours"`
