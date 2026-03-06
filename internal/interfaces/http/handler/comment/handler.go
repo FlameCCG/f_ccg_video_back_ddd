@@ -1,6 +1,10 @@
-// Package comment 提供评论 HTTP 处理器。
+// Package comment 把评论创建、回复、点赞、置顶和管理查询的 HTTP 请求翻译为应用用例调用。
 //
-// gin.Context 止于接口层，应用层仅接收 context.Context 与 DTO。
+// handler.go 声明显式依赖，其他文件按入口拆分；参数结构体保留 Gin 绑定与校验标签。
+// 从请求取得参数和经过鉴权的身份，构造应用参数后传 c.Request.Context()，最后映射错误和响应。
+// gin.Context 止步于接口层，领域规则、事务、缓存与跨上下文调用由 application 编排。
+// 具体入口与权限链到 internal/interfaces/http/router 中查看，业务允许条件还需由应用与领域判断。
+// JSON 字段、状态码和响应文案属于对外契约。
 package comment
 
 import (

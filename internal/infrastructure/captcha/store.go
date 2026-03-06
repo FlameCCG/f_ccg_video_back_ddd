@@ -1,4 +1,9 @@
-// Package captcha 提供验证码基础设施：点击/滑块验证码生成与校验、图形验证码存储。
+// Package captcha 实现交互验证码、图形验证码和邮件验证码存储。
+//
+// click.go/slide.go 适配验证码库，store.go/email.go 实现状态存取，email_generator.go 生成邮件验证码。
+// 生成、发送、验证和限流分属不同步骤，是否需要某类验证码由登录场景与站点配置共同决定。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package captcha
 
 import (

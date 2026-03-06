@@ -18,7 +18,7 @@ type UserBanRecord struct {
 	IsUnbanned bool            `gorm:"not null;default:0;index;comment:是否已解封" json:"isUnbanned"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 user_ban_records，保持迁移与仓储 SQL 使用同一张表。
 func (UserBanRecord) TableName() string {
 	return "user_ban_records"
 }

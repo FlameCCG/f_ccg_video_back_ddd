@@ -1,4 +1,9 @@
-// Package rule 描述 MySQL 表到 Elasticsearch 索引/类型的映射规则.
+// Package rule 描述 MySQL 表到 Elasticsearch 索引和字段的映射。
+//
+// 规则供 River 解释表、主键、字段筛选与索引目标，不是领域实体的另一种定义。
+// 变更映射需要同时检查索引 mapping、存量文档和增量转换，单改配置不会自动重建历史文档。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package rule
 
 import ( // 导入所需标准库与第三方库

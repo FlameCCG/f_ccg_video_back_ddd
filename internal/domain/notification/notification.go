@@ -1,4 +1,10 @@
-// Package notification 是通知上下文的领域层：通知实体、分类规则与仓储接口。
+// Package notification 表达通知实体、分类及通知仓储接口。
+//
+// notification.go 描述通知记录的业务字段，repository.go 表达创建、查询和已读等持久化需求。
+// 用户昵称、角标缓存与私信未读数由应用层组合；它们不应使通知实体依赖其他上下文服务。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package notification
 
 import (

@@ -1,6 +1,10 @@
-// Package video 提供视频 HTTP 处理器。
+// Package video 把上传、投稿、改稿、播放、互动、弹幕和管理的 HTTP 请求翻译为应用用例调用。
 //
-// gin.Context 止于接口层，应用层仅接收 context.Context 与 DTO。
+// handler.go 声明显式依赖，其他文件按入口拆分；参数结构体保留 Gin 绑定与校验标签。
+// 从请求取得参数和经过鉴权的身份，构造应用参数后传 c.Request.Context()，最后映射错误和响应。
+// gin.Context 止步于接口层，领域规则、事务、缓存与跨上下文调用由 application 编排。
+// publish.go/upload.go 将上传与投稿命令交给应用服务；admin_* 入口的管理权限来自路由中间件。
+// JSON 字段、状态码和响应文案属于对外契约。
 package video
 
 import (

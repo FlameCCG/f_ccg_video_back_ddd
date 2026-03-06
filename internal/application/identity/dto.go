@@ -1,6 +1,11 @@
-// Package identity 是身份上下文的应用层：用例服务、DTO（含读模型）与查询端口。
+// Package identity 编排账号、登录、第三方认证、封禁、经验与硬币。
 //
-// 本包不依赖 gin / gorm / redis：数据访问一律经端口，实现在 infrastructure。
+// 从 login_service.go、registration_service.go 进入主流程；ports_login.go 描述令牌、验证码与第三方能力。
+// 领域实体只表达身份规则，密码散列、JWT、OAuth HTTP、缓存与数据库由适配器实现。
+// 账号改名等操作还影响视频作者和搜索读模型，协作端口由 bootstrap/adapters 接到提供方。
+//
+// 本层接收 context.Context 与命令/查询参数，不接收 gin.Context，也不选择 GORM、Redis 或 Kafka 实现。
+// provider.go 只汇总本上下文构造器；具体实现和跨上下文端口在 bootstrap 绑定。
 package identity
 
 import (

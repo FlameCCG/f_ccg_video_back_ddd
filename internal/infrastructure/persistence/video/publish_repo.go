@@ -12,7 +12,8 @@ import (
 
 // Persist 在单事务中写入视频、标签、分 P 与初始资源。
 //
-// 源文件名超长等数据库错误经 domain.MapSourceFileNameDBError 转为可读业务文案。
+// publish_at 与 is_scheduled 同步写入视频行；事务不回滚已上传对象，也不保证提交后的 Kafka 投递。
+// 源文件名超长等数据库错误经 domain.MapSourceFileNameDBError 转为用户可读文案。
 func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraft) error {
 	if draft == nil || draft.Video == nil {
 		return domain.ErrParamInvalid
@@ -85,6 +86,8 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 		return err
 	}
 
+	// 只有数据库事务成功后才向投稿结果回填视频主键与时间。
+	// 分P ID 在事务中回填用于后续派发；调用方必须先检查 Persist 的错误再使用这些结果。
 	draft.Video.ID = row.ID
 	draft.Video.CreatedAt = row.CreatedAt
 	draft.Video.UpdatedAt = row.UpdatedAt

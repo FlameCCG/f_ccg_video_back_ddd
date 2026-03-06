@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminReportListReq is an exported API type.
+// AdminReportListReq 按举报对象种类、处理状态与分页查询举报；对象种类不是视频的审核状态。
 type AdminReportListReq struct {
 	Type     string            `form:"type" binding:"required,oneof=video danmu"`
 	Status   enum.ReportStatus `form:"status" binding:"omitempty"`
@@ -53,7 +53,7 @@ func (h *AdminHandler) AdminReportListView(c *gin.Context) {
 	}
 }
 
-// AdminReportHandleReq is an exported API type.
+// AdminReportHandleReq 表达同类举报的批量处理结论和备注，处理人从认证上下文取得。
 type AdminReportHandleReq struct {
 	Type       string            `json:"type" binding:"required,oneof=video danmu"`
 	ReportIDs  []uint            `json:"reportIds" binding:"required,min=1,dive,gt=0"`
@@ -98,7 +98,7 @@ func (h *AdminHandler) AdminReportHandleView(c *gin.Context) {
 	res.OkWithData(gin.H{"handled": affected}, c)
 }
 
-// AdminDanmuListReq is an exported API type.
+// AdminDanmuListReq 按发送用户、用户名和内容关键字筛选管理端弹幕列表。
 type AdminDanmuListReq struct {
 	UserID   uint   `form:"userId" binding:"omitempty,gt=0"`
 	Username string `form:"username"`
@@ -127,7 +127,7 @@ func (h *AdminHandler) AdminDanmuListView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// AdminDeleteDanmuReq is an exported API type.
+// AdminDeleteDanmuReq 指定管理端批量删除的弹幕 ID，由用例协调点赞和分P计数处理。
 type AdminDeleteDanmuReq struct {
 	DanmuIDs []uint `json:"danmuIds" binding:"required,min=1,dive,gt=0"`
 }

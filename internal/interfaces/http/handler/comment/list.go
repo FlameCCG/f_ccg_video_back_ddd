@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CommentListReq is an exported API type.
+// CommentListReq 描述视频或动态的根评论分页与排序；评论目标合法性由应用/领域规则继续校验。
 type CommentListReq struct {
 	VideoID   uint   `form:"videoId" binding:"omitempty,gt=0" label:"视频ID"`
 	DynamicID uint   `form:"dynamicId" binding:"omitempty,gt=0" label:"动态ID"`
@@ -17,7 +17,7 @@ type CommentListReq struct {
 	SortBy    string `form:"sortBy" label:"排序方式"` // time/hot
 }
 
-// ListView handles the corresponding HTTP request.
+// ListView 将列表参数交给评论查询用例，按统一分页信封返回。
 func (h *Handler) ListView(c *gin.Context) {
 	req := middlewares.GetBound[CommentListReq](c)
 	if (req.VideoID > 0 && req.DynamicID > 0) || (req.VideoID == 0 && req.DynamicID == 0) {

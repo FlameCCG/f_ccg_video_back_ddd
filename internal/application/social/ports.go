@@ -6,7 +6,14 @@ import (
 	domain "f_ccg_video_back_ddd/internal/domain/social"
 )
 
-// 读侧查询端口的实现在 infrastructure/persistence/social，可读取 users / user_confs / dynamics 表；写侧通过协作端口执行。
+// ---------------------------------------------------------------------------
+// 读侧查询端口：实现落在本上下文的 infrastructure/persistence/social。
+// 其中 users / user_confs / dynamics 的读取按 docs/architecture.md 第 4 节
+// 「读侧投影允许直读其它上下文的表」执行；写侧一律经下方协作端口。
+// ---------------------------------------------------------------------------
+
+// 端口阅读：用户存在性、粉丝指标和列表投影由本地端口表达；隐私规则仍由 domain/social 决定。
+// 保留的索引同步接口不表示关注写用例当前会同步调用它，实际用户文档更新还经过 River。
 
 // RelationQuery 关注关系读侧端口。
 type RelationQuery interface {

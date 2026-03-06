@@ -1,4 +1,9 @@
-// Package identity 是身份上下文的缓存适配器：用户状态缓存与创作中心指标存储。
+// Package identity 适配用户状态快照与创作中心指标存储。
+//
+// user_status_cache.go 通过 generation 协调失效和回填，creator_metric_store.go 保存按时间组织的指标。
+// 封禁状态涉及授权，读取失败与“正常用户”应按上层错误处理区分，不能只看缓存是否命中。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package identity
 
 import (

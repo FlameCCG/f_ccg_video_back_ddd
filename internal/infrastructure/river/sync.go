@@ -190,6 +190,8 @@ func (h *eventHandler) String() string { // 标识 handler 名称（日志/调�
 	return "ESRiverEventHandler"
 }
 
+// syncLoop 先完成 ES 批量写入，再持久化对应 binlog 位点。
+// 如果先推进位点再写 ES，重启会跳过未写入的数据；相反的顺序可能重放，因此文档 ID 和覆盖写必须容忍重复。
 func (r *River) syncLoop() { // 核心批处理协程：聚合 BulkRequest，控制 flush 与位点落盘
 	bulkSize := defaultBulkSize             // 默认批量大小
 	if r.cfg != nil && r.cfg.BulkSize > 0 { // 可来自配置
@@ -1147,6 +1149,8 @@ func (r *River) loadUserRelationStats(userID uint64) (int64, []string, []string,
 	return followerCount, followingNames, friendNames, nil
 }
 
+// doBulkWithRetry 只对已分类为暂时性故障的批量写入做有限指数退避。
+// 永久错误或重试耗尽向上返回并停止位点推进；不能把 HTTP 层成功当成所有 bulk item 已成功。
 func (r *River) doBulkWithRetry(reqs []*elastic.BulkRequest) error {
 	backoff := riverBulkInitialBackoff
 

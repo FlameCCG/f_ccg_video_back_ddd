@@ -40,6 +40,9 @@ func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery, logger 
 }
 
 // Search 同时查询视频/用户/标签三个维度（标签由视频命中派生）。
+//
+// 标签总量是本次视频命中派生的标签数，不是独立搜索整个标签表的总数。
+// ES 超时后的 SQL 回退使用父 context，既避免复用已过期的子预算，也仍受请求总取消约束。
 func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
 	if !s.index.Available() {
 		return s.fallbackSearch(ctx, opts)

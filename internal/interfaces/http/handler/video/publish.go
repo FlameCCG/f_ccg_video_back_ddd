@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// PublishVideoReq is an exported API type.
+// PublishVideoReq 是 HTTP 投稿载荷，支持单源文件或 Parts；上传是否完成需由服务端重新核验，不能仅信任 FilePath。
 type PublishVideoReq struct {
 	Title       string                `json:"title" binding:"required,max=200" label:"视频标题"`
 	Description string                `json:"description" binding:"max=5000" label:"视频描述"`
@@ -27,7 +27,7 @@ type PublishVideoReq struct {
 	PublishTime time.Time             `json:"publishTime" label:"定时发布时间"`
 }
 
-// VideoPartPublishReq is an exported API type.
+// VideoPartPublishReq 描述一次多分P投稿中的源文件与可选标题，数组顺序映射到稿件分P排序。
 type VideoPartPublishReq struct {
 	Title    string `json:"title" binding:"max=200" label:"分P标题"`
 	FilePath string `json:"filePath" label:"文件路径"`
@@ -43,7 +43,7 @@ type PublishVideoResp struct {
 	Cover       string     `json:"cover"`
 }
 
-// PublishVideoView handles the corresponding HTTP request.
+// PublishVideoView 从认证上下文取得作者身份，把请求翻译为 PublishVideoCommand，保存与异步派发由应用服务编排。
 func (h *Handler) PublishVideoView(c *gin.Context) {
 	req := middlewares.GetBound[PublishVideoReq](c)
 	uid, loggedIn := getUID(c)
@@ -103,7 +103,7 @@ func (h *Handler) PublishVideoView(c *gin.Context) {
 	}, c)
 }
 
-// UpdateVideoReq is an exported API type.
+// UpdateVideoReq 是部分改稿载荷；指针字段区分缺省和显式零值，TagIDs 的 nil 与空数组分别表示保留和清空。
 type UpdateVideoReq struct {
 	VideoID     uint       `json:"videoId" binding:"required"`
 	Title       *string    `json:"title" binding:"omitempty,max=200"`
@@ -116,7 +116,7 @@ type UpdateVideoReq struct {
 	PublishTime *time.Time `json:"publishTime"`
 }
 
-// UpdateVideoView handles the corresponding HTTP request.
+// UpdateVideoView 将当前作者身份和可选修改字段交给改稿用例，不在接口层直接推导视频状态。
 func (h *Handler) UpdateVideoView(c *gin.Context) {
 	req := middlewares.GetBound[UpdateVideoReq](c)
 

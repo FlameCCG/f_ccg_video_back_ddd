@@ -4,8 +4,8 @@ package enum
 type WorkType int8
 
 const (
-	// WorkTypeVideo 常量.
+	// WorkTypeVideo 标记活动/已读记录对应视频作品。
 	WorkTypeVideo WorkType = iota + 1 // 视频
-	// WorkTypeDynamic 常量.
+	// WorkTypeDynamic 标记活动/已读记录对应图文动态。
 	WorkTypeDynamic // 动态（图文）
 )

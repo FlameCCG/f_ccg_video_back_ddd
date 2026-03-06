@@ -1,6 +1,10 @@
-// Package search 承载搜索领域中与框架无关的纯业务规则，包括关键词规范化、分页与排序边界、@ 提及匹配、热词权重、向量输入构造与封面取材。
+// Package search 表达搜索词、分页、热词、提及和向量输入规则。
 //
-// 本包不依赖 gin / gorm / redis / elastic / viper / zap。
+// keyword.go/pagination.go 规范输入边界，vector.go 构造向量化文本和封面取材信息。
+// 这些函数不连接 Elasticsearch、Redis 或嵌入模型；实际查询、回退、缓存和重建由应用层编排。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package search
 
 // 视频排序枚举.

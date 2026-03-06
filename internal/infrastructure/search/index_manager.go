@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// ErrIndexClientUnavailable 表示 ES 客户端未初始化，索引任务无法执行。
+// ErrIndexClientUnavailable 表示 ES 客户端未初始化，索引运维任务无法执行。
 //
 // CLI 返回非 0 退出码并显示可读原因。
 var ErrIndexClientUnavailable = errors.New("elasticsearch client not initialized")

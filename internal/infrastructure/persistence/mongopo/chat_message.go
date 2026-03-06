@@ -6,7 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
-// ChatMessageMedia 类型.
+// ChatMessageMedia 描述图片/表情等消息的媒体地址与可选尺寸，BSON 的 omitempty 控制缺省字段落库。
 type ChatMessageMedia struct {
 	URL    string `bson:"url" json:"url"`
 	Mime   string `bson:"mime,omitempty" json:"mime,omitempty"`

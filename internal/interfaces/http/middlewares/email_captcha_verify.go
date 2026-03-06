@@ -20,19 +20,19 @@ const (
 	emailCaptchaVerifyWindow = 10 * time.Minute
 )
 
-// EmailCaptchaVerifyReq 类型.
+// EmailCaptchaVerifyReq 承载邮件验证码标识、输入值和目标邮箱，用于校验与多维限流。
 type EmailCaptchaVerifyReq struct {
 	EmailID   string `json:"emailID"`
 	EmailCode string `json:"emailCode"`
 	Email     string `json:"email"`
 }
 
-// EmailCaptchaVerify 函数.
+// EmailCaptchaVerify 在站点启用邮件验证码时校验；未开启则继续执行下游链。
 func (m *Middlewares) EmailCaptchaVerify() gin.HandlerFunc {
 	return m.emailCaptchaVerify(false)
 }
 
-// EmailCaptchaVerifyRequired 函数.
+// EmailCaptchaVerifyRequired 强制执行邮件验证码校验，用于不允许被站点可选开关跳过的入口。
 func (m *Middlewares) EmailCaptchaVerifyRequired() gin.HandlerFunc {
 	return m.emailCaptchaVerify(true)
 }

@@ -7,18 +7,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CommentLikeReq is an exported API type.
+// CommentLikeReq 指定点赞切换的评论 ID，点赞人取自认证上下文。
 type CommentLikeReq struct {
 	CommentID uint `json:"commentId" binding:"required" label:"评论ID"`
 }
 
-// CommentLikeResp is an exported API type.
+// CommentLikeResp 返回切换后的点赞数与当前用户是否已点赞，两者用于页面同步状态。
 type CommentLikeResp struct {
 	LikeCount int64 `json:"likeCount"`
 	IsLiked   bool  `json:"isLiked"`
 }
 
-// LikeView handles the corresponding HTTP request.
+// LikeView 调用评论点赞切换用例，返回当前计数和用户标记。
 func (h *Handler) LikeView(c *gin.Context) {
 	req := middlewares.GetBound[CommentLikeReq](c)
 

@@ -8,7 +8,7 @@ type VideoCoin struct {
 	Coins   int  `gorm:"not null;default:1;comment:投币数量(1-2)" json:"coins"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 video_coins，保持迁移与仓储 SQL 使用同一张表。
 func (VideoCoin) TableName() string {
 	return "video_coins"
 }

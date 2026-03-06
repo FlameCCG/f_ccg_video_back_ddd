@@ -1,4 +1,7 @@
-// Package coinutil provides package functionality.
+// Package coinutil 统一硬币展示的舍入和格式。
+//
+// Round 保留一位小数，Format 输出固定一位小数的字符串。
+// 这是浮点值的显示/计算辅助，不提供数据库事务或高精度货币记账保证。
 package coinutil
 
 import (

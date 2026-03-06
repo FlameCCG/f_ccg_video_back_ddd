@@ -1,6 +1,6 @@
 package site
 
-// Register 类型.
+// Register 配置注册场景的验证码能力；邮件验证与交互验证码是分别控制的步骤。
 type Register struct {
 	EmailCaptcha            bool `mapstructure:"emailCaptcha" json:"emailCaptcha"`
 	TextGraphicCaptcha      bool `mapstructure:"textGraphicCaptcha" json:"textGraphicCaptcha"`

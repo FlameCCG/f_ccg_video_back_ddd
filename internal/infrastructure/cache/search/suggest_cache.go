@@ -1,4 +1,9 @@
-// Package search 是搜索限界上下文的缓存适配器：联想结果进程内缓存与 Redis 热搜词榜。
+// Package search 适配搜索联想进程内缓存与 Redis 热词榜。
+//
+// suggest_cache.go 与 hot_keyword_store.go 使用不同存储和失效方式；进程内命中不代表多实例共享。
+// 缓存格式、key 和 TTL 与调用方契约配合，搜索和回退策略仍属于 application/search。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package search
 
 import (

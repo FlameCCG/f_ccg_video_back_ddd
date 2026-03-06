@@ -25,7 +25,7 @@ var (
 	errUploadImageFailed = errors.New("上传图片失败")
 )
 
-// VideoReportReq is an exported API type.
+// VideoReportReq 携带作品举报目标、原因与补充说明，举报人从认证上下文取得。
 type VideoReportReq struct {
 	VideoID uint   `form:"videoId" json:"videoId" binding:"required,gt=0"`
 	Reason  string `form:"reason" json:"reason" binding:"required,max=200"`
@@ -62,7 +62,7 @@ func (h *Handler) ReportVideoView(c *gin.Context) {
 	res.OkWithData(report, c)
 }
 
-// DanmuReportReq is an exported API type.
+// DanmuReportReq 携带弹幕举报目标、原因与说明，与举报处理状态分开建模。
 type DanmuReportReq struct {
 	DanmuID uint   `json:"danmuId" binding:"required,gt=0"`
 	Reason  string `json:"reason" binding:"required,max=200"`

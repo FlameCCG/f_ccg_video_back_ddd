@@ -1,4 +1,9 @@
-// Package dynamic 是动态上下文的缓存适配器：关注未读数缓存。
+// Package dynamic 适配关注动态未读数缓存。
+//
+// unread_follow_cache.go 以用户维度保存派生计数，读取或已读变化后按用例要求失效。
+// 它加速展示，不替代动态活动与已读记录本身。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package dynamic
 
 import (

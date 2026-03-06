@@ -1,7 +1,10 @@
-// Package contentops 是内容运营上下文（站点配置 + 站点统计 + 轮播图）的领域层。
+// Package contentops 表达轮播图字段裁定和站点统计计算规则。
 //
-// 本包为纯 Go 实现：不 import gin / gorm / redis / viper / zap，
-// 只承载轮播图的字段裁定规则与站点统计的计算规则。
+// banner.go 决定轮播图的合法字段与操作，stats.go 计算统计展示值，repository.go 声明持久化能力。
+// 站点配置的文件格式和热更新机制不属于本领域包；它们分别位于 internal/config 与 infrastructure/config。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package contentops
 
 import (

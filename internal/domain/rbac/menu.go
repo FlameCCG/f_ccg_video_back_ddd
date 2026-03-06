@@ -1,7 +1,11 @@
-// Package rbac 是 RBAC 上下文的领域层：角色、菜单、权限覆盖判定、角色继承规则与仓储接口。
+// Package rbac 表达角色、菜单、权限覆盖与角色继承规则。
 //
-// 本包为纯 Go：不依赖 gin / gorm / redis / casbin / viper / zap 等任何框架。
-// Casbin 的通配匹配能力经 PathMatcher 端口注入，实现留在 infrastructure。
+// inherit.go 检查继承关系，permission.go 计算授权覆盖，menu_icon.go/menu_suggestion.go 校验不可信展示输入。
+// repository.go 定义仓储契约，PathMatcher 把路径匹配能力抽象为端口；本包不创建 Casbin enforcer。
+// 菜单是否展示与 API 是否允许调用是不同判断，不能仅凭前端菜单树推导服务端权限。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package rbac
 
 import (

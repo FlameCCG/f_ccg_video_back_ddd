@@ -7,7 +7,7 @@
 
 ## 模块目录
 1. [用户管理](01-user-management.md) - 注册登录、用户信息、设置、记录
-2. [验证码管理](02-captcha-management.md) - 图形/滑块/点击/邮箱验证码获取与校验
+2. [验证码管理](02-captcha-management.md) - 按场景选择交互类型，获取图形/滑块/点选及邮箱验证码
 3. [站点管理](03-site-management.md) - 站点配置与统计、心跳/打点
 4. [轮播图管理](04-banner-management.md) - 轮播图获取与展示
 5. [视频管理](05-video-management.md) - 视频浏览、搜索、互动、投稿、上传、弹幕、收藏/历史

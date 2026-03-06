@@ -1,6 +1,6 @@
 package config
 
-// AI 类型.
+// AI 分别配置聊天、图片、视频和嵌入能力；各上游使用自己的模型标识与凭据。
 // 豆包图/视频/向量 Embedding 走 Eino Ark SDK（默认方舟 BaseURL），无需配置 doubaoBaseURL / embeddingModelBaseURL.
 // 聊天走 Eino Claude ChatModel 适配 Anthropic Messages 协议，
 // 使用 chatModel + chatModelBaseURL + chatModelAPIKey，无全局 baseURL/apiKey/textModel 兜底.
@@ -43,7 +43,7 @@ type AI struct {
 	TimeoutSec      int `mapstructure:"timeoutSec" json:"timeoutSec"`
 }
 
-// AIModel 类型.
+// AIModel 是一项可选配置的显示标签与实际值；界面展示 Label，调用上游使用 Value。
 type AIModel struct {
 	Label string `mapstructure:"label" json:"label"`
 	Value string `mapstructure:"value" json:"value"`

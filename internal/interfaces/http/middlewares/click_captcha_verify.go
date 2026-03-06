@@ -19,7 +19,7 @@ type clickCaptchaVerifyReq struct {
 	Dots  []identityapp.ClickCaptchaPoint `json:"captchaDots"`
 }
 
-// ClickCaptchaVerify 函数.
+// ClickCaptchaVerify 按登录场景点击验证码开关校验交互结果，失败终止中间件链。
 func (m *Middlewares) ClickCaptchaVerify() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !m.captcha.ClickCaptchaEnabled() {

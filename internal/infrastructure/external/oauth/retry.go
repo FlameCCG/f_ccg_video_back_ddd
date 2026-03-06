@@ -1,7 +1,9 @@
-// Package oauth 提供 QQ、Google、GitHub、Linux.do 与 X 的登录调用适配器及一次性 state 存储。
+// Package oauth 实现第三方 OAuth 登录与一次性 state 存储的外部协议适配。
 //
-// 实现 application/identity 的 OAuthStateStore 与 provider 客户端端口；
-// 授权、令牌、用户信息端点及其参数、超时与重试策略属于登录协议。
+// 各 provider 文件处理上游令牌和资料接口，state_store.go 以 Redis 消费 state，retry.go 约束 HTTP 重试。
+// state 的一次性校验防止回调串用；本包取得外部身份事实后，由 identity 用例决定本地账号与令牌。
+//
+// 上层依赖端口而非客户端库，测试可替换端口或 HTTP 服务以验证协议边界。
 package oauth
 
 import (

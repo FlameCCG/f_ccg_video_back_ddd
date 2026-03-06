@@ -91,6 +91,9 @@ func (s *OAuthLoginService) StoreOAuthState(ctx context.Context, provider, state
 }
 
 // ConsumeOAuthState 校验并消费一次性 OAuth state，防止授权码重放。
+//
+// state 绑定本次发起的 provider，消费成功后不能再用；它是回调关联校验，不替代上游对授权码的验证。
+// 此步骤由接口回调流程调用，Login 方法本身不自动消费 state，新增入口需维持同样的前置校验。
 func (s *OAuthLoginService) ConsumeOAuthState(ctx context.Context, provider, state string) error {
 	return s.states.Consume(ctx, provider, state)
 }

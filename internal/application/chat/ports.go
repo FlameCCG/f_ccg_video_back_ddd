@@ -2,6 +2,9 @@ package chat
 
 import "context"
 
+// 端口阅读：写侧仓储位于 domain/chat，本文件补充会话列表、关注事实与通知角标等应用协作能力。
+// 读模型无需先还原完整写实体，跨通知上下文依赖经 bootstrap 绑定。
+
 // Query 私信读侧查询端口（读模型由 infrastructure/persistence/chat 直接组装）。
 type Query interface {
 	// ListConversations 会话列表分页（按 updatedAt 倒序），返回读模型与总数。

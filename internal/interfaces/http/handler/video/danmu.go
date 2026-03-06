@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DanmuSendReq is an exported API type.
+// DanmuSendReq 携带作品/分P与弹幕样式，TimeOffset 是播放器时间轴秒数，发送时间由服务端另行记录。
 type DanmuSendReq struct {
 	VideoID    uint   `json:"videoId" binding:"required"`
 	PartID     uint   `json:"partId" binding:"omitempty,gt=0"`
@@ -49,7 +49,7 @@ func (h *Handler) SendDanmuView(c *gin.Context) {
 	res.OkWithData(dto, c)
 }
 
-// DanmuWSReq is an exported API type.
+// DanmuWSReq 描述弹幕房间握手参数；Token 用于前置身份处理，Origin 校验另由升级器负责。
 type DanmuWSReq struct {
 	VideoID uint   `form:"videoId" binding:"required"`
 	PartID  uint   `form:"partId" binding:"omitempty,gt=0"`
@@ -79,7 +79,7 @@ func (h *Handler) DanmuWSView(c *gin.Context) {
 	}
 }
 
-// DanmuHistoryReq is an exported API type.
+// DanmuHistoryReq 按播放时间区间读取历史弹幕，Start/End 不表示日历发送时间。
 type DanmuHistoryReq struct {
 	VideoID uint `form:"videoId" binding:"required"`
 	PartID  uint `form:"partId" binding:"omitempty,gt=0"`
@@ -114,7 +114,7 @@ func (h *Handler) DanmuHistoryView(c *gin.Context) {
 	res.OkWithList(list, int64(len(list)), c)
 }
 
-// DanmuRoomListReq is an exported API type.
+// DanmuRoomListReq 描述房间分页与播放区间/发送日期筛选，业务归一化和可见性由用例检查。
 type DanmuRoomListReq struct {
 	VideoID  uint   `form:"videoId" binding:"required,gt=0"`
 	PartID   uint   `form:"partId" binding:"omitempty,gt=0"`
@@ -199,7 +199,7 @@ func (h *Handler) DanmuMonthDatesView(c *gin.Context) {
 	res.OkWithData(result, c)
 }
 
-// DanmuLikeReq is an exported API type.
+// DanmuLikeReq 指定点赞切换的弹幕 ID，点赞用户来自认证上下文。
 type DanmuLikeReq struct {
 	DanmuID uint `json:"danmuId" binding:"required,gt=0"`
 }
@@ -225,7 +225,7 @@ func (h *Handler) DanmuLikeView(c *gin.Context) {
 	res.OkWithData(result, c)
 }
 
-// DeleteDanmuReq is an exported API type.
+// DeleteDanmuReq 指定作者侧删除的单条弹幕，资源归属和计数维护由应用用例执行。
 type DeleteDanmuReq struct {
 	DanmuID uint `json:"danmuId" binding:"required,gt=0"`
 }
@@ -250,7 +250,7 @@ func (h *Handler) DeleteDanmuView(c *gin.Context) {
 	res.OkWithMsg("删除成功", c)
 }
 
-// CreatorDanmuListReq is an exported API type.
+// CreatorDanmuListReq 查询当前创作者相关的弹幕分页，支持排序与内容过滤。
 type CreatorDanmuListReq struct {
 	Page     int    `form:"page" binding:"omitempty,min=1"`
 	PageSize int    `form:"pageSize" binding:"omitempty,min=1,max=50"`

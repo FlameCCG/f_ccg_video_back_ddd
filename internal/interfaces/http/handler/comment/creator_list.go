@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreatorCommentListReq is an exported API type.
+// CreatorCommentListReq 查询当前创作者作品下的评论，作品归属通过登录身份限定。
 type CreatorCommentListReq struct {
 	Page     int    `form:"page" binding:"omitempty,min=1"`
 	PageSize int    `form:"pageSize" binding:"omitempty,min=1,max=50"`

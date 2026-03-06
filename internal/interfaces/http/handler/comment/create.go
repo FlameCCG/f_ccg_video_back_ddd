@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreateCommentReq is an exported API type.
+// CreateCommentReq 表达评论目标、正文、可选父评论和提及/图片；回复的根节点与目标一致性由领域和用例判断。
 type CreateCommentReq struct {
 	VideoID   uint     `json:"videoId" binding:"omitempty,gt=0" label:"视频ID"`
 	DynamicID uint     `json:"dynamicId" binding:"omitempty,gt=0" label:"动态ID"`
@@ -19,7 +19,7 @@ type CreateCommentReq struct {
 	Pictures  []string `json:"pictures" label:"评论附带图片列表"`
 }
 
-// CreateView handles the corresponding HTTP request.
+// CreateView 从可信请求身份构造评论命令，并把协议层字段交给评论应用服务。
 func (h *Handler) CreateView(c *gin.Context) {
 	req := middlewares.GetBound[CreateCommentReq](c)
 

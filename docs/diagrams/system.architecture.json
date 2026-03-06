@@ -26,7 +26,7 @@
           "worker",
           "storage"
         ],
-        "note": "数据库提交后启动异步派发，响应不等待 Kafka。消费者与 HTTP 同进程；入队、转码完成、可播放各有边界。"
+        "note": "数据库提交后启动异步派发，响应不等待 Kafka。消费者默认随 HTTP，也可独立运行；入队、完成、可播放各有边界。"
       },
       {
         "id": "search",
@@ -181,7 +181,7 @@
       "id": "worker",
       "type": "backend",
       "label": "转码消费者",
-      "sublabel": "同进程 · FFmpeg",
+      "sublabel": "可独立 · FFmpeg",
       "pos": [
         590,
         542
@@ -292,7 +292,7 @@
       "title": "最后分清：查询与运行边界",
       "items": [
         "River 派生关键词索引；向量另行维护，应用查询 ES。",
-        "HTTP、River、转码、Cron 同进程；跨存储没有统一事务。"
+        "转码可独立运行；River、Cron 随 HTTP，跨存储无统一事务。"
       ]
     }
   ]

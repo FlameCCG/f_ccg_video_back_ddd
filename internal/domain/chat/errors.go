@@ -1,5 +1,10 @@
-// Package chat 是私信上下文的领域层：会话/消息实体、参与者规则、
-// 发送频率限制规则、未读推进规则与分页游标规则（纯 Go，零框架依赖）。
+// Package chat 表达私信会话、消息与发送约束。
+//
+// conversation.go 定义参与者与固定会话标识，message.go/send_limit.go/paging.go 处理消息合法性、发送限制和游标。
+// repository.go 声明消息持久化所需能力；Mongo BSON 与索引留在 infrastructure/persistence/chat。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package chat
 
 import "errors"

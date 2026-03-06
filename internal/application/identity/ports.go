@@ -6,6 +6,9 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
+// 端口阅读：身份用例只声明视频、角色、搜索、横幅和资料等所需能力，不导入提供方上下文模型。
+// 第三方 HTTP、验证码和发信端口集中于 ports_login.go，领域写仓储仍在 domain/identity。
+
 // AdminUserQuery 管理端用户列表查询端口（读侧，实现在 infrastructure）。
 type AdminUserQuery interface {
 	List(ctx context.Context, params AdminUserListParams) ([]AdminUserListItem, int64, error)

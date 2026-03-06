@@ -65,7 +65,8 @@ import (
 	"github.com/google/wire"
 )
 
-// RbacProviderSet Rbac 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// RbacProviderSet 装配角色权限与菜单的应用服务、SQL 仓储及 Casbin 适配器。
+// API 元数据从 OpenAPI 读取，实际路由资源仍由 Router 同步。
 var RbacProviderSet = wire.NewSet(
 	// internal/application/rbac
 	applicationRbac.ProviderSet,
@@ -90,7 +91,8 @@ var RbacProviderSet = wire.NewSet(
 	interfacesHttpHandlerRbac.NewHandler,
 )
 
-// ContentOpsProviderSet ContentOps 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// ContentOpsProviderSet 装配运营用例、轮播图仓储、站点统计缓存与配置写回。
+// 同一 ConfigFileWriter 同时满足运营和身份用例的窄接口。
 var ContentOpsProviderSet = wire.NewSet(
 	// internal/application/contentops
 	applicationContentops.ProviderSet,
@@ -113,7 +115,8 @@ var ContentOpsProviderSet = wire.NewSet(
 	interfacesHttpHandlerContentops.NewHandler,
 )
 
-// CommentProviderSet Comment 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// CommentProviderSet 装配评论仓储、读侧投影、点赞缓存与 HTTP 入口。
+// 通知和视频计数等跨上下文能力在 CrossContextProviderSet 中接入。
 var CommentProviderSet = wire.NewSet(
 	// internal/application/comment
 	applicationComment.ProviderSet,
@@ -134,7 +137,8 @@ var CommentProviderSet = wire.NewSet(
 	interfacesHttpHandlerComment.NewHandler,
 )
 
-// DynamicProviderSet Dynamic 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// DynamicProviderSet 装配动态写侧、关注流/活动查询和点赞/已读仓储。
+// 视频置顶与评论清理通过跨上下文端口绑定，领域不导入对方模型。
 var DynamicProviderSet = wire.NewSet(
 	// internal/application/dynamic
 	applicationDynamic.ProviderSet,
@@ -164,7 +168,8 @@ var DynamicProviderSet = wire.NewSet(
 	interfacesHttpHandlerDynamic.NewHandler,
 )
 
-// SocialProviderSet Social 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// SocialProviderSet 装配关注关系写仓储与关系/用户列表投影。
+// 本集合连接应用端口与 SQL 查询实现，隐私判断仍留在业务规则中。
 var SocialProviderSet = wire.NewSet(
 	// internal/application/social
 	applicationSocial.ProviderSet,
@@ -179,7 +184,8 @@ var SocialProviderSet = wire.NewSet(
 	interfacesHttpHandlerSocial.NewHandler,
 )
 
-// ChatProviderSet Chat 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// ChatProviderSet 装配私信应用服务、Mongo 仓储、Redis 事件总线与 Hub。
+// 同一个 Store 满足领域 Repository、应用 Query 和通知侧未读查询端口。
 var ChatProviderSet = wire.NewSet(
 	// internal/application/chat
 	applicationChat.ProviderSet,
@@ -200,7 +206,8 @@ var ChatProviderSet = wire.NewSet(
 	interfacesHttpHandlerChat.NewHandler,
 )
 
-// AIProviderSet AI 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// AIProviderSet 装配AI 编排、作品候选 SQL 投影与模型/资源上游适配器。
+// 聊天、图片、视频和资源代理分别绑定窄接口，不让用例自行构造客户端。
 var AIProviderSet = wire.NewSet(
 	// internal/application/ai
 	applicationAi.ProviderSet,
@@ -220,7 +227,8 @@ var AIProviderSet = wire.NewSet(
 	interfacesHttpHandlerAi.NewHandler,
 )
 
-// SearchProviderSet Search 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// SearchProviderSet 装配搜索用例、SQL 回退、源数据投影和联想/热词缓存。
+// River 作为异步关键词索引链路接入，ES 查询和向量实现由 SearchIndexProviderSet 补充。
 var SearchProviderSet = wire.NewSet(
 	// internal/application/search
 	applicationSearch.ProviderSet,
@@ -248,7 +256,8 @@ var SearchProviderSet = wire.NewSet(
 	infrastructureRiver.NewRiverComponent,
 )
 
-// MediaProviderSet Media 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// MediaProviderSet 装配媒体用例、资源仓储、进度/取消适配器、Kafka 与存储。
+// TranscodeEngine 同时满足探测、检查点、暂存、产物检查和编码窄接口。
 var MediaProviderSet = wire.NewSet(
 	// internal/application/media
 	applicationMedia.ProviderSet,
@@ -279,7 +288,8 @@ var MediaProviderSet = wire.NewSet(
 	wire.Bind(new(applicationVideo.UploadGarbageScanner), new(*infrastructureStorage.UploadGarbageScanner)),
 )
 
-// VideoProviderSet Video 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// VideoProviderSet 装配视频用例、写侧仓储、页面查询、缓存和弹幕入口。
+// ScheduleStore 绑定到 persistence/video 的 MySQL 实现；实时弹幕 Hub 由 NewDanmuHub 打断构造环。
 var VideoProviderSet = wire.NewSet(
 	// internal/application/video
 	applicationVideo.ProviderSet,
@@ -359,7 +369,8 @@ var VideoProviderSet = wire.NewSet(
 	interfacesHttpHandlerVideo.NewHandler,
 )
 
-// PlatformProviderSet Platform 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// PlatformProviderSet 装配周期维护用例与调度所需的队列、快照、投影适配器。
+// CronComponent 消费各 Job 端口，触发器不直接实现领域计算。
 var PlatformProviderSet = wire.NewSet(
 	// internal/application/platform
 	applicationPlatform.ProviderSet,
@@ -383,7 +394,8 @@ var PlatformProviderSet = wire.NewSet(
 	wire.Bind(new(infrastructureScheduler.AutoUnbanJob), new(*applicationPlatform.AutoUnbanService)),
 )
 
-// IdentityHTTPProviderSet IdentityHTTP 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// IdentityHTTPProviderSet 装配身份 HTTP 处理器及其 OAuth、发信和邮箱验证能力。
+// 核心账号仓储/服务由 IdentityProviderSet 提供，此处补足面向请求入口的外部依赖。
 var IdentityHTTPProviderSet = wire.NewSet(
 	// internal/infrastructure/external/oauth
 	infrastructureExternalOauth.NewBodyReader,
@@ -416,7 +428,8 @@ var NotificationHTTPProviderSet = wire.NewSet(
 	interfacesHttpHandlerNotification.NewHandler,
 )
 
-// SearchIndexProviderSet SearchIndex 上下文的 provider 集合（由仓库内的编译期接口断言自动推导）。
+// SearchIndexProviderSet 装配关键词查询、用户文档和视频向量索引的 ES 实现。
+// 同一 Adapter 满足搜索、提及和联想接口，VideoVectorIndex 同时提供读写与生命周期能力。
 var SearchIndexProviderSet = wire.NewSet(
 	// internal/infrastructure/search
 	infrastructureSearch.NewAdapter,

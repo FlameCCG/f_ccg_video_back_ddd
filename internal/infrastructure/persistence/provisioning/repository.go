@@ -1,4 +1,9 @@
-// Package provisioning 是运维初始化用例的持久化实现。
+// Package provisioning 实现超级管理员、角色绑定和默认横幅初始化。
+//
+// repository.go 实现 provisioning 用例要求的端口，复用默认用户上下文等已有持久化行为。
+// 只负责一次性任务的存取细节，任务选择、步骤顺序与资源清理由 CLI 和 bootstrap 组织。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package provisioning
 
 import (
@@ -36,9 +41,10 @@ type SuperUserRepository struct {
 	logger      *zap.Logger
 }
 
-// UserContextDecorator 在创建用户的 context 中附加默认横幅 ID，供 po.User.AfterCreate 读取。
+// UserContextDecorator 用于给创建用户的 ctx 附加默认横幅 ID
+// （供 po.User 的 AfterCreate 钩子读取）。
 //
-// 由 identity 用户仓储实现，使 CLI 建号与注册使用相同的初始化规则。
+// 由 identity 的用户仓储实现，避免 CLI 建号路径与注册路径行为分叉。
 type UserContextDecorator interface {
 	WithDefaultBanner(ctx context.Context) context.Context
 }

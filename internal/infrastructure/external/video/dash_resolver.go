@@ -1,3 +1,9 @@
+// Package video 实现视频详情所需的远程 DASH MPD 读取的外部协议适配。
+//
+// dash_resolver.go 负责发请求和读取清单，再交给 domain/video 的纯解析规则。
+// 网络超时、响应大小和 URL 解析属于适配器职责；返回的资源还要按详情读模型组织。
+//
+// 上层依赖端口而非客户端库，测试可替换端口或 HTTP 服务以验证协议边界。
 package video
 
 import (

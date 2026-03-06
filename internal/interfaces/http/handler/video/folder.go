@@ -8,12 +8,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreateFolderReq is an exported API type.
+// CreateFolderReq 提供新收藏夹名称，所有者来自认证上下文。
 type CreateFolderReq struct {
 	Name string `json:"name" binding:"required,min=1,max=50"`
 }
 
-// CreateFolderView handles the corresponding HTTP request.
+// CreateFolderView 以当前用户身份创建收藏夹，不接收请求自报的所有者。
 func (h *Handler) CreateFolderView(c *gin.Context) {
 	req := middlewares.GetBound[CreateFolderReq](c)
 
@@ -39,13 +39,13 @@ func (h *Handler) CreateFolderView(c *gin.Context) {
 	}, c)
 }
 
-// UpdateFolderReq is an exported API type.
+// UpdateFolderReq 指定当前用户名下的收藏夹与新名称，用例继续检查归属。
 type UpdateFolderReq struct {
 	FolderID uint   `json:"folderId" binding:"required"`
 	Name     string `json:"name" binding:"required,min=1,max=50"`
 }
 
-// UpdateFolderView handles the corresponding HTTP request.
+// UpdateFolderView 将当前用户、收藏夹 ID 与名称交给应用服务，返回更新结果。
 func (h *Handler) UpdateFolderView(c *gin.Context) {
 	req := middlewares.GetBound[UpdateFolderReq](c)
 
@@ -71,12 +71,12 @@ func (h *Handler) UpdateFolderView(c *gin.Context) {
 	}, c)
 }
 
-// DeleteFolderReq is an exported API type.
+// DeleteFolderReq 指定待删除收藏夹，删除关联与统计调整由仓储/用例协调。
 type DeleteFolderReq struct {
 	FolderID uint `json:"folderId" binding:"required"`
 }
 
-// DeleteFolderView handles the corresponding HTTP request.
+// DeleteFolderView 调用收藏夹删除用例并返回结果，接口层不自行扣减视频收藏计数。
 func (h *Handler) DeleteFolderView(c *gin.Context) {
 	req := middlewares.GetBound[DeleteFolderReq](c)
 
@@ -96,7 +96,7 @@ func (h *Handler) DeleteFolderView(c *gin.Context) {
 	res.OkWithMsg("删除成功", c)
 }
 
-// FolderListReq is an exported API type.
+// FolderListReq 可附带视频 ID，以便列表同时展示该视频在各收藏夹中的状态。
 type FolderListReq struct {
 	VideoID uint `form:"videoId" binding:"omitempty"`
 }
@@ -122,7 +122,7 @@ func (h *Handler) FolderListView(c *gin.Context) {
 	res.OkWithList(list, int64(len(list)), c)
 }
 
-// FolderVideosReq is an exported API type.
+// FolderVideosReq 描述某收藏夹的作品分页和排序，列表可见性由应用用例判断。
 type FolderVideosReq struct {
 	FolderID uint `form:"folderId" binding:"required"`
 	Page     int  `form:"page" binding:"omitempty,min=1"`

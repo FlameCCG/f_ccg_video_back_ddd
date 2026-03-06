@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CommentPinReq is an exported API type.
+// CommentPinReq 表达把指定评论设为或取消置顶，Pinned=false 是明确的取消操作。
 type CommentPinReq struct {
 	CommentID uint `json:"commentId" binding:"required,gt=0" label:"评论ID"`
 	Pinned    bool `json:"pinned" label:"是否置顶"`

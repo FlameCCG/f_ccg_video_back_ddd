@@ -2,7 +2,7 @@ package config
 
 import "f_ccg_video_back_ddd/internal/config/thirdlogin"
 
-// ThirdLogin 类型.
+// ThirdLogin 聚合各第三方登录客户端配置；指针缺省需由读取方与站点启用开关共同判断。
 type ThirdLogin struct {
 	QQ      *third_login.QQ      `mapstructure:"qq" json:"qq"`
 	Google  *third_login.Google  `mapstructure:"google" json:"google"`

@@ -8,6 +8,10 @@ import (
 )
 
 // VideoRepository 视频聚合写侧仓储（接口所有权归领域层）。
+//
+// 这里定义业务操作的输入输出与不存在语义，具体 SQL/PO 映射由 persistence/video 实现。
+// 它是当前较宽的写侧契约，也含部分事实读取；页面详情与列表的富投影另由应用查询端口提供。
+// 带 ForUpdate 的方法要在事务 context 中调用，脱离事务读取不能保护后续写入。
 type VideoRepository interface {
 	// FindByID 按主键读取视频；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, videoID uint) (*Video, error)

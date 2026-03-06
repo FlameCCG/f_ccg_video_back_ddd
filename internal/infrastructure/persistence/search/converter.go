@@ -1,6 +1,10 @@
-// Package search 提供 ES 查询失败回退、热词采样、@ 提及候选、用户搜索文档与向量索引数据的只读 SQL 投影。
+// Package search 实现搜索回退、提及和索引源数据的 SQL 查询。
 //
-// 查询可直读 videos、users、tags 和 user_focus；所有写入仍归各自上下文。
+// search_fallback.go/suggest_fallback.go 处理 ES 不可用时的候选读取，其余查询为热词、用户和向量提供源事实。
+// 本包面向 application/search DTO 做只读投影，可读取多上下文的表；它不负责修改作品或账号。
+// 回退查询与 ES 的排序和匹配能力不必完全等价，应按应用用例的实际策略理解结果。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package search
 
 import (

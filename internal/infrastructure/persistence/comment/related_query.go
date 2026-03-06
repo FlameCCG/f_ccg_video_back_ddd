@@ -23,9 +23,10 @@ FROM user_focus
 WHERE focus_user_id = ? AND user_id IN ?
 `
 
-// RelatedQuery 提供关联对象的只读 GORM 投影。
+// RelatedQuery 关联对象读侧投影的 GORM 实现。
 //
-// 查询直读 users、videos、dynamics 与 user_focus；写入仍由各自上下文负责。
+// 直读 users / videos / dynamics / user_focus 表：按 docs/architecture.md 第 4 节，
+// 读侧投影允许直读其它上下文的表，实现放在消费方上下文的 infrastructure。
 type RelatedQuery struct {
 	db *gorm.DB
 }

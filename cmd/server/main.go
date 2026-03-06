@@ -1,6 +1,9 @@
-// Package main 是 f_ccg_video_back_ddd 的应用入口。
+// Package main 是 HTTP 服务与一次性运维任务的进程入口。
 //
-// 职责仅限：解析 CLI flags → 调 bootstrap 注入器 → 运行并等待退出信号。
+// 先读 run 的任务分流，再读 runServer 的装配、启动与停机；业务规则不放在 main 中。
+// InitializeApp 返回的 cleanup 负责依赖清理，App.Start/Serve/Stop 负责运行期启停。
+// main 最后才调用 os.Exit：若在用例中直接退出，调用栈中的 defer 和 Wire cleanup 都不会执行。
+// -all 按步骤分别装配任务，每步清理后才进入下一步；它不是跨步骤数据库事务。
 package main
 
 import (

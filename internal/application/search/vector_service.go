@@ -124,6 +124,9 @@ func (s *VideoVectorService) IndexVideoVector(ctx context.Context, videoID uint)
 }
 
 // indexVideoVectorWithConfig 用固定配置快照同步单个视频；全量重建据此避免热更新造成维度撕裂。
+//
+// 嵌入模型、向量维度和目标索引属于同一组运行参数；一次重建中途切换其中一项可能产生不兼容文档。
+// 固定配置只稳定本轮参数，不会自动阻止源数据在扫描期间变化。
 func (s *VideoVectorService) indexVideoVectorWithConfig(
 	ctx context.Context,
 	cfg VectorConfig,

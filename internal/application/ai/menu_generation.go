@@ -23,6 +23,9 @@ const defaultMenuGenerationSystemPrompt = `你是企业后台 RBAC 菜单配置�
 5. titleEn/titleJa/name/path/component 均不得为空。`
 
 // GenerateMenuSuggestion 使用独立系统提示词生成菜单表单字段。
+//
+// AI 上下文只组织模型调用并返回文本，不直接操作 RBAC 仓储。
+// 调用由 RBAC 的本地生成端口进入，返回文本再由 RBAC 翻译和校验，具体绑定在 bootstrap。
 func (s *Service) GenerateMenuSuggestion(
 	ctx context.Context,
 	title string,

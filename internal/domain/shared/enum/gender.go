@@ -1,11 +1,10 @@
 package enum
 
-// GenderFemale 及相关导出常量.
 const (
-	// GenderUnknown 常量.
+	// GenderUnknown 表示未填写或未知性别。
 	GenderUnknown = 0
-	// GenderMale 常量.
+	// GenderMale 表示男性，持久化值为 1。
 	GenderMale = 1
-	// GenderFemale 常量.
+	// GenderFemale 表示女性，持久化值为 2。
 	GenderFemale = 2
 )

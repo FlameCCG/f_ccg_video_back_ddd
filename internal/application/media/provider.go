@@ -6,10 +6,9 @@ import (
 	"github.com/google/wire"
 )
 
-// ProviderSet 是 media 上下文的应用层 provider 集合。
+// ProviderSet 汇总 media 上下文的应用构造器，数据库、缓存与外部服务实现由 bootstrap 绑定，测试可注入 fake。
 //
-// GPU 冷却窗口与任务取消登记表在此创建为进程内唯一实例。
-// 仓储、缓存、存储及编码器等端口的 wire.Bind 由 bootstrap 汇总。
+// GPU 冷却窗口与任务取消登记表在此创建为进程内唯一实例。仓储、缓存、存储与编码器端口的 wire.Bind 由 bootstrap 汇总。
 var ProviderSet = wire.NewSet(
 	NewTranscodeService,
 	NewTranscodeDispatchService,

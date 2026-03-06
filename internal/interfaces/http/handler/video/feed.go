@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// HomeFeedReq is an exported API type.
+// HomeFeedReq 描述首页视频流分页与可选分区过滤。
 type HomeFeedReq struct {
 	Page        int  `form:"page" binding:"omitempty,min=1"`
 	PageSize    int  `form:"pageSize" binding:"omitempty,min=1,max=50"`
@@ -33,7 +33,7 @@ func (h *Handler) HomeFeedView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// VideoHotReq is an exported API type.
+// VideoHotReq 指定热门流的分页窗口，热度排序策略由应用用例决定。
 type VideoHotReq struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
 	PageSize int `form:"pageSize" binding:"omitempty,min=1,max=50"`
@@ -53,7 +53,7 @@ func (h *Handler) HotView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// VideoRankReq is an exported API type.
+// VideoRankReq 指定排行榜分页窗口，排名数据来源由查询用例选择。
 type VideoRankReq struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
 	PageSize int `form:"pageSize" binding:"omitempty,min=1,max=50"`
@@ -73,7 +73,7 @@ func (h *Handler) RankView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// VideoRecommendReq is an exported API type.
+// VideoRecommendReq 以当前作品和期望条数请求关联推荐，用例负责大小边界与候选筛选。
 type VideoRecommendReq struct {
 	VideoID uint `form:"videoId" binding:"required,gt=0"`
 	Size    int  `form:"size" binding:"omitempty,min=1,max=50"`

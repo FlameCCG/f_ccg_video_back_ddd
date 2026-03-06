@@ -44,6 +44,10 @@ func NewUpdateService(
 }
 
 // UpdateVideo 更新视频基础信息，需作者本人。
+//
+// 可选字段用指针区分“不修改”与“改成零值/false/空字符串”；标签还区分 nil 与空切片。
+// 在事务内加锁并调用 Video.Revise 后再保存，避免按旧快照覆盖管理员审核或删除结果。
+// 事务提交后才失效作者/详情缓存并同步向量；这些外部副作用不会回滚已成功的改稿。
 func (s *UpdateService) UpdateVideo(
 	ctx context.Context,
 	username string,

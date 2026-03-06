@@ -28,6 +28,9 @@ func NewDetailService(
 }
 
 // GetVideoDetail 获取视频详情（已发布优先；作者本人可预览私密/待审/定时稿）。
+//
+// 仅公开元数据进入共享详情缓存；作者预览从带身份约束的查询端口取得。
+// 用户自己的点赞/收藏/投币标记在 mergeDetail 中按请求补充，不能放入所有用户共享的 meta。
 func (s *DetailService) GetVideoDetail(ctx context.Context, videoID, viewerID uint) (*VideoDetail, error) {
 	if videoID == 0 {
 		return nil, domain.ErrVideoIDRequired
@@ -89,6 +92,8 @@ func (s *DetailService) GetVideoDetailAdmin(ctx context.Context, videoID uint) (
 	return s.mergeDetail(ctx, meta, stats, 0), nil
 }
 
+// loadForViewer 先查公开稿，仅当不存在且有登录用户时尝试作者预览。
+// 公开查询的数据库故障直接返回，不能误当作“未找到”再放宽查询范围。
 func (s *DetailService) loadForViewer(
 	ctx context.Context,
 	videoID, viewerID uint,
@@ -105,6 +110,8 @@ func (s *DetailService) loadForViewer(
 	return s.query.LoadOwnerPreview(ctx, videoID, viewerID)
 }
 
+// mergeDetail 将可共享的静态元数据、变化频繁的计数与本次访问者标记组合成响应。
+// 分离三种生命周期可避免每次计数变化重建资源清单，也避免把个人状态泄漏给其他用户。
 func (s *DetailService) mergeDetail(
 	ctx context.Context,
 	meta *DetailMeta,

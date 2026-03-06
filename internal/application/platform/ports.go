@@ -8,6 +8,9 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
+// 端口阅读：周期维护通过队列/快照输入、数据库投影和确认端口进行。
+// 确认既可能对应 Redis processing 队列，也可能对应版本脏标记，不能用一个泛化的 ack 理解所有任务。
+
 // UserStatusWriter 用户状态缓存写穿端口（跨上下文）。
 //
 // 由 identity 上下文的应用服务在 bootstrap 中绑定实现

@@ -12,10 +12,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// UserRoleRepository 通过 GORM 管理用户与角色绑定。
+// UserRoleRepository 是用户与角色绑定仓储的 GORM 实现。
 //
-// 读侧直读 users，校验用户存在性与 current_role_id；写侧直接操作 user_roles，
-// 避免 GORM Association 对 users 执行 Save 而触发 BeforeSave，清空 OAuth 绑定。
+// 读侧直读 identity 的 users 表，仅校验存在性与 current_role_id；
+// 写侧直接操作 user_roles 关联表，避免触发 users 的 BeforeSave 钩子而清空 OAuth 绑定。
 type UserRoleRepository struct {
 	db *gorm.DB
 }

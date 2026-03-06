@@ -87,6 +87,8 @@ type dashSegmentTimelineXML struct {
 
 type dashVideoProbe func(context.Context, string) (media.VideoMeta, error)
 
+// validateDASHOutput 在独立预算内核验清单、引用文件与探测时长，不因为 FFmpeg 退出码为 0 就直接接受产物。
+// 完整性检查在发布资源前执行，避免把仅写出 MPD 或时长截断的目录暴露为可播放结果。
 func validateDASHOutput(
 	ctx context.Context,
 	dir string,
@@ -303,6 +305,8 @@ func expandDASHSegmentName(pattern string, rep dashRepresentationXML, number uin
 	return name, nil
 }
 
+// walkDASHTimeline 按 SegmentTimeline 的时间刻度展开分段并逐个访问，检查引用文件所需的序号/时间点。
+// 时间刻度是媒体时间基，不能直接当成毫秒或墙上时钟；本函数只读取原生时间轴，不重写分段声明。
 func walkDASHTimeline(timeline *dashSegmentTimelineXML, visit func(uint64) error) (uint64, uint64, error) {
 	if timeline == nil || len(timeline.Entries) == 0 {
 		return 0, 0, errors.New("DASH SegmentTimeline is missing")

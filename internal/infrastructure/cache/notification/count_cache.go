@@ -1,4 +1,9 @@
-// Package notification 是通知上下文的缓存适配器：角标计数缓存。
+// Package notification 适配用户通知角标的派生计数缓存。
+//
+// count_cache.go 保存计数并提供失效能力，实际通知和私信未读事实由各自仓储查询。
+// 新增通知、删除和已读操作需要配合失效；不要把旧角标当成授权或消息存在性的依据。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package notification
 
 import (

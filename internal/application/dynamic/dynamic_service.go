@@ -126,6 +126,9 @@ func (s *Service) Delete(ctx context.Context, userID, dynamicID uint) error {
 }
 
 // Pin 置顶/取消置顶动态：与视频置顶互斥（同一用户同一时间只允许置顶一个作品）。
+//
+// 本上下文声明 VideoPinWriter 端口，在同一个事务 context 中清除视频置顶并更新动态。
+// 当前同库适配器使这些写入可共同回滚；它不是仅靠跨上下文方法调用就获得的分布式事务。
 func (s *Service) Pin(ctx context.Context, userID, dynamicID uint, pinned bool) error {
 	if userID == 0 {
 		return domain.ErrUserNotLogin

@@ -53,7 +53,7 @@ func (s *RoleService) List(ctx context.Context) ([]*domain.Role, error) {
 
 // Create 创建角色，在事务内写角色与菜单绑定，提交后写 Casbin 权限策略。
 //
-// 权限策略写入失败时，角色已创建，因此接口可能返回部分成功结果。
+// 权限策略写入失败时角色已经创建，因此接口可能返回部分成功结果。
 func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) error {
 	// 重名预检不校验 Count 的错误，查询失败时按 0 处理并继续。
 	count, _ := s.roles.CountByName(ctx, params.Name)

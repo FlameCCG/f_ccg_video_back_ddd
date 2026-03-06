@@ -12,6 +12,9 @@ import (
 
 // CasbinAuth Casbin 权限验证中间件.
 //
+// 需要在认证已写入 uid 后执行，以 user:<id>、路由模板和 HTTP 方法组成授权三元组。
+// 角色菜单只影响导航展示，不能替代此处对实际 API 请求的授权。
+//
 // 路由均为静态路径，业务参数走 query/body，鉴权对象为 Gin FullPath（与 -rs 同步的资源表路径一致）。
 // 匹配规则见 conf/rbac_model.conf 的 globMatch（精确路径 + * / ** 通配）。
 func (m *Middlewares) CasbinAuth() gin.HandlerFunc {

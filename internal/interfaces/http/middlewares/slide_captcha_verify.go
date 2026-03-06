@@ -19,7 +19,7 @@ type slideCaptchaVerifyReq struct {
 	Y     int    `json:"slideCaptchaY" form:"slideCaptchaY"`
 }
 
-// SlideCaptchaVerify 函数.
+// SlideCaptchaVerify 按登录场景滑块开关校验 token 与坐标，成功后复位请求体并继续下游绑定。
 func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !m.captcha.SlideCaptchaEnabled() {

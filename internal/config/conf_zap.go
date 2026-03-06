@@ -1,6 +1,7 @@
 package config
 
-// Logger 类型.
+// Logger 描述各级别日志文件、控制台输出与轮转保留策略。
+// 字段只提供构造参数，实际编码与输出行为在 infrastructure/logger 中实现。
 type Logger struct {
 	DebugFileName string `mapstructure:"debugFileName" json:"debugFileName"`
 	InfoFileName  string `mapstructure:"infoFileName" json:"infoFileName"`

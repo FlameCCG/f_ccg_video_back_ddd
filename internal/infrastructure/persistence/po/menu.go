@@ -17,7 +17,7 @@ type Menu struct {
 	Children  []*Menu `gorm:"-" json:"children,omitempty"`                  // 子菜单，不存数据库
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 menus，保持迁移与仓储 SQL 使用同一张表。
 func (Menu) TableName() string {
 	return "menus"
 }

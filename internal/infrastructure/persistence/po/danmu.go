@@ -1,6 +1,6 @@
 package po
 
-// Danmu 类型.
+// Danmu 按作品、分P和播放时间偏移保存弹幕；TimeOffset 是片内秒数，CreatedAt 才是发送时间。
 type Danmu struct {
 	Model
 	UserID      uint   `gorm:"not null;comment:用户ID" json:"userId"`
@@ -16,7 +16,7 @@ type Danmu struct {
 	User        User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 danmu，保持迁移与仓储 SQL 使用同一张表。
 func (Danmu) TableName() string {
 	return "danmu"
 }

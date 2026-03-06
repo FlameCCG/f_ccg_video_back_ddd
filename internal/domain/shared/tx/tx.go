@@ -1,6 +1,9 @@
-// Package tx 定义跨仓储事务编排端口。
+// Package tx 定义应用层可使用的本地事务编排端口。
 //
-// 应用层通过 tx.Manager 开启事务，句柄随 context 向下传递；仓储从 context 取得当前事务，使领域层与应用层无需依赖 GORM。
+// 应用服务通过 Manager.Do 包住需要共同提交的数据库操作，回调 context 携带实现侧事务句柄。
+// 仓储必须继续传递这个 context，基础设施才能复用同一事务；领域和应用层不暴露 *gorm.DB。
+// 当前 GORM 实现复用已有事务而不创建保存点；内层返回错误需向外传播才会触发外层回滚。
+// 这个端口不使 Redis、Kafka、对象存储或其他数据库自动加入事务。
 package tx
 
 import "context"

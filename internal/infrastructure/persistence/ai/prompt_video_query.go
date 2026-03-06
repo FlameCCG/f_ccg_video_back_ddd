@@ -1,4 +1,9 @@
-// Package ai 是 AI 上下文的持久化实现：站内作品候选的读侧投影。
+// Package ai 实现站内作品候选的 SQL 读侧投影。
+//
+// prompt_video_query.go 从数据库取得提示词需要的候选事实，返回 application/ai 模型。
+// 本包不调用 AI，也不拥有这些作品的写入规则；查询可跨表，写入仍归所属上下文。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package ai
 
 import (

@@ -161,6 +161,9 @@ func (s *TranscodeService) logPipelineMode(task domain.TranscodeTask, plan domai
 }
 
 // runMP4SuperPipeline 运行 MP4 多输出管线：L1 跳过已入库目标 → 编码 → 上传 → 落库。
+//
+// 入库记录和存储对象都有效才允许跳过，防止“资源行存在但对象已丢失”被当成任务完成。
+// 编码检查点是另一层复用：有本地产物时可跳过编码，但上传和资源保存仍需按状态继续。
 func (s *TranscodeService) runMP4SuperPipeline(
 	ctx context.Context,
 	task domain.TranscodeTask,

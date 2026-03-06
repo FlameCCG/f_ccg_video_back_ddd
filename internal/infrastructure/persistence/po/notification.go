@@ -24,7 +24,7 @@ type UserGlobalNotification struct {
 	CommentID        uint      `gorm:"comment:被点赞的评论ID或者回复我评论的评论ID或@我的评论ID" json:"commentID"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 user_global_notifications，保持迁移与仓储 SQL 使用同一张表。
 func (UserGlobalNotification) TableName() string {
 	return "user_global_notifications"
 }
@@ -36,7 +36,7 @@ type NotificationUserRead struct {
 	CreatedAt      time.Time `json:"createdAt"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 notification_user_reads，保持迁移与仓储 SQL 使用同一张表。
 func (NotificationUserRead) TableName() string {
 	return "notification_user_reads"
 }

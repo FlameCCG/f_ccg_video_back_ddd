@@ -160,7 +160,7 @@ services:
     command: server --address ":9000" --console-address ":9001" /data
     volumes:
       # Linux 数据卷避免 Windows NTFS/9p 挂载在 RenameData 时偶发 Access Denied。
-      # 已有 components/minio/data 必须停服复制并校验后再切换，见 docs/minio-storage.md。
+      # 已有 components/minio/data 必须停服复制并校验后再切换。
       - minio_data:/data
     networks:
       - f_video_network

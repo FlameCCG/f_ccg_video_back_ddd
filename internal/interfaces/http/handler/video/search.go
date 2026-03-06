@@ -43,7 +43,7 @@ func (h *Handler) HomeSearchTopView(c *gin.Context) {
 	res.OkWithData(list, c)
 }
 
-// VideoSearchReq is an exported API type.
+// VideoSearchReq 描述关键词、分页和排序选项，应用/领域层将外部排序值归一化。
 type VideoSearchReq struct {
 	Keyword    string `form:"keyword" binding:"required"`
 	Page       int    `form:"page" binding:"omitempty,min=1"`
@@ -52,7 +52,7 @@ type VideoSearchReq struct {
 	VideoOrder int    `form:"videoOrder" binding:"omitempty,oneof=0 1"`    // 0降序 1升序
 }
 
-// VideoSearchView handles the corresponding HTTP request.
+// VideoSearchView 把视频搜索条件交给应用搜索能力，并将结果转换为当前视频接口响应。
 func (h *Handler) VideoSearchView(c *gin.Context) {
 	req := middlewares.GetBound[VideoSearchReq](c)
 
@@ -90,13 +90,13 @@ func (h *Handler) VideoSearchView(c *gin.Context) {
 	res.OkWithData(data, c)
 }
 
-// VideoSuggestReq is an exported API type.
+// VideoSuggestReq 以 Prefix 和期望条数请求搜索联想，具体缓存与回退策略留在搜索用例。
 type VideoSuggestReq struct {
 	Prefix string `form:"prefix" binding:"required"`
 	Size   int    `form:"size" binding:"omitempty,min=1,max=20"`
 }
 
-// SuggestView handles the corresponding HTTP request.
+// SuggestView 将前缀与条数交给搜索联想用例，不在 Handler 构造 Elasticsearch DSL。
 func (h *Handler) SuggestView(c *gin.Context) {
 	req := middlewares.GetBound[VideoSuggestReq](c)
 

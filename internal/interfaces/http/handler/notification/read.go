@@ -7,12 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// MarkReadReq is an exported API type.
+// MarkReadReq 指定需要标记已读的通知 ID，不直接修改通知正文或其他用户的阅读状态。
 type MarkReadReq struct {
 	IDs []uint `json:"ids" binding:"required,min=1,dive,gt=0" label:"通知ID列表"`
 }
 
-// MarkRead handles the corresponding HTTP request.
+// MarkRead 以当前登录身份标记指定通知已读，并由应用层维护角标失效。
 func (h *Handler) MarkRead(c *gin.Context) {
 	req := middlewares.GetBound[MarkReadReq](c)
 

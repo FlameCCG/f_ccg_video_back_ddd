@@ -61,6 +61,9 @@ func cleanObjectKey(relativePath string) (string, error) {
 }
 
 // safeJoinLocal 把相对路径安全地拼接到 base 目录内，拒绝任何越界结果。
+//
+// 先归一化再用 filepath.Rel 验证目录边界，不能仅用字符串前缀比较相邻目录名。
+// 这里验证的是路径词法关系，不解析符号链接；存储目录的实际链接布局还需由部署和写入方式约束。
 func safeJoinLocal(base string, elems ...string) (string, error) {
 	base = strings.TrimSpace(base)
 	if base == "" {

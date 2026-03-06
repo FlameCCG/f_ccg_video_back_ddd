@@ -1,6 +1,9 @@
-// Package media 适配转码进度存取、取消事件广播与视频详情缓存失效。
+// Package media 适配转码进度、取消广播与详情缓存失效。
 //
-// Redis key、TTL 与 Pub/Sub 频道属于缓存协议。
+// progress_cache.go 保存进度快照并发布变更，cancel_broadcaster.go 发送删除取消信号。
+// Pub/Sub 通知是最佳努力信号，快照可补读；消费者还会核对数据库中的任务有效性。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package media
 
 import (

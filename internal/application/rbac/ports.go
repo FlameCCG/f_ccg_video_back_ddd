@@ -6,6 +6,9 @@ import (
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 )
 
+// 端口阅读：应用经 Enforcer 访问授权引擎，经资源元数据与菜单建议端口使用外部能力。
+// 端口方法不等同于数据库事务边界，策略更新与菜单/角色表更新需在用例中分别检查。
+
 // MenuSuggestionGenerator AI 菜单字段生成端口。
 //
 // 接口由消费方 rbac 定义；AI 上下文的应用服务实现它，基础设施聊天模型仍经

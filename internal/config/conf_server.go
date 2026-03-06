@@ -1,6 +1,6 @@
 package config
 
-// Server 类型.
+// Server 配置 HTTP 监听与 Gin 模式，并给 CORS/WebSocket 来源策略提供允许源。
 type Server struct {
 	Name string `mapstructure:"name" json:"name"`
 	Addr string `mapstructure:"addr" json:"addr"`

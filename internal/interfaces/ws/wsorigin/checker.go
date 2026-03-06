@@ -1,6 +1,8 @@
-// Package wsorigin 校验浏览器 WebSocket 的 Origin 头。
+// Package wsorigin 校验浏览器 WebSocket 握手中的 Origin。
 //
-// Checker 通过构造函数接收 *infraconfig.Provider，Origin 校验由 WebSocket 接口层执行。
+// Checker 读取当前配置决定是否允许跨源升级，把浏览器来源策略留在接口层。
+// Origin 校验与身份认证分别解决来源和用户身份问题，通过 Origin 检查并不授予访问私信或弹幕的权限。
+// 具体无 Origin、同源与配置允许源的行为以 checker.go 的分支为准。
 package wsorigin
 
 import (

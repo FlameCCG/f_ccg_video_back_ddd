@@ -9,7 +9,7 @@ type UserFocus struct {
 	FocusUser   User `gorm:"foreignKey:FocusUserID" json:"-"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 user_focus，保持迁移与仓储 SQL 使用同一张表。
 func (UserFocus) TableName() string {
 	return "user_focus"
 }

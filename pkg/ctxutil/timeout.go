@@ -1,4 +1,8 @@
-// Package ctxutil provides package functionality.
+// Package ctxutil 提供请求超时约定与受进程管理的后台任务组。
+//
+// timeout.go 定义不同操作的预算，WithDetachedTimeout 保留上下文值但解除请求取消，再施加独立截止时间。
+// DetachedTaskGroup 拒绝停机后的新任务，并取消和等待在途任务；它不是持久任务队列，进程退出会丢失尚未完成的工作。
+// 调用方仍需传播上下文并及时响应取消，超时不能强制终止不合作的任务。
 package ctxutil
 
 import (
@@ -26,12 +30,11 @@ const (
 	// RequestUploadTimeout 用于上传分片和合并，避免大文件上传被普通 API 超时误杀。
 	RequestUploadTimeout = 10 * time.Minute
 
-	// AsyncQuickTimeout 常量.
+	// AsyncQuickTimeout 用于后台轻量写入/失效等快速任务的独立时间预算。
 	AsyncQuickTimeout = 2 * time.Second
-	// AsyncDefaultTimeout 常量.
+	// AsyncDefaultTimeout 用于普通后台任务的默认时间预算。
 	AsyncDefaultTimeout = 3 * time.Second
-	// AsyncLongTimeout 及相关导出常量.
-	// AsyncLongTimeout 常量.
+	// AsyncLongTimeout 用于较重后台工作及停机等待的较长时间预算，不是转码整任务的统一上限。
 	AsyncLongTimeout = 15 * time.Second
 
 	// ExternalShortTimeout 用于公网 IP 等短外部 HTTP 探测。

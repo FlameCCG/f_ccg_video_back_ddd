@@ -232,7 +232,8 @@ func (c *ClickCaptcha) padding(scenes ...string) int {
 	return cfg.Site.CaptchaSettings(scene, "click").Padding
 }
 
-// buildClickTargets 将目标 map 转成按索引排序的稳定切片。验证码答案不得写入日志或标准输出。
+// buildClickTargets 把生成器返回的目标 map 转成按索引排序的稳定切片。
+// 验证码答案不得写入日志或标准输出。
 func buildClickTargets(raw map[int]*click.Dot) []clickCaptchaTarget {
 	targets := make([]clickCaptchaTarget, 0, len(raw)) // 预分配容量
 	for idx, dot := range raw {                        // 遍历所有目标

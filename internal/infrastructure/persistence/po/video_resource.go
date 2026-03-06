@@ -3,6 +3,10 @@ package po
 import "f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 // VideoResource 视频资源表(支持多分辨率).
+//
+// 唯一索引组合 视频 ID、Resolution 和 IsSouceVideo，支持重试时按资源变体复用/更新。
+// IsSouceVideo 的历史拼写同时进入列名与 JSON，不应在注释整理中顺带更名。
+// 自适应资源的 FileURL 指向 MPD 清单，一行数据库记录可能对应存储中的一整个目录。
 type VideoResource struct {
 	Model
 	VideoID        uint                 `gorm:"not null;index;uniqueIndex:uk_video_resources_variant,priority:1;comment:视频ID" json:"videoId"`
@@ -19,7 +23,7 @@ type VideoResource struct {
 	Video Video `gorm:"foreignKey:VideoID" json:"video,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 video_resources，保持迁移与仓储 SQL 使用同一张表。
 func (VideoResource) TableName() string {
 	return "video_resources"
 }

@@ -1,4 +1,9 @@
-// Package comment 是评论上下文的持久化实现：GORM 仓储、读侧投影与 PO↔domain 转换。
+// Package comment 实现评论写仓储、列表查询和关联清理。
+//
+// comment_repo.go 负责写侧，query.go/related_query.go 构建读侧，purge_repo.go 提供跨用例评论清理。
+// converter.go 在 po 与领域/应用模型之间转换，数据库错误在适配器边界翻译为业务可识别错误。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package comment
 
 import (
