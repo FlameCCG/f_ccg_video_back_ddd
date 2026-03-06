@@ -1,13 +1,13 @@
 package config
 
 import (
-	"fmt"
+	"net"
 	"net/url"
+	"strconv"
 )
 
-// Mongo 配置 Mongo URI 或分项连接参数，以及连接超时和连接池上限。
+// Mongo 用分项连接参数描述 MongoDB，并包含连接超时和连接池上限。
 type Mongo struct {
-	URI        string `mapstructure:"uri" json:"uri"`
 	Host       string `mapstructure:"host" json:"host"`
 	Port       int    `mapstructure:"port" json:"port"`
 	Username   string `mapstructure:"username" json:"username"`
@@ -18,13 +18,9 @@ type Mongo struct {
 	MaxPool    uint64 `mapstructure:"maxPool" json:"maxPool"`
 }
 
-// GetURI 优先返回显式 URI，否则拼接分项参数；未指定主机/端口时使用本机默认值。
-// 认证参数需按 URL 规则转义，调用方不应把返回连接串写入日志。
+// GetURI 由主机、端口和账号拼接 Mongo 连接串。未指定主机或端口时使用本机默认值。
+// 账号和密码按 userinfo 规则转义，调用方不应把返回连接串写入日志。
 func (m Mongo) GetURI() string {
-	if m.URI != "" {
-		return m.URI
-	}
-
 	host := m.Host
 	if host == "" {
 		host = "127.0.0.1"
@@ -35,8 +31,12 @@ func (m Mongo) GetURI() string {
 		port = 27017
 	}
 
+	u := url.URL{
+		Scheme: "mongodb",
+		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
+	}
 	if m.Username == "" {
-		return fmt.Sprintf("mongodb://%s:%d", host, port)
+		return u.String()
 	}
 
 	authSource := m.AuthSource
@@ -44,12 +44,11 @@ func (m Mongo) GetURI() string {
 		authSource = "admin"
 	}
 
-	return fmt.Sprintf(
-		"mongodb://%s:%s@%s:%d/?authSource=%s",
-		url.PathEscape(m.Username),
-		url.PathEscape(m.Password),
-		host,
-		port,
-		url.QueryEscape(authSource),
-	)
+	u.User = url.UserPassword(m.Username, m.Password)
+	u.Path = "/"
+	query := u.Query()
+	query.Set("authSource", authSource)
+	u.RawQuery = query.Encode()
+
+	return u.String()
 }
