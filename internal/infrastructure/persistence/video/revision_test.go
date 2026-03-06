@@ -42,7 +42,7 @@ func newRevisionFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	// 只建立改稿所需表，避免其它业务表在 SQLite 中的同名索引冲突。
-	if err := db.AutoMigrate(&po.Video{}, &po.Tag{}, &po.VideoPartition{}, &po.VideoPublishSchedule{}); err != nil {
+	if err := db.AutoMigrate(&po.Video{}, &po.Tag{}, &po.VideoPartition{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("CREATE TABLE video_tags (video_id integer, tag_id integer, PRIMARY KEY (video_id, tag_id))").Error; err != nil {
@@ -104,7 +104,7 @@ func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []do
 }
 
 func (f *fixture) revisionService(repo domain.VideoRepository, effects *revisionEffects) *app.UpdateService {
-	effects.ScheduleStore = infra.NewScheduleStore(f.db, nil)
+	effects.ScheduleStore = infra.NewScheduleStore(f.db)
 	authors := app.NewAuthorService(repo, revisionAuthorIDs{}, revisionMeta{effects: effects}, nil, zap.NewNop())
 	return app.NewUpdateService(gormx.NewTxManager(f.db), repo, f.partitions, effects, authors,
 		app.NewVectorSyncService(nil, nil, nil), infraconfig.NewProvider(&config.Config{}))
@@ -171,12 +171,12 @@ func TestUpdateRevisionRollsBackBeforeSideEffects(t *testing.T) {
 	if stored.Title != "old" || stored.Status != enum.VideoStatusPublished {
 		t.Fatalf("rollback failed: %+v", stored)
 	}
-	var plans int64
-	if err := f.db.Model(&po.VideoPublishSchedule{}).Count(&plans).Error; err != nil {
+	var persistedRow po.Video
+	if err := f.db.First(&persistedRow, stored.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if effects.invalidated != 0 || plans != 0 {
-		t.Fatalf("cache invalidated or schedule escaped rollback: effects=%+v, plans=%d", effects, plans)
+	if effects.invalidated != 0 || persistedRow.PublishAt != nil {
+		t.Fatalf("cache invalidated or publish time escaped rollback: effects=%+v, publishAt=%v", effects, persistedRow.PublishAt)
 	}
 }
 

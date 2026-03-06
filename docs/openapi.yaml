@@ -378,6 +378,19 @@ components:
       type: object
       description: 视频项
       properties:
+        isScheduled:
+          type: boolean
+          description: 是否定时作品，发布后保留
+        publishAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 计划发布时间，成功发布后保留
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 管理员审核通过时间，免审或未通过时为空
         id:
           type: integer
           format: uint
@@ -3070,6 +3083,19 @@ components:
       type: object
       description: 管理端视频列表项
       properties:
+        isScheduled:
+          type: boolean
+          description: 是否定时作品，发布后保留
+        publishAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 计划发布时间，成功发布后保留
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: 管理员审核通过时间，免审或未通过时为空
         id:
           type: integer
           format: uint
@@ -9883,7 +9909,13 @@ paths:
               - 2
               - 3
               - 4
-          description: 视频状态（1已发布 2私密 3已删除 4审核中）
+              - 5
+          description: 视频状态（1已发布 2私密 3已删除 4审核中 5定时待发布）
+        - name: isScheduled
+          in: query
+          schema:
+            type: boolean
+          description: 是否定时作品，false 筛选即时作品
         - name: partitionId
           in: query
           schema:

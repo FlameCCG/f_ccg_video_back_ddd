@@ -42,6 +42,32 @@ func TestReviseVisibility(t *testing.T) {
 	}
 }
 
+func TestRevisePreservesPublicationTypeAndClearsApprovalWhenResubmitted(t *testing.T) {
+	now := time.Now()
+	approved, future := now.Add(-time.Hour), now.Add(time.Hour)
+	v := &domain.Video{ID: 1, AuthorUsername: "alice", Status: enum.VideoStatusScheduled, IsScheduled: true, ApprovedAt: &approved}
+	title := "new title"
+	if err := v.Revise("alice", domain.Revision{Title: &title}, now, true); err != nil {
+		t.Fatal(err)
+	}
+	if !v.IsScheduled || v.ApprovedAt == nil || !v.ApprovedAt.Equal(approved) {
+		t.Fatalf("metadata revision lost publication info: %+v", v)
+	}
+	if err := v.Revise("alice", domain.Revision{PublishTime: &future}, now, true); err != nil {
+		t.Fatal(err)
+	}
+	if !v.IsScheduled || v.Status != enum.VideoStatusReview || v.ApprovedAt != nil {
+		t.Fatalf("resubmission retained stale approval: %+v", v)
+	}
+	private := true
+	if err := v.Revise("alice", domain.Revision{IsPrivate: &private}, now, true); err != nil {
+		t.Fatal(err)
+	}
+	if v.IsScheduled || v.Status != enum.VideoStatusPrivate {
+		t.Fatalf("cancelled scheduling retained current publication type: %+v", v)
+	}
+}
+
 func TestReviseRejectsInvalidAggregateWithoutMutation(t *testing.T) {
 	title, public := "changed", false
 	for _, tt := range []struct {

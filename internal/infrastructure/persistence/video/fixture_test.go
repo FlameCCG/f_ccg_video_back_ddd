@@ -57,7 +57,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	if err := db.AutoMigrate(
-		&po.User{}, &po.Video{}, &po.VideoPublishSchedule{}, &po.VideoPartition{}, &po.VideoPart{},
+		&po.User{}, &po.Video{}, &po.VideoPartition{}, &po.VideoPart{},
 		&po.VideoResource{}, &po.VideoPartResource{}, &po.Tag{},
 		&po.VideoLike{}, &po.VideoCoin{}, &po.VideoPlayHistory{},
 		&po.FavoriteFolder{}, &po.FavoriteFolderVideo{},

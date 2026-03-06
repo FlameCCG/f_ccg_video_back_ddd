@@ -17,6 +17,9 @@ import (
 
 // DetailMeta 视频详情的文本/结构化信息（有失效时间的缓存部分）。
 type DetailMeta struct {
+	IsScheduled bool                   `json:"isScheduled"`
+	PublishAt   *time.Time             `json:"publishAt"`
+	ApprovedAt  *time.Time             `json:"approvedAt"`
 	ID          uint                   `json:"id"`
 	Title       string                 `json:"title"`
 	Description string                 `json:"description"`
@@ -35,6 +38,9 @@ type DetailMeta struct {
 
 // VideoDetail 视频详情响应体。
 type VideoDetail struct {
+	IsScheduled   bool                   `json:"isScheduled"`
+	PublishAt     *time.Time             `json:"publishAt"`
+	ApprovedAt    *time.Time             `json:"approvedAt"`
 	ID            uint                   `json:"id"`
 	Title         string                 `json:"title"`
 	Description   string                 `json:"description"`
@@ -302,6 +308,9 @@ type AdminVideoAuthor struct {
 
 // AdminVideoItem 管理端视频列表项。
 type AdminVideoItem struct {
+	IsScheduled   bool             `json:"isScheduled"`
+	PublishAt     *time.Time       `json:"publishAt"`
+	ApprovedAt    *time.Time       `json:"approvedAt"`
 	ID            uint             `json:"id"`
 	Title         string           `json:"title"`
 	Cover         string           `json:"cover"`
@@ -462,6 +471,7 @@ type AdminDanmuListParams struct {
 
 // AdminVideoListParams 管理端视频列表查询参数。
 type AdminVideoListParams struct {
+	IsScheduled *bool
 	UserID      uint
 	Keyword     string
 	Status      int

@@ -40,7 +40,8 @@ func openFeedQueryTestDB(t *testing.T) *gorm.DB {
 			author_username text, partition_id integer, views integer, likes integer,
 			comment_count integer, coin_count integer, favorite_count integer,
 			danmu_count integer, is_pinned numeric, pinned_at datetime,
-			is_original numeric, storage_type integer, status integer
+			is_original numeric, storage_type integer, status integer, publish_at datetime,
+			approved_at datetime, is_scheduled numeric NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE video_play_histories (
 			user_id integer, video_id integer, progress integer, duration integer,
