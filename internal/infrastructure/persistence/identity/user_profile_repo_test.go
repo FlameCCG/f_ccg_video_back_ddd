@@ -26,6 +26,7 @@ func openUserProfileTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE users (
 			id integer PRIMARY KEY, created_at datetime, updated_at datetime,
 			username text, email text, password text, avatar text, description text,
+ refresh_token_hash text, must_change_password numeric,
 			gender integer, birthday datetime, level integer, open_id text,
 			register_source text, exp integer, coin_count numeric, status integer,
 			current_role_id integer, register_ip text, last_login_ip text,

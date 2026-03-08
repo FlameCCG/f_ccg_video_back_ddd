@@ -289,3 +289,17 @@ func (a *IdentityDefaultFolderEnsurer) EnsureDefaultFolder(ctx context.Context, 
 
 	return err
 }
+
+// IdentityContentAuthorizer checks live account status at the content boundary.
+type IdentityContentAuthorizer struct{ bans *identityapp.BanService }
+
+func NewIdentityContentAuthorizer(bans *identityapp.BanService) *IdentityContentAuthorizer {
+	return &IdentityContentAuthorizer{bans: bans}
+}
+func (a *IdentityContentAuthorizer) EnsureCanPublish(ctx context.Context, uid uint) error {
+	return a.bans.EnsureCanPublish(ctx, uid)
+}
+
+func (a *IdentityCoinLedger) RevokeFavoriteReward(ctx context.Context, authorID, actorID, videoID uint) error {
+	return a.coins.RevokeFavoriteReward(ctx, authorID, actorID, videoID)
+}

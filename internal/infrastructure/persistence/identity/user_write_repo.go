@@ -113,7 +113,6 @@ func (r *UserRepository) CountByEmailExcluding(
 // Create 创建用户并写入 user_roles 关联，回填 user.ID。
 //
 // 要求在事务内调用；ctx 必须先经 WithDefaultBanner 包装，
-// 否则 po.User 的 AfterCreate 钩子拿不到站点配置的默认横幅 ID。
 func (r *UserRepository) Create(ctx context.Context, user *domain.User, roleID uint) error {
 	if user == nil {
 		return domain.ErrUserNotFound
@@ -146,7 +145,7 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uint, passwo
 	return gormx.DB(ctx, r.db).
 		Model(&po.User{}).
 		Where("id = ?", userID).
-		Update("password", passwordHash).Error
+		Updates(map[string]any{"password": passwordHash, "refresh_token_hash": "", "must_change_password": false}).Error
 }
 
 // UpdateEmail 覆盖写邮箱。

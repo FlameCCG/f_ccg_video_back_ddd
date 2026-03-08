@@ -138,6 +138,7 @@ func (s *OAuthLoginService) Login(ctx context.Context, in OAuthLoginInput) (*jwt
 		RegisterSource: in.Provider,
 		OpenID:         info.OpenID,
 		Email:          info.Email,
+		EmailVerified:  info.EmailVerified,
 		FallbackEmail:  info.FallbackEmail,
 		Avatar:         info.Avatar,
 		RegisterIP:     in.IP,
@@ -195,6 +196,11 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain
 	}
 
 	if user != nil {
+		// Only an explicit provider assertion can associate a pre-existing email.
+		// Synthetic fallback addresses and unverified claims never grant access.
+		if !profile.EmailVerified || profile.Email == "" {
+			return nil, ErrOAuthAccountBindingRequired
+		}
 		return user, nil
 	}
 
@@ -224,7 +230,7 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain
 			return fmt.Errorf("create oauth user failed: %w", createErr)
 		}
 
-		return nil
+		return s.users.InitializeDefaults(txCtx, created.ID)
 	}); err != nil {
 		return nil, err
 	}
@@ -252,8 +258,8 @@ func (s *OAuthLoginService) completeLogin(
 	user *domain.User,
 	in OAuthLoginInput,
 ) (*jwts.JwtToken, error) {
-	if user.IsPermanentlyBanned() {
-		return nil, domain.ErrAccountPermanentlyBanned
+	if user.IsBanned() {
+		return nil, domain.ErrAccountBanned
 	}
 
 	// 角色关联不可读时拒绝登录。
@@ -275,7 +281,7 @@ func (s *OAuthLoginService) completeLogin(
 		s.logger,
 	)
 
-	token, err := s.tokens.Issue(user.ID, user.Username)
+	token, err := s.tokens.IssueForUser(ctx, user, s.users)
 	if err != nil {
 		s.logger.Error("create jwt token failed", zap.Error(err))
 

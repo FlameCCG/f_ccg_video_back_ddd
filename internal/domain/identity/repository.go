@@ -47,6 +47,7 @@ type ExpRecordRepository interface {
 
 // CoinRecordRepository 硬币流水仓储。
 type CoinRecordRepository interface {
+	HasDedupKey(context.Context, uint, string) (bool, error)
 	// Create 写入硬币流水；dedupKey 命中唯一索引时返回 ErrDuplicateRecord。
 	Create(ctx context.Context, userID uint, delta float64, reason string, dedupKey *string) error
 }

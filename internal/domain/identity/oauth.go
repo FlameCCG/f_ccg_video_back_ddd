@@ -8,6 +8,8 @@ import (
 
 // OAuthProfile 第三方登录返回的用户画像值对象。
 type OAuthProfile struct {
+	// EmailVerified is an explicit provider assertion of email ownership.
+	EmailVerified bool
 	// RegisterSource 注册来源，同时作为 provider 名（qq/google/github/linuxdo/x）。
 	RegisterSource string
 	// OpenID 第三方用户唯一标识。
@@ -31,6 +33,7 @@ var fallbackEmailLocalPartPattern = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 func (p OAuthProfile) Normalize() (OAuthProfile, error) {
 	p.RegisterSource = strings.TrimSpace(p.RegisterSource)
 	p.OpenID = strings.TrimSpace(p.OpenID)
+	p.Email = strings.TrimSpace(p.Email)
 
 	if p.RegisterSource == "" {
 		return OAuthProfile{}, ErrOAuthRegisterSourceEmpty
@@ -45,6 +48,9 @@ func (p OAuthProfile) Normalize() (OAuthProfile, error) {
 
 // ResolvedEmail 返回落库使用的邮箱：优先第三方返回值，其次兜底邮箱。
 func (p OAuthProfile) ResolvedEmail() string {
+	if !p.EmailVerified {
+		return BuildOAuthFallbackEmail(p.RegisterSource, p.OpenID, p.FallbackEmail)
+	}
 	return NormalizeOAuthEmail(p.RegisterSource, p.OpenID, p.Email, p.FallbackEmail)
 }
 

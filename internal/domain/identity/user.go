@@ -18,27 +18,29 @@ import (
 //
 // JSON 字段定义接口响应；gorm tag 与关联等持久化信息由 infrastructure 的 PO 承载。
 type User struct {
-	ID             uint            `json:"id"`
-	CreatedAt      time.Time       `json:"-"`
-	UpdatedAt      time.Time       `json:"-"`
-	Username       string          `json:"username"`
-	Email          string          `json:"email"`
-	Password       string          `json:"-"`
-	Avatar         string          `json:"avatar"`
-	Description    string          `json:"description"`
-	Gender         int             `json:"gender"`
-	Birthday       *time.Time      `json:"birthday"`
-	Level          int             `json:"level"`
-	OpenID         string          `json:"openID"`
-	RegisterSource string          `json:"registerSource"`
-	Exp            int64           `json:"exp"`
-	CoinCount      float64         `json:"coinCount"`
-	Status         enum.UserStatus `json:"status"`
-	CurrentRoleID  uint            `json:"currentRoleID"`
-	RegisterIP     string          `json:"registerIP"`
-	LastLoginIP    string          `json:"lastLoginIP"`
-	RegisterAddr   string          `json:"registerAddr"`
-	LastLoginAddr  string          `json:"lastLoginAddr"`
+	RefreshTokenHash   string          `json:"-"`
+	MustChangePassword bool            `json:"mustChangePassword,omitempty"`
+	ID                 uint            `json:"id"`
+	CreatedAt          time.Time       `json:"-"`
+	UpdatedAt          time.Time       `json:"-"`
+	Username           string          `json:"username"`
+	Email              string          `json:"email"`
+	Password           string          `json:"-"`
+	Avatar             string          `json:"avatar"`
+	Description        string          `json:"description"`
+	Gender             int             `json:"gender"`
+	Birthday           *time.Time      `json:"birthday"`
+	Level              int             `json:"level"`
+	OpenID             string          `json:"openID"`
+	RegisterSource     string          `json:"registerSource"`
+	Exp                int64           `json:"exp"`
+	CoinCount          float64         `json:"coinCount"`
+	Status             enum.UserStatus `json:"status"`
+	CurrentRoleID      uint            `json:"currentRoleID"`
+	RegisterIP         string          `json:"registerIP"`
+	LastLoginIP        string          `json:"lastLoginIP"`
+	RegisterAddr       string          `json:"registerAddr"`
+	LastLoginAddr      string          `json:"lastLoginAddr"`
 }
 
 // IsBanned 判断用户当前是否处于封禁态（限时或永久）。
