@@ -12,6 +12,7 @@ import (
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func main() {
@@ -44,9 +45,7 @@ func runMaintenanceTaskWithInitializer(
 ) int {
 	if task == cli.TaskInitAll {
 		allOpts := *opts
-		if len(allOpts.Args) == 0 {
-			allOpts.Args = []string{"ccg", "123456"}
-		} else if len(allOpts.Args) < 2 {
+		if len(allOpts.Args) < 2 || strings.TrimSpace(allOpts.Args[0]) == "" || strings.TrimSpace(allOpts.Args[1]) == "" {
 			_, _ = fmt.Fprintln(os.Stderr, "请同时提供超级管理员用户名和密码，例如: go run ./cmd/server -all 用户名 密码")
 			return 1
 		}
