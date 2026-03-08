@@ -5,6 +5,10 @@
 package jwts
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,14 +21,20 @@ import (
 
 // JwtToken 把访问/刷新令牌及各自的 Unix 秒级过期时间作为一个登录结果返回。
 type JwtToken struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
-	AccessExp    int64  `json:"accessExp"`
-	RefreshExp   int64  `json:"refreshExp"`
+	MustChangePassword bool   `json:"mustChangePassword,omitempty"`
+	AccessToken        string `json:"accessToken"`
+	RefreshToken       string `json:"refreshToken"`
+	AccessExp          int64  `json:"accessExp"`
+	RefreshExp         int64  `json:"refreshExp"`
 }
 
 // CreateJwtToken 签发 access/refresh token；secret 为空或签名失败时返回错误。
 func CreateJwtToken(uid, username string, exp time.Duration, secret string, refreshExp time.Duration, refreshSecret string) (*JwtToken, error) {
+	return CreateJwtTokenWithPassword(uid, username, "", false, exp, secret, refreshExp, refreshSecret)
+}
+
+// CreateJwtTokenWithPassword binds both tokens to the current credential state.
+func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange bool, exp time.Duration, secret string, refreshExp time.Duration, refreshSecret string) (*JwtToken, error) {
 	if strings.TrimSpace(secret) == "" {
 		return nil, errors.New("jwt access secret is required")
 	}
@@ -32,11 +42,20 @@ func CreateJwtToken(uid, username string, exp time.Duration, secret string, refr
 		return nil, errors.New("jwt refresh secret is required")
 	}
 
+	var entropy [32]byte
+	if _, err := rand.Read(entropy[:]); err != nil {
+		return nil, err
+	}
+	sessionID := hex.EncodeToString(entropy[:])
 	aExp := time.Now().Add(exp).Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"uid":      uid,
-		"username": username,
-		"exp":      aExp,
+		"uid":                uid,
+		"username":           username,
+		"pwdVer":             PasswordVersion(passwordHash, secret),
+		"tokenUse":           "access",
+		"mustChangePassword": mustChange,
+		"jti":                sessionID,
+		"exp":                aExp,
 	})
 	aToken, err := token.SignedString([]byte(secret))
 	if err != nil {
@@ -45,8 +64,11 @@ func CreateJwtToken(uid, username string, exp time.Duration, secret string, refr
 
 	rExp := time.Now().Add(refreshExp).Unix()
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"uid": uid,
-		"exp": rExp,
+		"uid":      uid,
+		"tokenUse": "refresh",
+		"pwdVer":   PasswordVersion(passwordHash, refreshSecret),
+		"jti":      sessionID,
+		"exp":      rExp,
 	})
 	rToken, err := refreshToken.SignedString([]byte(refreshSecret))
 	if err != nil {
@@ -54,10 +76,11 @@ func CreateJwtToken(uid, username string, exp time.Duration, secret string, refr
 	}
 
 	return &JwtToken{
-		AccessToken:  aToken,
-		AccessExp:    aExp,
-		RefreshToken: rToken,
-		RefreshExp:   rExp,
+		MustChangePassword: mustChange,
+		AccessToken:        aToken,
+		AccessExp:          aExp,
+		RefreshToken:       rToken,
+		RefreshExp:         rExp,
 	}, nil
 }
 
@@ -183,4 +206,46 @@ func claimUnix(claims jwt.MapClaims, key string) (int64, error) {
 	default:
 		return 0, errors.New("invalid token")
 	}
+}
+
+// PasswordVersion is a one-way, server-keyed credential version. Password changes
+// change the bcrypt hash (including its random salt), invalidating all old tokens.
+func PasswordVersion(passwordHash, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte("jwt-credential-version:" + passwordHash))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// CheckPasswordVersion verifies a signed token against current credentials.
+func CheckPasswordVersion(tokenString, secret, passwordHash string, expectedUse ...string) error {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !token.Valid {
+		return errors.New("invalid token")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return errors.New("invalid token")
+	}
+	if len(expectedUse) > 0 {
+		if use, ok := claims["tokenUse"].(string); !ok || use != expectedUse[0] {
+			return errors.New("incorrect token use")
+		}
+	}
+	version, ok := claims["pwdVer"].(string)
+	if !ok || !hmac.Equal([]byte(version), []byte(PasswordVersion(passwordHash, secret))) {
+		return errors.New("credentials changed")
+	}
+	if jti, ok := claims["jti"].(string); !ok || jti == "" {
+		return errors.New("invalid token")
+	}
+	return nil
+}
+func TokenDigest(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }

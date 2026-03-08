@@ -49,3 +49,25 @@ func TestCreateJwtTokenRoundTrip(t *testing.T) {
 		_ = err
 	}
 }
+
+func TestCredentialVersionAndTokenPurpose(t *testing.T) {
+	pair, err := CreateJwtTokenWithPassword("7", "user", "password-hash", false, time.Hour, "shared-secret", time.Hour, "shared-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPasswordVersion(pair.AccessToken, "shared-secret", "password-hash", "access"); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPasswordVersion(pair.RefreshToken, "shared-secret", "password-hash", "refresh"); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPasswordVersion(pair.AccessToken, "shared-secret", "password-hash", "refresh"); err == nil {
+		t.Fatal("access token accepted as refresh")
+	}
+	if err := CheckPasswordVersion(pair.RefreshToken, "shared-secret", "password-hash", "access"); err == nil {
+		t.Fatal("refresh token accepted as access")
+	}
+	if err := CheckPasswordVersion(pair.AccessToken, "shared-secret", "changed-hash", "access"); err == nil {
+		t.Fatal("old credential version accepted")
+	}
+}
