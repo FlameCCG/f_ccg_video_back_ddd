@@ -10,26 +10,31 @@ import (
 
 // GitHubURLReq 请求/响应结构体.
 type GitHubURLReq struct {
-	State               string `form:"state" binding:"required"`
+	State               string `form:"state"`
 	CodeChallenge       string `form:"codeChallenge"`
 	CodeChallengeMethod string `form:"codeChallengeMethod" binding:"omitempty,oneof=S256"`
 }
 
 // LinuxDoURLReq 请求/响应结构体.
 type LinuxDoURLReq struct {
-	State string `form:"state" binding:"required"`
+	State string `form:"state"`
 }
 
 // XURLReq 请求/响应结构体.
 type XURLReq struct {
-	State               string `form:"state" binding:"required"`
+	State               string `form:"state"`
 	CodeChallenge       string `form:"codeChallenge" binding:"required"`
 	CodeChallengeMethod string `form:"codeChallengeMethod" binding:"omitempty,oneof=S256 plain"`
 }
 
 // QQUrlView 处理对应 HTTP 请求.
 func (h *Handler) QQUrlView(c *gin.Context) {
-	res.OkWithData(h.oauthURL.QQURL(), c)
+	authURL, err := h.oauthURL.QQURL(c.Request.Context())
+	if err != nil {
+		res.FailWithMsg("OAuth authorization unavailable", c)
+		return
+	}
+	res.OkWithData(authURL, c)
 }
 
 // GoogleUrlView 处理对应 HTTP 请求.
