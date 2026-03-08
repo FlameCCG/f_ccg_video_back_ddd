@@ -26,9 +26,10 @@ type DASHVariant struct {
 	BaseURL  string `json:"baseUrl,omitempty"`
 	FileName string `json:"fileName,omitempty"`
 	// FileSize 由最后一个 SegmentURL 的 mediaRange 末字节推算（单文件 DASH）。
-	FileSize   int64  `json:"fileSize,omitempty"`
-	Resolution string `json:"resolution,omitempty"`
-	FrameRate  string `json:"frameRate,omitempty"`
+	FileSize   int64    `json:"fileSize,omitempty"`
+	Resolution string   `json:"resolution,omitempty"`
+	FrameRate  string   `json:"frameRate,omitempty"`
+	Files      []string `json:"-"`
 }
 
 // mpdXML 是用于 Representation 发现的最小 MPD 结构。
@@ -48,20 +49,35 @@ type mpdAdaptationSet struct {
 	FrameRate   string              `xml:"frameRate,attr"`
 	MaxWidth    int                 `xml:"maxWidth,attr"`
 	MaxHeight   int                 `xml:"maxHeight,attr"`
+	Template    *mpdSegmentTemplate `xml:"SegmentTemplate"`
 	Reps        []mpdRepresentation `xml:"Representation"`
 }
 
 type mpdRepresentation struct {
-	ID          string          `xml:"id,attr"`
-	Bandwidth   int             `xml:"bandwidth,attr"`
-	Width       int             `xml:"width,attr"`
-	Height      int             `xml:"height,attr"`
-	Codecs      string          `xml:"codecs,attr"`
-	MimeType    string          `xml:"mimeType,attr"`
-	FrameRate   string          `xml:"frameRate,attr"`
-	BaseURL     string          `xml:"BaseURL"`
-	SegmentList *mpdSegmentList `xml:"SegmentList"`
-	SegmentBase *mpdSegmentBase `xml:"SegmentBase"`
+	ID          string              `xml:"id,attr"`
+	Bandwidth   int                 `xml:"bandwidth,attr"`
+	Width       int                 `xml:"width,attr"`
+	Height      int                 `xml:"height,attr"`
+	Codecs      string              `xml:"codecs,attr"`
+	MimeType    string              `xml:"mimeType,attr"`
+	FrameRate   string              `xml:"frameRate,attr"`
+	BaseURL     string              `xml:"BaseURL"`
+	SegmentList *mpdSegmentList     `xml:"SegmentList"`
+	SegmentBase *mpdSegmentBase     `xml:"SegmentBase"`
+	Template    *mpdSegmentTemplate `xml:"SegmentTemplate"`
+}
+
+type mpdSegmentTemplate struct {
+	Initialization string `xml:"initialization,attr"`
+	Media          string `xml:"media,attr"`
+	StartNumber    int64  `xml:"startNumber,attr"`
+	Timeline       *struct {
+		Entries []struct {
+			Start    *int64 `xml:"t,attr"`
+			Duration int64  `xml:"d,attr"`
+			Repeat   int64  `xml:"r,attr"`
+		} `xml:"S"`
+	} `xml:"SegmentTimeline"`
 }
 
 type mpdSegmentList struct {
@@ -166,6 +182,20 @@ func ParseMPDVariants(data []byte) ([]DASHVariant, error) {
 					v.Resolution = firstNonEmpty(v.MimeType, "流")
 				}
 
+				template := rep.Template
+				if template == nil {
+					template = as.Template
+				}
+				if template != nil {
+					files, err := templateFiles(template, rep.ID, rep.Bandwidth)
+					if err != nil {
+						return nil, err
+					}
+					v.Files = files
+					if len(files) > 0 {
+						v.FileName = baseNameOf(files[0])
+					}
+				}
 				v.FileSize = estimateRepFileSize(rep)
 				out = append(out, v)
 			}
@@ -390,4 +420,64 @@ func DashDirPrefix(fileURL string) string {
 	}
 
 	return ""
+}
+
+var templateToken = regexp.MustCompile(`\$(RepresentationID|Bandwidth|Number|Time)(%0([0-9]{1,2})d)?\$`)
+
+func templateFiles(t *mpdSegmentTemplate, id string, bandwidth int) ([]string, error) {
+	expand := func(pattern string, number, stamp int64) string {
+		pattern = strings.ReplaceAll(pattern, "$$", "\x00")
+		pattern = templateToken.ReplaceAllStringFunc(pattern, func(token string) string {
+			m := templateToken.FindStringSubmatch(token)
+			if m[1] == "RepresentationID" {
+				return id
+			}
+			value := number
+			if m[1] == "Time" {
+				value = stamp
+			}
+			if m[1] == "Bandwidth" {
+				value = int64(bandwidth)
+			}
+			width, _ := strconv.Atoi(m[3])
+			return fmt.Sprintf("%0*d", width, value)
+		})
+		return strings.ReplaceAll(pattern, "\x00", "$")
+	}
+	files := []string{}
+	if t.Initialization != "" {
+		files = append(files, expand(t.Initialization, 0, 0))
+	}
+	if t.Media == "" || t.Timeline == nil {
+		return nil, fmt.Errorf("DASH template requires media and timeline")
+	}
+	number := t.StartNumber
+	if number == 0 {
+		number = 1
+	}
+	var stamp int64
+	for i, e := range t.Timeline.Entries {
+		if e.Start != nil {
+			stamp = *e.Start
+		}
+		repeat := e.Repeat
+		if e.Duration <= 0 {
+			return nil, fmt.Errorf("invalid DASH segment duration")
+		}
+		if repeat < 0 {
+			if i+1 >= len(t.Timeline.Entries) || t.Timeline.Entries[i+1].Start == nil {
+				return nil, fmt.Errorf("unbounded DASH timeline")
+			}
+			repeat = (*t.Timeline.Entries[i+1].Start-stamp+e.Duration-1)/e.Duration - 1
+		}
+		if repeat < 0 || repeat > 100000 || int64(len(files))+repeat+1 > 100000 {
+			return nil, fmt.Errorf("DASH timeline exceeds segment limit")
+		}
+		for j := int64(0); j <= repeat; j++ {
+			files = append(files, expand(t.Media, number, stamp))
+			number++
+			stamp += e.Duration
+		}
+	}
+	return files, nil
 }
