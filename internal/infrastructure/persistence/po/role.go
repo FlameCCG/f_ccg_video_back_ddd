@@ -1,7 +1,5 @@
 package po
 
-import "gorm.io/gorm"
-
 // Role 角色表.
 type Role struct {
 	Model
@@ -14,18 +12,4 @@ type Role struct {
 // TableName 显式绑定表名 roles，保持迁移与仓储 SQL 使用同一张表。
 func (Role) TableName() string {
 	return "roles"
-}
-
-// AfterDelete 删除角色后自动清理关联关系.
-func (r Role) AfterDelete(db *gorm.DB) error {
-	// 删除角色菜单关联
-	if err := db.Where("role_id = ?", r.ID).Delete(&RoleMenu{}).Error; err != nil {
-		return err
-	}
-	// 删除角色用户关联
-	if err := db.Where("role_id = ?", r.ID).Delete(&UserRole{}).Error; err != nil {
-		return err
-	}
-
-	return nil
 }

@@ -33,7 +33,16 @@ func NewInheritService(
 }
 
 // Assign 建立角色继承关系，并把父角色菜单以「继承」标记同步给子角色。
-func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) error {
+func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
+	s.graph = NewRoleGraph(scoped)
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
 		return domain.ErrRoleNotFound
@@ -133,7 +142,16 @@ func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) 
 // Remove 解除角色的直接继承关系，并回收不再由任何父角色提供的继承菜单。
 //
 // 仅允许解除「直接继承」；间接继承须先解顶层父角色。
-func (s *InheritService) Remove(ctx context.Context, roleID, parentRoleID uint) error {
+func (s *InheritService) Remove(ctx context.Context, roleID, parentRoleID uint) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
+	s.graph = NewRoleGraph(scoped)
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
 		return domain.ErrRoleNotFound

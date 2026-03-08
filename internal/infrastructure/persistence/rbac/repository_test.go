@@ -183,8 +183,12 @@ func TestRoleAndMenuRepositories(t *testing.T) {
 		t.Fatalf("unexpected menu after update: %+v", reloaded)
 	}
 
-	// 删除角色应由 AfterDelete 钩子清掉 role_menus。
-	if err := f.roles.DeleteByID(ctx, admin.ID); err != nil {
+	if err := gormx.NewTxManager(f.db).Do(ctx, func(txCtx context.Context) error {
+		if err := f.roles.DeleteBindings(txCtx, admin.ID); err != nil {
+			return err
+		}
+		return f.roles.DeleteByID(txCtx, admin.ID)
+	}); err != nil {
 		t.Fatalf("delete role: %v", err)
 	}
 
