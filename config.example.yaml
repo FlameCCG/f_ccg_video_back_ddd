@@ -413,7 +413,7 @@ ai:
   #   off  —— 纯文本向量，「以图搜视频」将失效
   embeddingImageMode: auto
   # 站内资源公网前缀，用于把相对封面路径补成绝对地址；
-  # 留空时本地存储的封面会直接从磁盘读取，MinIO 等内网地址会由后端代抓再转 base64
+  # 本地封面可直接从已配置目录读取；远程资源须使用公网 URL，后端不代抓私网地址
   assetBaseURL: ""
   # 向量召回与关键词召回做 RRF 融合的排名常数（业界惯例 60）
   vectorRRFRankConstant: 60
