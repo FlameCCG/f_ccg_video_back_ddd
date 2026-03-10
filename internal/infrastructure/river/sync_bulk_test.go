@@ -656,3 +656,20 @@ func writeBulkSuccess(t *testing.T, w http.ResponseWriter) {
 		}]
 	}`)
 }
+
+func TestRiverCallbackUnblocksWhenQueueConsumerStops(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	r := &River{ctx: ctx, cancel: cancel, syncCh: make(chan any, 1)}
+	r.syncCh <- "full"
+	done := make(chan error, 1)
+	go func() { done <- r.enqueue("blocked") }()
+	cancel()
+	select {
+	case err := <-done:
+		if err != context.Canceled {
+			t.Fatalf("error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("callback leaked after cancellation")
+	}
+}
