@@ -10,6 +10,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Repository 评论仓储的 GORM 实现。
@@ -233,7 +234,7 @@ func NewLikeRepository(db *gorm.DB) *LikeRepository {
 func (r *LikeRepository) Find(ctx context.Context, commentID, userID uint) (*domain.Like, error) {
 	var row po.CommentLike
 	if err := gormx.DB(ctx, r.db).
-		Where("comment_id = ? AND user_id = ?", commentID, userID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).Where("comment_id = ? AND user_id = ?", commentID, userID).
 		First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -252,8 +253,12 @@ func (r *LikeRepository) Create(ctx context.Context, like *domain.Like) error {
 	}
 
 	row := toPOLike(like)
-	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
-		return err
+	result := gormx.DB(ctx, r.db).Clauses(clause.OnConflict{DoNothing: true}).Create(row)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrLikeDuplicated
 	}
 
 	like.ID = row.ID
