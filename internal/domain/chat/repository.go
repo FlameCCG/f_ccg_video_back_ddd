@@ -12,6 +12,8 @@ import (
 type Repository interface {
 	// Available 报告私信存储是否可用。
 	Available() bool
+	// SendMessage atomically persists a message and its conversation update.
+	SendMessage(ctx context.Context, msg *Message, preview string) error
 	// EnsureIndexes 创建聊天集合索引（启动期幂等执行）。
 	EnsureIndexes(ctx context.Context) error
 	// InsertMessage 落库一条消息，并回填仓储生成的消息 ID。

@@ -167,3 +167,15 @@ type fakeBadgeInvalidator struct {
 func (f *fakeBadgeInvalidator) InvalidateCount(receiverID int) {
 	f.invalidated = append(f.invalidated, receiverID)
 }
+
+func (f *fakeRepository) SendMessage(ctx context.Context, msg *domain.Message, preview string) error {
+	before := len(f.inserted)
+	if err := f.InsertMessage(ctx, msg); err != nil {
+		return err
+	}
+	if err := f.ApplySend(ctx, msg, preview); err != nil {
+		f.inserted = f.inserted[:before]
+		return err
+	}
+	return nil
+}
