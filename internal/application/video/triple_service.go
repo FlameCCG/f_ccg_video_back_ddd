@@ -169,12 +169,13 @@ func (s *InteractionService) applyTriple(
 		out.NewlyFaved = true
 
 		if authorID > 0 && authorID != userID {
+			key := favoriteRewardKey(userID, videoID)
 			if err := s.ledger.ApplyChange(
 				ctx,
 				authorID,
 				domain.FavoriteAuthorReward,
 				"作品被收藏 +"+coinutil.Format(domain.FavoriteAuthorReward),
-				nil,
+				&key,
 			); err != nil {
 				return nil, err
 			}

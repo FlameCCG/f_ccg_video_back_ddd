@@ -96,6 +96,8 @@ var CrossContextProviderSet = wire.NewSet(
 	adapters.NewUploadQuotaExemption,
 	wire.Bind(new(videoapp.UploadQuotaExemption), new(*adapters.UploadQuotaExemption)),
 	wire.Bind(new(videoapp.ExpAwarder), new(*identityapp.ExpService)),
+	adapters.NewIdentityContentAuthorizer,
+	wire.Bind(new(videoapp.ContentAuthorizer), new(*adapters.IdentityContentAuthorizer)),
 	adapters.NewIdentityCoinLedger,
 	wire.Bind(new(videoapp.CoinLedger), new(*adapters.IdentityCoinLedger)),
 	adapters.NewVideoStorageResolver,

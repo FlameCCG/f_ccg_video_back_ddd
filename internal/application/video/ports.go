@@ -397,6 +397,7 @@ type ExpAwarder interface {
 //
 // ApplyChange 复用 context 中已有的事务，使三连和投币的硬币变更与视频侧写入处于同一事务。
 type CoinLedger interface {
+	RevokeFavoriteReward(ctx context.Context, authorID, actorID, videoID uint) error
 	// LockAccounts 在调用方事务中锁定账户；由 identity 负责排序与去重。
 	LockAccounts(ctx context.Context, userIDs []uint) error
 	// ApplyChange 增减用户硬币余额并写入流水。
@@ -472,4 +473,10 @@ type CommentPurger interface {
 // 绑定目标：dynamic 上下文。
 type DynamicReadMarker interface {
 	MaybeMarkReadByVideo(ctx context.Context, userID, videoID uint) error
+}
+
+// ContentAuthorizer validates current account status for every content mutation,
+// including messages received on an already established WebSocket connection.
+type ContentAuthorizer interface {
+	EnsureCanPublish(context.Context, uint) error
 }
