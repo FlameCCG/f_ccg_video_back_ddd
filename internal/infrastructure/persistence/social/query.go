@@ -243,6 +243,7 @@ func (q *RelationQuery) listSocialUsers(
 	group.Go(func() error {
 		query := buildBase().WithContext(groupCtx).
 			Select("u.id, u.username, u.avatar, u.description, u.level").
+			Order("user_focus.created_at DESC, u.id DESC").
 			Offset((page - 1) * pageSize).
 			Limit(pageSize)
 
