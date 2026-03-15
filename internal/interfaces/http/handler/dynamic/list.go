@@ -1,6 +1,7 @@
 package dynamic
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -31,7 +32,7 @@ func (h *Handler) ListView(c *gin.Context) {
 
 	list, total, err := h.feed.ListFeed(c.Request.Context(), uid, req.UserID, req.Type, req.Page, req.PageSize)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

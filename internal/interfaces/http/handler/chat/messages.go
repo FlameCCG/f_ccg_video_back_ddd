@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -24,9 +25,9 @@ func (h *Handler) MessageListView(c *gin.Context) {
 		return
 	}
 
-	data, err := h.service.ListMessages(c, uid, req.PeerID, req.Before)
+	data, err := h.service.ListMessages(c.Request.Context(), uid, req.PeerID, req.Before)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

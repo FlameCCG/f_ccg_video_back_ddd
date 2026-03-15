@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -24,7 +25,7 @@ func (h *Handler) MarkReadView(c *gin.Context) {
 	}
 
 	if err := h.service.MarkRead(c.Request.Context(), uid, req.PeerID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

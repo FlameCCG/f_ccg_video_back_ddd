@@ -1,6 +1,7 @@
 package social
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"strconv"
 	"strings"
 
@@ -47,7 +48,7 @@ func (h *Handler) FansListView(c *gin.Context) {
 		Keyword:  keyword,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

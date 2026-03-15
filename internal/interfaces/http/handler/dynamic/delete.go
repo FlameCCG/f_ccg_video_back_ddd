@@ -1,6 +1,7 @@
 package dynamic
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -23,7 +24,7 @@ func (h *Handler) DeleteView(c *gin.Context) {
 	}
 
 	if err := h.dynamics.Delete(c.Request.Context(), uid, req.DynamicID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

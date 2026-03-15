@@ -3,6 +3,7 @@ package identity
 import (
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -36,7 +37,7 @@ func (h *AdminHandler) AdminBanView(c *gin.Context) {
 		OperatorID: operatorID,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

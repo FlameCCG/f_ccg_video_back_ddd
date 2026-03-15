@@ -2,6 +2,7 @@ package identity
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -31,7 +32,7 @@ func (h *Handler) BindEmailView(c *gin.Context) {
 		Email:  req.Email,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

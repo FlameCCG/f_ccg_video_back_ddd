@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,28 +27,7 @@ func userFacingAIError(err error) string {
 		return fallback
 	}
 
-	msg := strings.TrimSpace(err.Error())
-	if msg == "" {
-		return fallback
-	}
-
-	// 配置缺失、参数问题：用户可感知并处理
-	for _, keyword := range []string{
-		"API Key",
-		"api key",
-		"未配置",
-		"未初始化",
-		"不能为空",
-		"不是合法",
-		"不支持",
-		"无效",
-	} {
-		if strings.Contains(msg, keyword) {
-			return msg
-		}
-	}
-
-	return fallback
+	return clienterror.Message(err)
 }
 
 func copyUpstreamHeaders(dst, src http.Header) {

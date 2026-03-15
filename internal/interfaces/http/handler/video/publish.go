@@ -1,6 +1,7 @@
 package video
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
@@ -88,7 +89,7 @@ func (h *Handler) PublishVideoView(c *gin.Context) {
 		AuthorUsername: authorUsername,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -152,7 +153,7 @@ func (h *Handler) UpdateVideoView(c *gin.Context) {
 			return
 		}
 
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		h.log().Error("update video failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
 
 		return

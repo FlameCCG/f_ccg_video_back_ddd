@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -23,8 +24,8 @@ func (h *Handler) DeleteConversationView(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.DeleteConversation(c, uid, req.PeerID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+	if err := h.service.DeleteConversation(c.Request.Context(), uid, req.PeerID); err != nil {
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"strconv"
 	"strings"
 
@@ -43,7 +44,7 @@ type UpdateUserRolesReq struct {
 func (h *Handler) GetRoleListView(c *gin.Context) {
 	roles, err := h.roles.List(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -61,7 +62,7 @@ func (h *Handler) CreateRoleView(c *gin.Context) {
 		Permissions: toDomainPermissions(req.Permissions),
 		CopyRoleID:  req.CopyRoleID,
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -77,7 +78,7 @@ func (h *Handler) UpdateRoleView(c *gin.Context) {
 		Name:   req.Name,
 		Desc:   req.Desc,
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -100,7 +101,7 @@ func (h *Handler) DeleteRoleView(c *gin.Context) {
 	}
 
 	if err := h.roles.Delete(c.Request.Context(), roleID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -112,7 +113,7 @@ func (h *Handler) AssignRoleView(c *gin.Context) {
 	req := middlewares.GetBound[AssignRoleReq](c)
 
 	if err := h.roles.AssignUserRoles(c.Request.Context(), req.UserID, req.RoleIDs); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -124,7 +125,7 @@ func (h *Handler) RemoveRoleView(c *gin.Context) {
 	req := middlewares.GetBound[AssignRoleReq](c)
 
 	if err := h.roles.RemoveUserRoles(c.Request.Context(), req.UserID, req.RoleIDs); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -136,7 +137,7 @@ func (h *Handler) UpdateUserRolesView(c *gin.Context) {
 	req := middlewares.GetBound[UpdateUserRolesReq](c)
 
 	if err := h.roles.ReplaceUserRoles(c.Request.Context(), req.UserID, req.RoleIDs); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -165,7 +166,7 @@ func (h *Handler) GetUserRolesView(c *gin.Context) {
 
 	roles, err := h.roles.UserRoles(c.Request.Context(), uint(userID))
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -189,7 +190,7 @@ func (h *Handler) UserPermissionsView(c *gin.Context) {
 
 	items, err := h.roles.UserPermissions(c.Request.Context(), uint(userID))
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"strconv"
 	"strings"
 
@@ -21,7 +22,7 @@ func (h *Handler) AssignRoleInheritView(c *gin.Context) {
 	req := middlewares.GetBound[RoleInheritReq](c)
 
 	if err := h.inherits.Assign(c.Request.Context(), req.RoleID, req.ParentRoleID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -33,7 +34,7 @@ func (h *Handler) RemoveRoleInheritView(c *gin.Context) {
 	req := middlewares.GetBound[RoleInheritReq](c)
 
 	if err := h.inherits.Remove(c.Request.Context(), req.RoleID, req.ParentRoleID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -57,7 +58,7 @@ func (h *Handler) RoleInheritListView(c *gin.Context) {
 
 	resp, err := h.inherits.List(c.Request.Context(), uint(roleID))
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -69,7 +70,7 @@ func (h *Handler) RoleInheritListView(c *gin.Context) {
 func (h *Handler) RoleInheritTreeView(c *gin.Context) {
 	tree, err := h.inherits.Tree(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -87,7 +88,7 @@ func (h *Handler) RoleInheritTreeView(c *gin.Context) {
 
 	filtered, err := h.inherits.FilterTree(c.Request.Context(), tree, uint(roleID))
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

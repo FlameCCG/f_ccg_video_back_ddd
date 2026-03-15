@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"strconv"
 	"strings"
 
@@ -66,7 +67,7 @@ type AssignMenuReq struct {
 func (h *Handler) GetMenuListView(c *gin.Context) {
 	menuTree, err := h.menus.Tree(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -207,7 +208,7 @@ func (h *Handler) DeleteMenuView(c *gin.Context) {
 	}
 
 	if err := h.menus.Delete(c.Request.Context(), menuID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -219,7 +220,7 @@ func (h *Handler) AssignMenuView(c *gin.Context) {
 	req := middlewares.GetBound[AssignMenuReq](c)
 
 	if err := h.menus.AssignRoleMenus(c.Request.Context(), req.RoleID, req.MenuIDs); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -231,7 +232,7 @@ func (h *Handler) RemoveRoleMenuView(c *gin.Context) {
 	req := middlewares.GetBound[AssignMenuReq](c)
 
 	if err := h.menus.RemoveRoleMenus(c.Request.Context(), req.RoleID, req.MenuIDs); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -255,7 +256,7 @@ func (h *Handler) RoleMenusView(c *gin.Context) {
 
 	resp, err := h.menus.RoleMenus(c.Request.Context(), uint(roleID))
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -272,7 +273,7 @@ func (h *Handler) GetUserMenusView(c *gin.Context) {
 
 	menuTree, err := h.menus.UserMenus(c.Request.Context(), uid)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -300,7 +301,7 @@ func (h *Handler) respondMenuMutationError(
 		domain.ErrMenuIconTooLong,
 	} {
 		if errors.Is(err, businessErr) {
-			res.FailWithMsg(businessErr.Error(), c)
+			res.FailWithMsg(clienterror.Message(businessErr), c)
 
 			return
 		}
@@ -311,7 +312,7 @@ func (h *Handler) respondMenuMutationError(
 	logFields = append(logFields, fields...)
 	logFields = append(logFields, zap.Error(err))
 	h.log().Error("menu mutation failed", logFields...)
-	res.FailWithMsg(fallback.Error(), c)
+	res.FailWithMsg(clienterror.Message(fallback), c)
 }
 
 func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID *uint) {
@@ -320,7 +321,7 @@ func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID
 		domain.ErrParentMenuNotFound,
 	} {
 		if errors.Is(err, businessErr) {
-			res.FailWithMsg(businessErr.Error(), c)
+			res.FailWithMsg(clienterror.Message(businessErr), c)
 
 			return
 		}
@@ -346,7 +347,7 @@ func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID
 		zap.Error(err),
 	}
 	h.log().Error("menu generation failed", fields...)
-	res.FailWithMsg(publicErr.Error(), c)
+	res.FailWithMsg(clienterror.Message(publicErr), c)
 }
 
 func optionalMenuIDField(key string, value *uint) zap.Field {

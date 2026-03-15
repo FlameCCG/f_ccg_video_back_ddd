@@ -1,6 +1,7 @@
 package dynamic
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -19,7 +20,7 @@ func (h *Handler) AdminDeleteView(c *gin.Context) {
 
 	deleted, err := h.admin.Delete(ctx, req.DynamicIDs)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

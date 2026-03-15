@@ -1,11 +1,8 @@
 package video
 
 import (
-	"strings"
-
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -28,20 +25,7 @@ func (h *Handler) DetailView(c *gin.Context) {
 	req := middlewares.GetBound[VideoDetailReq](c)
 	ctx := c.Request.Context()
 
-	token := c.GetHeader("Authorization")
-	token = strings.TrimPrefix(token, "Bearer ")
-
-	uidStr, _, err := jwts.ParseJwtToken(token, h.accessSecret())
-	if err != nil {
-		h.log().Debug("parse jwt token failed", zap.Error(err))
-	}
-
-	c.Set("uid", uidStr)
-
-	var viewerID uint
-	if uid, ok := getUID(c); ok {
-		viewerID = uid
-	}
+	viewerID := h.resolveUID(c)
 
 	detail, err := h.detail.GetVideoDetail(ctx, req.VideoID, viewerID)
 	if err != nil {

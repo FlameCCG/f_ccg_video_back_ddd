@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"strconv"
 
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
@@ -20,7 +21,7 @@ func (h *Handler) RecentLikedView(c *gin.Context) {
 
 	list, total, err := h.activity.RecentLiked(c.Request.Context(), targetID, viewerID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -39,7 +40,7 @@ func (h *Handler) RecentCoinedView(c *gin.Context) {
 
 	list, total, err := h.activity.RecentCoined(c.Request.Context(), targetID, viewerID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

@@ -1,6 +1,7 @@
 package dynamic
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -31,12 +32,12 @@ func (h *Handler) PinView(c *gin.Context) {
 
 	if req.DynamicID > 0 {
 		if err := h.dynamics.Pin(c.Request.Context(), uid, req.DynamicID, req.Pinned); err != nil {
-			res.FailWithMsg(err.Error(), c)
+			res.FailWithMsg(clienterror.Message(err), c)
 			return
 		}
 	} else {
 		if err := h.dynamics.PinVideo(c.Request.Context(), uid, req.VideoID, req.Pinned); err != nil {
-			res.FailWithMsg(err.Error(), c)
+			res.FailWithMsg(clienterror.Message(err), c)
 			return
 		}
 	}

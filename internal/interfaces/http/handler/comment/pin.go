@@ -1,6 +1,7 @@
 package comment
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -25,7 +26,7 @@ func (h *Handler) PinView(c *gin.Context) {
 	}
 
 	if err := h.svc.Pin(c.Request.Context(), uid, req.CommentID, req.Pinned); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

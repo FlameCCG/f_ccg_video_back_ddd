@@ -3,6 +3,7 @@ package video
 import (
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -26,7 +27,7 @@ func (h *AdminHandler) AdminDetailView(c *gin.Context) {
 			return
 		}
 
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -61,7 +62,7 @@ func (h *AdminHandler) AdminListView(c *gin.Context) {
 		PageSize:    req.PageSize,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -84,7 +85,7 @@ func (h *AdminHandler) AdminReviewView(c *gin.Context) {
 		Status:   enum.VideoStatus(req.Status),
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -103,7 +104,7 @@ func (h *AdminHandler) AdminRestoreVideoView(c *gin.Context) {
 
 	affected, err := h.admin.Restore(c.Request.Context(), req.VideoIDs)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -123,7 +124,7 @@ func (h *AdminHandler) AdminDeleteVideoView(c *gin.Context) {
 
 	result, err := h.admin.Delete(c.Request.Context(), req.VideoIDs, req.HardDelete)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

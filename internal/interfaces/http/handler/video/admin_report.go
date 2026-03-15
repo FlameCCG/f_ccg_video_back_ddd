@@ -4,6 +4,7 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -33,7 +34,7 @@ func (h *AdminHandler) AdminReportListView(c *gin.Context) {
 	case "video":
 		list, total, err := h.reports.AdminVideoReports(ctx, req.Page, req.PageSize, int(req.Status))
 		if err != nil {
-			res.FailWithMsg(err.Error(), c)
+			res.FailWithMsg(clienterror.Message(err), c)
 
 			return
 		}
@@ -42,7 +43,7 @@ func (h *AdminHandler) AdminReportListView(c *gin.Context) {
 	case "danmu":
 		list, total, err := h.reports.AdminDanmuReports(ctx, req.Page, req.PageSize, int(req.Status))
 		if err != nil {
-			res.FailWithMsg(err.Error(), c)
+			res.FailWithMsg(clienterror.Message(err), c)
 
 			return
 		}
@@ -90,7 +91,7 @@ func (h *AdminHandler) AdminReportHandleView(c *gin.Context) {
 		c.Request.Context(), handleType, req.ReportIDs, req.Status, req.HandleNote, handlerID,
 	)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -119,7 +120,7 @@ func (h *AdminHandler) AdminDanmuListView(c *gin.Context) {
 		PageSize: req.PageSize,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -138,7 +139,7 @@ func (h *AdminHandler) AdminDeleteDanmuView(c *gin.Context) {
 
 	deleted, err := h.danmu.AdminDelete(c.Request.Context(), req.DanmuIDs)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

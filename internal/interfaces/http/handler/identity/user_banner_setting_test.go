@@ -77,7 +77,11 @@ func (f *bannerFixture) createUser(t *testing.T, userID uint, username, email st
 	// 再 WithContext(ctx).Transaction，这样 AfterCreate 钩子能从 tx.Statement.Context 读到横幅 ID。
 	ctx := f.users.WithDefaultBanner(context.Background())
 	if err := f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return f.users.Create(gormx.WithTx(ctx, tx), user, 0)
+		txCtx := gormx.WithTx(ctx, tx)
+		if err := f.users.Create(txCtx, user, 0); err != nil {
+			return err
+		}
+		return f.users.InitializeDefaults(txCtx, user.ID)
 	}); err != nil {
 		t.Fatalf("create user %d failed: %v", userID, err)
 	}

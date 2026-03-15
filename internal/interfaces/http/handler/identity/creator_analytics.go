@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -26,7 +27,7 @@ func (h *Handler) CreatorAnalyticsView(c *gin.Context) {
 
 	data, err := h.creators.Analytics(c.Request.Context(), uid, req.Range, req.Type)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -45,7 +46,7 @@ func (h *Handler) CreatorOverviewView(c *gin.Context) {
 
 	data, err := h.creators.Overview(c.Request.Context(), uid)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

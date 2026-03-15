@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"strings"
 
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
@@ -34,7 +35,7 @@ func (h *Handler) AssignPermissionView(c *gin.Context) {
 		RoleName:    req.RoleName,
 		Permissions: toDomainPermissions(req.Permissions),
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -49,7 +50,7 @@ func (h *Handler) RemovePermissionView(c *gin.Context) {
 		RoleName:    req.RoleName,
 		Permissions: toDomainPermissions(req.Permissions),
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -65,7 +66,7 @@ func (h *Handler) UpdateRolePermissionsView(c *gin.Context) {
 		Permissions:      toDomainPermissions(req.Permissions),
 		BreakInheritance: req.BreakInheritance,
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -83,7 +84,7 @@ func (h *Handler) GetRolePermissionsView(c *gin.Context) {
 
 	resp, err := h.permissions.RolePermissions(c.Request.Context(), roleName)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -95,7 +96,7 @@ func (h *Handler) GetRolePermissionsView(c *gin.Context) {
 func (h *Handler) WildcardListView(c *gin.Context) {
 	items, err := h.permissions.WildcardList()
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
@@ -106,7 +107,7 @@ func (h *Handler) WildcardListView(c *gin.Context) {
 func (h *Handler) ResourceListView(c *gin.Context) {
 	items, err := h.permissions.ResourceList(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -23,9 +24,9 @@ func (h *Handler) CreateConversationView(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.CreateConversation(c, uid, req.PeerID)
+	item, err := h.service.CreateConversation(c.Request.Context(), uid, req.PeerID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

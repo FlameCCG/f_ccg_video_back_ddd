@@ -2,6 +2,7 @@ package identity
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
@@ -64,7 +65,7 @@ func (h *AdminHandler) AdminUpdateUserBannerListView(c *gin.Context) {
 			return
 		}
 
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

@@ -1,6 +1,7 @@
 package dynamic
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -32,7 +33,7 @@ func (h *Handler) LikeView(c *gin.Context) {
 
 	result, err := h.likes.ToggleLike(ctx, uid, req.DynamicID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 
