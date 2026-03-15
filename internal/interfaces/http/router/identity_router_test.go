@@ -89,7 +89,7 @@ func TestAdminLoginRouteRequiresSlideCaptcha(t *testing.T) {
 
 	provider := infraconfig.NewProvider(&config.Config{
 		Site: &site.Site{
-			Register: &site.Register{SlideCaptcha: true},
+			Login: &site.Login{SlideCaptcha: true},
 		},
 	})
 
@@ -117,7 +117,7 @@ func TestAdminLoginRouteRequiresSlideCaptcha(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 
-	if response.Msg != "slide captcha verification required" {
+	if response.Msg != "captcha verification required" {
 		t.Fatalf("admin login route should require slide captcha, got %q", response.Msg)
 	}
 }

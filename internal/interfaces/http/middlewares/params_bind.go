@@ -26,6 +26,7 @@ func JsonBindParams[T any](c *gin.Context) {
 
 // BindParams 由 Gin 根据请求方式与 Content-Type 选择绑定器，成功后保存 T 供处理器读取。
 func BindParams[T any](c *gin.Context) {
+	LimitRequestBody(c, 52<<20)
 	var cr T
 	if err := c.ShouldBind(&cr); err != nil {
 		loggerFromContext(c).Error("BindParams error", zap.Error(err))
