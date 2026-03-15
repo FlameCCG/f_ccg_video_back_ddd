@@ -3,6 +3,7 @@ package danmu
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"fmt"
 	"net/http"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
+	"f_ccg_video_back_ddd/pkg/authsession"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -596,6 +598,10 @@ func (c *client) handleSend(msg clientMessage) {
 
 	ctx, cancel := context.WithTimeout(c.ctx, sendDanmuTimeout)
 	defer cancel()
+	if err := authsession.Validate(ctx); err != nil {
+		c.sendSystem("session expired, please sign in again")
+		return
+	}
 
 	_, err := c.room.hub.service.Send(ctx, c.userID, videoapp.SendDanmuParams{
 		VideoID:     c.videoID,
@@ -607,7 +613,7 @@ func (c *client) handleSend(msg clientMessage) {
 		Position:    msg.Position,
 	})
 	if err != nil {
-		c.sendSystem(err.Error())
+		c.sendSystem(clienterror.Message(err))
 	}
 }
 
@@ -631,6 +637,16 @@ func (c *client) writePump() {
 				return
 			}
 		case <-pingTicker.C:
+			if c.userID != 0 {
+				authCtx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
+				err := authsession.Validate(authCtx)
+				cancel()
+				if err != nil {
+					c.closeWithReason("session revoked")
+					return
+				}
+			}
+
 			_ = c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
