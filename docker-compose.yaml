@@ -189,21 +189,33 @@ services:
     ports:
       - "27017:27017" # MongoDB 默认端口
     volumes:
+      - mongo_keyfile:/run/mongo-keyfile
+      - ./deploy/mongodb/start-replica.sh:/opt/mongodb/start-replica.sh:ro
       - ./components/mongodb/data:/data/db # 数据持久化
       - ./components/mongodb/config:/data/configdb # 配置持久化
       - ./components/mongodb/logs:/var/log/mongodb # 日志持久化
-    command: # 自定义启动参数
-      [
-        "mongod",
-        "--auth", # 启用认证
-        "--bind_ip_all", # 允许所有 IP 访问
-      ]
+    entrypoint: ["/bin/bash", "/opt/mongodb/start-replica.sh"]
+    command: ["mongod", "--auth", "--bind_ip_all", "--replSet", "rs0", "--keyFile", "/run/mongo-keyfile/key"]
     networks:
       - f_video_network
+  mongodb-replica-init:
+    image: mongo:8.0
+    depends_on: [mongodb]
+    restart: on-failure
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=123456
+    volumes:
+      - ./deploy/mongodb/init-replica.sh:/opt/mongodb/init-replica.sh:ro
+    entrypoint: ["/bin/bash", "/opt/mongodb/init-replica.sh"]
+    networks:
+      - f_video_network
+
 networks:
   f_video_network:
     driver: bridge
 volumes:
+  mongo_keyfile:
   minio_data:
     name: f_ccg_video_minio_data
     external: true

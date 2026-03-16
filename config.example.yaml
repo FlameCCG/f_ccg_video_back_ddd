@@ -93,6 +93,8 @@ logger:
 
 # MongoDB（弹幕等文档数据）
 mongo:
+  replicaSet: rs0
+  directConnection: true # single-node compose mapped port; use false for multi-node deployments
   # 认证库名
   authSource: admin
   # 业务数据库名
