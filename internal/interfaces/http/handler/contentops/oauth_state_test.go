@@ -85,10 +85,8 @@ func TestGitHubUrlViewStoresState(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/github-url", nil)
-	ctx.Set("request", GitHubURLReq{
-		State: "github-state",
-	})
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/github-url?state=github-state", nil)
+	ctx.Set("request", GitHubURLReq{})
 
 	handler.GitHubUrlView(ctx)
 
@@ -133,9 +131,8 @@ func TestXUrlViewStoresState(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/x-url", nil)
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/x-url?state=x-state", nil)
 	ctx.Set("request", XURLReq{
-		State:         "x-state",
 		CodeChallenge: "challenge",
 	})
 
@@ -182,10 +179,7 @@ func TestLinuxDoUrlViewStoresState(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/linuxdo-url", nil)
-	ctx.Set("request", LinuxDoURLReq{
-		State: "linuxdo-state",
-	})
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/linuxdo-url?state=linuxdo-state", nil)
 
 	handler.LinuxDoUrlView(ctx)
 
@@ -249,12 +243,12 @@ func TestOAuthMissingConfigDoesNotStoreState(t *testing.T) {
 	provider := infraconfig.NewProvider(&config.Config{})
 	service := app.NewOAuthURLService(provider, states)
 	calls := []func() (string, error){
-		func() (string, error) { return service.GoogleURL(t.Context(), "caller-state") },
+		func() (string, error) { return service.GoogleURL(t.Context()) },
 		func() (string, error) {
-			return service.GitHubURL(t.Context(), app.GitHubURLParams{State: "caller-state"})
+			return service.GitHubURL(t.Context(), app.GitHubURLParams{})
 		},
-		func() (string, error) { return service.LinuxDoURL(t.Context(), "caller-state") },
-		func() (string, error) { return service.XURL(t.Context(), app.XURLParams{State: "caller-state"}) },
+		func() (string, error) { return service.LinuxDoURL(t.Context()) },
+		func() (string, error) { return service.XURL(t.Context(), app.XURLParams{}) },
 		func() (string, error) { return service.QQURL(t.Context()) },
 	}
 	for _, call := range calls {
