@@ -79,7 +79,7 @@ func runMaintenanceTaskWithInitializer(
 	if cleanup != nil {
 		defer cleanup()
 	}
-	if err := executor.Execute(ctx, opts.Args); err != nil {
+	if err = executor.Execute(ctx, opts.Args); err != nil {
 		return 1
 	}
 	return 0
@@ -125,22 +125,16 @@ func runServer(ctx context.Context, opts *cli.Options) int {
 
 	exitCode := 0
 
-	if err := app.Start(ctx); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "启动后台组件失败: %v\n", err)
-		exitCode = 1
-	}
+	app.Start(ctx)
 
 	// Serve 阻塞至 SIGINT/SIGTERM（或 ListenAndServe 异常退出），期间完成 HTTP 优雅关闭。
 	// 随后显式按序停止后台消费者与基础设施，避免仅依赖 defer 在硬杀时不可达。
-	if err := app.Serve(); err != nil {
+	if err = app.Serve(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "HTTP 服务退出异常: %v\n", err)
 		exitCode = 1
 	}
 
-	if err := app.Stop(ctx); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "优雅退出失败: %v\n", err)
-		exitCode = 1
-	}
+	app.Stop(ctx)
 
 	return exitCode
 }

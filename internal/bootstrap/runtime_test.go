@@ -2,28 +2,21 @@ package bootstrap
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"testing"
 )
 
 type runtimeComponentSpy struct {
-	name     string
-	events   *[]string
-	startErr error
-	stopErr  error
+	name   string
+	events *[]string
 }
 
-func (s *runtimeComponentSpy) Start(context.Context) error {
+func (s *runtimeComponentSpy) Start(context.Context) {
 	*s.events = append(*s.events, "start:"+s.name)
-
-	return s.startErr
 }
 
-func (s *runtimeComponentSpy) Stop(context.Context) error {
+func (s *runtimeComponentSpy) Stop(context.Context) {
 	*s.events = append(*s.events, "stop:"+s.name)
-
-	return s.stopErr
 }
 
 func TestRuntimeComponentsPreserveStartAndStopOrder(t *testing.T) {
@@ -35,19 +28,20 @@ func TestRuntimeComponentsPreserveStartAndStopOrder(t *testing.T) {
 	}
 
 	runtime := &RuntimeComponents{
-		river:     component("river"),
-		video:     component("video"),
-		transcode: component("transcode"),
-		cron:      component("cron"),
-		chatHub:   component("chat"),
-		danmuHub:  component("danmu"),
+		chatIndexes: component("chat_indexes"),
+		river:       component("river"),
+		video:       component("video"),
+		transcode:   component("transcode"),
+		cron:        component("cron"),
+		chatHub:     component("chat"),
+		danmuHub:    component("danmu"),
 	}
 
 	runtime.Start(context.Background())
 	runtime.Stop(context.Background())
 
 	want := []string{
-		"start:river", "start:video", "start:transcode", "start:cron", "start:chat", "start:danmu",
+		"start:chat_indexes", "start:river", "start:video", "start:transcode", "start:cron",
 		"stop:transcode", "stop:video", "stop:river", "stop:cron", "stop:chat", "stop:danmu",
 	}
 	if !reflect.DeepEqual(events, want) {
@@ -55,17 +49,12 @@ func TestRuntimeComponentsPreserveStartAndStopOrder(t *testing.T) {
 	}
 }
 
-func TestRuntimeComponentsContinueAfterComponentError(t *testing.T) {
+func TestRuntimeComponentsSkipMissingComponents(t *testing.T) {
 	t.Parallel()
 
 	var events []string
 	runtime := &RuntimeComponents{
-		river: &runtimeComponentSpy{
-			name:     "river",
-			events:   &events,
-			startErr: errors.New("start failed"),
-			stopErr:  errors.New("stop failed"),
-		},
+		river: &runtimeComponentSpy{name: "river", events: &events},
 		video: &runtimeComponentSpy{name: "video", events: &events},
 	}
 

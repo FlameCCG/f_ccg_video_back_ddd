@@ -1,9 +1,8 @@
 package middlewares
 
 import (
-	"strings"
-
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,18 +13,16 @@ import (
 // 需要身份的写接口应使用强制认证链，并由应用用例继续检查资源归属。
 func (m *Middlewares) JwtOptional() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := c.GetHeader("Authorization")
+		token := strings.TrimSpace(c.GetHeader("Authorization"))
 		if token == "" {
 			c.Next()
 			return
 		}
 
 		token = strings.TrimPrefix(token, "Bearer ")
-		if m.userStatus != nil {
-			if user, err := m.userStatus.ValidateAccessToken(c.Request.Context(), token, m.accessSecret()); err == nil && !user.MustChangePassword {
-				c.Set("uid", strconv.FormatUint(uint64(user.ID), 10))
-				c.Set("username", user.Username)
-			}
+		if user, err := m.resolveAccessUser(c, token); err == nil && !user.MustChangePassword {
+			c.Set("uid", strconv.FormatUint(uint64(user.ID), 10))
+			c.Set("username", user.Username)
 		}
 
 		c.Next()

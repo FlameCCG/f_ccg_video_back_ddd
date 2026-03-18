@@ -1,14 +1,15 @@
 package middlewares
 
 import (
+	"context"
+	"errors"
+	"strconv"
 	"strings"
 	"time"
 
-	"context"
-	"errors"
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/pkg/authsession"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
-	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -83,20 +84,7 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 
 	token = strings.TrimPrefix(token, "Bearer ")
 
-	uid, username, err := jwts.ParseJwtTokenWithRole(token, m.accessSecret())
-	if err != nil {
-		m.log().Error("JwtAuth ParseJwtToken failed", zap.Error(err))
-		res.FailWithMsg("token无效或已过期", c)
-		c.Abort()
-
-		return false
-	}
-
-	if m.userStatus == nil {
-		c.Abort()
-		return false
-	}
-	user, validationErr := m.userStatus.ValidateAccessToken(c.Request.Context(), token, m.accessSecret())
+	user, validationErr := m.resolveAccessUser(c, token)
 	if validationErr != nil {
 		m.log().Warn("JWT credential validation failed", zap.Error(validationErr))
 		res.FailWithMsg("token invalid or account unavailable", c)
@@ -118,7 +106,33 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 		}
 		return nil
 	}))
-	return m.authenticateResolvedUser(c, uid, username)
+	return m.authenticateResolvedUser(c, strconv.FormatUint(uint64(user.ID), 10), user.Username)
+}
+
+type requestAuthentication struct {
+	token  string
+	secret string
+	user   *domain.User
+	err    error
+}
+
+const requestAuthenticationKey = "middlewares.jwt.authentication"
+
+// resolveAccessUser only reuses validation within this request and for the same
+// token and signing key. Long-lived session validators deliberately bypass it.
+func (m *Middlewares) resolveAccessUser(c *gin.Context, token string) (*domain.User, error) {
+	secret := m.accessSecret()
+	if cached, ok := c.Get(requestAuthenticationKey); ok {
+		if result, ok := cached.(requestAuthentication); ok && result.token == token && result.secret == secret {
+			return result.user, result.err
+		}
+	}
+	if m.userStatus == nil {
+		return nil, errors.New("authentication service unavailable")
+	}
+	user, err := m.userStatus.ValidateAccessToken(c.Request.Context(), token, secret)
+	c.Set(requestAuthenticationKey, requestAuthentication{token: token, secret: secret, user: user, err: err})
+	return user, err
 }
 
 func (m *Middlewares) authenticateResolvedUser(c *gin.Context, uid, username string) bool {

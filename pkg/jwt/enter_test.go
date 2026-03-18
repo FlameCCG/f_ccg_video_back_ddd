@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/golang-jwt/jwt/v4"
 )
 
 func TestCreateJwtTokenRejectsEmptySecret(t *testing.T) {
@@ -69,5 +71,64 @@ func TestCredentialVersionAndTokenPurpose(t *testing.T) {
 	}
 	if err := CheckPasswordVersion(pair.AccessToken, "shared-secret", "changed-hash", "access"); err == nil {
 		t.Fatal("old credential version accepted")
+	}
+}
+
+func TestAccessClaimsValidateSignaturePurposeExpiryAndCredentials(t *testing.T) {
+	t.Parallel()
+	const secret = "access-secret"
+	const password = "password-hash"
+	for _, test := range []struct {
+		name    string
+		change  func(jwt.MapClaims)
+		method  jwt.SigningMethod
+		key     string
+		wantErr bool
+	}{
+		{name: "valid"},
+		{name: "bad signature", key: "another-key", wantErr: true},
+		{name: "different algorithm", method: jwt.SigningMethodHS512, wantErr: true},
+		{name: "refresh token", change: func(c jwt.MapClaims) { c["tokenUse"] = "refresh" }, wantErr: true},
+		{name: "expired", change: func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Hour).Unix() }, wantErr: true},
+		{name: "missing expiry", change: func(c jwt.MapClaims) { delete(c, "exp") }, wantErr: true},
+		{name: "missing session", change: func(c jwt.MapClaims) { delete(c, "jti") }, wantErr: true},
+		{name: "missing credential version", change: func(c jwt.MapClaims) { delete(c, "pwdVer") }, wantErr: true},
+		{name: "missing UID", change: func(c jwt.MapClaims) { delete(c, "uid") }, wantErr: true},
+		{name: "missing username", change: func(c jwt.MapClaims) { delete(c, "username") }, wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			claims := jwt.MapClaims{"uid": "7", "username": "alice", "exp": time.Now().Add(time.Hour).Unix(), "tokenUse": "access", "jti": "session", "pwdVer": PasswordVersion(password, secret)}
+			if test.change != nil {
+				test.change(claims)
+			}
+			method := test.method
+			if method == nil {
+				method = jwt.SigningMethodHS256
+			}
+			key := test.key
+			if key == "" {
+				key = secret
+			}
+			token, err := jwt.NewWithClaims(method, claims).SignedString([]byte(key))
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := ParseAccessToken(token, secret)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("parse error = %v, want error %v", err, test.wantErr)
+			}
+			if test.wantErr {
+				return
+			}
+			if parsed.UID != "7" || parsed.Username != "alice" {
+				t.Fatalf("unexpected claims: %+v", parsed)
+			}
+			if err := parsed.CheckPasswordVersion(secret, password); err != nil {
+				t.Fatal(err)
+			}
+			if err := parsed.CheckPasswordVersion(secret, "changed-password"); err == nil {
+				t.Fatal("changed credentials accepted")
+			}
+		})
 	}
 }

@@ -25,7 +25,6 @@ type AdminVideoService struct {
 	comments  CommentPurger
 	canceller TranscodeCanceller
 	storage   StorageResolver
-	uploads   *UploadService
 	logger    *zap.Logger
 }
 
@@ -43,7 +42,6 @@ func NewAdminVideoService(
 	comments CommentPurger,
 	canceller TranscodeCanceller,
 	storage StorageResolver,
-	uploads *UploadService,
 	logger *zap.Logger,
 ) *AdminVideoService {
 	return &AdminVideoService{
@@ -59,7 +57,6 @@ func NewAdminVideoService(
 		comments:  comments,
 		canceller: canceller,
 		storage:   storage,
-		uploads:   uploads,
 		logger:    logger,
 	}
 }

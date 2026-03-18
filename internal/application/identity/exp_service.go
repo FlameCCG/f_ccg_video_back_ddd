@@ -22,13 +22,6 @@ func NewExpService(txm tx.Manager, users domain.UserRepository, records domain.E
 	return &ExpService{txm: txm, users: users, records: records}
 }
 
-// AddExp 增加经验并返回最新等级/经验（reason 用于记录原因）.
-func (s *ExpService) AddExp(ctx context.Context, userID uint, delta int64, reason string) (*domain.User, error) {
-	user, _, err := s.addExpWithRecord(ctx, userID, delta, reason, nil)
-
-	return user, err
-}
-
 // LoginExp 每日登录加经验（同一用户每天最多一次）.
 func (s *ExpService) LoginExp(ctx context.Context, userID uint) error {
 	if userID == 0 {
@@ -51,15 +44,6 @@ func (s *ExpService) LikeExp(ctx context.Context, userID uint) error {
 	_, _, err := s.addExpWithRecord(ctx, userID, domain.ExpPerLike, fmt.Sprintf("点赞 +%d", domain.ExpPerLike), &key)
 
 	return err
-}
-
-// CoinExp 投币加经验（无视频维度幂等；优先用 CoinExpForVideo）.
-func (s *ExpService) CoinExp(ctx context.Context, userID uint, coins int64) error {
-	if userID == 0 {
-		return domain.ErrUserNotLogin
-	}
-
-	return s.applyCoinExp(ctx, userID, coins, nil)
 }
 
 // CoinExpForVideo 投币加经验（同一用户同一视频仅一次，与投币关系对齐）.

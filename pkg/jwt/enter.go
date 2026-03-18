@@ -28,6 +28,60 @@ type JwtToken struct {
 	RefreshExp         int64  `json:"refreshExp"`
 }
 
+// AccessClaims contains claims from a verified access token. Credential checks
+// reuse these claims without parsing or verifying the signature again.
+type AccessClaims struct {
+	UID      string
+	Username string
+	version  string
+}
+
+func ParseAccessToken(tokenString, secret string) (*AccessClaims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+	uid, err := claimString(claims, "uid")
+	if err != nil {
+		return nil, err
+	}
+	username, err := claimString(claims, "username")
+	if err != nil {
+		return nil, err
+	}
+	exp, err := claimUnix(claims, "exp")
+	if err != nil || exp <= time.Now().Unix() {
+		return nil, errors.New("token expired or missing expiry")
+	}
+	if use, ok := claims["tokenUse"].(string); !ok || use != "access" {
+		return nil, errors.New("incorrect token use")
+	}
+	if jti, ok := claims["jti"].(string); !ok || jti == "" {
+		return nil, errors.New("invalid token")
+	}
+	version, ok := claims["pwdVer"].(string)
+	if !ok || version == "" {
+		return nil, errors.New("invalid credential version")
+	}
+	return &AccessClaims{UID: uid, Username: username, version: version}, nil
+}
+
+func (c *AccessClaims) CheckPasswordVersion(secret, passwordHash string) error {
+	if c == nil || !hmac.Equal([]byte(c.version), []byte(PasswordVersion(passwordHash, secret))) {
+		return errors.New("credentials changed")
+	}
+	return nil
+}
+
 // CreateJwtToken 签发 access/refresh token；secret 为空或签名失败时返回错误。
 func CreateJwtToken(uid, username string, exp time.Duration, secret string, refreshExp time.Duration, refreshSecret string) (*JwtToken, error) {
 	return CreateJwtTokenWithPassword(uid, username, "", false, exp, secret, refreshExp, refreshSecret)

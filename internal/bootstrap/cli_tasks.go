@@ -6,8 +6,6 @@ import (
 	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
-	"f_ccg_video_back_ddd/internal/infrastructure/search"
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
 	aihandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/ai"
 	chathandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/chat"
@@ -23,7 +21,6 @@ import (
 	"f_ccg_video_back_ddd/internal/interfaces/http/router"
 	"f_ccg_video_back_ddd/pkg/validate"
 
-	"github.com/casbin/casbin/v2"
 	"go.uber.org/zap"
 )
 
@@ -51,16 +48,16 @@ func (a *BannerStorageResolverAdapter) Resolve() (provisioningapp.StorageDriver,
 	return driver, nil
 }
 
-// NewCLIRouter 构造仅用于枚举路由的 Router。
+// NewCLIRouter 构造仅用于路由枚举的真实 Router。
 //
-// -rs 进程不执行请求用例，使用空 handler 接收者可避免初始化 Kafka、对象存储及后台组件。
+// 路由注册只需要非 nil handler 接收者；请求处理用例不会在 -rs 进程中执行，
+// 因而使用空 handler 壳和无业务依赖的中间件，只注册路由，不执行鉴权和请求处理。
 func NewCLIRouter(
 	cfgProvider *infraconfig.Provider,
-	enforcer *casbin.SyncedEnforcer,
 	logger *zap.Logger,
 	translator *validate.Translator,
 ) *router.Router {
-	mw := middlewares.New(cfgProvider, enforcer, nil, nil, nil, nil, nil, nil, logger)
+	mw := middlewares.New(cfgProvider, nil, nil, nil, nil, nil, nil, nil, logger)
 
 	return router.New(
 		cfgProvider,
@@ -107,31 +104,4 @@ func (l *RouterRouteLister) Routes() []rbacdomain.RouteInfo {
 	}
 
 	return routes
-}
-
-// NewESCLIExecutor 确保 -es 任务在 ES 之前完成 MySQL 初始化。
-func NewESCLIExecutor(
-	_ *mysql.DB,
-	indexes *search.IndexManager,
-	logger *zap.Logger,
-) *cli.Executor {
-	return cli.NewESIndexExecutor(indexes, logger)
-}
-
-// NewResourceSyncCLIExecutor 在执行 -rs 用例前完成全部前置基础设施初始化。
-func NewResourceSyncCLIExecutor(
-	_ *Infrastructure,
-	service *rbacapp.ResourceSyncService,
-	logger *zap.Logger,
-) *cli.Executor {
-	return cli.NewResourceSyncExecutor(service, logger)
-}
-
-// NewRBACInitCLIExecutor 在执行 -rbac 用例前完成全部前置基础设施初始化。
-func NewRBACInitCLIExecutor(
-	_ *Infrastructure,
-	service *rbacapp.InitService,
-	logger *zap.Logger,
-) *cli.Executor {
-	return cli.NewRBACInitExecutor(service, logger)
 }

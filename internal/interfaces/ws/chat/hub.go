@@ -102,13 +102,8 @@ func NewHub(service *chatapp.Service, bus EventBus, origin *wsorigin.Checker, lo
 	}
 }
 
-// Start 启动 hub。房间与 Redis 订阅器按首个连接懒创建，因此无需预热，始终返回 nil。
-func (h *Hub) Start(_ context.Context) error {
-	return nil
-}
-
 // Stop 停止订阅并断开全部 WebSocket 连接，供 App.Stop 显式释放 Redis 订阅与长连接资源。
-func (h *Hub) Stop(_ context.Context) error {
+func (h *Hub) Stop(_ context.Context) {
 	h.mu.Lock()
 	rooms := make([]*room, 0, len(h.rooms))
 
@@ -123,8 +118,6 @@ func (h *Hub) Stop(_ context.Context) error {
 		r.stopSubscriber()
 		r.closeClients()
 	}
-
-	return nil
 }
 
 // ServeWS 升级连接并进入读写循环，直到连接结束。

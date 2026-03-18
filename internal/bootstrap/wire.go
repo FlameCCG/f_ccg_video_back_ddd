@@ -14,7 +14,7 @@ import (
 // 本文件带 wireinject 标签，只供 Wire 分析；这里的 panic(wire.Build(...)) 是生成声明，
 // 不会进入正常服务的运行路径。普通构建使用 wire_gen.go 中同名的普通 Go 函数。
 // 返回的 func() 是清理已成功构造依赖的闭包，error 对应返回错误的 provider；
-// provider 自身发生 panic（如配置加载失败）时，不应假定会走普通 error 回退路径。
+// provider 自身发生 panic 时，不应假定会走普通 error 回退路径。
 //
 // 生成命令（在项目根目录执行；依赖图说明见 docs/architecture.md 第 6 节）：
 //
@@ -48,17 +48,17 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	panic(wire.Build(SuperUserTaskProviderSet))
 }
 
-// InitializeESIndexTask 构造 -es 运维任务（配置 + 日志 + MySQL + Elasticsearch）。
+// InitializeESIndexTask 构造 -es 运维任务（配置 + 日志 + Elasticsearch）。
 func InitializeESIndexTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	panic(wire.Build(ESIndexTaskProviderSet))
 }
 
-// InitializeResourceSyncTask 构造 -rs 运维任务（完整前置基础设施 + 真实 HTTP Router）。
+// InitializeResourceSyncTask 构造 -rs 运维任务（配置 + 日志 + MySQL + 真实 HTTP Router）。
 func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	panic(wire.Build(ResourceSyncTaskProviderSet))
 }
 
-// InitializeRBACInitTask 构造 -rbac 运维任务（完整前置基础设施）。
+// InitializeRBACInitTask 构造 -rbac 运维任务（配置 + 日志 + MySQL + Casbin）。
 func InitializeRBACInitTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	panic(wire.Build(RBACInitTaskProviderSet))
 }

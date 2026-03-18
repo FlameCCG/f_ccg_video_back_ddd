@@ -36,43 +36,6 @@ func (h *Handler) SaveHistoryView(c *gin.Context) {
 	res.OkWithMsg("保存成功", c)
 }
 
-// HistoryQueryReq 指定要读取的作品播放进度，查询范围限定为当前用户。
-type HistoryQueryReq struct {
-	VideoID uint `form:"videoId" binding:"required"`
-}
-
-// HistoryResp 是单条播放历史响应；Progress/Duration 对应已播放位置与总时长。
-type HistoryResp struct {
-	VideoID  uint `json:"videoId"`
-	Progress int  `json:"progress"`
-	Duration int  `json:"duration"`
-}
-
-// GetHistoryView 获取播放进度，此处理器不挂载路由。
-func (h *Handler) GetHistoryView(c *gin.Context) {
-	req := middlewares.GetBound[HistoryQueryReq](c)
-
-	uid, ok := getUID(c)
-	if !ok {
-		res.FailWithMsg("请先登录", c)
-
-		return
-	}
-
-	hist, err := h.history.GetPlayHistory(c.Request.Context(), uid, req.VideoID)
-	if err != nil {
-		res.OkWithData(HistoryResp{VideoID: req.VideoID}, c)
-
-		return
-	}
-
-	res.OkWithData(HistoryResp{
-		VideoID:  hist.VideoID,
-		Progress: hist.Progress,
-		Duration: hist.Duration,
-	}, c)
-}
-
 // HistoryListReq 描述当前用户历史记录的分页与标题关键字筛选。
 type HistoryListReq struct {
 	Page     int    `form:"page" binding:"omitempty,min=1"`

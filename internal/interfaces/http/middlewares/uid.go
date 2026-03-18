@@ -46,13 +46,3 @@ func GetUID(c *gin.Context) (uint, bool) {
 		return 0, false
 	}
 }
-
-// GetUIDString 返回字符串形式的 uid（兼容仍按字符串传递的调用方）。
-func GetUIDString(c *gin.Context) (string, bool) {
-	uid, ok := GetUID(c)
-	if !ok {
-		return "", false
-	}
-
-	return strconv.FormatUint(uint64(uid), 10), true
-}

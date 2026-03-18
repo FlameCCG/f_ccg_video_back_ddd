@@ -112,7 +112,7 @@ func (r *UserRepository) CountByEmailExcluding(
 
 // Create 创建用户并写入 user_roles 关联，回填 user.ID。
 //
-// 要求在事务内调用；ctx 必须先经 WithDefaultBanner 包装，
+// 要求在事务内调用，并在同一事务中调用 InitializeDefaults。
 func (r *UserRepository) Create(ctx context.Context, user *domain.User, roleID uint) error {
 	if user == nil {
 		return domain.ErrUserNotFound

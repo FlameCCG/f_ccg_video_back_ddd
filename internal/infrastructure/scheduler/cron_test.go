@@ -13,19 +13,13 @@ func TestStop_NilSafeAndIdempotent(t *testing.T) {
 	// 未启动状态与重复 Stop 均不应 panic。
 	component := NewCronComponent(nil, nil, nil, nil, nil, zap.NewNop())
 
-	if err := component.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
+	component.Stop(context.Background())
 
-	if err := component.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
+	component.Stop(context.Background())
 
 	// nil 组件同样安全。
 	var nilComponent *CronComponent
-	if err := nilComponent.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop on nil component: %v", err)
-	}
+	nilComponent.Stop(context.Background())
 }
 
 func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
@@ -38,7 +32,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 
 	// 注册一个长任务：启动后阻塞，直到 Stop 的 context 等待窗口结束或任务自行返回。
 	// 这里用短 sleep，确保 crontab.Stop() 的 Done 能在任务结束后触发。
-	if err := component.startJobs([]cronJob{{
+	component.startJobs([]cronJob{{
 		name: "TestJob",
 		spec: "* * * * * *",
 		run: func() {
@@ -46,9 +40,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 			exited.Store(true)
 		},
-	}}); err != nil {
-		t.Fatalf("startJobs: %v", err)
-	}
+	}})
 
 	// 等至少一次调度触发。
 	deadline := time.Now().Add(2 * time.Second)
@@ -60,9 +52,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if err := component.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
+	component.Stop(context.Background())
 
 	if component.crontab != nil {
 		t.Fatal("crontab should be cleared after Stop")
@@ -74,9 +64,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 	}
 
 	// 幂等。
-	if err := component.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
+	component.Stop(context.Background())
 }
 
 func TestStartJobs_IgnoresDuplicateStart(t *testing.T) {
@@ -90,23 +78,17 @@ func TestStartJobs_IgnoresDuplicateStart(t *testing.T) {
 		run:  func() { runs.Add(1) },
 	}}
 
-	if err := component.startJobs(job); err != nil {
-		t.Fatalf("startJobs: %v", err)
-	}
+	component.startJobs(job)
 
 	first := component.crontab
 
-	if err := component.startJobs(job); err != nil {
-		t.Fatalf("startJobs (duplicate): %v", err)
-	}
+	component.startJobs(job)
 
 	if component.crontab != first {
 		t.Fatal("duplicate start should not replace the running scheduler")
 	}
 
-	if err := component.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
+	component.Stop(context.Background())
 }
 
 func TestCronSpecsMatchLegacySchedule(t *testing.T) {

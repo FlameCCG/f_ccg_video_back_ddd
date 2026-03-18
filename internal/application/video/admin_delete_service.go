@@ -181,9 +181,6 @@ func (s *AdminVideoService) deleteStorageFiles(
 					zap.String("prefix", target.DashDirPrefix),
 					zap.String("storageType", string(target.StorageType)))
 			} else {
-				// 前缀目录可能含源片同级对象，失效秒传缓存
-				s.uploads.InvalidateUploadCompletedCacheByStoredPath(target.DashDirPrefix)
-				s.uploads.InvalidateUploadCompletedCacheByStoredPath(target.Path)
 				deleted += n
 			}
 
@@ -237,8 +234,6 @@ func (s *AdminVideoService) deleteStorageFiles(
 			continue
 		}
 
-		// 源片被硬删后必须失效秒传缓存，否则 status 仍 completed → 发布时报「请先完成视频上传」
-		s.uploads.InvalidateUploadCompletedCacheByStoredPath(target.Path)
 		deleted++
 	}
 
