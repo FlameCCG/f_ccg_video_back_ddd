@@ -15,7 +15,7 @@ import (
 
 // ReportService 举报用例服务。
 type ReportService struct {
-	videos   videorepo.VideoRepository
+	videos   VideoFactsQuery
 	danmus   videorepo.DanmuRepository
 	reports  videorepo.ReportRepository
 	query    ReportQuery
@@ -27,7 +27,7 @@ type ReportService struct {
 
 // NewReportService 构造举报用例服务。
 func NewReportService(
-	videos videorepo.VideoRepository,
+	videos VideoFactsQuery,
 	danmus videorepo.DanmuRepository,
 	reports videorepo.ReportRepository,
 	query ReportQuery,

@@ -5,10 +5,11 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 	"path/filepath"
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestFavoriteRewardAndClawbackAreLifetimeIdempotent(t *testing.T) {
@@ -24,10 +25,10 @@ func TestFavoriteRewardAndClawbackAreLifetimeIdempotent(t *testing.T) {
 	if err = db.Create(&po.User{Model: po.Model{ID: 1}, Username: "author", Email: "author@example.com", Password: "hash"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	s := app.NewCoinService(gormx.NewTxManager(db), infra.NewUserRepository(db, nil), infra.NewCoinRecordRepository(db))
+	s := app.NewCoinService(gormx.NewTxManager(db), infra.NewCoinAccountRepository(db), infra.NewCoinRecordRepository(db))
 	key := "favorite:2:10"
 	for i := 0; i < 20; i++ {
-		if _, _, err = s.ApplyChange(t.Context(), 1, .1, "favorite", &key); err != nil {
+		if _, err = s.ApplyChange(t.Context(), 1, .1, "favorite", &key); err != nil {
 			t.Fatal(err)
 		}
 		if err = s.RevokeFavoriteReward(t.Context(), 1, 2, 10); err != nil {
@@ -56,11 +57,11 @@ func TestFavoriteRewardAndClawbackAreLifetimeIdempotent(t *testing.T) {
 	if err := db.Model(&po.User{}).Where("id=1").UpdateColumn("coin_count", -.3).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, applied, err := s.ApplyChange(t.Context(), 1, .1, "favorite", &key); err != nil || applied {
-		t.Fatalf("duplicate on negative balance: applied=%v err=%v", applied, err)
+	if result, err := s.ApplyChange(t.Context(), 1, .1, "favorite", &key); err != nil || result.Applied {
+		t.Fatalf("duplicate on negative balance: applied=%v err=%v", result.Applied, err)
 	}
-	if _, applied, err := s.ApplyChange(t.Context(), 1, .1, "new earning", nil); err != nil || !applied {
-		t.Fatalf("debt recovery: applied=%v err=%v", applied, err)
+	if result, err := s.ApplyChange(t.Context(), 1, .1, "new earning", nil); err != nil || !result.Applied {
+		t.Fatalf("debt recovery: applied=%v err=%v", result.Applied, err)
 	}
 	if err := db.First(&user, 1).Error; err != nil || user.CoinCount != -.2 {
 		t.Fatalf("debt balance=%v err=%v", user.CoinCount, err)

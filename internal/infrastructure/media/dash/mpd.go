@@ -1,0 +1,405 @@
+package dash
+
+import (
+	"encoding/xml"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	"fmt"
+	"net/url"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+// mpdXML 是用于 Representation 发现的最小 MPD 结构。
+type mpdXML struct {
+	XMLName xml.Name    `xml:"MPD"`
+	Periods []mpdPeriod `xml:"Period"`
+}
+
+type mpdPeriod struct {
+	AdaptationSets []mpdAdaptationSet `xml:"AdaptationSet"`
+}
+
+type mpdAdaptationSet struct {
+	ContentType string              `xml:"contentType,attr"`
+	MimeType    string              `xml:"mimeType,attr"`
+	Codecs      string              `xml:"codecs,attr"`
+	FrameRate   string              `xml:"frameRate,attr"`
+	MaxWidth    int                 `xml:"maxWidth,attr"`
+	MaxHeight   int                 `xml:"maxHeight,attr"`
+	Template    *mpdSegmentTemplate `xml:"SegmentTemplate"`
+	Reps        []mpdRepresentation `xml:"Representation"`
+}
+
+type mpdRepresentation struct {
+	ID          string              `xml:"id,attr"`
+	Bandwidth   int                 `xml:"bandwidth,attr"`
+	Width       int                 `xml:"width,attr"`
+	Height      int                 `xml:"height,attr"`
+	Codecs      string              `xml:"codecs,attr"`
+	MimeType    string              `xml:"mimeType,attr"`
+	FrameRate   string              `xml:"frameRate,attr"`
+	BaseURL     string              `xml:"BaseURL"`
+	SegmentList *mpdSegmentList     `xml:"SegmentList"`
+	SegmentBase *mpdSegmentBase     `xml:"SegmentBase"`
+	Template    *mpdSegmentTemplate `xml:"SegmentTemplate"`
+}
+
+type mpdSegmentTemplate struct {
+	Initialization string `xml:"initialization,attr"`
+	Media          string `xml:"media,attr"`
+	StartNumber    int64  `xml:"startNumber,attr"`
+	Timeline       *struct {
+		Entries []struct {
+			Start    *int64 `xml:"t,attr"`
+			Duration int64  `xml:"d,attr"`
+			Repeat   int64  `xml:"r,attr"`
+		} `xml:"S"`
+	} `xml:"SegmentTimeline"`
+}
+
+type mpdSegmentList struct {
+	Initialization *mpdRange   `xml:"Initialization"`
+	SegmentURLs    []mpdSegURL `xml:"SegmentURL"`
+}
+
+type mpdSegmentBase struct {
+	IndexRange string    `xml:"indexRange,attr"`
+	Init       *mpdRange `xml:"Initialization"`
+}
+
+type mpdRange struct {
+	Range string `xml:"range,attr"`
+}
+
+type mpdSegURL struct {
+	MediaRange string `xml:"mediaRange,attr"`
+	IndexRange string `xml:"indexRange,attr"`
+}
+
+var mediaRangeEndRe = regexp.MustCompile(`(?i)^(\d+)-(\d+)$`)
+
+// xmlnsStripRe 去掉 xmlns 声明，使 encoding/xml 能在 MPEG-DASH 默认命名空间下
+// 按本地元素名匹配，而不必给每个字段都打上 URN。
+var xmlnsStripRe = regexp.MustCompile(`\sxmlns(?::[A-Za-z0-9_]+)?="[^"]*"`)
+
+// ParseMPDVariants 从 MPD XML 字节中提取 Representation 列表。
+//
+// DASH MPD 几乎总会声明 xmlns="urn:mpeg:dash:schema:mpd:2011"；
+// Go 的 encoding/xml 要求标签命名空间精确匹配，因此先剥离 xmlns 再按本地名匹配。
+func ParseMPDVariants(data []byte) ([]videovo.DASHVariant, error) {
+	cleaned := xmlnsStripRe.ReplaceAll(data, nil)
+
+	var doc mpdXML
+	if err := xml.Unmarshal(cleaned, &doc); err != nil {
+		return nil, fmt.Errorf("xml unmarshal: %w", err)
+	}
+
+	out := make([]videovo.DASHVariant, 0, 8)
+
+	for _, period := range doc.Periods {
+		for _, as := range period.AdaptationSets {
+			asType := classifyAdaptationContentType(as)
+			for _, rep := range as.Reps {
+				v := videovo.DASHVariant{
+					ID:          strings.TrimSpace(rep.ID),
+					ContentType: asType,
+					Width:       rep.Width,
+					Height:      rep.Height,
+					Bandwidth:   rep.Bandwidth,
+					Codecs:      firstNonEmpty(rep.Codecs, as.Codecs),
+					MimeType:    firstNonEmpty(rep.MimeType, as.MimeType),
+					BaseURL:     strings.TrimSpace(rep.BaseURL),
+					FrameRate:   firstNonEmpty(rep.FrameRate, as.FrameRate),
+				}
+				if v.Bandwidth > 0 {
+					v.Bitrate = (v.Bandwidth + 500) / 1000 // bps → kbps（四舍五入）
+				}
+
+				if v.BaseURL != "" {
+					v.FileName = baseNameOf(strings.Split(v.BaseURL, "?")[0])
+				}
+
+				// AdaptationSet 未声明时，用 mime/codecs 推断内容类型。
+				if v.ContentType == "unknown" {
+					v.ContentType = classifyRepContentType(v)
+				}
+
+				switch v.ContentType {
+				case "video":
+					v.Resolution = videovo.ResolutionLabelFromSize(v.Width, v.Height)
+				case "audio":
+					v.Resolution = "音频"
+				default:
+					v.Resolution = firstNonEmpty(v.MimeType, "流")
+				}
+
+				template := rep.Template
+				if template == nil {
+					template = as.Template
+				}
+				if template != nil {
+					files, err := templateFiles(template, rep.ID, rep.Bandwidth)
+					if err != nil {
+						return nil, err
+					}
+					v.Files = files
+					if len(files) > 0 {
+						v.FileName = baseNameOf(files[0])
+					}
+				}
+				v.FileSize = estimateRepFileSize(rep)
+				out = append(out, v)
+			}
+		}
+	}
+
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no representation in mpd")
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		// 视频优先，其次按高度降序，再按带宽降序
+		if out[i].ContentType != out[j].ContentType {
+			return contentTypeRank(out[i].ContentType) < contentTypeRank(out[j].ContentType)
+		}
+
+		if out[i].Height != out[j].Height {
+			return out[i].Height > out[j].Height
+		}
+
+		return out[i].Bandwidth > out[j].Bandwidth
+	})
+
+	return out, nil
+}
+
+func contentTypeRank(t string) int {
+	switch t {
+	case "video":
+		return 0
+	case "audio":
+		return 1
+	default:
+		return 2
+	}
+}
+
+func classifyAdaptationContentType(as mpdAdaptationSet) string {
+	ct := strings.ToLower(strings.TrimSpace(as.ContentType))
+	if ct == "video" || ct == "audio" {
+		return ct
+	}
+
+	mime := strings.ToLower(as.MimeType)
+
+	switch {
+	case strings.HasPrefix(mime, "video/"):
+		return "video"
+	case strings.HasPrefix(mime, "audio/"):
+		return "audio"
+	}
+
+	if as.MaxHeight > 0 || as.MaxWidth > 0 {
+		return "video"
+	}
+
+	return "unknown"
+}
+
+func classifyRepContentType(v videovo.DASHVariant) string {
+	mime := strings.ToLower(v.MimeType)
+
+	switch {
+	case strings.HasPrefix(mime, "video/"):
+		return "video"
+	case strings.HasPrefix(mime, "audio/"):
+		return "audio"
+	}
+
+	codecs := strings.ToLower(v.Codecs)
+	if strings.Contains(codecs, "avc") || strings.Contains(codecs, "hev") ||
+		strings.Contains(codecs, "hvc") || strings.Contains(codecs, "vp9") ||
+		strings.Contains(codecs, "av01") {
+		return "video"
+	}
+
+	if strings.Contains(codecs, "mp4a") || strings.Contains(codecs, "opus") ||
+		strings.Contains(codecs, "ac-3") || strings.Contains(codecs, "ec-3") {
+		return "audio"
+	}
+
+	if v.Width > 0 || v.Height > 0 {
+		return "video"
+	}
+
+	return "unknown"
+}
+
+func estimateRepFileSize(rep mpdRepresentation) int64 {
+	maxEnd := int64(0)
+
+	if rep.SegmentList != nil {
+		for _, seg := range rep.SegmentList.SegmentURLs {
+			if end := parseRangeEnd(seg.MediaRange); end > maxEnd {
+				maxEnd = end
+			}
+		}
+
+		if rep.SegmentList.Initialization != nil {
+			if end := parseRangeEnd(rep.SegmentList.Initialization.Range); end > maxEnd {
+				maxEnd = end
+			}
+		}
+	}
+
+	if rep.SegmentBase != nil {
+		if end := parseRangeEnd(rep.SegmentBase.IndexRange); end > maxEnd {
+			maxEnd = end
+		}
+
+		if rep.SegmentBase.Init != nil {
+			if end := parseRangeEnd(rep.SegmentBase.Init.Range); end > maxEnd {
+				maxEnd = end
+			}
+		}
+	}
+
+	if maxEnd <= 0 {
+		return 0
+	}
+
+	// mediaRange 的末字节下标是闭区间 → size = end+1
+	return maxEnd + 1
+}
+
+func parseRangeEnd(rangeAttr string) int64 {
+	rangeAttr = strings.TrimSpace(rangeAttr)
+
+	m := mediaRangeEndRe.FindStringSubmatch(rangeAttr)
+	if len(m) != 3 {
+		return 0
+	}
+
+	end, err := strconv.ParseInt(m[2], 10, 64)
+	if err != nil {
+		return 0
+	}
+
+	return end
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+
+	return ""
+}
+
+// baseNameOf 取路径末段（等价 path.Base 对普通相对路径的行为）。
+func baseNameOf(p string) string {
+	if p == "" {
+		return "."
+	}
+
+	trimmed := strings.TrimRight(p, "/")
+	if trimmed == "" {
+		return "/"
+	}
+
+	if i := strings.LastIndexByte(trimmed, '/'); i >= 0 {
+		return trimmed[i+1:]
+	}
+
+	return trimmed
+}
+
+// DashDirPrefix 从 DASH manifest 的 file_url 中提取目录前缀。
+//
+// 例 "http://host/videos/8/dash/manifest.mpd" → "videos/8/dash/"。
+func DashDirPrefix(fileURL string) string {
+	trimmed := strings.TrimSpace(fileURL)
+	if trimmed == "" {
+		return ""
+	}
+	// 如果是完整 URL，取 Path 部分
+	if u, err := url.Parse(trimmed); err == nil && u.Scheme != "" && u.Host != "" && u.Path != "" {
+		trimmed = u.Path
+	}
+	// 去掉查询参数（如有）
+	if idx := strings.Index(trimmed, "?"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+
+	trimmed = strings.TrimPrefix(trimmed, "/")
+	// 找到 manifest.mpd 所在目录
+	if idx := strings.LastIndex(trimmed, "/"); idx >= 0 {
+		return trimmed[:idx+1] // 保留末尾 /
+	}
+
+	return ""
+}
+
+var templateToken = regexp.MustCompile(`\$(RepresentationID|Bandwidth|Number|Time)(%0([0-9]{1,2})d)?\$`)
+
+func templateFiles(t *mpdSegmentTemplate, id string, bandwidth int) ([]string, error) {
+	expand := func(pattern string, number, stamp int64) string {
+		pattern = strings.ReplaceAll(pattern, "$$", "\x00")
+		pattern = templateToken.ReplaceAllStringFunc(pattern, func(token string) string {
+			m := templateToken.FindStringSubmatch(token)
+			if m[1] == "RepresentationID" {
+				return id
+			}
+			value := number
+			if m[1] == "Time" {
+				value = stamp
+			}
+			if m[1] == "Bandwidth" {
+				value = int64(bandwidth)
+			}
+			width, _ := strconv.Atoi(m[3])
+			return fmt.Sprintf("%0*d", width, value)
+		})
+		return strings.ReplaceAll(pattern, "\x00", "$")
+	}
+	files := []string{}
+	if t.Initialization != "" {
+		files = append(files, expand(t.Initialization, 0, 0))
+	}
+	if t.Media == "" || t.Timeline == nil {
+		return nil, fmt.Errorf("DASH template requires media and timeline")
+	}
+	number := t.StartNumber
+	if number == 0 {
+		number = 1
+	}
+	var stamp int64
+	for i, e := range t.Timeline.Entries {
+		if e.Start != nil {
+			stamp = *e.Start
+		}
+		repeat := e.Repeat
+		if e.Duration <= 0 {
+			return nil, fmt.Errorf("invalid DASH segment duration")
+		}
+		if repeat < 0 {
+			if i+1 >= len(t.Timeline.Entries) || t.Timeline.Entries[i+1].Start == nil {
+				return nil, fmt.Errorf("unbounded DASH timeline")
+			}
+			repeat = (*t.Timeline.Entries[i+1].Start-stamp+e.Duration-1)/e.Duration - 1
+		}
+		if repeat < 0 || repeat > 100000 || int64(len(files))+repeat+1 > 100000 {
+			return nil, fmt.Errorf("DASH timeline exceeds segment limit")
+		}
+		for j := int64(0); j <= repeat; j++ {
+			files = append(files, expand(t.Media, number, stamp))
+			number++
+			stamp += e.Duration
+		}
+	}
+	return files, nil
+}

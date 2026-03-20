@@ -3,6 +3,7 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
 	"io"
 	"net"
@@ -57,6 +58,7 @@ func NewUploadService(
 
 // UploadChunkForUser 在首片实际写入前占用当天名额；失败或放弃均不退还。
 func (s *UploadService) UploadChunkForUser(ctx context.Context, userID uint, fileHash, index string, size int64, reader io.Reader) error {
+	cfg := s.configuration()
 	ctx = uploadscope.WithOwner(ctx, userID)
 	fileHash = trimSpace(fileHash)
 	index = trimSpace(index)
@@ -66,16 +68,17 @@ func (s *UploadService) UploadChunkForUser(ctx context.Context, userID uint, fil
 	if err := s.storage.ValidateChunkIndex(index); err != nil {
 		return err
 	}
-	if err := s.claimQuota(ctx, userID, fileHash); err != nil {
+	if err := s.claimQuota(ctx, userID, fileHash, cfg); err != nil {
 		return err
 	}
 	return s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
-		return s.UploadChunk(guardCtx, fileHash, index, size, reader)
+		return s.uploadChunk(guardCtx, fileHash, index, size, reader, cfg)
 	})
 }
 
 // GetUploadStatusForUser 仅在确认完整对象存在后为秒传占额，才返回 completed=true。
 func (s *UploadService) GetUploadStatusForUser(ctx context.Context, userID uint, fileHash string) (*UploadStatus, error) {
+	cfg := s.configuration()
 	ctx = uploadscope.WithOwner(ctx, userID)
 	fileHash = trimSpace(fileHash)
 	if err := s.validateFileHash(fileHash); err != nil {
@@ -88,25 +91,26 @@ func (s *UploadService) GetUploadStatusForUser(ctx context.Context, userID uint,
 		if err != nil || !status.Completed {
 			return err
 		}
-		return s.claimQuota(guardCtx, userID, fileHash)
+		return s.claimQuota(guardCtx, userID, fileHash, cfg)
 	})
 	return status, err
 }
 
 // CompleteUploadForUser 在复用已完成对象或合并分片前做服务端额度兜底。
 func (s *UploadService) CompleteUploadForUser(ctx context.Context, userID uint, fileHash, fileName string, totalChunks int) (string, error) {
+	cfg := s.configuration()
 	ctx = uploadscope.WithOwner(ctx, userID)
 	fileHash = trimSpace(fileHash)
 	if err := s.validateFileHash(fileHash); err != nil {
 		return "", err
 	}
-	if err := s.claimQuota(ctx, userID, fileHash); err != nil {
+	if err := s.claimQuota(ctx, userID, fileHash, cfg); err != nil {
 		return "", err
 	}
 	var path string
 	err := s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
 		var err error
-		path, err = s.CompleteUpload(guardCtx, fileHash, fileName, totalChunks)
+		path, err = s.completeUpload(guardCtx, fileHash, fileName, totalChunks, cfg)
 		return err
 	})
 	return path, err
@@ -114,6 +118,10 @@ func (s *UploadService) CompleteUploadForUser(ctx context.Context, userID uint, 
 
 // WithPublishUploads 将多分P的对象校验、额度检查和 MySQL 投稿写入置于同一组哈希锁内。
 func (s *UploadService) WithPublishUploads(ctx context.Context, userID uint, hashes []string, validate, persist func(context.Context) error) error {
+	return s.withPublishUploads(ctx, userID, hashes, s.configuration(), validate, persist)
+}
+
+func (s *UploadService) withPublishUploads(ctx context.Context, userID uint, hashes []string, cfg *config.Config, validate, persist func(context.Context) error) error {
 	normalized := make([]string, len(hashes))
 	for i, hash := range hashes {
 		hash = trimSpace(hash)
@@ -127,7 +135,7 @@ func (s *UploadService) WithPublishUploads(ctx context.Context, userID uint, has
 			return err
 		}
 		for _, hash := range uniqueUploadHashes(normalized) {
-			if err := s.claimQuota(guardCtx, userID, hash); err != nil {
+			if err := s.claimQuota(guardCtx, userID, hash, cfg); err != nil {
 				return err
 			}
 		}
@@ -135,11 +143,11 @@ func (s *UploadService) WithPublishUploads(ctx context.Context, userID uint, has
 	})
 }
 
-func (s *UploadService) claimQuota(ctx context.Context, userID uint, fileHash string) error {
+func (s *UploadService) claimQuota(ctx context.Context, userID uint, fileHash string, cfg *config.Config) error {
 	if s.quota == nil { // 仅供不装配 Redis 的单元测试使用；正式 Wire 图始终注入 quota。
 		return nil
 	}
-	return s.quota.Claim(ctx, userID, fileHash)
+	return s.quota.claim(ctx, userID, fileHash, cfg)
 }
 
 func (s *UploadService) withHashes(ctx context.Context, hashes []string, fn func(context.Context) error) error {
@@ -156,6 +164,10 @@ func (s *UploadService) UploadChunk(
 	size int64,
 	reader io.Reader,
 ) error {
+	return s.uploadChunk(ctx, fileHash, index, size, reader, s.configuration())
+}
+
+func (s *UploadService) uploadChunk(ctx context.Context, fileHash, index string, size int64, reader io.Reader, cfg *config.Config) error {
 	fileHash = trimSpace(fileHash)
 	index = trimSpace(index)
 	driver, err := s.resolve()
@@ -171,7 +183,7 @@ func (s *UploadService) UploadChunk(
 		return err
 	}
 
-	if err := s.validateIncomingChunkSize(ctx, driver, fileHash, index, size); err != nil {
+	if err := s.validateIncomingChunkSize(ctx, driver, fileHash, index, size, cfg); err != nil {
 		return err
 	}
 
@@ -277,6 +289,10 @@ func (s *UploadService) CompleteUpload(
 	fileHash, fileName string,
 	totalChunks int,
 ) (string, error) {
+	return s.completeUpload(ctx, fileHash, fileName, totalChunks, s.configuration())
+}
+
+func (s *UploadService) completeUpload(ctx context.Context, fileHash, fileName string, totalChunks int, cfg *config.Config) (string, error) {
 	driver, err := s.resolve()
 	if err != nil {
 		return "", err
@@ -309,7 +325,7 @@ func (s *UploadService) CompleteUpload(
 		return "", err
 	}
 
-	if err := s.validateIncomingChunkSize(ctx, driver, fileHash, "", 0); err != nil {
+	if err := s.validateIncomingChunkSize(ctx, driver, fileHash, "", 0, cfg); err != nil {
 		return "", err
 	}
 
@@ -414,8 +430,7 @@ const mebibyte int64 = 1024 * 1024
 
 // uploadSizeLimits 读取单分片和整文件上限，单位 MB。
 // maxChunkSize 优先；没配时用 chunkSize 卡住单分片。两者都没配则不限制单分片。
-func (s *UploadService) uploadSizeLimits() (chunkMB, fileMB int64) {
-	cfg := s.cfgProvider.Get()
+func uploadSizeLimits(cfg *config.Config) (chunkMB, fileMB int64) {
 	if cfg == nil || cfg.Site == nil || cfg.Site.Storage == nil {
 		return 0, 0
 	}
@@ -434,12 +449,13 @@ func (s *UploadService) validateIncomingChunkSize(
 	driver StorageDriver,
 	fileHash, index string,
 	size int64,
+	cfg *config.Config,
 ) error {
 	if size < 0 {
 		return errors.New("分块大小无效")
 	}
 
-	chunkMB, fileMB := s.uploadSizeLimits()
+	chunkMB, fileMB := uploadSizeLimits(cfg)
 	if chunkMB > 0 && size > chunkMB*mebibyte {
 		return fmt.Errorf("分块大小超过限制（最大 %dMB)", chunkMB)
 	}
@@ -567,4 +583,11 @@ func joinObjectPath(parts ...string) string {
 	}
 
 	return strings.Join(cleaned, "/")
+}
+
+func (s *UploadService) configuration() *config.Config {
+	if s.cfgProvider != nil {
+		return s.cfgProvider.Get()
+	}
+	return nil
 }

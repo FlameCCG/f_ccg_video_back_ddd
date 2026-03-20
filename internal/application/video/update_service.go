@@ -3,6 +3,7 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"time"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
@@ -17,6 +18,7 @@ import (
 type UpdateService struct {
 	txm         tx.Manager
 	videos      videorepo.VideoRepository
+	tags        videorepo.TagRepository
 	partitions  videorepo.PartitionRepository
 	schedule    ScheduleStore
 	authors     *AuthorService
@@ -28,6 +30,7 @@ type UpdateService struct {
 func NewUpdateService(
 	txm tx.Manager,
 	videos videorepo.VideoRepository,
+	tags videorepo.TagRepository,
 	partitions videorepo.PartitionRepository,
 	schedule ScheduleStore,
 	authors *AuthorService,
@@ -37,6 +40,7 @@ func NewUpdateService(
 	return &UpdateService{
 		txm:         txm,
 		videos:      videos,
+		tags:        tags,
 		partitions:  partitions,
 		schedule:    schedule,
 		authors:     authors,
@@ -65,6 +69,7 @@ func (s *UpdateService) UpdateVideo(
 		partition *videoentity.Partition
 	)
 	now := time.Now()
+	reviewEnabled := contentReviewEnabled(s.cfgProvider.Get())
 	change := videoentity.Revision{
 		Title: opts.Title, Description: opts.Description, Cover: opts.CoverURL,
 		PartitionID: opts.PartitionID, IsOriginal: opts.IsOriginal,
@@ -79,7 +84,7 @@ func (s *UpdateService) UpdateVideo(
 		if err != nil {
 			return err
 		}
-		if err := video.Revise(username, change, now, s.contentReviewEnabled()); err != nil {
+		if err := video.Revise(username, change, now, reviewEnabled); err != nil {
 			return err
 		}
 
@@ -101,12 +106,12 @@ func (s *UpdateService) UpdateVideo(
 		}
 
 		if opts.TagIDs != nil {
-			tags, err = s.videos.FindTagsByIDs(txCtx, opts.TagIDs)
+			tags, err = s.tags.FindTagsByIDs(txCtx, opts.TagIDs)
 			if err != nil {
 				return errQueryTagsFailed
 			}
 		} else {
-			tags, err = s.videos.TagsByVideoID(txCtx, video.ID)
+			tags, err = s.tags.TagsByVideoID(txCtx, video.ID)
 			if err != nil {
 				return err
 			}
@@ -126,7 +131,7 @@ func (s *UpdateService) UpdateVideo(
 			}
 		}
 		if opts.TagIDs != nil {
-			return s.videos.ReplaceTags(txCtx, video.ID, tags)
+			return s.tags.ReplaceTags(txCtx, video.ID, tags)
 		}
 		return nil
 	}); err != nil {
@@ -137,10 +142,6 @@ func (s *UpdateService) UpdateVideo(
 	s.vectors.SyncAsync(ctx, video.ID, video.Status)
 
 	return buildUpdatedVideo(video, tags, partition), nil
-}
-
-func (s *UpdateService) contentReviewEnabled() bool {
-	return contentReviewEnabled(s.cfgProvider)
 }
 
 // buildUpdatedVideo 组装改稿响应体。
@@ -190,8 +191,7 @@ func buildUpdatedVideo(
 }
 
 // contentReviewEnabled 读取站点内容审核开关。
-func contentReviewEnabled(cfgProvider shared.ConfigReader) bool {
-	cfg := cfgProvider.Get()
+func contentReviewEnabled(cfg *config.Config) bool {
 
 	return cfg != nil &&
 		cfg.Site != nil &&

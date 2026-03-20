@@ -25,7 +25,7 @@ func (h *Handler) PinView(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Pin(c.Request.Context(), uid, req.CommentID, req.Pinned); err != nil {
+	if err := h.pin.Pin(c.Request.Context(), uid, req.CommentID, req.Pinned); err != nil {
 		res.FailWithMsg(clienterror.Message(err), c)
 
 		return

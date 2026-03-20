@@ -3,6 +3,7 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
 	"sort"
 	"strings"
@@ -51,6 +52,14 @@ func NewUploadQuotaService(store UploadQuotaStore, exemption UploadQuotaExemptio
 // Claim 对管理员豁免，对普通用户占用额度；依赖故障返回不可用，不把故障解释为允许上传。
 // 同哈希重试是否重复计数由 store 的原子去重契约保证，本方法不在进程内先读后写计数。
 func (s *UploadQuotaService) Claim(ctx context.Context, userID uint, fileHash string) error {
+	var cfg *config.Config
+	if s != nil && s.cfg != nil {
+		cfg = s.cfg.Get()
+	}
+	return s.claim(ctx, userID, fileHash, cfg)
+}
+
+func (s *UploadQuotaService) claim(ctx context.Context, userID uint, fileHash string, cfg *config.Config) error {
 	fileHash = strings.TrimSpace(fileHash)
 	if s == nil || s.store == nil || s.exemption == nil || userID == 0 {
 		return ErrUploadQuotaUnavailable
@@ -63,10 +72,8 @@ func (s *UploadQuotaService) Claim(ctx context.Context, userID uint, fileHash st
 		return nil
 	}
 	limit := defaultDailyUploadLimit
-	if s.cfg != nil {
-		if cfg := s.cfg.Get(); cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.DailyUploadLimit > 0 {
-			limit = cfg.Site.Storage.DailyUploadLimit
-		}
+	if cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.DailyUploadLimit > 0 {
+		limit = cfg.Site.Storage.DailyUploadLimit
 	}
 	allowed, err := s.store.Claim(ctx, userID, fileHash, limit)
 	if err != nil {

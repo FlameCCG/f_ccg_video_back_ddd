@@ -334,6 +334,12 @@ var VideoProviderSet = wire.NewSet(
 	wire.Bind(new(videorepo.ReportRepository), new(*infrastructurePersistenceVideo.ReportRepository)),
 	wire.Bind(new(applicationVideo.UserVideoQuery), new(*infrastructurePersistenceVideo.UserVideoQuery)),
 	wire.Bind(new(videorepo.VideoRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
+	wire.Bind(new(videorepo.PublicationRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
+	wire.Bind(new(videorepo.TagRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
+	wire.Bind(new(videorepo.StatsRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
+	wire.Bind(new(videorepo.CleanupRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
+	wire.Bind(new(applicationVideo.VideoFactsQuery), new(*infrastructurePersistenceVideo.VideoRepository)),
+
 	// internal/infrastructure/cache/video
 	infrastructureCacheVideo.NewUploadQuotaStore,
 	infrastructureCacheVideo.NewUploadHashGuard,

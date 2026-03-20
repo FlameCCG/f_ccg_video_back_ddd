@@ -18,6 +18,7 @@ import (
 type AdminVideoService struct {
 	txm       tx.Manager
 	videos    videorepo.VideoRepository
+	cleanup   videorepo.CleanupRepository
 	query     AdminVideoQuery
 	stats     *StatsService
 	authors   *AuthorService
@@ -35,6 +36,7 @@ type AdminVideoService struct {
 func NewAdminVideoService(
 	txm tx.Manager,
 	videos videorepo.VideoRepository,
+	cleanup videorepo.CleanupRepository,
 	query AdminVideoQuery,
 	stats *StatsService,
 	authors *AuthorService,
@@ -50,6 +52,7 @@ func NewAdminVideoService(
 	return &AdminVideoService{
 		txm:       txm,
 		videos:    videos,
+		cleanup:   cleanup,
 		query:     query,
 		stats:     stats,
 		authors:   authors,

@@ -285,7 +285,7 @@ func TestReviewUsesVideoPublishTime(t *testing.T) {
 				store = failingPublishTimeStore{store}
 			}
 			authors := app.NewAuthorService(f.videos, revisionAuthorIDs{}, revisionMeta{effects: &revisionEffects{}}, nil, zap.NewNop())
-			admin := app.NewAdminVideoService(gormx.NewTxManager(f.db), f.videos, nil, nil, authors, inactiveRevisionMeta{}, nil, store, app.NewVectorSyncService(nil, nil, nil), nil, nil, nil, zap.NewNop())
+			admin := app.NewAdminVideoService(gormx.NewTxManager(f.db), f.videos, f.videos, nil, nil, authors, inactiveRevisionMeta{}, nil, store, app.NewVectorSyncService(nil, nil, nil), nil, nil, nil, zap.NewNop())
 			_, err := admin.Review(t.Context(), app.AdminVideoReviewParams{VideoIDs: []uint{id}, Status: enum.VideoStatusPublished})
 			if (err != nil) != tt.fail {
 				t.Fatalf("error=%v, want fail=%v", err, tt.fail)
@@ -316,6 +316,7 @@ func TestImmediatePublishHasNoScheduledTime(t *testing.T) {
 
 type deletingVideoRepository struct {
 	videorepo.VideoRepository
+	app.VideoFactsQuery
 }
 
 func (deletingVideoRepository) UsernameByUserID(context.Context, uint) (string, error) {
@@ -343,10 +344,10 @@ func TestDeleteScheduleFailureRollsBackVisibility(t *testing.T) {
 			}
 			var err error
 			if admin {
-				svc := app.NewAdminVideoService(gormx.NewTxManager(f.db), f.videos, nil, nil, nil, nil, nil, store, nil, nil, nil, nil, zap.NewNop())
+				svc := app.NewAdminVideoService(gormx.NewTxManager(f.db), f.videos, f.videos, nil, nil, nil, nil, nil, store, nil, nil, nil, nil, zap.NewNop())
 				_, err = svc.Delete(t.Context(), []uint{id}, false)
 			} else {
-				svc := app.NewDeleteService(gormx.NewTxManager(f.db), deletingVideoRepository{f.videos}, deletionComments{}, nil, store, nil, zap.NewNop())
+				svc := app.NewDeleteService(gormx.NewTxManager(f.db), deletingVideoRepository{VideoRepository: f.videos, VideoFactsQuery: f.videos}, deletingVideoRepository{VideoRepository: f.videos, VideoFactsQuery: f.videos}, deletionComments{}, nil, store, nil, zap.NewNop())
 				err = svc.DeleteVideo(t.Context(), id, 1)
 			}
 			if err == nil {

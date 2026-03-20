@@ -118,7 +118,7 @@ func (a *IdentityCoinLedger) ApplyChange(
 	reason string,
 	dedupKey *string,
 ) error {
-	_, _, err := a.coins.ApplyChange(ctx, userID, delta, reason, dedupKey)
+	_, err := a.coins.ApplyChange(ctx, userID, delta, reason, dedupKey)
 
 	return err
 }
@@ -155,13 +155,13 @@ func (a *IdentityPublishedVideoStats) AggregateByAuthor(
 
 // IdentityVideoTagWriter 把视频聚合的标签写入能力适配为 identity 的弱类型响应端口。
 type IdentityVideoTagWriter struct {
-	videos videorepo.VideoRepository
+	videos videorepo.TagRepository
 }
 
 var _ identityapp.VideoTagWriter = (*IdentityVideoTagWriter)(nil)
 
 // NewIdentityVideoTagWriter 构造标签写入适配器。
-func NewIdentityVideoTagWriter(videos videorepo.VideoRepository) *IdentityVideoTagWriter {
+func NewIdentityVideoTagWriter(videos videorepo.TagRepository) *IdentityVideoTagWriter {
 	return &IdentityVideoTagWriter{videos: videos}
 }
 

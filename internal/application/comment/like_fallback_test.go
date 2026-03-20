@@ -78,7 +78,7 @@ func TestLikeFallbackInsertsBeforeCheckingAndReadsCountInTransaction(t *testing.
 			comments.count = 1
 		}
 		likes := &conflictLikes{t: t, duplicate: duplicate}
-		svc := &Service{txm: txm, comments: comments, likes: likes}
+		svc := &LikeService{txm: txm, comments: comments, likes: likes}
 		count, liked, err := svc.toggleLikeWithDB(context.Background(), 2, 3)
 		if err != nil || liked == duplicate || count != comments.count || likes.deleted != duplicate {
 			t.Fatalf("duplicate=%v count=%d liked=%v deleted=%v err=%v", duplicate, count, liked, likes.deleted, err)

@@ -32,7 +32,7 @@ func (h *Handler) ListView(c *gin.Context) {
 		uid = v
 	}
 
-	list, total, err := h.svc.List(c.Request.Context(), app.ListParams{
+	list, total, err := h.query.List(c.Request.Context(), app.ListParams{
 		VideoID:   req.VideoID,
 		DynamicID: req.DynamicID,
 		ViewerID:  uid,

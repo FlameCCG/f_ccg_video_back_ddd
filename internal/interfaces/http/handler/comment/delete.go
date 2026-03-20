@@ -24,7 +24,7 @@ func (h *Handler) DeleteView(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Delete(c.Request.Context(), uid, req.CommentID); err != nil {
+	if err := h.delete.Delete(c.Request.Context(), uid, req.CommentID); err != nil {
 		res.FailWithMsg(clienterror.Message(err), c)
 
 		return

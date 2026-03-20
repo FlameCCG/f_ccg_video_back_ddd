@@ -14,11 +14,15 @@ import (
 
 // Handler 评论 HTTP 处理器。
 type Handler struct {
-	svc      *app.Service
+	create   *app.CreateService
+	delete   *app.DeleteService
+	pin      *app.PinService
+	query    *app.QueryService
+	like     *app.LikeService
 	resolver ipUtils.RegionResolver
 }
 
 // NewHandler 构造评论处理器，resolver 用于解析客户端 IP 归属地。
-func NewHandler(svc *app.Service, resolver ipUtils.RegionResolver) *Handler {
-	return &Handler{svc: svc, resolver: resolver}
+func NewHandler(create *app.CreateService, delete *app.DeleteService, pin *app.PinService, query *app.QueryService, like *app.LikeService, resolver ipUtils.RegionResolver) *Handler {
+	return &Handler{create: create, delete: delete, pin: pin, query: query, like: like, resolver: resolver}
 }

@@ -39,7 +39,7 @@ func (h *Handler) CreateView(c *gin.Context) {
 		return
 	}
 
-	comment, err := h.svc.Create(c.Request.Context(), app.CreateCommand{
+	comment, err := h.create.Create(c.Request.Context(), app.CreateCommand{
 		UserID:    uid,
 		VideoID:   req.VideoID,
 		DynamicID: req.DynamicID,

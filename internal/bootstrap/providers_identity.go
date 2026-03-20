@@ -35,6 +35,8 @@ var SharedProviderSet = wire.NewSet(
 var IdentityProviderSet = wire.NewSet(
 	// 持久化实现
 	identityrepo.NewUserRepository,
+	identityrepo.NewCoinAccountRepository,
+	wire.Bind(new(identitydomainrepo.CoinAccountRepository), new(*identityrepo.CoinAccountRepository)),
 	wire.Bind(new(identitydomainrepo.UserRepository), new(*identityrepo.UserRepository)),
 	wire.Bind(new(identitydomainrepo.UserAccountRepository), new(*identityrepo.UserRepository)),
 	identityrepo.NewExpRecordRepository,
@@ -103,5 +105,5 @@ var NotificationProviderSet = wire.NewSet(
 	wire.Bind(new(notificationapp.ActorProfileProvider), new(*notificationrepo.ActorQuery)),
 	notificationapp.ProviderSet,
 	// identity 的封禁通知端口由通知应用服务实现（跨上下文协调在应用层完成）
-	wire.Bind(new(identityapp.BanNotifier), new(*notificationapp.Service)),
+	wire.Bind(new(identityapp.BanNotifier), new(*notificationapp.DeliveryService)),
 )

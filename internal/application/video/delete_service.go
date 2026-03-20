@@ -14,6 +14,7 @@ import (
 type DeleteService struct {
 	txm       tx.Manager
 	videos    videorepo.VideoRepository
+	facts     VideoFactsQuery
 	comments  CommentPurger
 	canceller TranscodeCanceller
 	schedule  ScheduleStore
@@ -25,6 +26,7 @@ type DeleteService struct {
 func NewDeleteService(
 	txm tx.Manager,
 	videos videorepo.VideoRepository,
+	facts VideoFactsQuery,
 	comments CommentPurger,
 	canceller TranscodeCanceller,
 	schedule ScheduleStore,
@@ -34,6 +36,7 @@ func NewDeleteService(
 	return &DeleteService{
 		txm:       txm,
 		videos:    videos,
+		facts:     facts,
 		comments:  comments,
 		canceller: canceller,
 		schedule:  schedule,
@@ -66,7 +69,7 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 		if video == nil {
 			return videoerrors.ErrRecordNotFound
 		}
-		username, _ := s.videos.UsernameByUserID(txCtx, userID)
+		username, _ := s.facts.UsernameByUserID(txCtx, userID)
 		changed, err = video.DeleteBy(username)
 		if err != nil || !changed {
 			return err

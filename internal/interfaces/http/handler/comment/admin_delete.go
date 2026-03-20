@@ -18,7 +18,7 @@ func (h *Handler) AdminDeleteView(c *gin.Context) {
 	req := middlewares.GetBound[AdminDeleteCommentReq](c)
 	ctx := c.Request.Context()
 
-	deleted, err := h.svc.AdminDelete(ctx, req.CommentIDs)
+	deleted, err := h.delete.AdminDelete(ctx, req.CommentIDs)
 	if err != nil {
 		res.FailWithMsg(clienterror.Message(err), c)
 

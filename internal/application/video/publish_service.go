@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
 	"time"
 
@@ -20,7 +21,8 @@ import (
 //
 // 通过配置端口读取运行参数，仓储负责落库，转码任务通过投递端口发送。
 type PublishService struct {
-	videos      videorepo.VideoRepository
+	videos      videorepo.PublicationRepository
+	tags        videorepo.TagRepository
 	partitions  videorepo.PartitionRepository
 	uploads     *UploadService
 	transcode   TranscodeDispatcher
@@ -32,7 +34,8 @@ type PublishService struct {
 
 // NewPublishService 构造投稿用例服务。
 func NewPublishService(
-	videos videorepo.VideoRepository,
+	videos videorepo.PublicationRepository,
+	tags videorepo.TagRepository,
 	partitions videorepo.PartitionRepository,
 	uploads *UploadService,
 	transcode TranscodeDispatcher,
@@ -43,6 +46,7 @@ func NewPublishService(
 ) *PublishService {
 	return &PublishService{
 		videos:      videos,
+		tags:        tags,
 		partitions:  partitions,
 		uploads:     uploads,
 		transcode:   transcode,
@@ -59,6 +63,7 @@ func NewPublishService(
 // 存储对象早于数据库投稿存在，持有哈希锁是为了协调清理，不会把存储系统纳入 MySQL 事务。
 func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoCommand) (*PublishVideoResult, error) {
 	now := time.Now()
+	cfg := s.cfgProvider.Get()
 
 	publishTime := cmd.PublishTime
 	if publishTime.IsZero() || publishTime.Before(now) {
@@ -69,14 +74,14 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 		publishTime = now
 	}
 
-	storageType := s.storageType()
+	storageType := storageType(cfg)
 
 	var scheduledAt *time.Time
 
 	isMultiPart := len(cmd.Parts) > 0
 	if isMultiPart {
 		maxParts := 10
-		if cfg := s.cfgProvider.Get(); cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.MaxUploadNum > 0 {
+		if cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.MaxUploadNum > 0 {
 			maxParts = cfg.Site.Storage.MaxUploadNum
 		}
 		if len(cmd.Parts) > maxParts {
@@ -102,7 +107,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	// 投稿入库之前持有全部源文件的哈希锁，清理任务无法在验证后、入库前删除源文件。
 	persistCtx, cancel := ctxutil.WithDetachedTimeout(ctx, ctxutil.RequestLongTimeout)
 	defer cancel()
-	if err := s.uploads.WithPublishUploads(persistCtx, cmd.AuthorID, hashes,
+	if err := s.uploads.withPublishUploads(persistCtx, cmd.AuthorID, hashes, cfg,
 		func(guardCtx context.Context) error { return s.preparePublishUploads(guardCtx, &cmd) },
 		func(guardCtx context.Context) error {
 			if isMultiPart {
@@ -121,7 +126,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 				Title: cmd.Title, Description: cmd.Description, Cover: cmd.CoverURL,
 				AuthorUsername: cmd.AuthorUsername, PartitionID: cmd.PartitionID,
 				IsOriginal: cmd.IsOriginal, StorageType: storageType,
-			}, publishTime, cmd.IsPrivate, contentReviewEnabled(s.cfgProvider), now)
+			}, publishTime, cmd.IsPrivate, contentReviewEnabled(cfg), now)
 			return s.persistVideo(guardCtx, video, cmd, parts, scheduledAt)
 		}); err != nil {
 		return nil, err
@@ -144,7 +149,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 				input := cmd.Parts[order]
 				if err := s.dispatchTranscodeTaskForPart(
 					asyncCtx, video.ID, parts[idx].ID,
-					input.FilePath, input.FileName, input.FileHash, storageType,
+					input.FilePath, input.FileName, input.FileHash, storageType, cfg,
 				); err != nil {
 					s.logger.Error("dispatch transcode task failed",
 						zap.Error(err), zap.Uint("videoId", video.ID), zap.Uint("partId", parts[idx].ID))
@@ -154,7 +159,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 			return
 		}
 
-		if err := s.dispatchTranscodeTask(asyncCtx, video, cmd, storageType); err != nil {
+		if err := s.dispatchTranscodeTask(asyncCtx, video, cmd, storageType, cfg); err != nil {
 			s.logger.Error("dispatch transcode task failed", zap.Error(err))
 		}
 	})
@@ -224,7 +229,7 @@ func (s *PublishService) persistVideo(
 	var tags []videoentity.Tag
 
 	if len(cmd.TagIDs) > 0 {
-		found, err := s.videos.FindTagsByIDs(ctx, cmd.TagIDs)
+		found, err := s.tags.FindTagsByIDs(ctx, cmd.TagIDs)
 		if err != nil {
 			return errQueryTagsFailed
 		}
@@ -288,15 +293,16 @@ func (s *PublishService) dispatchTranscodeTask(
 	video *videoentity.Video,
 	cmd PublishVideoCommand,
 	storage enum.VideoStorageType,
+	cfg *config.Config,
 ) error {
 	task := TranscodeTask{
-		ResolutionList: s.transcodeResolutions(),
+		ResolutionList: transcodeResolutions(cfg),
 		StorageType:    storage,
 		SourcePath:     cmd.FilePath,
 		FileHash:       cmd.FileHash,
 		FileName:       cmd.FileName,
 		VideoID:        video.ID,
-		OutputPath:     s.transcodeOutputPath(storage, cmd.FileHash),
+		OutputPath:     transcodeOutputPath(cfg, storage, cmd.FileHash),
 	}
 
 	if err := s.transcode.PublishTranscodeTask(ctx, task); err != nil {
@@ -313,16 +319,17 @@ func (s *PublishService) dispatchTranscodeTaskForPart(
 	videoID, partID uint,
 	filePath, fileName, fileHash string,
 	storage enum.VideoStorageType,
+	cfg *config.Config,
 ) error {
 	task := TranscodeTask{
-		ResolutionList: s.transcodeResolutions(),
+		ResolutionList: transcodeResolutions(cfg),
 		StorageType:    storage,
 		SourcePath:     filePath,
 		FileHash:       fileHash,
 		FileName:       fileName,
 		VideoID:        videoID,
 		VideoPartID:    partID,
-		OutputPath:     s.transcodeOutputPath(storage, fileHash),
+		OutputPath:     transcodeOutputPath(cfg, storage, fileHash),
 	}
 
 	if err := s.transcode.PublishTranscodeTask(ctx, task); err != nil {
@@ -335,22 +342,20 @@ func (s *PublishService) dispatchTranscodeTaskForPart(
 }
 
 // transcodeResolutions 读取配置的转码分辨率列表，缺省时兜底 360/720/1080。
-func (s *PublishService) transcodeResolutions() []uint16 {
-	cfg := s.cfgProvider.Get()
+func transcodeResolutions(cfg *config.Config) []uint16 {
 	if cfg != nil && cfg.Transcode != nil && len(cfg.Transcode.TranscodeResolutions) > 0 {
-		return cfg.Transcode.TranscodeResolutions
+		return append([]uint16(nil), cfg.Transcode.TranscodeResolutions...)
 	}
 
 	return []uint16{360, 720, 1080}
 }
 
 // transcodeOutputPath 按存储类型推导转码产物输出前缀。
-func (s *PublishService) transcodeOutputPath(storage enum.VideoStorageType, fileHash string) string {
+func transcodeOutputPath(cfg *config.Config, storage enum.VideoStorageType, fileHash string) string {
 	switch storage {
 	case enum.StorageTypeLocal:
 		return joinObjectPath("videos", fileHash)
 	case enum.StorageTypeMinio:
-		cfg := s.cfgProvider.Get()
 		if cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.MinIO != nil {
 			return joinObjectPath(cfg.Site.Storage.MinIO.UserUploadPrefix, fileHash)
 		}
@@ -362,8 +367,7 @@ func (s *PublishService) transcodeOutputPath(storage enum.VideoStorageType, file
 }
 
 // storageType 解析生效的存储类型，Local / MinIO 配置缺失时安全回退到本地存储。
-func (s *PublishService) storageType() enum.VideoStorageType {
-	cfg := s.cfgProvider.Get()
+func storageType(cfg *config.Config) enum.VideoStorageType {
 	if cfg == nil || cfg.Site == nil || cfg.Site.Storage == nil {
 		return enum.StorageTypeLocal
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 
 	"go.uber.org/zap"
 )
@@ -13,7 +12,7 @@ import (
 //
 // identity 更新用户资料后，通过此入口失效视频详情 meta 与作者 ID 缓存。
 type AuthorService struct {
-	videos    videorepo.VideoRepository
+	videos    VideoFactsQuery
 	authorIDs AuthorIDCache
 	meta      DetailMetaCache
 	usernames UsernameCache
@@ -22,7 +21,7 @@ type AuthorService struct {
 
 // NewAuthorService 构造作者解析与缓存失效服务。
 func NewAuthorService(
-	videos videorepo.VideoRepository,
+	videos VideoFactsQuery,
 	authorIDs AuthorIDCache,
 	meta DetailMetaCache,
 	usernames UsernameCache,

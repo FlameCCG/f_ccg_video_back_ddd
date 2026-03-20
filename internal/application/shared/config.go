@@ -11,7 +11,7 @@ import "f_ccg_video_back_ddd/internal/config"
 // ConfigReader 是应用层读取运行期配置的端口。
 //
 // 配置树支持热更新（文件监听与管理端写回都会整体替换快照），因此用例内
-// 每次需要配置时应重新 Get 取本地变量再读字段，避免同一次调用跨版本撕裂：
+// 一次用例入口 Get 一次并复用本地快照，避免同一次调用跨版本撕裂：
 //
 //	cfg := r.Get()
 //	if cfg == nil || cfg.Site == nil { ... }

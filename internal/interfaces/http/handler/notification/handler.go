@@ -13,10 +13,12 @@ import (
 
 // Handler 通知相关接口。
 type Handler struct {
-	svc *app.Service
+	inbox  *app.InboxService
+	admin  *app.AdminService
+	counts *app.CountService
 }
 
 // NewHandler 构造通知处理器。
-func NewHandler(svc *app.Service) *Handler {
-	return &Handler{svc: svc}
+func NewHandler(inbox *app.InboxService, admin *app.AdminService, counts *app.CountService) *Handler {
+	return &Handler{inbox: inbox, admin: admin, counts: counts}
 }

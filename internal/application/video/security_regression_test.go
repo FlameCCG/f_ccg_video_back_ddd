@@ -17,7 +17,7 @@ import (
 )
 
 type securityVideoRepo struct {
-	videorepo.VideoRepository
+	VideoFactsQuery
 	author uint
 }
 
@@ -83,6 +83,7 @@ func TestTripleFavoriteCyclesShareLifetimeRewardKeyAndExcludeAuthor(t *testing.T
 
 type failedDeleteRepo struct {
 	videorepo.VideoRepository
+	videorepo.CleanupRepository
 	db      *gorm.DB
 	failure error
 }
@@ -137,7 +138,7 @@ func TestHardDeleteFailureRollsBackStatusCommentsAndVideo(t *testing.T) {
 		}
 	}
 	failure := errors.New("failure after dependent deletes")
-	s := &AdminVideoService{txm: gormx.NewTxManager(db), videos: failedDeleteRepo{db: db, failure: failure}, comments: deleteComments{db: db}, schedule: deleteSchedule{}}
+	s := &AdminVideoService{txm: gormx.NewTxManager(db), videos: failedDeleteRepo{db: db, failure: failure}, cleanup: failedDeleteRepo{db: db, failure: failure}, comments: deleteComments{db: db}, schedule: deleteSchedule{}}
 	if _, err := s.hardDelete(t.Context(), []uint{1}); !errors.Is(err, failure) {
 		t.Fatalf("error=%v", err)
 	}

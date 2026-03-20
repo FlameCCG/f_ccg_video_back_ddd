@@ -9,7 +9,6 @@ package adapters
 import (
 	"context"
 
-	chatapp "f_ccg_video_back_ddd/internal/application/chat"
 	commentapp "f_ccg_video_back_ddd/internal/application/comment"
 	dynamicapp "f_ccg_video_back_ddd/internal/application/dynamic"
 	notificationapp "f_ccg_video_back_ddd/internal/application/notification"
@@ -18,28 +17,10 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// BadgeInvalidator 把通知角标缓存的 Invalidate 方法适配为 chat 的 InvalidateCount 端口。
-//
-// 它刻意只依赖缓存端口，避免 chat.Service 与 notification.Service 的构造环。
-type BadgeInvalidator struct {
-	cache notificationapp.CountCache
-}
-
-var _ chatapp.NotificationBadgeInvalidator = (*BadgeInvalidator)(nil)
-
-// NewBadgeInvalidator 构造聊天写后角标失效适配器。
-func NewBadgeInvalidator(cache notificationapp.CountCache) *BadgeInvalidator {
-	return &BadgeInvalidator{cache: cache}
-}
-
-// InvalidateCount 失效指定接收者的角标缓存。
-func (a *BadgeInvalidator) InvalidateCount(receiverID int) {
-	a.cache.Invalidate(receiverID)
-}
-
 // Notifier 把 notification 应用服务适配为 comment / dynamic / video 三个上下文声明的通知端口。
 type Notifier struct {
-	notifications *notificationapp.Service
+	delivery *notificationapp.DeliveryService
+	counts   *notificationapp.CountService
 }
 
 var (
@@ -49,8 +30,8 @@ var (
 )
 
 // NewNotifier 构造通知适配器。
-func NewNotifier(notifications *notificationapp.Service) *Notifier {
-	return &Notifier{notifications: notifications}
+func NewNotifier(delivery *notificationapp.DeliveryService, counts *notificationapp.CountService) *Notifier {
+	return &Notifier{delivery: delivery, counts: counts}
 }
 
 // CreateNotices 实现 comment.Notifier：批量写入通知（一次插入，失败则整批不生效）。
@@ -76,12 +57,12 @@ func (a *Notifier) CreateNotices(ctx context.Context, notices []commentapp.Notic
 		})
 	}
 
-	return a.notifications.CreateBatch(ctx, rows)
+	return a.delivery.CreateBatch(ctx, rows)
 }
 
 // InvalidateCount 实现 comment.Notifier / chat.NotificationBadgeInvalidator：失效角标计数缓存。
 func (a *Notifier) InvalidateCount(receiverID int) {
-	a.notifications.InvalidateCount(receiverID)
+	a.counts.InvalidateCount(receiverID)
 }
 
 // NotifyDynamicLike 实现 dynamic.DynamicLikeNotifier：向动态作者发送点赞通知。
@@ -92,7 +73,7 @@ func (a *Notifier) NotifyDynamicLike(
 	actionUserID uint,
 	actionUserName, actionUserAvatar, title, content string,
 ) error {
-	return a.notifications.Create(ctx, &notificationentity.Notification{
+	return a.delivery.Create(ctx, &notificationentity.Notification{
 		Type:             enum.NotificationLikeDynamicType,
 		ReceiverID:       int(receiverID),
 		DynamicID:        dynamicID,
@@ -106,7 +87,7 @@ func (a *Notifier) NotifyDynamicLike(
 
 // NotifyVideoLike 实现 video.VideoNotifier：视频被点赞通知。
 func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.VideoNotice) {
-	_ = a.notifications.Create(ctx, &notificationentity.Notification{
+	_ = a.delivery.Create(ctx, &notificationentity.Notification{
 		Type:             enum.NotificationVideoLikeType,
 		ReceiverID:       int(notice.ReceiverID),
 		ActionUserID:     notice.ActionUserID,
@@ -138,5 +119,5 @@ func (a *Notifier) NotifySystemBatch(ctx context.Context, notices []videoapp.Sys
 		})
 	}
 
-	_ = a.notifications.CreateBatch(ctx, rows)
+	_ = a.delivery.CreateBatch(ctx, rows)
 }

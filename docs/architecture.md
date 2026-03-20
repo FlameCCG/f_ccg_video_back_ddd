@@ -77,7 +77,7 @@ f_ccg_video_back_ddd/
 
 业务模块内部统一遵循以下约定：`entity` 承载实体及其行为，`valueobject` 承载值与独立策略，`repository` 只声明领域状态仓储，`service` 承载不自然属于单个对象的领域操作。事件放 `event`，非仓储能力接口放 `port`，共享业务错误放 `domainerr`。目录按实际职责建立，实体不能反向依赖领域服务、仓储或能力端口。
 
-主要写路径通过模型行为表达，例如 `Comment.SetPinned`、`Video.Review` / `PublishWhenDue`、`User.ApplyCoinChange` / `ApplyExperience`、`Banner.ChangePlacement` 和 `Menu.Revise`。应用层负责取得事实、事务与提交后的协作；对象自身的约束不会因拆目录而转移到领域服务中。
+主要写路径通过模型行为表达，例如 `Comment.SetPinned`、`Video.Review` / `PublishWhenDue`、`CoinAccount.ApplyChange` / `RevokeFavoriteReward`、`User.ApplyExperience`、`Banner.ChangePlacement` 和 `Menu.Revise`。应用层负责取得事实、事务与提交后的协作；对象自身的约束不会因拆目录而转移到领域服务中。
 
 ## 2. 限界上下文映射
 
@@ -93,6 +93,28 @@ f_ccg_video_back_ddd/
 | `platform`、`provisioning` | 定时维护用例；初始化和运维用例。Cron 调度器本身在 `infrastructure/scheduler`。 |
 
 边界不等于“一个业务动作只进一个包”。例如投稿在 `video.PublishService` 中完成 DB 写入，然后经跨上下文端口派发到 `media.TranscodeDispatchService`；分片上传的 HTTP 用例在 `video.UploadService`，底层存储驱动在 `infrastructure/storage`。可顺着[投稿用例](../internal/application/video/publish_service.go)、[上传用例](../internal/application/video/upload_service.go)、[转码投递](../internal/application/media/dispatch_service.go)追踪。
+
+### 用例与领域的当前阅读入口
+
+应用层仍在 `internal/application/<context>` 同包内按业务能力组织文件，输入输出与端口就近放在 `*_types.go`、`*_ports.go`；单一用例的类型也可以直接放在用例文件中。领域仍保留现有职责分包。
+
+| 上下文 | 用例与领域入口 |
+|---|---|
+| comment | [CreateService](../internal/application/comment/create_service.go)、[DeleteService](../internal/application/comment/delete_service.go)、[PinService](../internal/application/comment/pin_service.go)、[QueryService](../internal/application/comment/query_service.go)、[LikeService](../internal/application/comment/like_service.go)；缓存重建与通知派发各有包内组件 |
+| video | 投稿使用 `PublicationRepository` 和 `TagRepository`，改稿使用 `VideoRepository` 和 `TagRepository`，统计使用 `StatsRepository`，物理清理使用 `CleanupRepository`；[VideoFactsQuery](../internal/application/video/facts_query.go) 提供辅助事实。同一持久化实现满足这些接口 |
+| identity | [CoinService](../internal/application/identity/coin_service.go) 协调事务内账户加载、领域行为、流水和余额保存；[CoinAccount](../internal/domain/identity/entity/coin_account.go) 是硬币规则的唯一实现，`User.CoinCount` 仍供资料和登录读取 |
+| rbac | [菜单排序策略](../internal/domain/rbac/service/menu_order.go) 从菜单快照与同级顺序计算计划；[MenuService](../internal/application/rbac/menu_service.go) 负责锁定、父链校验、事务内保存，权限校验与 Casbin 协作由应用层协调 |
+| notification | [DeliveryService](../internal/application/notification/delivery_service.go) 写入通知，[InboxService](../internal/application/notification/inbox_service.go) 维护收件箱，[AdminService](../internal/application/notification/admin_service.go) 管理系统通知；[CountService](../internal/application/notification/count_service.go) 集中角标缓存、singleflight、聊天未读组合及后台刷新 |
+| contentops | 配置读取、[快照复制](../internal/application/contentops/config_snapshot.go)、[敏感值保留](../internal/application/contentops/config_secrets.go) 和[原子写入](../internal/application/contentops/config_write.go) 按职责阅读 |
+| ai、search | AI 按对话、图像、视频、资源访问组织；搜索保留查询服务，降级和结果补全各自就近维护 |
+| dynamic、social、chat | 按业务能力组织内聚服务，查询模型与映射按业务能力维护 |
+| media、platform、provisioning、shared | 保留媒体管线与 runtime、后台维护、初始化编排和现有共享枚举/事务契约 |
+
+投稿、改稿、上传及一次到期发布处理复用入口取得的配置快照；领域只接收审核开关等具体政策值。分 P 投稿的额度判断也复用同一快照。
+
+MPD XML、分片模板和存储目录解析位于 [infrastructure/media/dash](../internal/infrastructure/media/dash/mpd.go)，HTTP 获取由外部适配器负责；资源描述、`DASHVariant` 与业务计算留在领域。源文件名的约束属于领域，[数据库异常翻译](../internal/infrastructure/persistence/video/filename_error.go) 属于持久化适配器。
+
+各上下文入口见 `internal/application/<context>`。评论置顶使用事务协调写入，进程内提交后任务仍没有持久化投递保证。
 
 ## 3. 依赖方向与能验证的约束
 
@@ -134,7 +156,7 @@ interfaces ──▶ application ──▶ domain（规则与写侧仓储端口�
 ## 5. PO ↔ domain 转换约定
 
 - PO 位于 `internal/infrastructure/persistence/po`（MySQL）与 `mongopo`（Mongo）；它们描述落库形状，不是领域对象，也不应被当成所有 API 的响应类型。
-- 需要从写侧进入领域层时，由仓储显式转换。例如[视频转换器](../internal/infrastructure/persistence/video/converter.go)的 `toDomainVideo` / `toPOVideo`；读侧可直接从查询结果组装[应用读模型](../internal/application/video/dto.go)。转换是按具体用例做的，并非每个 PO 都有完全对称的双向映射。
+- 需要从写侧进入领域层时，由仓储显式转换。例如[视频转换器](../internal/infrastructure/persistence/video/converter.go)的 `toDomainVideo` / `toPOVideo`；读侧可直接从查询结果组装[应用读模型](../internal/application/video/detail_types.go)。转换是按具体用例做的，并非每个 PO 都有完全对称的双向映射。
 - 持久化与序列化契约应分别验证表名、列名、索引和 JSON 字段，结构相似不能替代行为验证。
 
 ## 6. wire 装配图
@@ -261,7 +283,7 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件启动失�
 
 1. **分片与秒传**：`video.UploadService` 校验文件哈希、分片编号和大小。普通用户在首片写入前、确认秒传前或完成上传前，按“北京时间自然日 + 不同源文件哈希”占用额度；同哈希重复请求不重复计数。Redis Lua 脚本负责原子判定，管理员免额度。Redis 故障时额度校验失败，服务不会默认放行。见[上传服务](../internal/application/video/upload_service.go)、[配额用例](../internal/application/video/upload_quota.go)、[Redis 脚本](../internal/infrastructure/cache/video/upload_quota.go)。
 2. **完成上传**：先询问存储驱动最终对象是否存在，已存在就复用；否则核对分片集合并合并。进程内的“已完成”缓存不是对象存在的权威证据，状态查询仍探测驱动。这解释了为什么删除源对象后旧缓存不能继续构成秒传成功。见[上传服务](../internal/application/video/upload_service.go)。
-3. **投稿入库**：`PublishService` 验证已完成源文件、分区、标签，并调用 `VideoRepository.Persist` 写视频、分 P 和初始资源。验证至入库期间持有按哈希排序的 Redis 锁，清理任务用同一把锁协调；多哈希排序避免相互等待。见[投稿用例](../internal/application/video/publish_service.go)、[Redis 哈希锁](../internal/infrastructure/cache/video/upload_guard.go)、[持久化实现](../internal/infrastructure/persistence/video/publish_repo.go)。
+3. **投稿入库**：`PublishService` 验证已完成源文件、分区、标签，并调用 `PublicationRepository.Persist` 写视频、分 P 和初始资源。验证至入库期间持有按哈希排序的 Redis 锁，清理任务用同一把锁协调；多哈希排序避免相互等待。见[投稿用例](../internal/application/video/publish_service.go)、[Redis 哈希锁](../internal/infrastructure/cache/video/upload_guard.go)、[持久化实现](../internal/infrastructure/persistence/video/publish_repo.go)。
 4. **异步派发与处理**：定时发布计划与视频状态在同一数据库事务内提交；入库后，detached 任务处理向量同步和 Kafka 转码投递；失败记日志，不会回滚已完成的投稿事务。消费者以有限 worker 池执行 `media.TranscodeService`，由 FFmpeg/ffprobe、断点、进度、产物上传和资源落库适配器配合完成。见[投稿用例](../internal/application/video/publish_service.go)、[消费组件](../internal/infrastructure/mq/transcode_consumer.go)、[转码服务](../internal/application/media/transcode_service.go)。
 5. **重试与清理**：成功或视频已删除时会标记 Kafka 消息；永久错误成功写入 DLQ 后也会标记。可重试错误耗尽本轮尝试、停机取消或 rebalance 可能导致再投递，断点恢复不等于恰好一次。Cron 每 5 分钟清理过期分片和未投稿源文件，删源文件前查询 MySQL 资源引用，并尝试取得相同哈希锁。默认保留时间是未合并分片 2 小时、未投稿源文件 1 小时，可由站点配置覆盖。见[Kafka 消费循环](../internal/infrastructure/mq/kafka_consumer.go)、[清理用例](../internal/application/video/upload_cleanup.go)、[Cron](../internal/infrastructure/scheduler/cron.go)。
 
@@ -277,11 +299,11 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件启动失�
 
 ### 10.2 按代码看：谁依赖接口，谁提供实现？
 
-以投稿为例，`PublishService` 的保存能力字段是 `domain.VideoRepository`。用例声明自己需要保存稿件，不需要知道数据库连接池、表名或 GORM 关联写法。基础设施仓储实现 `Persist`，bootstrap 选择该对象并传给应用构造器。
+以投稿为例，`PublishService` 的保存能力字段是 `domain/video/repository.PublicationRepository`。用例声明自己需要保存稿件，不需要知道数据库连接池、表名或 GORM 关联写法。基础设施仓储实现 `Persist`，bootstrap 选择该对象并传给应用构造器。
 
 ```text
-编译时：PublishService → domain.VideoRepository
-        GORM 仓储 → domain.VideoRepository / PublishDraft
+编译时：PublishService → repository.PublicationRepository
+        GORM 仓储 → repository.PublicationRepository / PublishDraft
         bootstrap → 构造器与具体实现
 
 运行时：Handler → PublishService → 注入的 GORM 仓储 → MySQL

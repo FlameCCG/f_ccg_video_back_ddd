@@ -60,7 +60,7 @@ func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*v
 		if err != nil {
 			return err
 		}
-		result, storageTargets, err = s.videos.HardDelete(txCtx, videoIDs)
+		result, storageTargets, err = s.cleanup.HardDelete(txCtx, videoIDs)
 		if err != nil {
 			return err
 		}
@@ -200,7 +200,7 @@ func (s *AdminVideoService) deleteStorageFiles(
 			continue
 		}
 
-		stillReferenced, err := s.videos.StoragePathStillReferenced(cleanupCtx, target.Path)
+		stillReferenced, err := s.cleanup.StoragePathStillReferenced(cleanupCtx, target.Path)
 		if err != nil {
 			failed++
 

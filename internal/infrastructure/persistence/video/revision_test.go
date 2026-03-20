@@ -81,6 +81,7 @@ func (revisionAuthorIDs) Invalidate(context.Context, uint) {}
 // 除失败注入外，使用真实仓储；锁定读取和保存必须拿到同一个事务句柄。
 type revisionRepository struct {
 	videorepo.VideoRepository
+	videorepo.TagRepository
 	readCtx  context.Context
 	failTags error
 }
@@ -102,13 +103,18 @@ func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []vi
 	if r.failTags != nil {
 		return r.failTags
 	}
-	return r.VideoRepository.ReplaceTags(ctx, id, tags)
+	return r.TagRepository.ReplaceTags(ctx, id, tags)
 }
 
-func (f *fixture) revisionService(repo videorepo.VideoRepository, effects *revisionEffects) *app.UpdateService {
+type revisionStore interface {
+	videorepo.VideoRepository
+	videorepo.TagRepository
+}
+
+func (f *fixture) revisionService(repo revisionStore, effects *revisionEffects) *app.UpdateService {
 	effects.ScheduleStore = infra.NewScheduleStore(f.db)
-	authors := app.NewAuthorService(repo, revisionAuthorIDs{}, revisionMeta{effects: effects}, nil, zap.NewNop())
-	return app.NewUpdateService(gormx.NewTxManager(f.db), repo, f.partitions, effects, authors,
+	authors := app.NewAuthorService(f.videos, revisionAuthorIDs{}, revisionMeta{effects: effects}, nil, zap.NewNop())
+	return app.NewUpdateService(gormx.NewTxManager(f.db), repo, repo, f.partitions, effects, authors,
 		app.NewVectorSyncService(nil, nil, nil), infraconfig.NewProvider(&config.Config{}))
 }
 
@@ -126,7 +132,7 @@ func TestUpdateRevisionPersistsZeroValuesAndClearsTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	effects := &revisionEffects{}
-	repo := &revisionRepository{VideoRepository: f.videos}
+	repo := &revisionRepository{VideoRepository: f.videos, TagRepository: f.videos}
 	blank, original := "", false
 	out, err := f.revisionService(repo, effects).UpdateVideo(t.Context(), "alice", app.UpdateVideoOpts{
 		VideoID: row.ID, Description: &blank, IsOriginal: &original, TagIDs: []uint{},
@@ -157,7 +163,7 @@ func TestUpdateRevisionRollsBackBeforeSideEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	failure := errors.New("tag save failed")
-	repo := &revisionRepository{VideoRepository: f.videos, failTags: failure}
+	repo := &revisionRepository{VideoRepository: f.videos, TagRepository: f.videos, failTags: failure}
 	effects := &revisionEffects{}
 	title, private := "new", true
 	_, err := f.revisionService(repo, effects).UpdateVideo(t.Context(), "alice", app.UpdateVideoOpts{
@@ -204,7 +210,7 @@ func TestUpdateRevisionVisibilityAndOwnership(t *testing.T) {
 			}
 			effects := &revisionEffects{}
 			future := time.Now().Add(time.Hour)
-			_, err := f.revisionService(&revisionRepository{VideoRepository: f.videos}, effects).UpdateVideo(t.Context(), tt.author,
+			_, err := f.revisionService(&revisionRepository{VideoRepository: f.videos, TagRepository: f.videos}, effects).UpdateVideo(t.Context(), tt.author,
 				app.UpdateVideoOpts{VideoID: row.ID, PublishTime: &future})
 			if tt.wantErr && !errors.Is(err, videoerrors.ErrRecordNotFound) {
 				t.Fatalf("error=%v", err)

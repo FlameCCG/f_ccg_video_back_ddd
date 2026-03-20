@@ -15,7 +15,7 @@ import (
 // Persist 在单事务中写入视频、标签、分 P 与初始资源。
 //
 // publish_at 与 is_scheduled 同步写入视频行；事务不回滚已上传对象，也不保证提交后的 Kafka 投递。
-// 源文件名超长等数据库错误经 domain.MapSourceFileNameDBError 转为用户可读文案。
+// 源文件名超长等数据库错误经 mapSourceFileNameDBError 转为用户可读文案。
 func (r *VideoRepository) Persist(ctx context.Context, draft *videoentity.PublishDraft) error {
 	if draft == nil || draft.Video == nil {
 		return videoerrors.ErrParamInvalid
@@ -110,7 +110,7 @@ func createInitialPartResources(tx *gorm.DB, draft *videoentity.PublishDraft, pa
 		}
 
 		if err := tx.Create(&resource).Error; err != nil {
-			return videovo.MapSourceFileNameDBError(err, resource.SourceFileName)
+			return mapSourceFileNameDBError(err, resource.SourceFileName)
 		}
 	}
 
@@ -125,7 +125,7 @@ func createInitialVideoResource(tx *gorm.DB, draft *videoentity.PublishDraft, vi
 	}
 
 	if err := tx.Create(resource).Error; err != nil {
-		return videovo.MapSourceFileNameDBError(err, resource.SourceFileName)
+		return mapSourceFileNameDBError(err, resource.SourceFileName)
 	}
 
 	return nil

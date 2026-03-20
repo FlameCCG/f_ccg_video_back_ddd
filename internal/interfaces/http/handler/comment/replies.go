@@ -25,7 +25,7 @@ func (h *Handler) RepliesView(c *gin.Context) {
 		uid = v
 	}
 
-	list, total, err := h.svc.Replies(c.Request.Context(), app.RepliesParams{
+	list, total, err := h.query.Replies(c.Request.Context(), app.RepliesParams{
 		RootID:   req.RootID,
 		ViewerID: uid,
 		Page:     req.Page,

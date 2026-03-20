@@ -21,7 +21,7 @@ import (
 // MySQL 账本原子；展示计数在事务提交后更新，Redis 失败则 DB 兜底并失效缓存以重建。
 type InteractionService struct {
 	txm      tx.Manager
-	videos   videorepo.VideoRepository
+	videos   VideoFactsQuery
 	likes    videorepo.LikeRepository
 	coins    videorepo.CoinRepository
 	folders  videorepo.FolderRepository
@@ -41,7 +41,7 @@ type InteractionService struct {
 // NewInteractionService 构造视频互动用例服务。
 func NewInteractionService(
 	txm tx.Manager,
-	videos videorepo.VideoRepository,
+	videos VideoFactsQuery,
 	likes videorepo.LikeRepository,
 	coins videorepo.CoinRepository,
 	folders videorepo.FolderRepository,

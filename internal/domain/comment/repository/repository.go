@@ -63,10 +63,8 @@ type LikeRepository interface {
 	// Find 查询单条点赞记录；不存在时返回 (nil, nil)。
 	Find(ctx context.Context, commentID, userID uint) (*commententity.Like, error)
 	// Create 写入点赞记录并回填自增 ID。
-	Create(ctx context.Context, like *commententity.
-		// DeleteByID 按主键删除点赞记录。
-		Like) error
-
+	Create(ctx context.Context, like *commententity.Like) error
+	// DeleteByID 按主键删除点赞记录。
 	DeleteByID(ctx context.Context, likeID uint) error
 	// DeleteByCommentIDs 删除指定评论的全部点赞记录。
 	DeleteByCommentIDs(ctx context.Context, commentIDs []uint) error

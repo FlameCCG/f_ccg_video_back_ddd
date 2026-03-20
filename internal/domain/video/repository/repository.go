@@ -6,14 +6,10 @@ import (
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 )
 
-// VideoRepository 视频聚合写侧仓储（接口所有权归领域层）。
-//
-// 这里定义业务操作的输入输出与不存在语义，具体 SQL/PO 映射由 persistence/video 实现。
-// 它是当前较宽的写侧契约，也含部分事实读取；页面详情与列表的富投影另由应用查询端口提供。
-// 带 ForUpdate 的方法要在事务 context 中调用，脱离事务读取不能保护后续写入。
+// VideoRepository 稿件加载、字段级改稿和生命周期状态仓储。
+// ForUpdate 方法必须使用调用方事务 context，不提供全实体 Save。
 type VideoRepository interface {
 	// FindByID 按主键读取视频；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, videoID uint) (*videoentity.Video, error)
@@ -24,24 +20,6 @@ type VideoRepository interface {
 	// FindByIDAndAuthorForUpdate 在调用方事务内锁定视频，直到本次改稿提交或回滚。
 	// 不存在时返回 ErrRecordNotFound；调用方必须传入 tx.Manager 的事务 context。
 	FindByIDAndAuthorForUpdate(ctx context.Context, videoID uint, authorUsername string) (*videoentity.Video, error)
-	// EnsurePublished 校验视频存在且处于已发布状态；否则返回 ErrRecordNotFound。
-	EnsurePublished(ctx context.Context, videoID uint) error
-	// Exists 判断视频行是否存在（不限状态）。
-	Exists(ctx context.Context, videoID uint) (bool, error)
-	// PublishedStats 读取已发布视频的统计行；不存在时返回 ErrRecordNotFound。
-	PublishedStats(ctx context.Context, videoID uint) (*videovo.Stats, error)
-	// ApplyStatsDelta 在 MySQL 上以「不小于 0」表达式应用统计增量（仅已发布视频）。
-	ApplyStatsDelta(ctx context.Context, videoID uint, delta videovo.StatsDelta) error
-	// AuthorIDByVideoID 读取视频作者的用户 ID；作者缺失时返回 ErrVideoAuthorNotFound。
-	AuthorIDByVideoID(ctx context.Context, videoID uint) (uint, error)
-	// PublishedAuthorIDByVideoID 读取已发布视频作者的用户 ID（供事务内互动流程使用）。
-	PublishedAuthorIDByVideoID(ctx context.Context, videoID uint) (uint, error)
-	// AuthorUsernameByVideoID 读取视频的作者用户名；视频不存在时返回 ErrRecordNotFound。
-	AuthorUsernameByVideoID(ctx context.Context, videoID uint) (string, error)
-	// UsernameByUserID 读取用户名（读侧投影，可直读 users 表）。
-	UsernameByUserID(ctx context.Context, userID uint) (string, error)
-	// UserIDByUsername 读取用户 ID 与规范化后的用户名（读侧投影）。
-	UserIDByUsername(ctx context.Context, username string) (uint, string, error)
 	// UpdateStatus 无条件更新视频状态。
 	UpdateStatus(ctx context.Context, videoID uint, status enum.VideoStatus) error
 	// UpdateStatusFrom 仅当当前状态等于 from 时更新为 to，返回影响行数。
@@ -52,30 +30,10 @@ type VideoRepository interface {
 	UpdateStatusBatch(ctx context.Context, videoIDs []uint, status enum.VideoStatus) (int64, error)
 	// UpdateStatusBatchFrom 批量条件更新视频状态，返回影响行数。
 	UpdateStatusBatchFrom(ctx context.Context, videoIDs []uint, from, to enum.VideoStatus) (int64, error)
-	// IDsByAuthor 读取该作者名下的全部视频 ID（用于批量失效详情缓存）。
-	IDsByAuthor(ctx context.Context, authorUsername string) ([]uint, error)
 	// IDsByStatus 过滤出指定状态的视频 ID。
 	IDsByStatus(ctx context.Context, videoIDs []uint, status enum.VideoStatus) ([]uint, error)
-	// IDsByPartition 列出某分区下的全部视频 ID。
-	IDsByPartition(ctx context.Context, partitionID uint) ([]uint, error)
-	// CountByPartition 统计某分区下的视频数量。
-	CountByPartition(ctx context.Context, partitionID uint) (int64, error)
 	// SaveRevision 保存已锁定、经 Video.Revise 校验的改稿快照；不覆盖计数与媒体资源。
 	SaveRevision(ctx context.Context, video *videoentity.Video) error
-	// ReplaceTags 覆盖视频的标签关联（tags 为空表示清空关联）。
-	ReplaceTags(ctx context.Context, videoID uint, tags []videoentity.Tag) error
-	// TagsByVideoID 读取视频当前关联的标签。
-	TagsByVideoID(ctx context.Context, videoID uint) ([]videoentity.Tag, error)
-	// FindTagsByIDs 按 ID 批量读取标签（无匹配时返回非 nil 空切片，与 GORM Find 语义一致）。
-	FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]videoentity.Tag, error)
-	// CreateOrGetTag 创建标签（若已存在同名标签则返回现有）。
-	CreateOrGetTag(ctx context.Context, name string) (*videoentity.Tag, error)
-	// Persist 在单事务内落库一次投稿（视频 + 标签 + 分P + 初始资源）。
-	Persist(ctx context.Context, draft *videoentity.PublishDraft) error
-	// HardDelete 物理删除视频及其全部关联数据，返回各表删除计数与待清理的存储目标。
-	HardDelete(ctx context.Context, videoIDs []uint) (*HardDeleteResult, []StorageDeleteTarget, error)
-	// StoragePathStillReferenced 判断对象路径是否仍被其它视频/资源引用，兼容历史完整 URL/bucket 前缀。
-	StoragePathStillReferenced(ctx context.Context, storedPath string) (bool, error)
 }
 
 // HardDeleteResult 物理删除的各表影响行数。

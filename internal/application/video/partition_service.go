@@ -13,7 +13,7 @@ import (
 // PartitionService 视频分区用例服务。
 type PartitionService struct {
 	partitions videorepo.PartitionRepository
-	videos     videorepo.VideoRepository
+	videos     VideoFactsQuery
 	cache      PartitionCache
 	authors    *AuthorService
 	logger     *zap.Logger
@@ -22,7 +22,7 @@ type PartitionService struct {
 // NewPartitionService 构造分区用例服务。
 func NewPartitionService(
 	partitions videorepo.PartitionRepository,
-	videos videorepo.VideoRepository,
+	videos VideoFactsQuery,
 	cache PartitionCache,
 	authors *AuthorService,
 	logger *zap.Logger,

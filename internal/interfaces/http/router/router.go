@@ -36,10 +36,9 @@ const (
 //
 // 依赖全部由 wire 在 bootstrap 注入；本类型只做路由声明，不含业务逻辑。
 type Router struct {
-	cfgProvider *infraconfig.Provider
-	mw          *middlewares.Middlewares
-	validator   *validate.Translator
-
+	cfgProvider   *infraconfig.Provider
+	mw            *middlewares.Middlewares
+	validator     *validate.Translator
 	identity      *identityhandler.Handler
 	identityAdmin *identityhandler.AdminHandler
 	captcha       *identityhandler.CaptchaHandler

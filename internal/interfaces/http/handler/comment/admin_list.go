@@ -24,7 +24,7 @@ func (h *Handler) AdminListView(c *gin.Context) {
 	req := middlewares.GetBound[AdminCommentListReq](c)
 	ctx := c.Request.Context()
 
-	list, total, err := h.svc.AdminList(ctx, app.AdminListParams{
+	list, total, err := h.query.AdminList(ctx, app.AdminListParams{
 		UserID:   req.UserID,
 		Username: req.Username,
 		Keyword:  req.Keyword,

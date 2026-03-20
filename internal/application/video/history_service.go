@@ -10,14 +10,14 @@ import (
 
 // HistoryService 播放历史用例服务。
 type HistoryService struct {
-	videos  videorepo.VideoRepository
+	videos  VideoFactsQuery
 	history videorepo.HistoryRepository
 	query   HistoryQuery
 }
 
 // NewHistoryService 构造播放历史用例服务。
 func NewHistoryService(
-	videos videorepo.VideoRepository,
+	videos VideoFactsQuery,
 	history videorepo.HistoryRepository,
 	query HistoryQuery,
 ) *HistoryService {

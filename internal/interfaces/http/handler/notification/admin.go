@@ -20,7 +20,7 @@ type AdminListReq struct {
 func (h *Handler) AdminList(c *gin.Context) {
 	req := middlewares.GetBound[AdminListReq](c)
 
-	list, total, err := h.svc.AdminList(c.Request.Context(), req.Page, req.PageSize)
+	list, total, err := h.admin.AdminList(c.Request.Context(), req.Page, req.PageSize)
 	if err != nil {
 		res.FailWithMsg("获取失败", c)
 
@@ -51,7 +51,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.CreateSystemNotice(c.Request.Context(), app.CreateSystemNoticeCommand{
+	if err := h.admin.CreateSystemNotice(c.Request.Context(), app.CreateSystemNoticeCommand{
 		ActorID:    uid,
 		Title:      req.Title,
 		Content:    req.Content,
@@ -83,7 +83,7 @@ type AdminUpdateReq struct {
 func (h *Handler) AdminUpdate(c *gin.Context) {
 	req := middlewares.GetBound[AdminUpdateReq](c)
 
-	err := h.svc.UpdateSystemNotice(c.Request.Context(), app.UpdateSystemNoticeCommand{
+	err := h.admin.UpdateSystemNotice(c.Request.Context(), app.UpdateSystemNoticeCommand{
 		ID:         req.ID,
 		Title:      req.Title,
 		Content:    req.Content,

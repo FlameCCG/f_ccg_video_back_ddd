@@ -9,27 +9,27 @@ import (
 )
 
 func TestCoinChangesProtectBalanceAndPermitRewardDebt(t *testing.T) {
-	user := &entity.User{ID: 1, CoinCount: 0}
-	if err := user.ApplyCoinChange(-0.1); !errors.Is(err, identityerrors.ErrCoinInsufficient) {
+	user := entity.RestoreCoinAccount(1, 0)
+	if err := user.ApplyChange(-0.1); !errors.Is(err, identityerrors.ErrCoinInsufficient) {
 		t.Fatalf("spending error = %v", err)
 	}
-	if user.CoinCount != 0 {
-		t.Fatalf("rejected spending changed balance: %v", user.CoinCount)
+	if user.Balance() != 0 {
+		t.Fatalf("rejected spending changed balance: %v", user.Balance())
 	}
-	if err := user.RevokeFavoriteReward(); err != nil || user.CoinCount != -0.1 {
-		t.Fatalf("reward reversal: balance=%v err=%v", user.CoinCount, err)
+	if err := user.RevokeFavoriteReward(); err != nil || user.Balance() != -0.1 {
+		t.Fatalf("reward reversal: balance=%v err=%v", user.Balance(), err)
 	}
-	if err := user.ApplyCoinChange(-0.1); !errors.Is(err, identityerrors.ErrCoinInsufficient) || user.CoinCount != -0.1 {
-		t.Fatalf("debt must block further spending: balance=%v err=%v", user.CoinCount, err)
+	if err := user.ApplyChange(-0.1); !errors.Is(err, identityerrors.ErrCoinInsufficient) || user.Balance() != -0.1 {
+		t.Fatalf("debt must block further spending: balance=%v err=%v", user.Balance(), err)
 	}
-	if err := user.RevokeFavoriteReward(); err != nil || user.CoinCount != -0.2 {
-		t.Fatalf("another reward reversal: balance=%v err=%v", user.CoinCount, err)
+	if err := user.RevokeFavoriteReward(); err != nil || user.Balance() != -0.2 {
+		t.Fatalf("another reward reversal: balance=%v err=%v", user.Balance(), err)
 	}
-	if err := user.ApplyCoinChange(0.1); err != nil || user.CoinCount != -0.1 {
-		t.Fatalf("partial debt repayment: balance=%v err=%v", user.CoinCount, err)
+	if err := user.ApplyChange(0.1); err != nil || user.Balance() != -0.1 {
+		t.Fatalf("partial debt repayment: balance=%v err=%v", user.Balance(), err)
 	}
-	if err := user.ApplyCoinChange(0.23); err != nil || user.CoinCount != 0.1 {
-		t.Fatalf("repayment must retain decimal rounding: balance=%v err=%v", user.CoinCount, err)
+	if err := user.ApplyChange(0.23); err != nil || user.Balance() != 0.1 {
+		t.Fatalf("repayment must retain decimal rounding: balance=%v err=%v", user.Balance(), err)
 	}
 }
 

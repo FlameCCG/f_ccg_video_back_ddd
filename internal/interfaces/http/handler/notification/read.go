@@ -23,7 +23,7 @@ func (h *Handler) MarkRead(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.MarkRead(c.Request.Context(), int(uid), req.IDs); err != nil {
+	if err := h.inbox.MarkRead(c.Request.Context(), int(uid), req.IDs); err != nil {
 		res.FailWithMsg("更新失败", c)
 
 		return

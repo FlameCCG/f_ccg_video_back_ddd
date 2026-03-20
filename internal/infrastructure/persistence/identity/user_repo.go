@@ -3,9 +3,7 @@ package identity
 import (
 	"context"
 	"errors"
-	"slices"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
 	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
 	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
@@ -26,26 +24,6 @@ type UserRepository struct {
 
 // 编译期断言：满足领域侧仓储接口。
 var _ identityrepo.UserRepository = (*UserRepository)(nil)
-
-// LockAccounts 是账户所有者提供的锁定能力，不让视频仓储直接操作 users。
-func (r *UserRepository) LockAccounts(ctx context.Context, userIDs []uint) error {
-	ordered := slices.Clone(userIDs)
-	slices.Sort(ordered)
-	ordered = slices.Compact(ordered)
-	for _, id := range ordered {
-		if id == 0 {
-			continue
-		}
-		if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("id").Take(&po.User{}, "id = ?", id).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return identityerrors.ErrUserRecordNotFound
-			}
-			return err
-		}
-	}
-	return nil
-}
 
 // NewUserRepository 构造用户仓储。
 func NewUserRepository(db *gorm.DB, cfgProvider *infraconfig.Provider) *UserRepository {
@@ -158,39 +136,6 @@ func (r *UserRepository) ActivateIfBanned(ctx context.Context, userID uint) (boo
 	}
 
 	return result.RowsAffected > 0, nil
-}
-
-// CoinBalanceForUpdate 以行锁读取硬币余额（要求在事务内调用）。
-func (r *UserRepository) CoinBalanceForUpdate(ctx context.Context, userID uint) (float64, error) {
-	var row po.User
-	if err := gormx.DB(ctx, r.db).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
-		Select("id", "coin_count").
-		Take(&row, "id = ?", userID).Error; err != nil {
-		return 0, err
-	}
-
-	return row.CoinCount, nil
-}
-
-// CoinBalance 读取硬币余额（无锁）。
-func (r *UserRepository) CoinBalance(ctx context.Context, userID uint) (float64, error) {
-	var row po.User
-	if err := gormx.DB(ctx, r.db).
-		Select("id", "coin_count").
-		Take(&row, "id = ?", userID).Error; err != nil {
-		return 0, err
-	}
-
-	return row.CoinCount, nil
-}
-
-// UpdateCoinBalance 覆盖写硬币余额。
-func (r *UserRepository) UpdateCoinBalance(ctx context.Context, userID uint, coins float64) error {
-	return gormx.DB(ctx, r.db).
-		Model(&po.User{}).
-		Where("id = ?", userID).
-		Update("coin_count", coins).Error
 }
 
 // ExpAndLevelForUpdate 以行锁读取经验与等级（要求在事务内调用）。

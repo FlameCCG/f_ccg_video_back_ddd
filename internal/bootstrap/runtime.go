@@ -69,7 +69,6 @@ func (c *RuntimeComponents) Start(ctx context.Context) {
 	if c == nil {
 		return
 	}
-
 	for _, component := range []runtimeStarter{c.chatIndexes, c.river, c.video, c.transcode, c.cron} {
 		if component != nil {
 			component.Start(ctx)

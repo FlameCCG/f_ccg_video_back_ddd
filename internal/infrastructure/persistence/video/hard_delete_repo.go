@@ -2,11 +2,11 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/media/dash"
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -331,7 +331,7 @@ func addDashPrefixTarget(
 	targets *[]videorepo.StorageDeleteTarget,
 	seen map[string]struct{},
 ) {
-	prefix := videovo.DashDirPrefix(manifestURL)
+	prefix := dash.DashDirPrefix(manifestURL)
 	if prefix == "" {
 		return
 	}

@@ -172,20 +172,6 @@ func urlPathExt(p string) string {
 	return ""
 }
 
-// parseAbsoluteURL 若 raw 是带 scheme+host 的绝对 URL，则返回其 Path，否则返回错误。
-func parseAbsoluteURL(raw string) (string, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "", err
-	}
-
-	if u.Scheme == "" || u.Host == "" {
-		return "", errNotAbsoluteURL
-	}
-
-	return u.Path, nil
-}
-
 // NormalizeMediaURL 规范化媒体 URL 的转义路径；解析失败时原样返回。
 func NormalizeMediaURL(raw string) string {
 	u, err := url.Parse(raw)

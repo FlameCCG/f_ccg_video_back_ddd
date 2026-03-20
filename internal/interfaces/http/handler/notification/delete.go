@@ -27,7 +27,7 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.Delete(c.Request.Context(), int(uid), req.IDs); err != nil {
+	if err := h.inbox.Delete(c.Request.Context(), int(uid), req.IDs); err != nil {
 		if errors.Is(err, notificationentity.ErrSystemNotificationNotDeletable) {
 			res.FailWithMsg(clienterror.Message(err), c)
 
@@ -46,7 +46,7 @@ func (h *Handler) Delete(c *gin.Context) {
 func (h *Handler) AdminDelete(c *gin.Context) {
 	req := middlewares.GetBound[DeleteNotificationReq](c)
 
-	if err := h.svc.AdminDelete(c.Request.Context(), req.IDs); err != nil {
+	if err := h.admin.AdminDelete(c.Request.Context(), req.IDs); err != nil {
 		res.FailWithMsg("删除失败", c)
 
 		return

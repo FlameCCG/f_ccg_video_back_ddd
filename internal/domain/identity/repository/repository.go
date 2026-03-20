@@ -11,31 +11,17 @@ import (
 // UserRepository 用户聚合的写侧仓储（接口所有权归领域层）。
 type UserRepository interface {
 	// FindByID 按主键读取用户；不存在时返回 (nil, nil)。
-	FindByID(ctx context.Context, userID uint) (*identityentity.
-		// FindStatusByID 只读状态与用户名，供封禁流程使用；不存在时返回 (nil, nil)。
-		User, error)
-
-	FindStatusByID(ctx context.Context, userID uint) (*identityentity.
-		// FindProfileByID 只读 id/username/avatar，供通知渲染使用；不存在时返回 (nil, nil)。
-		User, error)
-
-	FindProfileByID(ctx context.Context, userID uint) (*identityentity.
-		// UsernameByID 读取用户名；用户不存在时返回空串。
-		User, error)
-
+	FindByID(ctx context.Context, userID uint) (*identityentity.User, error)
+	// FindStatusByID 只读状态与用户名，供封禁流程使用；不存在时返回 (nil, nil)。
+	FindStatusByID(ctx context.Context, userID uint) (*identityentity.User, error)
+	// FindProfileByID 只读 id/username/avatar，供通知渲染使用；不存在时返回 (nil, nil)。
+	FindProfileByID(ctx context.Context, userID uint) (*identityentity.User, error)
+	// UsernameByID 读取用户名；用户不存在时返回空串。
 	UsernameByID(ctx context.Context, userID uint) (string, error)
-	// LockAccounts 在调用方事务中按 ID 升序锁定账户，忽略重复及零 ID。
-	LockAccounts(ctx context.Context, userIDs []uint) error
 	// UpdateStatus 更新用户状态。
 	UpdateStatus(ctx context.Context, userID uint, status enum.UserStatus) error
 	// ActivateIfBanned 仅当用户仍处于限时封禁态时置为正常，返回是否更新成功。
 	ActivateIfBanned(ctx context.Context, userID uint) (bool, error)
-	// CoinBalanceForUpdate 以行锁读取硬币余额（要求在事务内调用）。
-	CoinBalanceForUpdate(ctx context.Context, userID uint) (float64, error)
-	// CoinBalance 读取硬币余额（无锁）。
-	CoinBalance(ctx context.Context, userID uint) (float64, error)
-	// UpdateCoinBalance 覆盖写硬币余额。
-	UpdateCoinBalance(ctx context.Context, userID uint, coins float64) error
 	// ExpAndLevelForUpdate 以行锁读取经验与等级（要求在事务内调用）。
 	ExpAndLevelForUpdate(ctx context.Context, userID uint) (exp int64, level int, err error)
 	// UpdateExpAndLevel 覆盖写经验与等级。

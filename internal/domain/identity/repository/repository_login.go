@@ -17,26 +17,18 @@ type UserAccountRepository interface {
 	SetRefreshToken(ctx context.Context, userID uint, passwordHash, tokenHash string) (bool, error)
 
 	// FindByID 按主键读取用户；不存在时返回 (nil, nil)。
-	FindByID(ctx context.Context, userID uint) (*identityentity.
-		// FindWithConfByID 一次查询读取用户及其一对一配置；用户不存在时返回 (nil, nil, nil)。
-		User, error)
-
+	FindByID(ctx context.Context, userID uint) (*identityentity.User, error)
+	// FindWithConfByID 一次查询读取用户及其一对一配置；用户不存在时返回 (nil, nil, nil)。
 	FindWithConfByID(ctx context.Context, userID uint) (*identityentity.User, *identityentity.UserConf, error)
 	// ExistsByUsernameOrEmail 判断用户名或邮箱是否已被占用。
 	ExistsByUsernameOrEmail(ctx context.Context, username, email string) (bool, error)
 	// FindByUsernameOrEmail 按「用户名或邮箱」登录标识读取用户；不存在时返回 (nil, nil)。
-	FindByUsernameOrEmail(ctx context.Context, identifier string) (*identityentity.
-		// FindByEmail 按邮箱读取用户；不存在时返回 (nil, nil)。
-		User, error)
-
-	FindByEmail(ctx context.Context, email string) (*identityentity.
-		// FindByOpenIDAndSource 按第三方 openID + 注册来源读取用户；不存在时返回 (nil, nil)。
-		User, error)
-
-	FindByOpenIDAndSource(ctx context.Context, openID, registerSource string) (*identityentity.
-		// CountByUsernameExcluding 统计除 excludeUserID 之外使用该用户名的账号数。
-		User, error)
-
+	FindByUsernameOrEmail(ctx context.Context, identifier string) (*identityentity.User, error)
+	// FindByEmail 按邮箱读取用户；不存在时返回 (nil, nil)。
+	FindByEmail(ctx context.Context, email string) (*identityentity.User, error)
+	// FindByOpenIDAndSource 按第三方 openID + 注册来源读取用户；不存在时返回 (nil, nil)。
+	FindByOpenIDAndSource(ctx context.Context, openID, registerSource string) (*identityentity.User, error)
+	// CountByUsernameExcluding 统计除 excludeUserID 之外使用该用户名的账号数。
 	CountByUsernameExcluding(ctx context.Context, username string, excludeUserID uint) (int64, error)
 	// CountByEmailExcluding 统计除 excludeUserID 之外使用该邮箱的账号数。
 	CountByEmailExcluding(ctx context.Context, email string, excludeUserID uint) (int64, error)

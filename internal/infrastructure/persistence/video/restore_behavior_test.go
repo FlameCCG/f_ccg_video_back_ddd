@@ -12,7 +12,7 @@ import (
 )
 
 func restoreService(f *fixture) *app.AdminVideoService {
-	return app.NewAdminVideoService(gormx.NewTxManager(f.db), f.videos, nil, nil, nil,
+	return app.NewAdminVideoService(gormx.NewTxManager(f.db), f.videos, f.videos, nil, nil, nil,
 		inactiveRevisionMeta{}, nil, nil, app.NewVectorSyncService(nil, nil, nil), nil, nil, nil, zap.NewNop())
 }
 

@@ -35,7 +35,7 @@ func (h *Handler) CreatorListView(c *gin.Context) {
 		return
 	}
 
-	list, total, err := h.svc.ListByAuthor(c.Request.Context(), app.CreatorListParams{
+	list, total, err := h.query.ListByAuthor(c.Request.Context(), app.CreatorListParams{
 		AuthorID: uid,
 		Page:     req.Page,
 		PageSize: req.PageSize,

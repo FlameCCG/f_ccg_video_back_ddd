@@ -128,8 +128,9 @@ func (s *Scheduler) loop(ctx context.Context) {
 // flushDue 按当前审核政策筛选一批到期候选。
 // 开启审核时不扫描 Review，避免轮询替代人工审核；真正发布前仍需重新锁定并检查。
 func (s *Scheduler) flushDue(ctx context.Context) {
+	reviewEnabled := contentReviewEnabled(s.cfgProvider.Get())
 	statuses := []enum.VideoStatus{enum.VideoStatusScheduled}
-	if !contentReviewEnabled(s.cfgProvider) {
+	if !reviewEnabled {
 		statuses = append(statuses, enum.VideoStatusReview)
 	}
 	videoIDs, err := s.store.DueVideoIDs(ctx, time.Now(), statuses)
@@ -140,7 +141,7 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 	}
 
 	for _, videoID := range videoIDs {
-		_, pubErr := s.ProcessDueScheduledVideo(ctx, videoID)
+		_, pubErr := s.processDueScheduledVideo(ctx, videoID, reviewEnabled)
 		if pubErr != nil {
 			s.logger.Error("scheduled publish failed", zap.Error(pubErr), zap.Uint("videoId", videoID))
 		}
@@ -155,6 +156,10 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 // 在事务中重新检查最新发布时间；状态变更与任务消费一起提交。
 // drop=true 表示本次任务已处理；成功发布保留原计划时间，调用方不可再无条件清除。
 func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) (bool, error) {
+	return s.processDueScheduledVideo(ctx, videoID, contentReviewEnabled(s.cfgProvider.Get()))
+}
+
+func (s *Scheduler) processDueScheduledVideo(ctx context.Context, videoID uint, reviewEnabled bool) (bool, error) {
 	var drop, published bool
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		video, err := s.videos.FindByIDForUpdate(txCtx, videoID)
@@ -174,7 +179,7 @@ func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) 
 				return err
 			}
 		}
-		decision := video.PublishWhenDue(publishAt, time.Now(), contentReviewEnabled(s.cfgProvider))
+		decision := video.PublishWhenDue(publishAt, time.Now(), reviewEnabled)
 		if decision.Published {
 			rows, err := s.videos.UpdateStatusFrom(txCtx, videoID, previousStatus, video.Status)
 			if err != nil {

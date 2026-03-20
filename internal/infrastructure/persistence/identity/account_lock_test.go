@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -31,7 +32,7 @@ func TestLockAccountsUsesOrderedMySQLRowLocks(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	ids := []uint{9, 0, 2, 9}
-	if err := infra.NewUserRepository(db, nil).LockAccounts(t.Context(), ids); err != nil {
+	if err := infra.NewCoinAccountRepository(db).LockAccounts(t.Context(), ids); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(ids, []uint{9, 0, 2, 9}) {

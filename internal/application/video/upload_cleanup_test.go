@@ -19,7 +19,7 @@ import (
 )
 
 type cleanupReferences struct {
-	videorepo.VideoRepository
+	videorepo.CleanupRepository
 	paths map[string]bool
 	err   error
 }

@@ -42,13 +42,13 @@ type UploadGarbageScanner interface {
 // 扫描、哈希锁、数据库引用检查和删除时效复核共同构成流程，任一步失败都不应推断文件可删。
 type UploadCleanupService struct {
 	scanner UploadGarbageScanner
-	videos  videorepo.VideoRepository
+	videos  videorepo.CleanupRepository
 	guard   UploadHashGuard
 	cfg     shared.ConfigReader
 	logger  *zap.Logger
 }
 
-func NewUploadCleanupService(scanner UploadGarbageScanner, videos videorepo.VideoRepository, guard UploadHashGuard, cfg shared.ConfigReader, logger *zap.Logger) *UploadCleanupService {
+func NewUploadCleanupService(scanner UploadGarbageScanner, videos videorepo.CleanupRepository, guard UploadHashGuard, cfg shared.ConfigReader, logger *zap.Logger) *UploadCleanupService {
 	return &UploadCleanupService{scanner: scanner, videos: videos, guard: guard, cfg: cfg, logger: logger}
 }
 

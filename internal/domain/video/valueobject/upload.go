@@ -40,28 +40,6 @@ func ValidateSourceFileName(fileName string) error {
 	return nil
 }
 
-// MapSourceFileNameDBError 将源文件名列超长等 DB 错误转为可读业务文案。
-func MapSourceFileNameDBError(err error, sourceFileName string) error {
-	if err == nil {
-		return nil
-	}
-
-	msg := err.Error()
-	if strings.Contains(msg, "source_file_name") &&
-		(strings.Contains(msg, "Data too long") || strings.Contains(msg, "1406")) {
-		if vErr := ValidateSourceFileName(sourceFileName); vErr != nil {
-			return vErr
-		}
-
-		return fmt.Errorf(
-			"源文件名过长（最多 %d 个字符）：请缩短文件名后重新选择并上传",
-			MaxSourceFileNameLen,
-		)
-	}
-
-	return err
-}
-
 // IsSourceFileNameError 判断错误是否为源文件名相关的业务错误。
 func IsSourceFileNameError(err error) bool {
 	if err == nil {

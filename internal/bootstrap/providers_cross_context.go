@@ -8,6 +8,7 @@ import (
 	dynamicapp "f_ccg_video_back_ddd/internal/application/dynamic"
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
+	notificationapp "f_ccg_video_back_ddd/internal/application/notification"
 	platformapp "f_ccg_video_back_ddd/internal/application/platform"
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
 	searchapp "f_ccg_video_back_ddd/internal/application/search"
@@ -53,8 +54,7 @@ var CrossContextProviderSet = wire.NewSet(
 	wire.Bind(new(schedulerinfra.UploadCleanupJob), new(*videoapp.UploadCleanupService)),
 
 	wire.Bind(new(identityapp.RateLimiter), new(*ratelimitinfra.Limiter)),
-	adapters.NewBadgeInvalidator,
-	wire.Bind(new(chatapp.NotificationBadgeInvalidator), new(*adapters.BadgeInvalidator)),
+	wire.Bind(new(chatapp.NotificationBadgeInvalidator), new(*notificationapp.CountService)),
 	adapters.NewNotifier,
 	wire.Bind(new(commentapp.Notifier), new(*adapters.Notifier)),
 	wire.Bind(new(dynamicapp.DynamicLikeNotifier), new(*adapters.Notifier)),

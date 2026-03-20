@@ -16,7 +16,7 @@ import (
 
 // DanmuService 弹幕用例服务。
 type DanmuService struct {
-	videos      videorepo.VideoRepository
+	videos      VideoFactsQuery
 	danmus      videorepo.DanmuRepository
 	query       DanmuQuery
 	recent      DanmuRecentCache
@@ -32,7 +32,7 @@ type DanmuService struct {
 //
 // broadcaster 在 bootstrap 构造 WebSocket Hub 后经 SetBroadcaster 回填。
 func NewDanmuService(
-	videos videorepo.VideoRepository,
+	videos VideoFactsQuery,
 	danmus videorepo.DanmuRepository,
 	query DanmuQuery,
 	recent DanmuRecentCache,

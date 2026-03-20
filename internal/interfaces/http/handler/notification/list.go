@@ -25,7 +25,7 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 
-	list, total, err := h.svc.List(c.Request.Context(), int(uid), req.Page, req.PageSize, req.Category)
+	list, total, err := h.inbox.List(c.Request.Context(), int(uid), req.Page, req.PageSize, req.Category)
 	if err != nil {
 		res.FailWithMsg("获取通知失败", c)
 
@@ -44,7 +44,7 @@ func (h *Handler) Counts(c *gin.Context) {
 		return
 	}
 
-	data, err := h.svc.CountSummary(c.Request.Context(), int(uid))
+	data, err := h.counts.CountSummary(c.Request.Context(), int(uid))
 	if err != nil {
 		res.FailWithMsg("获取数量失败", c)
 

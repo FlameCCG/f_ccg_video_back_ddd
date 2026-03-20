@@ -9,6 +9,7 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/media/dash"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,7 +103,7 @@ func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]v
 		if err != nil {
 			return nil, err
 		}
-		variants, err := videovo.ParseMPDVariants(body)
+		variants, err := dash.ParseMPDVariants(body)
 		if err != nil {
 			return nil, err
 		}
@@ -145,7 +146,7 @@ func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]v
 		return nil, errors.New("DASH manifest exceeds size limit")
 	}
 
-	variants, err := videovo.ParseMPDVariants(body)
+	variants, err := dash.ParseMPDVariants(body)
 	if err != nil {
 		return nil, err
 	}
