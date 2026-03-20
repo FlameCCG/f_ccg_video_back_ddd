@@ -7,7 +7,10 @@ import (
 
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -17,8 +20,8 @@ import (
 //
 // 通过配置端口读取运行参数，仓储负责落库，转码任务通过投递端口发送。
 type PublishService struct {
-	videos      domain.VideoRepository
-	partitions  domain.PartitionRepository
+	videos      videorepo.VideoRepository
+	partitions  videorepo.PartitionRepository
 	uploads     *UploadService
 	transcode   TranscodeDispatcher
 	vectors     *VectorSyncService
@@ -29,8 +32,8 @@ type PublishService struct {
 
 // NewPublishService 构造投稿用例服务。
 func NewPublishService(
-	videos domain.VideoRepository,
-	partitions domain.PartitionRepository,
+	videos videorepo.VideoRepository,
+	partitions videorepo.PartitionRepository,
 	uploads *UploadService,
 	transcode TranscodeDispatcher,
 	vectors *VectorSyncService,
@@ -68,12 +71,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 
 	storageType := s.storageType()
 
-	// 应用层提供时钟与审核事实，领域只裁定初始状态；待审稿件也可以保留未来发布时间。
-	initialStatus := domain.ResolvePublishVideoStatus(now, &publishTime, cmd.IsPrivate, contentReviewEnabled(s.cfgProvider))
 	var scheduledAt *time.Time
-	if domain.ShouldScheduleVideoPublish(now, publishTime, cmd.IsPrivate) {
-		scheduledAt = &publishTime
-	}
 
 	isMultiPart := len(cmd.Parts) > 0
 	if isMultiPart {
@@ -92,8 +90,8 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	} else if trimSpace(cmd.FileName) == "" || trimSpace(cmd.FileHash) == "" {
 		return nil, errUploadVideoFirst
 	}
-	var parts []domain.VideoPart
-	var video *domain.Video
+	var parts []videoentity.VideoPart
+	var video *videoentity.Video
 	hashes := []string{cmd.FileHash}
 	if isMultiPart {
 		hashes = make([]string, 0, len(cmd.Parts))
@@ -108,22 +106,22 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 		func(guardCtx context.Context) error { return s.preparePublishUploads(guardCtx, &cmd) },
 		func(guardCtx context.Context) error {
 			if isMultiPart {
-				parts = make([]domain.VideoPart, 0, len(cmd.Parts))
+				parts = make([]videoentity.VideoPart, 0, len(cmd.Parts))
 				for i, p := range cmd.Parts {
 					title := trimSpace(p.Title)
 					if title == "" {
-						title = domain.DefaultPartTitleFromFileName(p.FileName)
+						title = videovo.DefaultPartTitleFromFileName(p.FileName)
 					}
-					parts = append(parts, domain.VideoPart{
+					parts = append(parts, videoentity.VideoPart{
 						Title: title, SortOrder: i, Duration: 0, StorageType: storageType,
 					})
 				}
 			}
-			video = &domain.Video{
+			video, scheduledAt = videoentity.NewVideo(videoentity.VideoDraft{
 				Title: cmd.Title, Description: cmd.Description, Cover: cmd.CoverURL,
 				AuthorUsername: cmd.AuthorUsername, PartitionID: cmd.PartitionID,
-				IsOriginal: cmd.IsOriginal, Status: initialStatus, IsScheduled: scheduledAt != nil, Duration: 0, StorageType: storageType,
-			}
+				IsOriginal: cmd.IsOriginal, StorageType: storageType,
+			}, publishTime, cmd.IsPrivate, contentReviewEnabled(s.cfgProvider), now)
 			return s.persistVideo(guardCtx, video, cmd, parts, scheduledAt)
 		}); err != nil {
 		return nil, err
@@ -182,7 +180,7 @@ func (s *PublishService) preparePublishUploads(ctx context.Context, cmd *Publish
 				return errUploadAllPartsFirst
 			}
 
-			if err := domain.ValidateSourceFileName(cmd.Parts[i].FileName); err != nil {
+			if err := videovo.ValidateSourceFileName(cmd.Parts[i].FileName); err != nil {
 				return err
 			}
 
@@ -201,7 +199,7 @@ func (s *PublishService) preparePublishUploads(ctx context.Context, cmd *Publish
 		return errUploadVideoFirst
 	}
 
-	if err := domain.ValidateSourceFileName(cmd.FileName); err != nil {
+	if err := videovo.ValidateSourceFileName(cmd.FileName); err != nil {
 		return err
 	}
 
@@ -218,12 +216,12 @@ func (s *PublishService) preparePublishUploads(ctx context.Context, cmd *Publish
 // persistVideo 校验标签与分区后，把视频、标签关联、分P与初始资源写入单事务。
 func (s *PublishService) persistVideo(
 	ctx context.Context,
-	video *domain.Video,
+	video *videoentity.Video,
 	cmd PublishVideoCommand,
-	parts []domain.VideoPart,
+	parts []videoentity.VideoPart,
 	scheduledAt *time.Time,
 ) error {
-	var tags []domain.Tag
+	var tags []videoentity.Tag
 
 	if len(cmd.TagIDs) > 0 {
 		found, err := s.videos.FindTagsByIDs(ctx, cmd.TagIDs)
@@ -255,14 +253,14 @@ func (s *PublishService) persistVideo(
 
 	partition, err := s.partitions.FindByID(ctx, cmd.PartitionID)
 	if err != nil {
-		return domain.ErrPartitionNotFound
+		return videoerrors.ErrPartitionNotFound
 	}
 
 	if err := partition.EnsureSubmittable(); err != nil {
 		return err
 	}
 
-	draft := &domain.PublishDraft{
+	draft := &videoentity.PublishDraft{
 		Video:     video,
 		PublishAt: scheduledAt,
 		TagIDs:    tagIDsOf(tags),
@@ -270,16 +268,16 @@ func (s *PublishService) persistVideo(
 	}
 
 	if len(parts) > 0 {
-		draft.PartResources = make([]*domain.ResourceDraft, len(parts))
+		draft.PartResources = make([]*videoentity.ResourceDraft, len(parts))
 		for idx := range parts {
 			if idx >= len(cmd.Parts) {
 				continue
 			}
 
-			draft.PartResources[idx] = domain.BuildInitialResourceDraft(cmd.Parts[idx].FileName, cmd.Parts[idx].FilePath)
+			draft.PartResources[idx] = videoentity.BuildInitialResourceDraft(cmd.Parts[idx].FileName, cmd.Parts[idx].FilePath)
 		}
 	} else {
-		draft.VideoResource = domain.BuildInitialResourceDraft(cmd.FileName, cmd.FilePath)
+		draft.VideoResource = videoentity.BuildInitialResourceDraft(cmd.FileName, cmd.FilePath)
 	}
 
 	return s.videos.Persist(ctx, draft)
@@ -287,7 +285,7 @@ func (s *PublishService) persistVideo(
 
 func (s *PublishService) dispatchTranscodeTask(
 	ctx context.Context,
-	video *domain.Video,
+	video *videoentity.Video,
 	cmd PublishVideoCommand,
 	storage enum.VideoStorageType,
 ) error {
@@ -383,7 +381,7 @@ func (s *PublishService) storageType() enum.VideoStorageType {
 }
 
 // tagIDsOf 提取标签 ID 列表。
-func tagIDsOf(tags []domain.Tag) []uint {
+func tagIDsOf(tags []videoentity.Tag) []uint {
 	if len(tags) == 0 {
 		return nil
 	}

@@ -2,27 +2,28 @@ package media
 
 import (
 	"context"
-	domain "f_ccg_video_back_ddd/internal/domain/media"
 	"sync"
 	"testing"
 	"time"
+
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 )
 
 type progressInnerStub struct {
-	events chan domain.TranscodeProgress
+	events chan mediavo.TranscodeProgress
 	once   sync.Once
 }
 
-func (s *progressInnerStub) Events() <-chan domain.TranscodeProgress { return s.events }
-func (s *progressInnerStub) Close() error                            { s.once.Do(func() { close(s.events) }); return nil }
+func (s *progressInnerStub) Events() <-chan mediavo.TranscodeProgress { return s.events }
+func (s *progressInnerStub) Close() error                             { s.once.Do(func() { close(s.events) }); return nil }
 func TestProgressSubscriptionCloseUnblocksFullOutput(t *testing.T) {
 	for _, cancelContext := range []bool{false, true} {
 		t.Run(map[bool]string{false: "Close", true: "context"}[cancelContext], func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			inner := &progressInnerStub{events: make(chan domain.TranscodeProgress, 128)}
+			inner := &progressInnerStub{events: make(chan mediavo.TranscodeProgress, 128)}
 			for i := 0; i < 128; i++ {
-				inner.events <- domain.TranscodeProgress{VideoID: 1}
+				inner.events <- mediavo.TranscodeProgress{VideoID: 1}
 			}
 			sub := newProgressSubscription(ctx, inner)
 			deadline := time.Now().Add(time.Second)

@@ -6,7 +6,8 @@ import (
 	"errors"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -19,8 +20,8 @@ type UserConfRepository struct {
 }
 
 var (
-	_ domain.UserConfRepository = (*UserConfRepository)(nil)
-	_ app.UserConfQuery         = (*UserConfRepository)(nil)
+	_ identityrepo.UserConfRepository = (*UserConfRepository)(nil)
+	_ app.UserConfQuery               = (*UserConfRepository)(nil)
 )
 
 // NewUserConfRepository 构造用户配置仓储。
@@ -29,7 +30,7 @@ func NewUserConfRepository(db *gorm.DB) *UserConfRepository {
 }
 
 // FindByUserID 读取用户配置；不存在时返回 (nil, nil)。
-func (r *UserConfRepository) FindByUserID(ctx context.Context, userID uint) (*domain.UserConf, error) {
+func (r *UserConfRepository) FindByUserID(ctx context.Context, userID uint) (*identityentity.UserConf, error) {
 	row, err := r.load(ctx, userID)
 	if err != nil || row == nil {
 		return nil, err
@@ -62,7 +63,7 @@ func (r *UserConfRepository) load(ctx context.Context, userID uint) (*po.UserCon
 }
 
 // Update 部分更新用户配置。
-func (r *UserConfRepository) Update(ctx context.Context, userID uint, changes domain.UserConfChanges) error {
+func (r *UserConfRepository) Update(ctx context.Context, userID uint, changes identityentity.UserConfChanges) error {
 	updates, err := userConfUpdateColumns(changes)
 	if err != nil {
 		return err
@@ -87,7 +88,7 @@ func (r *UserConfRepository) ReassignBanner(ctx context.Context, fromBannerID, t
 }
 
 // userConfUpdateColumns 把领域侧的部分更新集合翻译为列名 → 值。
-func userConfUpdateColumns(changes domain.UserConfChanges) (map[string]any, error) {
+func userConfUpdateColumns(changes identityentity.UserConfChanges) (map[string]any, error) {
 	updates := make(map[string]any, 8)
 
 	if changes.OpenCollect != nil {

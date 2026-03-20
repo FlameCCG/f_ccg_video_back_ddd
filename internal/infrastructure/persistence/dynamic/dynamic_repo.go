@@ -5,7 +5,9 @@ import (
 	"errors"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
+	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
+	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -22,7 +24,7 @@ type DynamicRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.DynamicRepository = (*DynamicRepository)(nil)
+var _ dynamicrepo.DynamicRepository = (*DynamicRepository)(nil)
 
 // NewDynamicRepository 构造动态仓储。
 func NewDynamicRepository(db *gorm.DB) *DynamicRepository {
@@ -30,7 +32,7 @@ func NewDynamicRepository(db *gorm.DB) *DynamicRepository {
 }
 
 // FindByID 按主键读取动态；不存在时返回 (nil, nil)。
-func (r *DynamicRepository) FindByID(ctx context.Context, dynamicID uint) (*domain.Dynamic, error) {
+func (r *DynamicRepository) FindByID(ctx context.Context, dynamicID uint) (*dynamicentity.Dynamic, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, r.db).Where("id = ?", dynamicID).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -60,7 +62,7 @@ func (r *DynamicRepository) ExistsByID(ctx context.Context, dynamicID uint) (boo
 }
 
 // FindNoticeTargetByID 只读 id/user_id/content，供点赞通知渲染；不存在时返回 (nil, nil)。
-func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID uint) (*domain.Dynamic, error) {
+func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID uint) (*dynamicentity.Dynamic, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "user_id", "content").
@@ -77,7 +79,7 @@ func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID 
 }
 
 // Create 写入动态，并把自增 ID 与时间戳回填到领域实体。
-func (r *DynamicRepository) Create(ctx context.Context, d *domain.Dynamic) error {
+func (r *DynamicRepository) Create(ctx context.Context, d *dynamicentity.Dynamic) error {
 	if d == nil {
 		return nil
 	}
@@ -168,7 +170,7 @@ type LikeRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.LikeRepository = (*LikeRepository)(nil)
+var _ dynamicrepo.LikeRepository = (*LikeRepository)(nil)
 
 // NewLikeRepository 构造动态点赞仓储。
 func NewLikeRepository(db *gorm.DB) *LikeRepository {
@@ -180,7 +182,7 @@ func (r *LikeRepository) Create(ctx context.Context, dynamicID, userID uint) err
 	like := po.DynamicLike{DynamicID: dynamicID, UserID: userID}
 	if err := gormx.DB(ctx, r.db).Create(&like).Error; err != nil {
 		if isDynamicLikeDuplicateKey(err) {
-			return domain.ErrLikeDuplicated
+			return dynamicerrors.ErrLikeDuplicated
 		}
 
 		return err
@@ -218,7 +220,7 @@ type ReadRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.ReadRepository = (*ReadRepository)(nil)
+var _ dynamicrepo.ReadRepository = (*ReadRepository)(nil)
 
 // NewReadRepository 构造已读位点仓储。
 func NewReadRepository(db *gorm.DB) *ReadRepository {
@@ -226,7 +228,7 @@ func NewReadRepository(db *gorm.DB) *ReadRepository {
 }
 
 // FindByUserAndAuthor 读取用户对某作者的已读位点；不存在时返回 (nil, nil)。
-func (r *ReadRepository) FindByUserAndAuthor(ctx context.Context, userID, authorID uint) (*domain.ReadRecord, error) {
+func (r *ReadRepository) FindByUserAndAuthor(ctx context.Context, userID, authorID uint) (*dynamicentity.ReadRecord, error) {
 	var row po.DynamicRead
 	if err := gormx.DB(ctx, r.db).
 		Where("user_id = ? AND author_id = ?", userID, authorID).
@@ -242,7 +244,7 @@ func (r *ReadRepository) FindByUserAndAuthor(ctx context.Context, userID, author
 }
 
 // Create 写入一条新的已读位点，并回填自增 ID。
-func (r *ReadRepository) Create(ctx context.Context, record *domain.ReadRecord) error {
+func (r *ReadRepository) Create(ctx context.Context, record *dynamicentity.ReadRecord) error {
 	if record == nil {
 		return nil
 	}

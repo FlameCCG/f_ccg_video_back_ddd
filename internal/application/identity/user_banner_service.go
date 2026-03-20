@@ -9,7 +9,9 @@ import (
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
 	"f_ccg_video_back_ddd/pkg/uploadcheck"
 
 	"go.uber.org/zap"
@@ -21,7 +23,7 @@ const siteConfigSection = "site"
 // UserBannerService 用户主页横幅用例服务。
 type UserBannerService struct {
 	cfgProvider  shared.ConfigStore
-	confs        domain.UserConfRepository
+	confs        identityrepo.UserConfRepository
 	banners      UserBannerCatalog
 	configWriter ConfigFileWriter
 	storage      BannerStorage
@@ -31,7 +33,7 @@ type UserBannerService struct {
 // NewUserBannerService 构造用户横幅服务。
 func NewUserBannerService(
 	cfgProvider shared.ConfigStore,
-	confs domain.UserConfRepository,
+	confs identityrepo.UserConfRepository,
 	banners UserBannerCatalog,
 	configWriter ConfigFileWriter,
 	storage BannerStorage,
@@ -100,14 +102,14 @@ func (s *UserBannerService) resolveCurrentSelection(ctx context.Context, viewerI
 // AdminSetDefault 更换注册默认横幅：写回配置并把旧默认横幅的用户批量迁移到新横幅。
 func (s *UserBannerService) AdminSetDefault(ctx context.Context, bannerID uint) error {
 	if err := s.ensureUserBannerSelectable(ctx, bannerID); err != nil {
-		return domain.ErrUserBannerNotFound
+		return identityerrors.ErrUserBannerNotFound
 	}
 
 	var oldDefaultBannerID uint
 	if err := s.updateSiteConfig(func(cfgSite *site.Site) error {
-		oldDefaultBannerID = domain.ResolveDefaultUserBannerID(cfgSite.DefaultUserBannerID)
+		oldDefaultBannerID = identityvo.ResolveDefaultUserBannerID(cfgSite.DefaultUserBannerID)
 		if bannerID == oldDefaultBannerID {
-			return domain.ErrBannerAlreadyRegisterDefault
+			return identityerrors.ErrBannerAlreadyRegisterDefault
 		}
 		cfgSite.DefaultUserBannerID = bannerID
 
@@ -134,31 +136,31 @@ func (s *UserBannerService) AdminUpdateDefaults(
 	bannerIDs []uint,
 	action int,
 ) (*AdminUpdateUserBannerListResult, error) {
-	if action == domain.UserBannerActionAdd {
+	if action == identityvo.UserBannerActionAdd {
 		if err := s.ensureUserBannersSelectable(ctx, bannerIDs); err != nil {
-			return nil, domain.ErrUserBannerNotFound
+			return nil, identityerrors.ErrUserBannerNotFound
 		}
 	}
 	var current []uint
 	if err := s.updateSiteConfig(func(cfgSite *site.Site) error {
-		if err := domain.EnsureRegisterDefaultBannerNotTouched(bannerIDs, cfgSite.DefaultUserBannerID); err != nil {
-			return domain.ErrRegisterDefaultBannerLocked
+		if err := identityvo.EnsureRegisterDefaultBannerNotTouched(bannerIDs, cfgSite.DefaultUserBannerID); err != nil {
+			return identityerrors.ErrRegisterDefaultBannerLocked
 		}
-		current = domain.NormalizeBannerIDs(cfgSite.DefaultUserBannerIDs)
+		current = identityvo.NormalizeBannerIDs(cfgSite.DefaultUserBannerIDs)
 		switch action {
-		case domain.UserBannerActionAdd:
+		case identityvo.UserBannerActionAdd:
 			// 校验：如果要添加的 bannerID 已经存在于系统默认列表中，则报错。
-			for _, id := range domain.NormalizeBannerIDs(bannerIDs) {
+			for _, id := range identityvo.NormalizeBannerIDs(bannerIDs) {
 				if slices.Contains(current, id) {
-					return domain.ErrBannerAlreadyInDefaults
+					return identityerrors.ErrBannerAlreadyInDefaults
 				}
 			}
 
-			current = domain.MergeBannerIDs(current, bannerIDs)
-		case domain.UserBannerActionDelete:
-			current = domain.RemoveBannerIDs(current, bannerIDs)
+			current = identityvo.MergeBannerIDs(current, bannerIDs)
+		case identityvo.UserBannerActionDelete:
+			current = identityvo.RemoveBannerIDs(current, bannerIDs)
 		default:
-			return domain.ErrBannerActionInvalid
+			return identityerrors.ErrBannerActionInvalid
 		}
 		cfgSite.DefaultUserBannerIDs = append([]uint(nil), current...)
 		return nil
@@ -199,7 +201,7 @@ func (s *UserBannerService) UploadBanner(ctx context.Context, in UploadBannerInp
 // ensureUserBannerSelectable 校验单个横幅是可见的用户主页横幅。
 func (s *UserBannerService) ensureUserBannerSelectable(ctx context.Context, bannerID uint) error {
 	if bannerID == 0 {
-		return domain.ErrBannerIDRequired
+		return identityerrors.ErrBannerIDRequired
 	}
 
 	banner, err := s.banners.FindVisible(ctx, bannerID)
@@ -208,7 +210,7 @@ func (s *UserBannerService) ensureUserBannerSelectable(ctx context.Context, bann
 	}
 
 	if banner == nil {
-		return domain.ErrUserBannerNotFound
+		return identityerrors.ErrUserBannerNotFound
 	}
 
 	return nil
@@ -216,9 +218,9 @@ func (s *UserBannerService) ensureUserBannerSelectable(ctx context.Context, bann
 
 // ensureUserBannersSelectable 校验一批横幅全部是可见的用户主页横幅。
 func (s *UserBannerService) ensureUserBannersSelectable(ctx context.Context, bannerIDs []uint) error {
-	normalized := domain.NormalizeBannerIDs(bannerIDs)
+	normalized := identityvo.NormalizeBannerIDs(bannerIDs)
 	if len(normalized) == 0 {
-		return domain.ErrBannerIDsRequired
+		return identityerrors.ErrBannerIDsRequired
 	}
 
 	list, err := s.banners.ListVisible(ctx, normalized)
@@ -227,7 +229,7 @@ func (s *UserBannerService) ensureUserBannersSelectable(ctx context.Context, ban
 	}
 
 	if len(list) != len(normalized) {
-		return domain.ErrUserBannerNotFound
+		return identityerrors.ErrUserBannerNotFound
 	}
 
 	return nil
@@ -259,5 +261,5 @@ func (s *UserBannerService) systemDefaultBannerIDs() []uint {
 		return []uint{}
 	}
 
-	return domain.SystemDefaultUserBannerIDs(cfg.Site.DefaultUserBannerIDs, cfg.Site.DefaultUserBannerID)
+	return identityvo.SystemDefaultUserBannerIDs(cfg.Site.DefaultUserBannerIDs, cfg.Site.DefaultUserBannerID)
 }

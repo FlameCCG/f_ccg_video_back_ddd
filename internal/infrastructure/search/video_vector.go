@@ -13,7 +13,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
@@ -283,7 +283,7 @@ func (v *VideoVectorIndex) Store(
 
 	resp, err := (esapi.IndexRequest{
 		Index:      cfg.Index,
-		DocumentID: domain.VideoDocumentID(source.ID),
+		DocumentID: searchvo.VideoDocumentID(source.ID),
 		Body:       bytes.NewReader(payload),
 	}).Do(ctx, v.client)
 	if err != nil {
@@ -321,7 +321,7 @@ func (v *VideoVectorIndex) Delete(ctx context.Context, cfg app.VectorConfig, vid
 
 	resp, err := (esapi.DeleteRequest{
 		Index:      cfg.Index,
-		DocumentID: domain.VideoDocumentID(videoID),
+		DocumentID: searchvo.VideoDocumentID(videoID),
 		Refresh:    "true",
 	}).Do(ctx, v.client)
 	if err != nil {
@@ -563,8 +563,8 @@ func buildVideoVectorIndexSpec(dimensions int) map[string]any {
 }
 
 func buildVideoVectorDocument(source app.VideoVectorSource) (map[string]any, string) {
-	tagNames := domain.TrimNonEmpty(source.Tags)
-	content := (domain.VideoVectorInput{
+	tagNames := searchvo.TrimNonEmpty(source.Tags)
+	content := (searchvo.VideoVectorInput{
 		Title:       source.Title,
 		Description: source.Description,
 		Partition:   source.Partition,

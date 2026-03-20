@@ -5,7 +5,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
-	domain "f_ccg_video_back_ddd/internal/domain/platform"
+	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -36,7 +36,7 @@ type expiredBanRow struct {
 //
 // 子查询取每个 user_id 的 MAX(id)，再 JOIN users，
 // 过滤 u.status 与 r.status 为封禁中、r.end_at 非空且已到期。
-func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time.Time) ([]domain.ExpiredBan, error) {
+func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time.Time) ([]platformservice.ExpiredBan, error) {
 	db := gormx.DB(ctx, r.db)
 
 	subQuery := db.Model(&po.UserBanRecord{}).
@@ -60,9 +60,9 @@ func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time
 		return nil, err
 	}
 
-	expired := make([]domain.ExpiredBan, 0, len(rows))
+	expired := make([]platformservice.ExpiredBan, 0, len(rows))
 	for _, row := range rows {
-		expired = append(expired, domain.ExpiredBan{
+		expired = append(expired, platformservice.ExpiredBan{
 			RecordID: row.RecordID,
 			UserID:   row.UserID,
 			EndAt:    row.EndAt,

@@ -4,7 +4,10 @@ import (
 	"context"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacservice "f_ccg_video_back_ddd/internal/domain/rbac/service"
 
 	"go.uber.org/zap"
 )
@@ -14,8 +17,8 @@ const groupingPolicyName = "g"
 
 // InheritService 角色继承用例服务。
 type InheritService struct {
-	roles     domain.RoleRepository
-	roleMenus domain.RoleMenuRepository
+	roles     rbacrepo.RoleRepository
+	roleMenus rbacrepo.RoleMenuRepository
 	enforcer  Enforcer
 	graph     *RoleGraph
 	logger    *zap.Logger
@@ -23,8 +26,8 @@ type InheritService struct {
 
 // NewInheritService 构造角色继承用例服务。
 func NewInheritService(
-	roles domain.RoleRepository,
-	roleMenus domain.RoleMenuRepository,
+	roles rbacrepo.RoleRepository,
+	roleMenus rbacrepo.RoleMenuRepository,
 	enforcer Enforcer,
 	graph *RoleGraph,
 	logger *zap.Logger,
@@ -45,16 +48,16 @@ func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) 
 	s.graph = NewRoleGraph(scoped)
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return rbacerrors.ErrRoleNotFound
 	}
 
 	parent, err := s.roles.FindByID(ctx, parentRoleID)
 	if err != nil || parent == nil {
-		return domain.ErrParentRoleNotFound
+		return rbacerrors.ErrParentRoleNotFound
 	}
 
 	if role.ID == parent.ID {
-		return domain.ErrParentRoleIsSelf
+		return rbacerrors.ErrParentRoleIsSelf
 	}
 
 	// 已直接或间接继承则拒绝
@@ -62,11 +65,11 @@ func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) 
 	if err != nil {
 		s.logger.Error("检查角色继承关系失败", zap.Error(err))
 
-		return domain.ErrInheritFailed
+		return rbacerrors.ErrInheritFailed
 	}
 
 	if already {
-		return domain.AlreadyInheritedError(parent.Name, kind, topParent)
+		return rbacservice.AlreadyInheritedError(parent.Name, kind, topParent)
 	}
 
 	// 防止循环继承：父角色已继承当前角色
@@ -74,30 +77,30 @@ func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) 
 	if err != nil {
 		s.logger.Error("检查循环继承失败", zap.Error(err))
 
-		return domain.ErrInheritFailed
+		return rbacerrors.ErrInheritFailed
 	}
 
 	if cycle {
-		return domain.ErrInheritCycle
+		return rbacerrors.ErrInheritCycle
 	}
 
 	if _, err := s.enforcer.AddRoleForUser(role.Name, parent.Name); err != nil {
 		s.logger.Error("Casbin添加角色继承失败", zap.Error(err))
 
-		return domain.ErrInheritFailed
+		return rbacerrors.ErrInheritFailed
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
 		s.logger.Error("Casbin保存失败", zap.Error(err))
 
-		return domain.ErrPermissionSaveFailed
+		return rbacerrors.ErrPermissionSaveFailed
 	}
 
 	parentMenuIDs, err := s.roleMenus.DistinctMenuIDsByRole(ctx, parent.ID)
 	if err != nil {
 		s.logger.Error("读取父角色菜单失败", zap.Error(err))
 
-		return domain.ErrInheritFailed
+		return rbacerrors.ErrInheritFailed
 	}
 
 	if len(parentMenuIDs) == 0 {
@@ -108,7 +111,7 @@ func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) 
 	if err != nil {
 		s.logger.Error("读取角色菜单失败", zap.Error(err))
 
-		return domain.ErrInheritFailed
+		return rbacerrors.ErrInheritFailed
 	}
 
 	existing := make(map[uint]struct{}, len(existingMenuIDs))
@@ -130,10 +133,10 @@ func (s *InheritService) Assign(ctx context.Context, roleID, parentRoleID uint) 
 		return nil
 	}
 
-	if err := s.roleMenus.CreateIgnoreConflict(ctx, domain.NewInheritedRoleMenus(role.ID, missing)); err != nil {
+	if err := s.roleMenus.CreateIgnoreConflict(ctx, rbacentity.NewInheritedRoleMenus(role.ID, missing)); err != nil {
 		s.logger.Error("继承父角色菜单失败", zap.Error(err))
 
-		return domain.ErrInheritFailed
+		return rbacerrors.ErrInheritFailed
 	}
 
 	return nil
@@ -154,54 +157,54 @@ func (s *InheritService) Remove(ctx context.Context, roleID, parentRoleID uint) 
 	s.graph = NewRoleGraph(scoped)
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return rbacerrors.ErrRoleNotFound
 	}
 
 	parent, err := s.roles.FindByID(ctx, parentRoleID)
 	if err != nil || parent == nil {
-		return domain.ErrParentRoleNotFound
+		return rbacerrors.ErrParentRoleNotFound
 	}
 
 	directParents, err := s.graph.DirectParents(role.Name)
 	if err != nil {
 		s.logger.Error("读取直接父角色失败", zap.Error(err))
 
-		return domain.ErrRemoveFailed
+		return rbacerrors.ErrRemoveFailed
 	}
 
-	if !domain.ContainsRoleName(directParents, parent.Name) {
+	if !rbacservice.ContainsRoleName(directParents, parent.Name) {
 		// 是否为间接继承
 		already, kind, topParent, ierr := s.graph.IsAlreadyInherited(role.Name, parent.Name)
 		if ierr != nil {
 			s.logger.Error("检查继承关系失败", zap.Error(ierr))
 
-			return domain.ErrRemoveFailed
+			return rbacerrors.ErrRemoveFailed
 		}
 
-		if already && kind == domain.InheritKindIndirect {
-			return domain.IndirectUnlinkError(parent.Name, topParent)
+		if already && kind == rbacservice.InheritKindIndirect {
+			return rbacservice.IndirectUnlinkError(parent.Name, topParent)
 		}
 
-		return domain.ErrNotDirectInherit
+		return rbacerrors.ErrNotDirectInherit
 	}
 
 	if _, err := s.enforcer.DeleteRoleForUser(role.Name, parent.Name); err != nil {
 		s.logger.Error("Casbin移除角色继承失败", zap.Error(err))
 
-		return domain.ErrRemoveFailed
+		return rbacerrors.ErrRemoveFailed
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
 		s.logger.Error("Casbin保存失败", zap.Error(err))
 
-		return domain.ErrPermissionSaveFailed
+		return rbacerrors.ErrPermissionSaveFailed
 	}
 
 	parents, err := s.enforcer.GetRolesForUser(role.Name)
 	if err != nil {
 		s.logger.Error("读取角色继承失败", zap.Error(err))
 
-		return domain.ErrRemoveFailed
+		return rbacerrors.ErrRemoveFailed
 	}
 
 	if len(parents) == 0 {
@@ -212,7 +215,7 @@ func (s *InheritService) Remove(ctx context.Context, roleID, parentRoleID uint) 
 	if err != nil {
 		s.logger.Error("读取父角色失败", zap.Error(err))
 
-		return domain.ErrRemoveFailed
+		return rbacerrors.ErrRemoveFailed
 	}
 
 	parentIDs := make([]uint, 0, len(parentRoles))
@@ -233,7 +236,7 @@ func (s *InheritService) Remove(ctx context.Context, roleID, parentRoleID uint) 
 	if err != nil {
 		s.logger.Error("读取父角色菜单失败", zap.Error(err))
 
-		return domain.ErrRemoveFailed
+		return rbacerrors.ErrRemoveFailed
 	}
 
 	if len(keepMenuIDs) == 0 {
@@ -243,7 +246,7 @@ func (s *InheritService) Remove(ctx context.Context, roleID, parentRoleID uint) 
 	if err := s.roleMenus.DeleteInheritedByRoleExcept(ctx, role.ID, keepMenuIDs); err != nil {
 		s.logger.Error("移除继承菜单失败", zap.Error(err))
 
-		return domain.ErrRemoveFailed
+		return rbacerrors.ErrRemoveFailed
 	}
 
 	return nil
@@ -254,7 +257,7 @@ func (s *InheritService) dropInheritedMenus(ctx context.Context, roleID uint) er
 	if err := s.roleMenus.DeleteInheritedByRole(ctx, roleID); err != nil {
 		s.logger.Error("移除继承菜单失败", zap.Error(err))
 
-		return domain.ErrRemoveFailed
+		return rbacerrors.ErrRemoveFailed
 	}
 
 	return nil
@@ -264,21 +267,21 @@ func (s *InheritService) dropInheritedMenus(ctx context.Context, roleID uint) er
 func (s *InheritService) List(ctx context.Context, roleID uint) (RoleInheritsResp, error) {
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
-		return RoleInheritsResp{}, domain.ErrRoleNotFound
+		return RoleInheritsResp{}, rbacerrors.ErrRoleNotFound
 	}
 
 	direct, err := s.graph.DirectParents(role.Name)
 	if err != nil {
 		s.logger.Error("查询直接父角色失败", zap.Error(err))
 
-		return RoleInheritsResp{}, domain.ErrQueryFailed
+		return RoleInheritsResp{}, rbacerrors.ErrQueryFailed
 	}
 
 	implicit, err := s.graph.ImplicitParents(role.Name)
 	if err != nil {
 		s.logger.Error("查询隐式父角色失败", zap.Error(err))
 
-		return RoleInheritsResp{}, domain.ErrQueryFailed
+		return RoleInheritsResp{}, rbacerrors.ErrQueryFailed
 	}
 
 	directSet := make(map[string]struct{}, len(direct))
@@ -339,47 +342,47 @@ func (s *InheritService) List(ctx context.Context, roleID uint) (RoleInheritsRes
 }
 
 // Tree 构建全量角色继承树。
-func (s *InheritService) Tree(ctx context.Context) ([]*domain.RoleInheritTreeNode, error) {
+func (s *InheritService) Tree(ctx context.Context) ([]*rbacservice.RoleInheritTreeNode, error) {
 	if s.enforcer == nil {
-		return nil, domain.ErrEnforcerNotInitialized
+		return nil, rbacerrors.ErrEnforcerNotInitialized
 	}
 
 	roles, err := s.roles.ListBrief(ctx)
 	if err != nil {
-		return nil, domain.ErrQueryRoleFailed
+		return nil, rbacerrors.ErrQueryRoleFailed
 	}
 
 	if len(roles) == 0 {
-		return []*domain.RoleInheritTreeNode{}, nil
+		return []*rbacservice.RoleInheritTreeNode{}, nil
 	}
 
 	policies, err := s.enforcer.GetNamedGroupingPolicy(groupingPolicyName)
 	if err != nil {
-		return nil, domain.ErrQueryFailed
+		return nil, rbacerrors.ErrQueryFailed
 	}
 
-	return domain.BuildRoleInheritTree(roles, policies), nil
+	return rbacservice.BuildRoleInheritTree(roles, policies), nil
 }
 
 // FilterTree 只保留与指定角色相关的继承子树。
 func (s *InheritService) FilterTree(
 	ctx context.Context,
-	tree []*domain.RoleInheritTreeNode,
+	tree []*rbacservice.RoleInheritTreeNode,
 	roleID uint,
-) ([]*domain.RoleInheritTreeNode, error) {
+) ([]*rbacservice.RoleInheritTreeNode, error) {
 	role, err := s.roles.FindBriefByID(ctx, roleID)
 	if err != nil || role == nil {
-		return nil, domain.ErrRoleNotFound
+		return nil, rbacerrors.ErrRoleNotFound
 	}
 
 	roleName := strings.TrimSpace(role.Name)
 	if roleName == "" {
-		return nil, domain.ErrRoleNameBlank
+		return nil, rbacerrors.ErrRoleNameBlank
 	}
 
 	if len(tree) == 0 {
-		return []*domain.RoleInheritTreeNode{}, nil
+		return []*rbacservice.RoleInheritTreeNode{}, nil
 	}
 
-	return domain.FilterRoleInheritTree(tree, roleName), nil
+	return rbacservice.FilterRoleInheritTree(tree, roleName), nil
 }

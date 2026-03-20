@@ -7,7 +7,7 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -30,7 +30,7 @@ func (s *ScheduleStore) Available() bool { return s != nil && s.db != nil }
 // Add 保存计划时刻并设置定时意图；调用方需要自行保证视频存在、业务状态正确及事务范围。
 func (s *ScheduleStore) Add(ctx context.Context, videoID uint, when time.Time) error {
 	if videoID == 0 {
-		return domain.ErrVideoIDRequired
+		return videoerrors.ErrVideoIDRequired
 	}
 	return gormx.DB(ctx, s.db).Model(&po.Video{}).Where("id = ?", videoID).
 		UpdateColumns(map[string]any{"publish_at": when, "is_scheduled": true}).Error
@@ -43,7 +43,7 @@ func (s *ScheduleStore) Remove(ctx context.Context, videoID uint) error {
 
 func (s *ScheduleStore) save(ctx context.Context, videoID uint, when *time.Time) error {
 	if videoID == 0 {
-		return domain.ErrVideoIDRequired
+		return videoerrors.ErrVideoIDRequired
 	}
 	return gormx.DB(ctx, s.db).Model(&po.Video{}).Where("id = ?", videoID).
 		UpdateColumn("publish_at", when).Error

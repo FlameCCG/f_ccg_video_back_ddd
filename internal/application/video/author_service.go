@@ -3,7 +3,8 @@ package video
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 
 	"go.uber.org/zap"
 )
@@ -12,7 +13,7 @@ import (
 //
 // identity 更新用户资料后，通过此入口失效视频详情 meta 与作者 ID 缓存。
 type AuthorService struct {
-	videos    domain.VideoRepository
+	videos    videorepo.VideoRepository
 	authorIDs AuthorIDCache
 	meta      DetailMetaCache
 	usernames UsernameCache
@@ -21,7 +22,7 @@ type AuthorService struct {
 
 // NewAuthorService 构造作者解析与缓存失效服务。
 func NewAuthorService(
-	videos domain.VideoRepository,
+	videos videorepo.VideoRepository,
 	authorIDs AuthorIDCache,
 	meta DetailMetaCache,
 	usernames UsernameCache,
@@ -35,7 +36,7 @@ func NewAuthorService(
 // 查找顺序作者 ID 缓存 → 详情 meta 缓存 → DB。
 func (s *AuthorService) AuthorID(ctx context.Context, videoID uint) (uint, error) {
 	if videoID == 0 {
-		return 0, domain.ErrVideoIDRequired
+		return 0, videoerrors.ErrVideoIDRequired
 	}
 
 	if ctx == nil {
@@ -61,7 +62,7 @@ func (s *AuthorService) AuthorID(ctx context.Context, videoID uint) (uint, error
 	}
 
 	if authorID == 0 {
-		return 0, domain.ErrVideoAuthorNotFound
+		return 0, videoerrors.ErrVideoAuthorNotFound
 	}
 
 	s.authorIDs.Store(ctx, videoID, authorID)

@@ -5,7 +5,6 @@
 package uploadcheck
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -76,9 +75,4 @@ func imageExtensionForMIME(contentType string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-// NewReadSeeker 将通用 reader 转为可复位 reader，用于 multipart.File 之外的测试。
-func NewReadSeeker(data []byte) io.ReadSeeker {
-	return bytes.NewReader(data)
 }

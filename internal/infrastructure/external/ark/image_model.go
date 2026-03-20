@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 
 	arkmodel "github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/schema"
@@ -28,8 +28,8 @@ func NewImageModel(logger *zap.Logger) *ImageModel {
 
 // Generate 通过 Eino 官方 ImageGenerationModel 调用豆包文生图/图生图。
 func (m *ImageModel) Generate(ctx context.Context, inv aiapp.ImageInvocation) (any, error) {
-	size := domain.ResolveImageSize(inv.Model, inv.Size, inv.Resolution, inv.AspectRatio)
-	responseFormat := domain.FirstNonEmpty(inv.ResponseFormat, "url")
+	size := aivo.ResolveImageSize(inv.Model, inv.Size, inv.Resolution, inv.AspectRatio)
+	responseFormat := aivo.FirstNonEmpty(inv.ResponseFormat, "url")
 
 	genConfig := &arkmodel.ImageGenerationConfig{
 		APIKey:           doubaoAPIKey(inv.Runtime),
@@ -40,7 +40,7 @@ func (m *ImageModel) Generate(ctx context.Context, inv aiapp.ImageInvocation) (a
 		DisableWatermark: true,
 	}
 
-	n := domain.RequestedImageCount(inv.N)
+	n := aivo.RequestedImageCount(inv.N)
 	if n > 1 {
 		genConfig.SequentialImageGeneration = arkmodel.SequentialImageGenerationAuto
 		genConfig.SequentialImageGenerationOption = &arkrtmodel.SequentialImageGenerationOptions{

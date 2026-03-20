@@ -3,9 +3,12 @@ package rbac
 import (
 	"context"
 	"errors"
-	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacservice "f_ccg_video_back_ddd/internal/domain/rbac/service"
+	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/casbins"
 
@@ -15,9 +18,9 @@ import (
 // RoleService 角色用例服务。
 type RoleService struct {
 	txm       tx.Manager
-	roles     domain.RoleRepository
-	menus     domain.MenuRepository
-	userRoles domain.UserRoleRepository
+	roles     rbacrepo.RoleRepository
+	menus     rbacrepo.MenuRepository
+	userRoles rbacrepo.UserRoleRepository
 	enforcer  Enforcer
 	logger    *zap.Logger
 }
@@ -25,9 +28,9 @@ type RoleService struct {
 // NewRoleService 构造角色用例服务。
 func NewRoleService(
 	txm tx.Manager,
-	roles domain.RoleRepository,
-	menus domain.MenuRepository,
-	userRoles domain.UserRoleRepository,
+	roles rbacrepo.RoleRepository,
+	menus rbacrepo.MenuRepository,
+	userRoles rbacrepo.UserRoleRepository,
 	enforcer Enforcer,
 	logger *zap.Logger,
 ) *RoleService {
@@ -42,10 +45,10 @@ func NewRoleService(
 }
 
 // List 读取全部角色（含各自绑定的菜单）。
-func (s *RoleService) List(ctx context.Context) ([]*domain.Role, error) {
+func (s *RoleService) List(ctx context.Context) ([]*rbacentity.Role, error) {
 	roles, err := s.roles.ListWithMenus(ctx)
 	if err != nil {
-		return nil, domain.ErrGetFailed
+		return nil, rbacerrors.ErrGetFailed
 	}
 
 	return roles, nil
@@ -66,12 +69,12 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (resu
 	// 重名预检不校验 Count 的错误，查询失败时按 0 处理并继续。
 	count, _ := s.roles.CountByName(ctx, params.Name)
 	if count > 0 {
-		return domain.ErrRoleNameExists
+		return rbacerrors.ErrRoleNameExists
 	}
 
 	var (
-		role      = domain.NewRole(params.Name, params.Desc)
-		copyPerms []domain.PermissionItem
+		role      = rbacentity.NewRole(params.Name, params.Desc)
+		copyPerms []rbacvo.PermissionItem
 		bizErr    error
 	)
 
@@ -80,17 +83,17 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (resu
 
 		if err := s.roles.Create(txCtx, role); err != nil {
 			s.logger.Error("创建角色失败", zap.Error(err))
-			bizErr = domain.ErrCreateFailed
+			bizErr = rbacerrors.ErrCreateFailed
 
 			return bizErr
 		}
 
-		var templateMenus []*domain.Menu
+		var templateMenus []*rbacentity.Menu
 
 		if params.CopyRoleID > 0 {
 			copyRole, err := s.roles.FindWithMenusByID(txCtx, params.CopyRoleID)
 			if err != nil || copyRole == nil {
-				bizErr = domain.ErrTemplateRoleNotFound
+				bizErr = rbacerrors.ErrTemplateRoleNotFound
 
 				return bizErr
 			}
@@ -99,34 +102,34 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (resu
 
 			perms, err := s.enforcer.GetPermissionsForUser(copyRole.Name)
 			if err != nil {
-				bizErr = domain.ErrTemplatePermissionsRead
+				bizErr = rbacerrors.ErrTemplatePermissionsRead
 
 				return bizErr
 			}
 
-			copyPerms = append(copyPerms, domain.NormalizeCasbinPolicyRows(perms)...)
+			copyPerms = append(copyPerms, rbacservice.NormalizeCasbinPolicyRows(perms)...)
 		}
 
-		ids := domain.MergeMenuIDs(templateMenus, params.MenuIDs)
+		ids := rbacentity.MergeMenuIDs(templateMenus, params.MenuIDs)
 		if len(ids) == 0 {
 			return nil
 		}
 
 		menus, err := s.menus.FindByIDs(txCtx, ids)
 		if err != nil {
-			bizErr = domain.ErrMenuNotFound
+			bizErr = rbacerrors.ErrMenuNotFound
 
 			return bizErr
 		}
 
 		if len(menus) != len(ids) {
-			bizErr = domain.ErrPartialMenusNotFound
+			bizErr = rbacerrors.ErrPartialMenusNotFound
 
 			return bizErr
 		}
 
 		if err := s.roles.AppendMenus(txCtx, role, menus); err != nil {
-			bizErr = domain.ErrBindMenuFailed
+			bizErr = rbacerrors.ErrBindMenuFailed
 
 			return bizErr
 		}
@@ -139,26 +142,26 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (resu
 
 		s.logger.Error("提交事务失败", zap.Error(err))
 
-		return domain.ErrCreateFailed
+		return rbacerrors.ErrCreateFailed
 	}
 
-	perms, err := domain.NormalizeNewPermissions(params.Permissions)
+	perms, err := rbacservice.NormalizeNewPermissions(params.Permissions)
 	if err != nil {
 		return err
 	}
 
 	perms = append(perms, copyPerms...)
-	perms = domain.DedupePermissions(perms)
+	perms = rbacservice.DedupePermissions(perms)
 
 	for _, p := range perms {
 		if _, err := s.enforcer.AddPolicy(role.Name, p.Resource, p.Action); err != nil {
-			return domain.ErrAddPermissionFailed
+			return rbacerrors.ErrAddPermissionFailed
 		}
 	}
 
 	if len(perms) > 0 {
 		if err := s.enforcer.SavePolicy(); err != nil {
-			return domain.ErrSavePermissionFailed
+			return rbacerrors.ErrSavePermissionFailed
 		}
 	}
 
@@ -176,50 +179,34 @@ func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) (resu
 	service.enforcer = scoped
 	s = &service
 	if params.Name == nil && params.Desc == nil {
-		return domain.ErrNoUpdatableFields
+		return rbacerrors.ErrNoUpdatableFields
 	}
 
 	role, err := s.roles.FindByID(ctx, params.RoleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return rbacerrors.ErrRoleNotFound
 	}
 
 	oldName := role.Name
-	newName := oldName
-
-	var nameUpdate, descUpdate *string
-
-	if params.Name != nil {
-		name := strings.TrimSpace(*params.Name)
-		if name == "" {
-			return domain.ErrRoleNameEmpty
-		}
-
-		if name != oldName {
-			// 重名预检忽略 Count 的错误。
-			count, _ := s.roles.CountByName(ctx, name)
-			if count > 0 {
-				return domain.ErrRoleNameExists
-			}
-
-			newName = name
-			nameUpdate = &name
-		}
+	candidate := *role
+	change, err := candidate.Revise(params.Name, params.Desc)
+	if err != nil {
+		return err
 	}
-
-	if params.Desc != nil {
-		desc := strings.TrimSpace(*params.Desc)
-		descUpdate = &desc
-	}
-
-	if nameUpdate == nil && descUpdate == nil {
-		return domain.ErrNoUpdatableFields
+	newName := candidate.Name
+	nameUpdate, descUpdate := change.Name, change.Desc
+	if nameUpdate != nil {
+		// 重名预检忽略 Count 的错误。
+		count, _ := s.roles.CountByName(ctx, newName)
+		if count > 0 {
+			return rbacerrors.ErrRoleNameExists
+		}
 	}
 
 	if err := s.roles.UpdateNameAndDesc(ctx, role.ID, nameUpdate, descUpdate); err != nil {
 		s.logger.Error("更新角色失败", zap.Error(err))
 
-		return domain.ErrUpdateFailed
+		return rbacerrors.ErrUpdateFailed
 	}
 
 	if newName != oldName {
@@ -227,10 +214,10 @@ func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) (resu
 			s.logger.Error("同步 Casbin 角色名失败", zap.Error(err))
 			if rollbackErr := s.roles.UpdateName(context.WithoutCancel(ctx), role.ID, oldName); rollbackErr != nil {
 				s.logger.Error("RBAC role rename compensation failed", zap.Error(rollbackErr))
-				return errors.Join(domain.ErrPermissionSyncFailed, err, rollbackErr)
+				return errors.Join(rbacerrors.ErrPermissionSyncFailed, err, rollbackErr)
 			}
 
-			return domain.ErrPermissionSyncFailed
+			return rbacerrors.ErrPermissionSyncFailed
 		}
 	}
 
@@ -277,7 +264,7 @@ func (s *RoleService) renameInCasbin(oldName, newName string) error {
 	if len(permissions) > 0 {
 		for _, p := range permissions {
 			if len(p) < 3 {
-				return domain.ErrInvalidCasbinPermission
+				return rbacerrors.ErrInvalidCasbinPermission
 			}
 
 			if _, err := s.enforcer.AddPolicy(newName, p[1], p[2]); err != nil {
@@ -305,18 +292,18 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) (result error) {
 	s = &service
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return rbacerrors.ErrRoleNotFound
 	}
 
 	userCount, err := s.roles.UserCount(ctx, role.ID)
 	if err != nil {
 		// 预加载用户失败与角色不存在使用同一对外文案。
-		return domain.ErrRoleNotFound
+		return rbacerrors.ErrRoleNotFound
 	}
 
 	// 检查是否有用户使用该角色
-	if userCount > 0 {
-		return domain.ErrRoleHasUsers
+	if err := role.EnsureDeletable(userCount); err != nil {
+		return err
 	}
 
 	// 删除角色（持久化钩子会自动清理关联）
@@ -325,13 +312,13 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) (result error) {
 	if _, err := s.enforcer.DeleteRole(role.Name); err != nil {
 		s.logger.Error("删除 Casbin 角色失败", zap.Error(err))
 
-		return domain.ErrRolePolicyCleanupFailed
+		return rbacerrors.ErrRolePolicyCleanupFailed
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
 		s.logger.Error("保存 Casbin 策略失败", zap.Error(err))
 
-		return domain.ErrRolePolicySaveFailed
+		return rbacerrors.ErrRolePolicySaveFailed
 	}
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
@@ -340,17 +327,17 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) (result error) {
 		}
 		return s.roles.DeleteByID(txCtx, role.ID)
 	}); err != nil {
-		return errors.Join(domain.ErrDeleteFailed, err)
+		return errors.Join(rbacerrors.ErrDeleteFailed, err)
 	}
 
 	return nil
 }
 
 // UserRoles 读取用户已绑定的角色列表。
-func (s *RoleService) UserRoles(ctx context.Context, userID uint) ([]*domain.Role, error) {
+func (s *RoleService) UserRoles(ctx context.Context, userID uint) ([]*rbacentity.Role, error) {
 	roles, err := s.userRoles.RolesByUser(ctx, userID)
 	if err != nil {
-		return nil, domain.ErrUserNotFound
+		return nil, rbacerrors.ErrUserNotFound
 	}
 
 	return roles, nil
@@ -360,14 +347,14 @@ func (s *RoleService) UserRoles(ctx context.Context, userID uint) ([]*domain.Rol
 func (s *RoleService) UserPermissions(ctx context.Context, userID uint) ([]UserPermissionItem, error) {
 	exists, err := s.userRoles.UserExists(ctx, userID)
 	if err != nil || !exists {
-		return nil, domain.ErrUserNotFound
+		return nil, rbacerrors.ErrUserNotFound
 	}
 
 	sub := casbins.GetUserSub(userID)
 
 	perms, err := s.enforcer.GetImplicitPermissionsForUser(sub)
 	if err != nil {
-		return nil, domain.ErrQueryFailed
+		return nil, rbacerrors.ErrQueryFailed
 	}
 
 	items := make([]UserPermissionItem, 0, len(perms))
@@ -409,7 +396,7 @@ func (s *RoleService) changeUserRoles(ctx context.Context, userID uint, roleIDs 
 	service := *s
 	service.enforcer = scoped
 	s = &service
-	var oldRoles, newRoles []*domain.Role
+	var oldRoles, newRoles []*rbacentity.Role
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		var err error
 		oldRoles, err = s.userRoles.RolesByUser(txCtx, userID)
@@ -418,10 +405,10 @@ func (s *RoleService) changeUserRoles(ctx context.Context, userID uint, roleIDs 
 		}
 		selected, err := s.roles.FindByIDs(txCtx, roleIDs)
 		if err != nil {
-			return domain.ErrQueryRoleFailed
+			return rbacerrors.ErrQueryRoleFailed
 		}
 		if len(selected) != len(roleIDs) {
-			return domain.ErrSomeRolesNotFound
+			return rbacerrors.ErrSomeRolesNotFound
 		}
 		switch mode {
 		case "assign":
@@ -429,7 +416,7 @@ func (s *RoleService) changeUserRoles(ctx context.Context, userID uint, roleIDs 
 			for _, r := range selected {
 				for _, old := range oldRoles {
 					if r.ID == old.ID {
-						return domain.DuplicateRoleAssignedError(r.Name)
+						return rbacerrors.DuplicateRoleAssignedError(r.Name)
 					}
 				}
 				newRoles = append(newRoles, r)
@@ -475,18 +462,18 @@ func (s *RoleService) changeUserRoles(ctx context.Context, userID uint, roleIDs 
 		if rollbackErr != nil {
 			s.logger.Error("RBAC role binding compensation failed", zap.Error(rollbackErr))
 		}
-		return errors.Join(domain.ErrPermissionSyncFailed, syncErr, rollbackErr)
+		return errors.Join(rbacerrors.ErrPermissionSyncFailed, syncErr, rollbackErr)
 	}
 	return nil
 }
 
 // mapUserLookupError 将用户查询错误归一为接口文案。
 func (s *RoleService) mapUserLookupError(err error) error {
-	if errors.Is(err, domain.ErrUserNotFound) {
-		return domain.ErrUserNotFound
+	if errors.Is(err, rbacerrors.ErrUserNotFound) {
+		return rbacerrors.ErrUserNotFound
 	}
 
 	s.logger.Error("查询用户失败", zap.Error(err))
 
-	return domain.ErrQueryUserFailed
+	return rbacerrors.ErrQueryUserFailed
 }

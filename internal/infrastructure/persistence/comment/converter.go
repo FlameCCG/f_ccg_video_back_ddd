@@ -8,17 +8,17 @@ package comment
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/comment"
-	domain "f_ccg_video_back_ddd/internal/domain/comment"
+	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainComment 把评论 PO 转为领域实体（逐字段显式映射，不含关联对象）。
-func toDomainComment(row *po.Comment) *domain.Comment {
+func toDomainComment(row *po.Comment) *commententity.Comment {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Comment{
+	return &commententity.Comment{
 		ID:            row.ID,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
@@ -41,8 +41,8 @@ func toDomainComment(row *po.Comment) *domain.Comment {
 }
 
 // toDomainComments 批量转换评论 PO（用于只读投影列表）。
-func toDomainComments(rows []po.Comment) []domain.Comment {
-	list := make([]domain.Comment, 0, len(rows))
+func toDomainComments(rows []po.Comment) []commententity.Comment {
+	list := make([]commententity.Comment, 0, len(rows))
 
 	for i := range rows {
 		if c := toDomainComment(&rows[i]); c != nil {
@@ -54,7 +54,7 @@ func toDomainComments(rows []po.Comment) []domain.Comment {
 }
 
 // toPOComment 把评论领域实体转为 PO（仅标量字段，关联对象由 GORM 自行处理）。
-func toPOComment(c *domain.Comment) *po.Comment {
+func toPOComment(c *commententity.Comment) *po.Comment {
 	if c == nil {
 		return nil
 	}
@@ -84,12 +84,12 @@ func toPOComment(c *domain.Comment) *po.Comment {
 }
 
 // toDomainLike 把评论点赞 PO 转为领域实体。
-func toDomainLike(row *po.CommentLike) *domain.Like {
+func toDomainLike(row *po.CommentLike) *commententity.Like {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Like{
+	return &commententity.Like{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -99,7 +99,7 @@ func toDomainLike(row *po.CommentLike) *domain.Like {
 }
 
 // toPOLike 把评论点赞领域实体转为 PO。
-func toPOLike(like *domain.Like) *po.CommentLike {
+func toPOLike(like *commententity.Like) *po.CommentLike {
 	if like == nil {
 		return nil
 	}

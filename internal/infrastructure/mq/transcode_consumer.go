@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
 	"f_ccg_video_back_ddd/internal/config"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -33,7 +35,7 @@ type TranscodeConsumer struct {
 	consumer   *KafkaConsumer
 	workerPool chan struct{} // 并发控制池
 	service    *mediaapp.TranscodeService
-	registry   *media.TaskRegistry
+	registry   *mediaruntime.TaskRegistry
 	subscriber CancelSubscriberPort
 	logger     *zap.Logger
 }
@@ -44,7 +46,7 @@ type TranscodeConsumer struct {
 func NewTranscodeConsumer(
 	cfg *config.Kafka,
 	service *mediaapp.TranscodeService,
-	registry *media.TaskRegistry,
+	registry *mediaruntime.TaskRegistry,
 	subscriber CancelSubscriberPort,
 	producers *ProducerPool,
 	logger *zap.Logger,
@@ -165,7 +167,7 @@ func (tc *TranscodeConsumer) handleMessage(session sarama.ConsumerGroupSession, 
 	defer func() { <-tc.workerPool }()
 
 	pt := tc.service.NewProgressTracker(key.VideoID, key.PartID)
-	taskCtx = media.ContextWithProgressTracker(taskCtx, pt)
+	taskCtx = mediaruntime.ContextWithProgressTracker(taskCtx, pt)
 
 	return tc.finishMessage(session, msg, taskCtx, pt, tc.processMessage(taskCtx, msg.Value))
 }
@@ -174,7 +176,7 @@ func (tc *TranscodeConsumer) handleMessage(session sarama.ConsumerGroupSession, 
 func (tc *TranscodeConsumer) processMessage(ctx context.Context, payloadBytes []byte) error {
 	payload, err := decodeTranscodePayload(payloadBytes)
 	if err != nil {
-		return media.PermanentMessage(fmt.Errorf("unmarshal payload failed: %w", err))
+		return mediaerrors.PermanentMessage(fmt.Errorf("unmarshal payload failed: %w", err))
 	}
 
 	return tc.service.ProcessTask(ctx, payload.Task())
@@ -188,12 +190,12 @@ func (tc *TranscodeConsumer) finishMessage(
 	session sarama.ConsumerGroupSession,
 	msg *sarama.ConsumerMessage,
 	taskCtx context.Context,
-	pt *media.TranscodeProgressTracker,
+	pt *mediaruntime.TranscodeProgressTracker,
 	processErr error,
 ) error {
 	key := taskIdentityFromMessage(msg.Value)
 
-	if media.TaskWasDeleted(taskCtx, processErr) {
+	if mediaruntime.TaskWasDeleted(taskCtx, processErr) {
 		tc.service.ClearProgress(taskCtx, key.VideoID, key.PartID)
 		session.MarkMessage(msg, "video deleted; transcode canceled")
 		tc.logger.Info("deleted video transcode task skipped",
@@ -237,14 +239,14 @@ func (tc *TranscodeConsumer) finishMessage(
 func (tc *TranscodeConsumer) logTranscodeSkipCommit(
 	session sarama.ConsumerGroupSession,
 	msg *sarama.ConsumerMessage,
-	key media.TaskKey,
+	key mediavo.TaskKey,
 	taskCtx context.Context,
-	pt *media.TranscodeProgressTracker,
+	pt *mediaruntime.TranscodeProgressTracker,
 	err error,
 	source string,
 ) {
 	percent, stage, status, outTimeSec := pt.DiagnosticSnapshot()
-	reason := media.ClassifyInterruptReason(taskCtx, err, session.Context().Err() != nil)
+	reason := mediaruntime.ClassifyInterruptReason(taskCtx, err, session.Context().Err() != nil)
 
 	tc.logger.Warn("transcode unfinished, skip kafka offset commit (will redeliver; checkpoint resumes finished encodes)",
 		zap.String("source", source),

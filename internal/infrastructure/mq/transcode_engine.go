@@ -11,7 +11,10 @@ import (
 	"strings"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	mediarepo "f_ccg_video_back_ddd/internal/domain/media/repository"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
@@ -25,7 +28,7 @@ import (
 // 进程、文件系统与数据库访问封装在本包，应用层只编排用例；包内无包级可变状态。
 type TranscodeEngine struct {
 	checkpoints *checkpointManager
-	resources   media.TranscodeResourceRepository
+	resources   mediarepo.TranscodeResourceRepository
 	httpClient  *http.Client
 	logger      *zap.Logger
 }
@@ -42,7 +45,7 @@ var (
 // NewTranscodeEngine 构造转码执行引擎。
 func NewTranscodeEngine(
 	cfgProvider *infraconfig.Provider,
-	resources media.TranscodeResourceRepository,
+	resources mediarepo.TranscodeResourceRepository,
 	logger *zap.Logger,
 ) *TranscodeEngine {
 	return &TranscodeEngine{
@@ -59,12 +62,12 @@ func NewTranscodeEngine(
 // -----------------------------------------------------------------------------
 
 // ProbeVideo 探测本地媒体文件元数据。
-func (e *TranscodeEngine) ProbeVideo(ctx context.Context, path string) (media.VideoMeta, error) {
+func (e *TranscodeEngine) ProbeVideo(ctx context.Context, path string) (mediavo.VideoMeta, error) {
 	return ProbeVideo(ctx, path, e.logger)
 }
 
 // SourceSize 返回任务源文件字节数：本地源 os.Stat，远程源 HTTP HEAD。
-func (e *TranscodeEngine) SourceSize(ctx context.Context, task media.TranscodeTask) (int64, error) {
+func (e *TranscodeEngine) SourceSize(ctx context.Context, task mediaentity.TranscodeTask) (int64, error) {
 	if task.StorageType == enum.StorageTypeLocal {
 		info, err := os.Stat(task.SourcePath)
 		if err != nil {
@@ -112,7 +115,7 @@ func (e *TranscodeEngine) statHTTPFile(ctx context.Context, source string) (int6
 // -----------------------------------------------------------------------------
 
 // OpenCheckpoint 打开（或创建）任务的断点目录。
-func (e *TranscodeEngine) OpenCheckpoint(task media.TranscodeTask) (mediaapp.Checkpoint, error) {
+func (e *TranscodeEngine) OpenCheckpoint(task mediaentity.TranscodeTask) (mediaapp.Checkpoint, error) {
 	return e.checkpoints.open(task)
 }
 
@@ -128,7 +131,7 @@ func (e *TranscodeEngine) StartCheckpointJanitor(ctx context.Context) {
 // PrepareSource 准备可供 ffmpeg 读取的本地源文件。
 func (e *TranscodeEngine) PrepareSource(
 	ctx context.Context,
-	task media.TranscodeTask,
+	task mediaentity.TranscodeTask,
 	ckpt mediaapp.Checkpoint,
 ) (string, func(), error) {
 	if task.StorageType == enum.StorageTypeLocal {
@@ -139,7 +142,7 @@ func (e *TranscodeEngine) PrepareSource(
 		return task.SourcePath, func() {}, nil
 	}
 
-	if err := media.EnsureRemoteSource(task.SourcePath); err != nil {
+	if err := mediaentity.EnsureRemoteSource(task.SourcePath); err != nil {
 		return "", nil, err
 	}
 
@@ -158,7 +161,7 @@ func (e *TranscodeEngine) reuseStagedSource(
 		return "", false
 	}
 
-	name := media.StagedSourceCheckpointName(sourceURL)
+	name := mediaentity.StagedSourceCheckpointName(sourceURL)
 
 	committedPath, ok := ckpt.CommittedFilePath(name)
 	if !ok {
@@ -217,7 +220,7 @@ func (e *TranscodeEngine) stageRemoteSource(
 		return "", nil, fmt.Errorf("download remote source returned status %d", resp.StatusCode)
 	}
 
-	pattern := media.StagedSourceTempPattern(req.URL.Path)
+	pattern := mediaentity.StagedSourceTempPattern(req.URL.Path)
 
 	var file *os.File
 	if ckpt.persistent() {
@@ -266,7 +269,7 @@ func (e *TranscodeEngine) stageRemoteSource(
 
 	if ckpt.persistent() {
 		// 校验通过后原子提交，供后续重试复用；提交失败退回一次性暂存语义。
-		committedPath, commitErr := ckpt.CommitFile(stagedPath, media.StagedSourceCheckpointName(sourceURL))
+		committedPath, commitErr := ckpt.CommitFile(stagedPath, mediaentity.StagedSourceCheckpointName(sourceURL))
 		if commitErr == nil {
 			stagedPath = committedPath
 			cleanup = func() {}
@@ -294,9 +297,9 @@ func (e *TranscodeEngine) stageRemoteSource(
 // TargetPersisted 判断 MP4 target 是否已完整入库。
 func (e *TranscodeEngine) TargetPersisted(
 	ctx context.Context,
-	task media.TranscodeTask,
-	target media.TranscodeTarget,
-	driver media.StorageDriver,
+	task mediaentity.TranscodeTask,
+	target mediavo.TranscodeTarget,
+	driver mediaport.StorageDriver,
 ) (string, bool) {
 	return transcodeTargetPersisted(ctx, e.resources, task, target, driver, e.logger)
 }
@@ -304,8 +307,8 @@ func (e *TranscodeEngine) TargetPersisted(
 // DASHPersisted 判断整套 DASH 是否已完整入库。
 func (e *TranscodeEngine) DASHPersisted(
 	ctx context.Context,
-	task media.TranscodeTask,
-	driver media.StorageDriver,
+	task mediaentity.TranscodeTask,
+	driver mediaport.StorageDriver,
 ) bool {
 	return dashOutputPersisted(ctx, e.resources, task, driver, e.logger)
 }
@@ -332,7 +335,7 @@ func asCheckpoint(ckpt mediaapp.Checkpoint) *transcodeCheckpoint {
 // -----------------------------------------------------------------------------
 
 // outputFileName 返回 target 的产物文件名；缺失时按序号与分辨率兜底。
-func outputFileName(target media.TranscodeTarget, index int) string {
+func outputFileName(target mediavo.TranscodeTarget, index int) string {
 	name := strings.TrimSpace(target.FileName)
 	if name == "" {
 		name = fmt.Sprintf("out_%d_%dp.mp4", index, target.Resolution)

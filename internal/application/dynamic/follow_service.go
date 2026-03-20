@@ -6,7 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
+	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
@@ -60,10 +61,10 @@ func (s *FollowService) ListFollowUsers(
 	page, pageSize int,
 ) ([]FollowUserItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, domain.ErrUserNotLogin
+		return nil, 0, dynamicerrors.ErrUserNotLogin
 	}
 
-	page, pageSize = domain.NormalizeFeedPaging(page, pageSize)
+	page, pageSize = dynamicvo.NormalizeFeedPaging(page, pageSize)
 
 	follows, err := s.follows.ListFollowing(ctx, userID)
 	if err != nil {
@@ -90,7 +91,7 @@ func (s *FollowService) ListFollowUsers(
 	items := make([]FollowUserItem, 0, len(follows))
 
 	for _, f := range follows {
-		activity := domain.FollowActivity{
+		activity := dynamicvo.FollowActivity{
 			LatestVideoAt:   videoLatest[f.Username],
 			LatestDynamicAt: dynamicLatest[f.FocusUserID],
 			LastReadAt:      readLatest[f.FocusUserID],
@@ -159,7 +160,7 @@ func sortFollowUsers(items []FollowUserItem) {
 // 缓存命中且新鲜时直接返回；过期时先返回缓存再异步刷新；未命中时同步刷新，同一用户的并发刷新由 singleflight 合并。
 func (s *FollowService) UnreadFollowCount(ctx context.Context, userID uint) (int64, error) {
 	if userID == 0 {
-		return 0, domain.ErrUserNotLogin
+		return 0, dynamicerrors.ErrUserNotLogin
 	}
 
 	if cached, fresh, ok := s.cache.Load(userID); ok {
@@ -187,7 +188,7 @@ func (s *FollowService) InvalidateUnreadCount(userID uint) {
 
 func (s *FollowService) refreshUnreadCount(ctx context.Context, userID uint) (int64, error) {
 	if userID == 0 {
-		return 0, domain.ErrUserNotLogin
+		return 0, dynamicerrors.ErrUserNotLogin
 	}
 
 	value, err, _ := s.countSFG.Do(unreadCountKey(userID), func() (any, error) {
@@ -223,7 +224,7 @@ func (s *FollowService) refreshUnreadCountAsync(userID uint) {
 
 func (s *FollowService) unreadCountUncached(ctx context.Context, userID uint) (int64, error) {
 	if userID == 0 {
-		return 0, domain.ErrUserNotLogin
+		return 0, dynamicerrors.ErrUserNotLogin
 	}
 
 	follows, err := s.follows.ListFollowing(ctx, userID)
@@ -251,7 +252,7 @@ func (s *FollowService) unreadCountUncached(ctx context.Context, userID uint) (i
 	var count int64
 
 	for _, f := range follows {
-		activity := domain.FollowActivity{
+		activity := dynamicvo.FollowActivity{
 			LatestVideoAt:   videoLatest[f.Username],
 			LatestDynamicAt: dynamicLatest[f.FocusUserID],
 			LastReadAt:      readLatest[f.FocusUserID],

@@ -5,20 +5,21 @@ import (
 	"errors"
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/contentops"
+	contentopserrors "f_ccg_video_back_ddd/internal/domain/contentops/domainerr"
+	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // fakeBannerRepo 记录调用参数的轮播图仓储替身（测试不走 wire）。
 type fakeBannerRepo struct {
-	visible          []domain.Banner
+	visible          []contentopsentity.Banner
 	visibleType      enum.BannerType
 	visiblePartition *uint
-	adminQuery       domain.BannerAdminQuery
-	byID             map[uint]*domain.Banner
-	created          *domain.Banner
+	adminQuery       contentopsentity.BannerAdminQuery
+	byID             map[uint]*contentopsentity.Banner
+	created          *contentopsentity.Banner
 	updatedID        uint
-	updatedChanges   domain.BannerChanges
+	updatedChanges   contentopsentity.BannerChanges
 	deletedIDs       []uint
 	err              error
 }
@@ -27,7 +28,7 @@ func (r *fakeBannerRepo) ListVisible(
 	_ context.Context,
 	bannerType enum.BannerType,
 	partitionID *uint,
-) ([]domain.Banner, error) {
+) ([]contentopsentity.Banner, error) {
 	r.visibleType = bannerType
 	r.visiblePartition = partitionID
 
@@ -36,8 +37,8 @@ func (r *fakeBannerRepo) ListVisible(
 
 func (r *fakeBannerRepo) ListAdmin(
 	_ context.Context,
-	query domain.BannerAdminQuery,
-) ([]domain.Banner, int64, error) {
+	query contentopsentity.BannerAdminQuery,
+) ([]contentopsentity.Banner, int64, error) {
 	r.adminQuery = query
 
 	return r.visible, int64(len(r.visible)), r.err
@@ -47,8 +48,8 @@ func (r *fakeBannerRepo) ListVisibleByIDs(
 	_ context.Context,
 	_ enum.BannerType,
 	ids []uint,
-) ([]domain.Banner, error) {
-	out := make([]domain.Banner, 0, len(ids))
+) ([]contentopsentity.Banner, error) {
+	out := make([]contentopsentity.Banner, 0, len(ids))
 	for _, id := range ids {
 		if banner, ok := r.byID[id]; ok {
 			out = append(out, *banner)
@@ -58,7 +59,7 @@ func (r *fakeBannerRepo) ListVisibleByIDs(
 	return out, r.err
 }
 
-func (r *fakeBannerRepo) FindByID(_ context.Context, bannerID uint) (*domain.Banner, error) {
+func (r *fakeBannerRepo) FindByID(_ context.Context, bannerID uint) (*contentopsentity.Banner, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -66,7 +67,7 @@ func (r *fakeBannerRepo) FindByID(_ context.Context, bannerID uint) (*domain.Ban
 	return r.byID[bannerID], nil
 }
 
-func (r *fakeBannerRepo) Create(_ context.Context, banner *domain.Banner) error {
+func (r *fakeBannerRepo) Create(_ context.Context, banner *contentopsentity.Banner) error {
 	if r.err != nil {
 		return r.err
 	}
@@ -77,7 +78,7 @@ func (r *fakeBannerRepo) Create(_ context.Context, banner *domain.Banner) error 
 	return nil
 }
 
-func (r *fakeBannerRepo) Update(_ context.Context, bannerID uint, changes domain.BannerChanges) error {
+func (r *fakeBannerRepo) Update(_ context.Context, bannerID uint, changes contentopsentity.BannerChanges) error {
 	r.updatedID = bannerID
 	r.updatedChanges = changes
 
@@ -92,18 +93,18 @@ func (r *fakeBannerRepo) Delete(_ context.Context, ids []uint) error {
 
 // fakeBannerCache 记录缓存命中与失效次数。
 type fakeBannerCache struct {
-	hit          []domain.Banner
+	hit          []contentopsentity.Banner
 	hitOK        bool
 	storedType   enum.BannerType
-	stored       []domain.Banner
+	stored       []contentopsentity.Banner
 	invalidCount int
 }
 
-func (c *fakeBannerCache) LoadVisible(_ enum.BannerType, _ *uint) ([]domain.Banner, bool) {
+func (c *fakeBannerCache) LoadVisible(_ enum.BannerType, _ *uint) ([]contentopsentity.Banner, bool) {
 	return c.hit, c.hitOK
 }
 
-func (c *fakeBannerCache) StoreVisible(bannerType enum.BannerType, _ *uint, items []domain.Banner) {
+func (c *fakeBannerCache) StoreVisible(bannerType enum.BannerType, _ *uint, items []contentopsentity.Banner) {
 	c.storedType = bannerType
 	c.stored = items
 }
@@ -126,7 +127,7 @@ func (q *fakePartitionQuery) Exists(_ context.Context, partitionID uint) (bool, 
 }
 
 func newBannerServiceFixture() (*BannerService, *fakeBannerRepo, *fakeBannerCache, *fakePartitionQuery) {
-	repo := &fakeBannerRepo{byID: map[uint]*domain.Banner{}}
+	repo := &fakeBannerRepo{byID: map[uint]*contentopsentity.Banner{}}
 	cache := &fakeBannerCache{}
 	partitions := &fakePartitionQuery{exists: true}
 
@@ -194,7 +195,7 @@ func TestBannerServiceListVisibleNormalizesFilters(t *testing.T) {
 
 func TestBannerServiceListVisibleUsesCache(t *testing.T) {
 	svc, repo, cache, _ := newBannerServiceFixture()
-	cache.hit = []domain.Banner{{ID: 9}}
+	cache.hit = []contentopsentity.Banner{{ID: 9}}
 	cache.hitOK = true
 
 	list, err := svc.ListVisible(context.Background(), VisibleBannerParams{Type: 1})
@@ -212,7 +213,7 @@ func TestBannerServiceListVisibleUsesCache(t *testing.T) {
 
 	// 未命中时回填缓存
 	cache.hitOK = false
-	repo.visible = []domain.Banner{{ID: 1}}
+	repo.visible = []contentopsentity.Banner{{ID: 1}}
 
 	if _, err := svc.ListVisible(context.Background(), VisibleBannerParams{Type: 1}); err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -286,7 +287,7 @@ func TestBannerServiceUpdate(t *testing.T) {
 		svc, _, _, _ := newBannerServiceFixture()
 
 		err := svc.Update(context.Background(), UpdateBannerParams{ID: 1})
-		if !errors.Is(err, domain.ErrBannerNoUpdatableField) {
+		if !errors.Is(err, contentopserrors.ErrBannerNoUpdatableField) {
 			t.Fatalf("unexpected err: %v", err)
 		}
 	})
@@ -304,7 +305,7 @@ func TestBannerServiceUpdate(t *testing.T) {
 
 	t.Run("改为非首页类型时分区归零", func(t *testing.T) {
 		svc, repo, cache, _ := newBannerServiceFixture()
-		repo.byID[1] = &domain.Banner{ID: 1, Type: enum.BannerTypeHome, PartitionID: 6}
+		repo.byID[1] = &contentopsentity.Banner{ID: 1, Type: enum.BannerTypeHome, PartitionID: 6}
 
 		bannerType := 2
 		if err := svc.Update(context.Background(), UpdateBannerParams{ID: 1, Type: &bannerType}); err != nil {
@@ -330,7 +331,7 @@ func TestBannerServiceUpdate(t *testing.T) {
 
 	t.Run("仅改封面时不触碰分区", func(t *testing.T) {
 		svc, repo, _, _ := newBannerServiceFixture()
-		repo.byID[1] = &domain.Banner{ID: 1, Type: enum.BannerTypeHome, PartitionID: 6}
+		repo.byID[1] = &contentopsentity.Banner{ID: 1, Type: enum.BannerTypeHome, PartitionID: 6}
 
 		cover := "new"
 		if err := svc.Update(context.Background(), UpdateBannerParams{ID: 1, Cover: &cover}); err != nil {

@@ -21,7 +21,7 @@ import (
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/config/site"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/pkg/uploadscope"
 
 	"go.uber.org/zap"
@@ -34,7 +34,7 @@ type LocalStorage struct {
 }
 
 // 编译期断言：满足领域侧存储驱动端口。
-var _ media.StorageDriver = (*LocalStorage)(nil)
+var _ mediaport.StorageDriver = (*LocalStorage)(nil)
 
 // NewLocalStorage 创建本地存储驱动实例。
 func NewLocalStorage(cfg *site.Storage, logger *zap.Logger) *LocalStorage {
@@ -50,7 +50,7 @@ func (l *LocalStorage) SaveChunk(
 	ctx context.Context,
 	fileHash, index string,
 	size int64,
-	reader media.ChunkReader,
+	reader mediaport.ChunkReader,
 ) error {
 	if l.cfg == nil || l.cfg.ChunkDir == "" {
 		return errors.New("未设置本地分块目录")

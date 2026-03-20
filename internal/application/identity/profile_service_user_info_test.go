@@ -8,21 +8,23 @@ import (
 	"testing"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 )
 
 type userInfoAccountRepository struct {
-	domain.UserAccountRepository
-	user              *domain.User
-	conf              *domain.UserConf
+	identityrepo.UserAccountRepository
+	user              *identityentity.User
+	conf              *identityentity.UserConf
 	err               error
 	findByIDCalls     atomic.Int32
 	findWithConfCalls atomic.Int32
 }
 
-func (r *userInfoAccountRepository) FindByID(context.Context, uint) (*domain.User, error) {
+func (r *userInfoAccountRepository) FindByID(context.Context, uint) (*identityentity.User, error) {
 	r.findByIDCalls.Add(1)
 
 	return r.user, r.err
@@ -31,20 +33,20 @@ func (r *userInfoAccountRepository) FindByID(context.Context, uint) (*domain.Use
 func (r *userInfoAccountRepository) FindWithConfByID(
 	context.Context,
 	uint,
-) (*domain.User, *domain.UserConf, error) {
+) (*identityentity.User, *identityentity.UserConf, error) {
 	r.findWithConfCalls.Add(1)
 
 	return r.user, r.conf, r.err
 }
 
 type userInfoConfRepository struct {
-	domain.UserConfRepository
+	identityrepo.UserConfRepository
 	findCalls atomic.Int32
-	conf      *domain.UserConf
+	conf      *identityentity.UserConf
 	err       error
 }
 
-func (r *userInfoConfRepository) FindByUserID(context.Context, uint) (*domain.UserConf, error) {
+func (r *userInfoConfRepository) FindByUserID(context.Context, uint) (*identityentity.UserConf, error) {
 	r.findCalls.Add(1)
 
 	return r.conf, r.err
@@ -135,7 +137,7 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 	})
 
 	accounts := &userInfoAccountRepository{
-		user: &domain.User{
+		user: &identityentity.User{
 			ID:             7,
 			Username:       "joined-user",
 			Email:          "joined@example.com",
@@ -150,7 +152,7 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 			Exp:            120,
 			CoinCount:      4.5,
 		},
-		conf: &domain.UserConf{
+		conf: &identityentity.UserConf{
 			UserID:   7,
 			LikeTags: []string{" Go ", "", "DDD"},
 			BannerID: 3,
@@ -270,7 +272,7 @@ func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
 	)
 
 	info, err := service.UserInfo(t.Context(), 7)
-	if !errors.Is(err, domain.ErrUserNotFound) {
+	if !errors.Is(err, identityerrors.ErrUserNotFound) {
 		t.Fatalf("error = %v, want ErrUserNotFound", err)
 	}
 	if info != nil {
@@ -285,7 +287,7 @@ func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
 }
 
 func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
-	accounts := &userInfoAccountRepository{user: &domain.User{ID: 7, Username: "joined-user"}}
+	accounts := &userInfoAccountRepository{user: &identityentity.User{ID: 7, Username: "joined-user"}}
 	confs := &userInfoConfRepository{err: errors.New("database unavailable")}
 	service := NewProfileService(
 		infraconfig.NewProvider(nil),
@@ -301,7 +303,7 @@ func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
 	)
 
 	detail, err := service.UserDetail(t.Context(), 7)
-	if !errors.Is(err, domain.ErrUserNotFound) {
+	if !errors.Is(err, identityerrors.ErrUserNotFound) {
 		t.Fatalf("error = %v, want ErrUserNotFound", err)
 	}
 	if detail != nil {
@@ -330,7 +332,7 @@ func TestProfileUserInfoAdministratorIdentity(t *testing.T) {
 			roles.items = []UserRoleItem{{Name: constants.AdminUserRole}}
 		}
 		service := NewProfileService(infraconfig.NewProvider(nil), nil,
-			&userInfoAccountRepository{user: &domain.User{ID: 7}}, &userInfoConfRepository{},
+			&userInfoAccountRepository{user: &identityentity.User{ID: 7}}, &userInfoConfRepository{},
 			&concurrentBannerCatalog{}, &concurrentRelationQuery{}, roles, nil, nil, nil)
 		info, err := service.UserInfo(t.Context(), 7)
 		if err != nil {

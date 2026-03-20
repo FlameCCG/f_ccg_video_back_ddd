@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -40,7 +40,7 @@ const (
 //
 // EmailAddressVerifier 与 EmailCaptchaSender 通过端口注入，测试可提供 fake 实现。
 type EmailCaptchaSendService struct {
-	users     domain.UserAccountRepository
+	users     identityrepo.UserAccountRepository
 	captcha   *CaptchaService
 	verifier  EmailAddressVerifier
 	sender    EmailCaptchaSender
@@ -52,7 +52,7 @@ type EmailCaptchaSendService struct {
 
 // NewEmailCaptchaSendService 构造邮箱验证码发送服务。
 func NewEmailCaptchaSendService(
-	users domain.UserAccountRepository,
+	users identityrepo.UserAccountRepository,
 	captcha *CaptchaService,
 	verifier EmailAddressVerifier,
 	sender EmailCaptchaSender,

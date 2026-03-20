@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -28,7 +28,7 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 	}{
 		{
 			name:       "create",
-			wantMsg:    domain.ErrCreateFailed.Error(),
+			wantMsg:    rbacerrors.ErrCreateFailed.Error(),
 			wantLogMsg: "menu mutation failed",
 			wantFields: map[string]string{"operation": "create", "creatorId": "9", "parentMenuId": "3"},
 			respond: func(h *Handler, c *gin.Context, err error) {
@@ -36,47 +36,41 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 				h.respondMenuMutationError(
 					c,
 					"create",
-					err,
-					domain.ErrCreateFailed,
-					zap.Uint("creatorId", 9),
+					err, rbacerrors.ErrCreateFailed, zap.Uint("creatorId", 9),
 					optionalMenuIDField("parentMenuId", &parentID),
 				)
 			},
 		},
 		{
 			name:       "update",
-			wantMsg:    domain.ErrUpdateFailed.Error(),
+			wantMsg:    rbacerrors.ErrUpdateFailed.Error(),
 			wantLogMsg: "menu mutation failed",
 			wantFields: map[string]string{"operation": "update", "menuId": "11"},
 			respond: func(h *Handler, c *gin.Context, err error) {
 				h.respondMenuMutationError(
 					c,
 					"update",
-					err,
-					domain.ErrUpdateFailed,
-					zap.Uint("menuId", 11),
+					err, rbacerrors.ErrUpdateFailed, zap.Uint("menuId", 11),
 				)
 			},
 		},
 		{
 			name:       "move",
-			wantMsg:    domain.ErrSortFailed.Error(),
+			wantMsg:    rbacerrors.ErrSortFailed.Error(),
 			wantLogMsg: "menu mutation failed",
 			wantFields: map[string]string{"operation": "move", "menuId": "11", "targetMenuId": "12"},
 			respond: func(h *Handler, c *gin.Context, err error) {
 				h.respondMenuMutationError(
 					c,
 					"move",
-					err,
-					domain.ErrSortFailed,
-					zap.Uint("menuId", 11),
+					err, rbacerrors.ErrSortFailed, zap.Uint("menuId", 11),
 					zap.Uint("targetMenuId", 12),
 				)
 			},
 		},
 		{
 			name:       "generate",
-			wantMsg:    domain.ErrReadMenuDataFailed.Error(),
+			wantMsg:    rbacerrors.ErrReadMenuDataFailed.Error(),
 			wantLogMsg: "menu generation failed",
 			wantFields: map[string]string{"operation": "generate", "parentMenuId": "3"},
 			respond: func(h *Handler, c *gin.Context, err error) {
@@ -96,7 +90,7 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 			cause := errors.New("database unavailable")
 			err := cause
 			if tt.name == "generate" {
-				err = fmt.Errorf("%w: %w", domain.ErrReadMenuDataFailed, cause)
+				err = fmt.Errorf("%w: %w", rbacerrors.ErrReadMenuDataFailed, cause)
 			}
 
 			tt.respond(handler, ctx, err)
@@ -133,35 +127,30 @@ func TestRespondMenuErrorsDoNotErrorLogKnownDomainFailures(t *testing.T) {
 	}{
 		{
 			name:    "mutation",
-			wantMsg: domain.ErrMenuNotFound.Error(),
+			wantMsg: rbacerrors.ErrMenuNotFound.Error(),
 			respond: func(h *Handler, c *gin.Context) {
 				h.respondMenuMutationError(
 					c,
 					"update",
-					fmt.Errorf("lookup: %w", domain.ErrMenuNotFound),
-					domain.ErrUpdateFailed,
-					zap.Uint("menuId", 99),
+					fmt.Errorf("lookup: %w", rbacerrors.ErrMenuNotFound), rbacerrors.ErrUpdateFailed, zap.Uint("menuId", 99),
 				)
 			},
 		},
 		{
 			name:    "mutation validation",
-			wantMsg: domain.ErrMenuTitleEmpty.Error(),
+			wantMsg: rbacerrors.ErrMenuTitleEmpty.Error(),
 			respond: func(h *Handler, c *gin.Context) {
 				h.respondMenuMutationError(
 					c,
-					"update",
-					domain.ErrMenuTitleEmpty,
-					domain.ErrUpdateFailed,
-					zap.Uint("menuId", 99),
+					"update", rbacerrors.ErrMenuTitleEmpty, rbacerrors.ErrUpdateFailed, zap.Uint("menuId", 99),
 				)
 			},
 		},
 		{
 			name:    "generation",
-			wantMsg: domain.ErrParentMenuNotFound.Error(),
+			wantMsg: rbacerrors.ErrParentMenuNotFound.Error(),
 			respond: func(h *Handler, c *gin.Context) {
-				h.respondMenuGenerationError(c, domain.ErrParentMenuNotFound, nil)
+				h.respondMenuGenerationError(c, rbacerrors.ErrParentMenuNotFound, nil)
 			},
 		},
 	}
@@ -191,12 +180,10 @@ func TestRespondMenuMutationErrorUsesNopLoggerWhenNil(t *testing.T) {
 	handler.respondMenuMutationError(
 		ctx,
 		"update",
-		errors.New("database unavailable"),
-		domain.ErrUpdateFailed,
-		zap.Uint("menuId", 1),
+		errors.New("database unavailable"), rbacerrors.ErrUpdateFailed, zap.Uint("menuId", 1),
 	)
 
-	assertMenuFailureResponse(t, recorder, domain.ErrUpdateFailed.Error())
+	assertMenuFailureResponse(t, recorder, rbacerrors.ErrUpdateFailed.Error())
 }
 
 func testMenuContext() (*gin.Context, *httptest.ResponseRecorder) {

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
@@ -16,8 +18,8 @@ const banNotifyTitle = "账号状态变更通知"
 // BanService 封禁用例服务。
 type BanService struct {
 	txm      tx.Manager
-	users    domain.UserRepository
-	records  domain.BanRecordRepository
+	users    identityrepo.UserRepository
+	records  identityrepo.BanRecordRepository
 	statuses *UserStatusService
 	notifier BanNotifier
 }
@@ -25,8 +27,8 @@ type BanService struct {
 // NewBanService 构造封禁用例服务。
 func NewBanService(
 	txm tx.Manager,
-	users domain.UserRepository,
-	records domain.BanRecordRepository,
+	users identityrepo.UserRepository,
+	records identityrepo.BanRecordRepository,
 	statuses *UserStatusService,
 	notifier BanNotifier,
 ) *BanService {
@@ -34,8 +36,8 @@ func NewBanService(
 }
 
 // Apply 执行封禁/解封，并写状态缓存与站内通知。
-func (s *BanService) Apply(ctx context.Context, action domain.BanAction) (*domain.BanRecord, error) {
-	normalized, err := domain.NormalizeBanAction(action)
+func (s *BanService) Apply(ctx context.Context, action identityentity.BanAction) (*identityentity.BanRecord, error) {
+	normalized, err := identityentity.NormalizeBanAction(action)
 	if err != nil {
 		return nil, err
 	}
@@ -46,10 +48,10 @@ func (s *BanService) Apply(ctx context.Context, action domain.BanAction) (*domai
 	}
 
 	if user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, identityerrors.ErrUserNotFound
 	}
 
-	record := domain.NewBanRecord(normalized, time.Now())
+	record := identityentity.NewBanRecord(normalized, time.Now())
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		if updateErr := s.users.UpdateStatus(txCtx, user.ID, normalized.Status); updateErr != nil {
@@ -94,7 +96,7 @@ func (s *BanService) Apply(ctx context.Context, action domain.BanAction) (*domai
 	return record, nil
 }
 
-func (s *BanService) notifyBanStatus(ctx context.Context, user *domain.User, record *domain.BanRecord) {
+func (s *BanService) notifyBanStatus(ctx context.Context, user *identityentity.User, record *identityentity.BanRecord) {
 	if user == nil || user.ID == 0 || record == nil || s.notifier == nil {
 		return
 	}
@@ -122,7 +124,7 @@ func (s *BanService) notifyBanStatus(ctx context.Context, user *domain.User, rec
 }
 
 // banStatusContent 组装封禁通知正文。
-func banStatusContent(record *domain.BanRecord) string {
+func banStatusContent(record *identityentity.BanRecord) string {
 	content := ""
 
 	switch record.Status {
@@ -147,7 +149,7 @@ func banStatusContent(record *domain.BanRecord) string {
 // ReleaseExpired 原子地解封到期用户并标记原封禁记录，返回本次是否完成解封。
 func (s *BanService) ReleaseExpired(ctx context.Context, userID uint, now time.Time) (bool, error) {
 	if userID == 0 {
-		return false, domain.ErrBanUserIDRequired
+		return false, identityentity.ErrBanUserIDRequired
 	}
 
 	unbanned := false
@@ -195,19 +197,19 @@ func (s *BanService) ReleaseExpired(ctx context.Context, userID uint, now time.T
 
 // BanRecordService 封禁记录查询用例服务。
 type BanRecordService struct {
-	records domain.BanRecordRepository
+	records identityrepo.BanRecordRepository
 	query   BanRecordQuery
 }
 
 // NewBanRecordService 构造封禁记录查询服务。
-func NewBanRecordService(records domain.BanRecordRepository, query BanRecordQuery) *BanRecordService {
+func NewBanRecordService(records identityrepo.BanRecordRepository, query BanRecordQuery) *BanRecordService {
 	return &BanRecordService{records: records, query: query}
 }
 
 // Latest 读取用户最近一条未解封封禁记录；无记录时返回 (nil, nil)。
-func (s *BanRecordService) Latest(ctx context.Context, userID uint) (*domain.BanRecord, error) {
+func (s *BanRecordService) Latest(ctx context.Context, userID uint) (*identityentity.BanRecord, error) {
 	if userID == 0 {
-		return nil, domain.ErrBanUserIDRequired
+		return nil, identityentity.ErrBanUserIDRequired
 	}
 
 	return s.records.FindLatestByUserID(ctx, userID)
@@ -224,14 +226,14 @@ func (s *BanRecordService) AdminList(
 // EnsureCanPublish rechecks DB status for every content write, including long-lived sockets.
 func (s *BanService) EnsureCanPublish(ctx context.Context, userID uint) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return identityerrors.ErrUserNotLogin
 	}
 	user, err := s.users.FindStatusByID(ctx, userID)
 	if err != nil {
 		return err
 	}
 	if user == nil {
-		return domain.ErrUserNotFound
+		return identityerrors.ErrUserNotFound
 	}
 	if user.Status == enum.UserStatusBanned {
 		if _, err := s.ReleaseExpired(ctx, userID, time.Now()); err != nil {
@@ -242,14 +244,14 @@ func (s *BanService) EnsureCanPublish(ctx context.Context, userID uint) error {
 			return err
 		}
 		if user == nil {
-			return domain.ErrUserNotFound
+			return identityerrors.ErrUserNotFound
 		}
 	}
 	if user.IsPermanentlyBanned() {
-		return domain.ErrAccountPermanentlyBanned
+		return identityerrors.ErrAccountPermanentlyBanned
 	}
 	if user.IsBanned() {
-		return domain.ErrAccountBanned
+		return identityerrors.ErrAccountBanned
 	}
 	return nil
 }

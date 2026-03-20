@@ -3,7 +3,7 @@ package video
 import (
 	"errors"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 
 	"github.com/gin-gonic/gin"
@@ -16,5 +16,5 @@ func getUID(c *gin.Context) (uint, bool) {
 
 // isRecordNotFound 判断错误是否为领域层的记录缺失哨兵，接口层无需依赖 GORM。
 func isRecordNotFound(err error) bool {
-	return errors.Is(err, domain.ErrRecordNotFound)
+	return errors.Is(err, videoerrors.ErrRecordNotFound)
 }

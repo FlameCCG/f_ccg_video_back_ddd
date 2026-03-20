@@ -5,7 +5,10 @@ import (
 	"errors"
 	"slices"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
@@ -22,7 +25,7 @@ type UserRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ domain.UserRepository = (*UserRepository)(nil)
+var _ identityrepo.UserRepository = (*UserRepository)(nil)
 
 // LockAccounts 是账户所有者提供的锁定能力，不让视频仓储直接操作 users。
 func (r *UserRepository) LockAccounts(ctx context.Context, userIDs []uint) error {
@@ -36,7 +39,7 @@ func (r *UserRepository) LockAccounts(ctx context.Context, userIDs []uint) error
 		if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("id").Take(&po.User{}, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return domain.ErrUserRecordNotFound
+				return identityerrors.ErrUserRecordNotFound
 			}
 			return err
 		}
@@ -52,14 +55,14 @@ func NewUserRepository(db *gorm.DB, cfgProvider *infraconfig.Provider) *UserRepo
 func (r *UserRepository) defaultUserBannerID() uint {
 	cfg := r.cfgProvider.Get()
 	if cfg == nil || cfg.Site == nil {
-		return domain.FallbackDefaultUserBannerID
+		return identityvo.FallbackDefaultUserBannerID
 	}
 
-	return domain.ResolveDefaultUserBannerID(cfg.Site.DefaultUserBannerID)
+	return identityvo.ResolveDefaultUserBannerID(cfg.Site.DefaultUserBannerID)
 }
 
 // FindByID 按主键读取用户；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindByID(ctx context.Context, userID uint) (*domain.User, error) {
+func (r *UserRepository) FindByID(ctx context.Context, userID uint) (*identityentity.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).First(&row, "id = ?", userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -76,7 +79,7 @@ func (r *UserRepository) FindByID(ctx context.Context, userID uint) (*domain.Use
 func (r *UserRepository) FindWithConfByID(
 	ctx context.Context,
 	userID uint,
-) (*domain.User, *domain.UserConf, error) {
+) (*identityentity.User, *identityentity.UserConf, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).Joins("UserConf").First(&row, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -90,7 +93,7 @@ func (r *UserRepository) FindWithConfByID(
 }
 
 // FindStatusByID 只读 id/status/username；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindStatusByID(ctx context.Context, userID uint) (*domain.User, error) {
+func (r *UserRepository) FindStatusByID(ctx context.Context, userID uint) (*identityentity.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "status", "username").
@@ -107,7 +110,7 @@ func (r *UserRepository) FindStatusByID(ctx context.Context, userID uint) (*doma
 }
 
 // FindProfileByID 只读 id/username/avatar；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindProfileByID(ctx context.Context, userID uint) (*domain.User, error) {
+func (r *UserRepository) FindProfileByID(ctx context.Context, userID uint) (*identityentity.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "username", "avatar").

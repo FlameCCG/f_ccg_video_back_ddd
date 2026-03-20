@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -499,7 +499,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 					return nil //nolint:nilerr // claim ends with session/context cancellation
 				}
 
-				var permanentErr *media.PermanentMessageError
+				var permanentErr *mediaerrors.PermanentMessageError
 				if errors.As(err, &permanentErr) {
 					if dlqErr := h.publishDLQ(msg, permanentErr.Unwrap()); dlqErr != nil {
 						return fmt.Errorf("publish dlq message: %w", dlqErr)
@@ -583,7 +583,7 @@ func (h consumerGroupHandler) handleMessage(
 			return err
 		}
 
-		var permanentErr *media.PermanentMessageError
+		var permanentErr *mediaerrors.PermanentMessageError
 		if errors.As(err, &permanentErr) {
 			return permanentErr
 		}
@@ -627,7 +627,7 @@ func (h consumerGroupHandler) handleMessage(
 		}
 	}
 
-	return media.PermanentMessage(fmt.Errorf("retries exhausted: %w", lastErr))
+	return mediaerrors.PermanentMessage(fmt.Errorf("retries exhausted: %w", lastErr))
 }
 
 // dlqMessage 是死信队列消息体（外部契约）。

@@ -8,7 +8,8 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/social"
-	domain "f_ccg_video_back_ddd/internal/domain/social"
+	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
+	socialvo "f_ccg_video_back_ddd/internal/domain/social/valueobject"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -18,20 +19,20 @@ type socialListQueryStub struct{}
 
 func (socialListQueryStub) Exists(context.Context, uint, uint) bool { return false }
 
-func (socialListQueryStub) Relation(context.Context, uint, uint) domain.Relation {
-	return domain.Relation{}
+func (socialListQueryStub) Relation(context.Context, uint, uint) socialentity.Relation {
+	return socialentity.Relation{}
 }
 
-func (socialListQueryStub) Counts(context.Context, uint, bool) domain.RelationCounts {
-	return domain.RelationCounts{}
+func (socialListQueryStub) Counts(context.Context, uint, bool) socialentity.RelationCounts {
+	return socialentity.RelationCounts{}
 }
 
-func (socialListQueryStub) FollowPrivacy(context.Context, uint) (domain.FollowPrivacy, error) {
-	return domain.FollowPrivacy{Exists: true}, nil
+func (socialListQueryStub) FollowPrivacy(context.Context, uint) (socialvo.FollowPrivacy, error) {
+	return socialvo.FollowPrivacy{Exists: true}, nil
 }
 
-func (socialListQueryStub) ActionPrivacy(context.Context, uint) (domain.ActionPrivacy, error) {
-	return domain.ActionPrivacy{}, nil
+func (socialListQueryStub) ActionPrivacy(context.Context, uint) (socialvo.ActionPrivacy, error) {
+	return socialvo.ActionPrivacy{}, nil
 }
 
 func (socialListQueryStub) ListFocus(context.Context, uint, int, int, string) ([]app.SocialListUser, int64, error) {

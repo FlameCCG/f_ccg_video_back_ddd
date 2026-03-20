@@ -2,8 +2,11 @@ package comment
 
 import (
 	"context"
-	domain "f_ccg_video_back_ddd/internal/domain/comment"
 	"testing"
+
+	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
+	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
 )
 
 type likeTxKey struct{}
@@ -16,7 +19,7 @@ func (m *likeTx) Do(ctx context.Context, fn func(context.Context) error) error {
 }
 
 type likeCountRepo struct {
-	domain.Repository
+	commentrepo.Repository
 	t     *testing.T
 	tx    *likeTx
 	count int64
@@ -44,26 +47,26 @@ func (r *likeCountRepo) LikeCountByID(ctx context.Context, _ uint) (int64, error
 }
 
 type conflictLikes struct {
-	domain.LikeRepository
+	commentrepo.LikeRepository
 	t                           *testing.T
 	duplicate, created, deleted bool
 }
 
-func (r *conflictLikes) Create(ctx context.Context, _ *domain.Like) error {
+func (r *conflictLikes) Create(ctx context.Context, _ *commententity.Like) error {
 	if ctx.Value(likeTxKey{}) != true {
 		r.t.Fatal("insert outside transaction")
 	}
 	r.created = true
 	if r.duplicate {
-		return domain.ErrLikeDuplicated
+		return commenterrors.ErrLikeDuplicated
 	}
 	return nil
 }
-func (r *conflictLikes) Find(ctx context.Context, _, _ uint) (*domain.Like, error) {
+func (r *conflictLikes) Find(ctx context.Context, _, _ uint) (*commententity.Like, error) {
 	if !r.created {
 		r.t.Fatal("check-before-insert race returned")
 	}
-	return &domain.Like{ID: 1}, nil
+	return &commententity.Like{ID: 1}, nil
 }
 func (r *conflictLikes) DeleteByID(context.Context, uint) error { r.deleted = true; return nil }
 

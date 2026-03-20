@@ -3,7 +3,7 @@ package comment
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/comment"
+	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
 )
 
 // 端口阅读：评论列表和评论对象/用户事实是读侧能力，通知、视频计数和热度是跨上下文协作能力。
@@ -25,7 +25,7 @@ type Query interface {
 	CountByVideo(ctx context.Context, videoID uint) (int64, error)
 	// ParentBrief 读取同一对象下的父评论投影（user_id / root_id / 用户名）；
 	// 不存在时返回 (nil, nil)。
-	ParentBrief(ctx context.Context, parentID, videoID, dynamicID uint) (*domain.ParentBrief, error)
+	ParentBrief(ctx context.Context, parentID, videoID, dynamicID uint) (*commententity.ParentBrief, error)
 }
 
 // RelatedQuery 关联对象的读侧投影端口。

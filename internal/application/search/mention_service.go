@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sort"
 
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -40,8 +40,8 @@ func (s *MentionService) SuggestFollowUsers(
 	}
 
 	ctx = ensureContext(ctx)
-	pagination := domain.NormalizeMentionPagination(page, pageSize)
-	keyword = domain.NormalizeKeyword(keyword)
+	pagination := searchvo.NormalizeMentionPagination(page, pageSize)
+	keyword = searchvo.NormalizeKeyword(keyword)
 
 	users, err := s.relations.FollowingWithFriendFlag(ctx, userID)
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *MentionService) filterByKeyword(
 	}
 
 	for _, user := range users {
-		if !domain.MatchesUsername(user.Username, keyword) {
+		if !searchvo.MatchesUsername(user.Username, keyword) {
 			continue
 		}
 
@@ -135,8 +135,8 @@ func sortMentionUsers(users []MentionUser) {
 }
 
 // paginateMentionUsers 内存分页；越界返回空列表。
-func paginateMentionUsers(users []MentionUser, pagination domain.Pagination) []MentionUser {
-	start, end := domain.SliceWindow(len(users), pagination)
+func paginateMentionUsers(users []MentionUser, pagination searchvo.Pagination) []MentionUser {
+	start, end := searchvo.SliceWindow(len(users), pagination)
 	if start == end {
 		return []MentionUser{}
 	}

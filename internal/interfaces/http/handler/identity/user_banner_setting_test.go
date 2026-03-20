@@ -12,7 +12,8 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	contentopspersistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/contentops"
@@ -67,7 +68,7 @@ func newBannerFixture(t *testing.T, cfg *config.Config, configPath string) *bann
 func (f *bannerFixture) createUser(t *testing.T, userID uint, username, email string) {
 	t.Helper()
 
-	user := &domain.User{
+	user := &identityentity.User{
 		ID:       userID,
 		Username: username,
 		Email:    email,
@@ -255,7 +256,7 @@ func TestAdminSetUserBannerView(t *testing.T) {
 	})
 
 	t.Run("reject setting already default banner", func(t *testing.T) {
-		currentDefault := domain.ResolveDefaultUserBannerID(fixture.provider.Get().Site.DefaultUserBannerID)
+		currentDefault := identityvo.ResolveDefaultUserBannerID(fixture.provider.Get().Site.DefaultUserBannerID)
 
 		// 保证该 ID 存在且是可选的用户横幅，从而只剩「已是注册默认横幅」这一失败原因。
 		if err := fixture.db.Save(&po.Banner{
@@ -430,7 +431,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{secondBannerID, thirdBannerID},
-			Action:    domain.UserBannerActionAdd,
+			Action:    identityvo.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -471,7 +472,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{secondBannerID},
-			Action:    domain.UserBannerActionAdd,
+			Action:    identityvo.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -490,7 +491,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{thirdBannerID},
-			Action:    domain.UserBannerActionDelete,
+			Action:    identityvo.UserBannerActionDelete,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -514,7 +515,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{firstBannerID},
-			Action:    domain.UserBannerActionAdd,
+			Action:    identityvo.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -533,7 +534,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{homeBannerID},
-			Action:    domain.UserBannerActionAdd,
+			Action:    identityvo.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)

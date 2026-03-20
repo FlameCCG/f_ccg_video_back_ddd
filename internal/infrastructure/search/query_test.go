@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/olivere/elastic/v7"
@@ -165,9 +165,9 @@ func TestApplyVideoSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 		order int
 		want  string
 	}{
-		{name: "views desc", field: domain.VideoSortViews, order: domain.SortOrderDesc, want: `"views"`},
-		{name: "danmu asc", field: domain.VideoSortDanmu, order: domain.SortOrderAsc, want: `"danmu_count"`},
-		{name: "duration desc", field: domain.VideoSortDuration, order: domain.SortOrderDesc, want: `"duration"`},
+		{name: "views desc", field: searchvo.VideoSortViews, order: searchvo.SortOrderDesc, want: `"views"`},
+		{name: "danmu asc", field: searchvo.VideoSortDanmu, order: searchvo.SortOrderAsc, want: `"danmu_count"`},
+		{name: "duration desc", field: searchvo.VideoSortDuration, order: searchvo.SortOrderDesc, want: `"duration"`},
 	}
 
 	for _, tt := range tests {
@@ -189,7 +189,7 @@ func TestApplyVideoSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 	}
 
 	relevance := elastic.NewSearchSource().Query(elastic.NewMatchAllQuery())
-	applyVideoSortToSource(relevance, domain.VideoSortRelevance, domain.SortOrderDesc)
+	applyVideoSortToSource(relevance, searchvo.VideoSortRelevance, searchvo.SortOrderDesc)
 
 	payload := marshalSource(t, relevance)
 	if strings.Contains(payload, `"views"`) {
@@ -205,9 +205,9 @@ func TestApplyUserSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 		field int
 		want  string
 	}{
-		{name: "followers", field: domain.UserSortFollowers, want: `"follower_count"`},
-		{name: "level", field: domain.UserSortLevel, want: `"level"`},
-		{name: "created at", field: domain.UserSortCreatedAt, want: `"created_at"`},
+		{name: "followers", field: searchvo.UserSortFollowers, want: `"follower_count"`},
+		{name: "level", field: searchvo.UserSortLevel, want: `"level"`},
+		{name: "created at", field: searchvo.UserSortCreatedAt, want: `"created_at"`},
 	}
 
 	for _, tt := range tests {
@@ -215,7 +215,7 @@ func TestApplyUserSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 			t.Parallel()
 
 			source := elastic.NewSearchSource().Query(elastic.NewMatchAllQuery())
-			applyUserSortToSource(source, tt.field, domain.SortOrderDesc)
+			applyUserSortToSource(source, tt.field, searchvo.SortOrderDesc)
 
 			payload := marshalSource(t, source)
 			if !strings.Contains(payload, tt.want) || !strings.Contains(payload, `"_score"`) {
@@ -236,19 +236,19 @@ func TestSuggestIndexAndFilterRouting(t *testing.T) {
 		wantField     string
 	}{
 		{
-			docType:       domain.DocTypeVideo,
+			docType:       searchvo.DocTypeVideo,
 			wantIndex:     constants.VideoSearchIndex,
 			publishedOnly: true,
 			wantField:     "title",
 		},
 		{
-			docType:       domain.DocTypeTag,
+			docType:       searchvo.DocTypeTag,
 			wantIndex:     constants.VideoSearchIndex,
 			publishedOnly: true,
 			wantField:     "tags",
 		},
 		{
-			docType:       domain.DocTypeUser,
+			docType:       searchvo.DocTypeUser,
 			wantIndex:     constants.UserSearchIndex,
 			publishedOnly: false,
 			wantField:     "username",
@@ -321,8 +321,8 @@ func TestBuildSearchRequestsCarryIndexAndSort(t *testing.T) {
 		Keyword:   "教程",
 		Page:      1,
 		PageSize:  20,
-		VideoSort: domain.VideoSortViews,
-		UserSort:  domain.UserSortFollowers,
+		VideoSort: searchvo.VideoSortViews,
+		UserSort:  searchvo.UserSortFollowers,
 	}
 
 	videoReq := buildVideoSearchRequest(opts, 0)

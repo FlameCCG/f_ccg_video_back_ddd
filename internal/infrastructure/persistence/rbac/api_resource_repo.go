@@ -3,7 +3,8 @@ package rbac
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -17,7 +18,7 @@ type ApiResourceRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ domain.ApiResourceRepository = (*ApiResourceRepository)(nil)
+var _ rbacrepo.ApiResourceRepository = (*ApiResourceRepository)(nil)
 
 // NewApiResourceRepository 构造接口资源仓储。
 func NewApiResourceRepository(db *gorm.DB) *ApiResourceRepository {
@@ -25,7 +26,7 @@ func NewApiResourceRepository(db *gorm.DB) *ApiResourceRepository {
 }
 
 // ListOrdered 按 path、method 升序读取全部资源。
-func (r *ApiResourceRepository) ListOrdered(ctx context.Context) ([]*domain.ApiResource, error) {
+func (r *ApiResourceRepository) ListOrdered(ctx context.Context) ([]*rbacentity.ApiResource, error) {
 	var rows []po.ApiResource
 	if err := gormx.DB(ctx, r.db).Order("path ASC, method ASC").Find(&rows).Error; err != nil {
 		return nil, err
@@ -35,7 +36,7 @@ func (r *ApiResourceRepository) ListOrdered(ctx context.Context) ([]*domain.ApiR
 }
 
 // ListPathMethod 只读 path、method（权限覆盖计算用）。
-func (r *ApiResourceRepository) ListPathMethod(ctx context.Context) ([]*domain.ApiResource, error) {
+func (r *ApiResourceRepository) ListPathMethod(ctx context.Context) ([]*rbacentity.ApiResource, error) {
 	var rows []po.ApiResource
 	if err := gormx.DB(ctx, r.db).Select("path", "method").Find(&rows).Error; err != nil {
 		return nil, err
@@ -45,7 +46,7 @@ func (r *ApiResourceRepository) ListPathMethod(ctx context.Context) ([]*domain.A
 }
 
 // ListAll 读取全部资源（同步比对用）。
-func (r *ApiResourceRepository) ListAll(ctx context.Context) ([]*domain.ApiResource, error) {
+func (r *ApiResourceRepository) ListAll(ctx context.Context) ([]*rbacentity.ApiResource, error) {
 	var rows []po.ApiResource
 	if err := gormx.DB(ctx, r.db).Find(&rows).Error; err != nil {
 		return nil, err
@@ -55,7 +56,7 @@ func (r *ApiResourceRepository) ListAll(ctx context.Context) ([]*domain.ApiResou
 }
 
 // Create 创建资源并回填自增 ID 与时间戳。
-func (r *ApiResourceRepository) Create(ctx context.Context, resource *domain.ApiResource) error {
+func (r *ApiResourceRepository) Create(ctx context.Context, resource *rbacentity.ApiResource) error {
 	row := toPOApiResource(resource)
 	if err := gormx.DB(ctx, r.db).Create(&row).Error; err != nil {
 		return err

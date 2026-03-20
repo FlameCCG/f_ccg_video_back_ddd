@@ -3,20 +3,22 @@ package video
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 )
 
 // HistoryService 播放历史用例服务。
 type HistoryService struct {
-	videos  domain.VideoRepository
-	history domain.HistoryRepository
+	videos  videorepo.VideoRepository
+	history videorepo.HistoryRepository
 	query   HistoryQuery
 }
 
 // NewHistoryService 构造播放历史用例服务。
 func NewHistoryService(
-	videos domain.VideoRepository,
-	history domain.HistoryRepository,
+	videos videorepo.VideoRepository,
+	history videorepo.HistoryRepository,
 	query HistoryQuery,
 ) *HistoryService {
 	return &HistoryService{videos: videos, history: history, query: query}
@@ -25,11 +27,11 @@ func NewHistoryService(
 // SavePlayHistory 保存/更新播放进度。
 func (s *HistoryService) SavePlayHistory(ctx context.Context, userID, videoID uint, progress, duration int) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return videoerrors.ErrUserNotLogin
 	}
 
 	if videoID == 0 {
-		return domain.ErrVideoIDRequired
+		return videoerrors.ErrVideoIDRequired
 	}
 
 	exists, err := s.videos.Exists(ctx, videoID)
@@ -38,16 +40,16 @@ func (s *HistoryService) SavePlayHistory(ctx context.Context, userID, videoID ui
 	}
 
 	if !exists {
-		return domain.ErrVideoNotFound
+		return videoerrors.ErrVideoNotFound
 	}
 
 	return s.history.Upsert(ctx, userID, videoID, progress, duration)
 }
 
 // GetPlayHistory 查询播放进度。
-func (s *HistoryService) GetPlayHistory(ctx context.Context, userID, videoID uint) (*domain.PlayHistory, error) {
+func (s *HistoryService) GetPlayHistory(ctx context.Context, userID, videoID uint) (*videorepo.PlayHistory, error) {
 	if userID == 0 || videoID == 0 {
-		return nil, domain.ErrParamInvalid
+		return nil, videoerrors.ErrParamInvalid
 	}
 
 	return s.history.Find(ctx, userID, videoID)
@@ -61,7 +63,7 @@ func (s *HistoryService) ListUserHistory(
 	keyword string,
 ) ([]HistoryItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, domain.ErrUserNotLogin
+		return nil, 0, videoerrors.ErrUserNotLogin
 	}
 
 	if page <= 0 {
@@ -72,13 +74,13 @@ func (s *HistoryService) ListUserHistory(
 		pageSize = 20
 	}
 
-	return s.query.List(ctx, userID, page, pageSize, domain.TrimKeyword(keyword))
+	return s.query.List(ctx, userID, page, pageSize, videoentity.TrimKeyword(keyword))
 }
 
 // DeleteHistory 批量删除用户历史记录。
 func (s *HistoryService) DeleteHistory(ctx context.Context, userID uint, videoIDs []uint) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return videoerrors.ErrUserNotLogin
 	}
 
 	if len(videoIDs) == 0 {

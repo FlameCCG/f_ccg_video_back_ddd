@@ -7,17 +7,17 @@
 package dynamic
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainDynamic 把动态 PO 转为领域实体。
-func toDomainDynamic(row *po.Dynamic) *domain.Dynamic {
+func toDomainDynamic(row *po.Dynamic) *dynamicentity.Dynamic {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Dynamic{
+	return &dynamicentity.Dynamic{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -31,7 +31,7 @@ func toDomainDynamic(row *po.Dynamic) *domain.Dynamic {
 }
 
 // toPODynamic 把动态领域实体转为 PO。
-func toPODynamic(d *domain.Dynamic) *po.Dynamic {
+func toPODynamic(d *dynamicentity.Dynamic) *po.Dynamic {
 	if d == nil {
 		return nil
 	}
@@ -52,12 +52,12 @@ func toPODynamic(d *domain.Dynamic) *po.Dynamic {
 }
 
 // toDomainReadRecord 把已读位点 PO 转为领域实体。
-func toDomainReadRecord(row *po.DynamicRead) *domain.ReadRecord {
+func toDomainReadRecord(row *po.DynamicRead) *dynamicentity.ReadRecord {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.ReadRecord{
+	return &dynamicentity.ReadRecord{
 		ID:               row.ID,
 		UserID:           row.UserID,
 		AuthorID:         row.AuthorID,
@@ -68,7 +68,7 @@ func toDomainReadRecord(row *po.DynamicRead) *domain.ReadRecord {
 }
 
 // toPOReadRecord 把已读位点领域实体转为 PO。
-func toPOReadRecord(record *domain.ReadRecord) *po.DynamicRead {
+func toPOReadRecord(record *dynamicentity.ReadRecord) *po.DynamicRead {
 	if record == nil {
 		return nil
 	}

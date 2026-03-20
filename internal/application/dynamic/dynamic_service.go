@@ -4,7 +4,10 @@ import (
 	"context"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
+	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
+	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
+	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
@@ -13,7 +16,7 @@ import (
 // Service 动态命令用例服务。
 type Service struct {
 	txm       tx.Manager
-	dynamics  domain.DynamicRepository
+	dynamics  dynamicrepo.DynamicRepository
 	users     UserProfileQuery
 	videos    VideoOwnershipQuery
 	videoPins VideoPinWriter
@@ -24,7 +27,7 @@ type Service struct {
 // NewService 构造动态命令用例服务。
 func NewService(
 	txm tx.Manager,
-	dynamics domain.DynamicRepository,
+	dynamics dynamicrepo.DynamicRepository,
 	users UserProfileQuery,
 	videos VideoOwnershipQuery,
 	videoPins VideoPinWriter,
@@ -44,7 +47,7 @@ func NewService(
 
 // Create 发布一条动态，并返回含作者资料的列表项。
 func (s *Service) Create(ctx context.Context, userID uint, content, imageURL string) (*DynamicItem, error) {
-	d, err := domain.NewDynamic(userID, content, imageURL)
+	d, err := dynamicentity.NewDynamic(userID, content, imageURL)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +58,7 @@ func (s *Service) Create(ctx context.Context, userID uint, content, imageURL str
 	}
 
 	if profile == nil {
-		return nil, domain.ErrRecordNotFound
+		return nil, dynamicerrors.ErrRecordNotFound
 	}
 
 	if err := s.dynamics.Create(ctx, d); err != nil {
@@ -78,11 +81,11 @@ func (s *Service) Create(ctx context.Context, userID uint, content, imageURL str
 // Delete 删除自己的动态，并在同一事务内级联清理其评论与评论点赞。
 func (s *Service) Delete(ctx context.Context, userID, dynamicID uint) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return dynamicerrors.ErrUserNotLogin
 	}
 
 	if dynamicID == 0 {
-		return domain.ErrDynamicIDRequired
+		return dynamicerrors.ErrDynamicIDRequired
 	}
 
 	d, err := s.dynamics.FindByID(ctx, dynamicID)
@@ -91,7 +94,7 @@ func (s *Service) Delete(ctx context.Context, userID, dynamicID uint) error {
 	}
 
 	if d == nil {
-		return domain.ErrDynamicNotFound
+		return dynamicerrors.ErrDynamicNotFound
 	}
 
 	if err := d.EnsureDeletableBy(userID); err != nil {
@@ -131,11 +134,11 @@ func (s *Service) Delete(ctx context.Context, userID, dynamicID uint) error {
 // 当前同库适配器使这些写入可共同回滚；它不是仅靠跨上下文方法调用就获得的分布式事务。
 func (s *Service) Pin(ctx context.Context, userID, dynamicID uint, pinned bool) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return dynamicerrors.ErrUserNotLogin
 	}
 
 	if dynamicID == 0 {
-		return domain.ErrDynamicIDRequired
+		return dynamicerrors.ErrDynamicIDRequired
 	}
 
 	d, err := s.dynamics.FindByID(ctx, dynamicID)
@@ -144,15 +147,13 @@ func (s *Service) Pin(ctx context.Context, userID, dynamicID uint, pinned bool) 
 	}
 
 	if d == nil {
-		return domain.ErrDynamicNotFound
+		return dynamicerrors.ErrDynamicNotFound
 	}
 
-	if err := d.EnsurePinnableBy(userID); err != nil {
+	if err := d.SetPinnedBy(userID, pinned, time.Now()); err != nil {
 		return err
 	}
-
-	plan := domain.BuildPinPlan(pinned)
-	now := time.Now()
+	plan := dynamicvo.BuildPinPlan(d.IsPinned)
 
 	return s.txm.Do(ctx, func(txCtx context.Context) error {
 		if plan.ClearOwnPinned {
@@ -174,7 +175,7 @@ func (s *Service) Pin(ctx context.Context, userID, dynamicID uint, pinned bool) 
 		}
 
 		if plan.Pinned {
-			return s.dynamics.SetPinned(txCtx, dynamicID, &now)
+			return s.dynamics.SetPinned(txCtx, dynamicID, d.PinnedAt)
 		}
 
 		return s.dynamics.ClearPinned(txCtx, dynamicID)
@@ -184,11 +185,11 @@ func (s *Service) Pin(ctx context.Context, userID, dynamicID uint, pinned bool) 
 // PinVideo 置顶/取消置顶视频：与动态置顶互斥（同一用户同一时间只允许置顶一个作品）。
 func (s *Service) PinVideo(ctx context.Context, userID, videoID uint, pinned bool) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return dynamicerrors.ErrUserNotLogin
 	}
 
 	if videoID == 0 {
-		return domain.ErrVideoIDRequired
+		return dynamicerrors.ErrVideoIDRequired
 	}
 
 	profile, err := s.users.ProfileByID(ctx, userID)
@@ -197,11 +198,11 @@ func (s *Service) PinVideo(ctx context.Context, userID, videoID uint, pinned boo
 	}
 
 	if profile == nil {
-		return domain.ErrRecordNotFound
+		return dynamicerrors.ErrRecordNotFound
 	}
 
 	if profile.Username == "" {
-		return domain.ErrUserNotFound
+		return dynamicerrors.ErrUserNotFound
 	}
 
 	owned, err := s.videos.ExistsPublishedByAuthor(ctx, videoID, profile.Username)
@@ -210,10 +211,10 @@ func (s *Service) PinVideo(ctx context.Context, userID, videoID uint, pinned boo
 	}
 
 	if !owned {
-		return domain.ErrVideoPinForbidden
+		return dynamicerrors.ErrVideoPinForbidden
 	}
 
-	plan := domain.BuildPinPlan(pinned)
+	plan := dynamicvo.BuildPinPlan(pinned)
 	now := time.Now()
 
 	return s.txm.Do(ctx, func(txCtx context.Context) error {

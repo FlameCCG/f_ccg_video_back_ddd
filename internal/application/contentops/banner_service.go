@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	domain "f_ccg_video_back_ddd/internal/domain/contentops"
+	contentopserrors "f_ccg_video_back_ddd/internal/domain/contentops/domainerr"
+	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsrepo "f_ccg_video_back_ddd/internal/domain/contentops/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // ErrBannerNotFound 轮播图不存在（转发领域错误，供 interfaces 层做错误分支判断，
 // 避免 interfaces 层直接 import 领域包）。
-var ErrBannerNotFound = domain.ErrBannerNotFound
+var ErrBannerNotFound = contentopserrors.ErrBannerNotFound
 
 // PartitionResolveError 标记分区裁定失败，使接口层可区分裁定错误与落库错误。
 //
@@ -40,14 +42,14 @@ func (e *PartitionResolveError) Unwrap() error {
 
 // BannerService 轮播图用例服务。
 type BannerService struct {
-	banners    domain.BannerRepository
+	banners    contentopsrepo.BannerRepository
 	cache      BannerCache
 	partitions VideoPartitionQuery
 }
 
 // NewBannerService 构造轮播图用例服务。
 func NewBannerService(
-	banners domain.BannerRepository,
+	banners contentopsrepo.BannerRepository,
 	cache BannerCache,
 	partitions VideoPartitionQuery,
 ) *BannerService {
@@ -60,7 +62,7 @@ func NewBannerService(
 //   - 指定了非首页类型又带分区筛选 → ErrBannerPartitionFilterUnsupported；
 //   - 只带分区未带类型 → 视为首页类型；
 //   - 首页类型未带分区 → 分区回落 0（首页本身）。
-func (s *BannerService) ListVisible(ctx context.Context, params VisibleBannerParams) ([]domain.Banner, error) {
+func (s *BannerService) ListVisible(ctx context.Context, params VisibleBannerParams) ([]contentopsentity.Banner, error) {
 	if params.PartitionID != nil && *params.PartitionID > 0 &&
 		params.Type > 0 && params.Type != int(enum.BannerTypeHome) {
 		return nil, ErrBannerPartitionFilterUnsupported
@@ -108,7 +110,7 @@ func (s *BannerService) ListVisible(ctx context.Context, params VisibleBannerPar
 func (s *BannerService) ListAdmin(
 	ctx context.Context,
 	params AdminBannerListParams,
-) ([]domain.Banner, int64, error) {
+) ([]contentopsentity.Banner, int64, error) {
 	if params.PartitionID != nil && *params.PartitionID > 0 &&
 		params.Type > 0 && params.Type != int(enum.BannerTypeHome) {
 		return nil, 0, ErrBannerPartitionFilterUnsupported
@@ -119,7 +121,7 @@ func (s *BannerService) ListAdmin(
 		bannerType = enum.BannerTypeHome
 	}
 
-	query := domain.BannerAdminQuery{
+	query := contentopsentity.BannerAdminQuery{
 		Page:        params.Page,
 		PageSize:    params.PageSize,
 		Type:        bannerType,
@@ -136,9 +138,9 @@ func (s *BannerService) ListVisibleByIDs(
 	ctx context.Context,
 	bannerType enum.BannerType,
 	ids []uint,
-) ([]domain.Banner, error) {
+) ([]contentopsentity.Banner, error) {
 	if len(ids) == 0 {
-		return []domain.Banner{}, nil
+		return []contentopsentity.Banner{}, nil
 	}
 
 	return s.banners.ListVisibleByIDs(ctx, bannerType, ids)
@@ -148,7 +150,7 @@ func (s *BannerService) ListVisibleByIDs(
 //
 // 默认值：未指定显示状态默认显示，
 // 未指定类型默认首页轮播图。
-func (s *BannerService) Create(ctx context.Context, params CreateBannerParams) (*domain.Banner, error) {
+func (s *BannerService) Create(ctx context.Context, params CreateBannerParams) (*contentopsentity.Banner, error) {
 	show := true
 	if params.Show != nil {
 		show = *params.Show
@@ -164,17 +166,15 @@ func (s *BannerService) Create(ctx context.Context, params CreateBannerParams) (
 		partitionID = *params.PartitionID
 	}
 
-	partitionID, err := s.resolvePartitionID(ctx, bannerType, partitionID)
-	if err != nil {
-		return nil, err
+	banner := &contentopsentity.Banner{
+		Cover: params.Cover, Href: params.Href, Show: show,
+		Type: enum.BannerTypeHome,
 	}
-
-	banner := &domain.Banner{
-		Cover:       params.Cover,
-		Href:        params.Href,
-		Show:        show,
-		Type:        bannerType,
-		PartitionID: partitionID,
+	if err := banner.ChangePlacement(&bannerType, &partitionID); err != nil {
+		return nil, &PartitionResolveError{Err: err}
+	}
+	if err := s.ensureBannerPartition(ctx, banner); err != nil {
+		return nil, err
 	}
 
 	if err := s.banners.Create(ctx, banner); err != nil {
@@ -191,7 +191,7 @@ func (s *BannerService) Create(ctx context.Context, params CreateBannerParams) (
 // 仅当请求携带类型或分区时才读取当前记录并重新裁定分区，
 // 且此时必定重写 partition_id 列。
 func (s *BannerService) Update(ctx context.Context, params UpdateBannerParams) error {
-	changes := domain.BannerChanges{
+	changes := contentopsentity.BannerChanges{
 		Cover: params.Cover,
 		Href:  params.Href,
 		Show:  params.Show,
@@ -203,35 +203,29 @@ func (s *BannerService) Update(ctx context.Context, params UpdateBannerParams) e
 			return err
 		}
 
-		bannerType := current.Type
-		if params.Type != nil && *params.Type > 0 {
-			bannerType = enum.BannerType(*params.Type)
-			changes.Type = &bannerType
+		var requestedType *enum.BannerType
+		if params.Type != nil {
+			value := enum.BannerType(*params.Type)
+			requestedType = &value
 		}
-
-		partitionID := current.PartitionID
-
-		switch {
-		case params.PartitionID != nil:
-			partitionID = *params.PartitionID
-		case bannerType != enum.BannerTypeHome:
-			partitionID = 0
+		if err := current.ChangePlacement(requestedType, params.PartitionID); err != nil {
+			return &PartitionResolveError{Err: err}
 		}
-
-		resolved, err := s.resolvePartitionID(ctx, bannerType, partitionID)
-		if err != nil {
+		if err := s.ensureBannerPartition(ctx, current); err != nil {
 			return err
 		}
-
-		changes.PartitionID = &resolved
+		if requestedType != nil && *requestedType > 0 {
+			changes.Type = &current.Type
+		}
+		changes.PartitionID = &current.PartitionID
 	}
 
 	if params.ID == 0 {
-		return domain.ErrBannerInvalidParam
+		return contentopserrors.ErrBannerInvalidParam
 	}
 
 	if changes.IsEmpty() {
-		return domain.ErrBannerNoUpdatableField
+		return contentopserrors.ErrBannerNoUpdatableField
 	}
 
 	if err := s.banners.Update(ctx, params.ID, changes); err != nil {
@@ -261,55 +255,41 @@ func (s *BannerService) Delete(ctx context.Context, ids []uint) error {
 // Get 按主键读取轮播图。
 //
 // 缺少主键、记录不存在或读取失败均返回 ErrBannerNotFound。
-func (s *BannerService) Get(ctx context.Context, bannerID uint) (*domain.Banner, error) {
+func (s *BannerService) Get(ctx context.Context, bannerID uint) (*contentopsentity.Banner, error) {
 	if bannerID == 0 {
-		return nil, fmt.Errorf("%w: %w", domain.ErrBannerNotFound, domain.ErrBannerInvalidParam)
+		return nil, fmt.Errorf("%w: %w", contentopserrors.ErrBannerNotFound, contentopserrors.ErrBannerInvalidParam)
 	}
 
 	banner, err := s.banners.FindByID(ctx, bannerID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", domain.ErrBannerNotFound, err)
+		return nil, fmt.Errorf("%w: %w", contentopserrors.ErrBannerNotFound, err)
 	}
 
 	if banner == nil {
-		return nil, domain.ErrBannerNotFound
+		return nil, contentopserrors.ErrBannerNotFound
 	}
 
 	return banner, nil
 }
 
-// resolvePartitionID 裁定并校验分区 ID：领域规则判类型，查询端口判存在性。
-func (s *BannerService) resolvePartitionID(
-	ctx context.Context,
-	bannerType enum.BannerType,
-	partitionID uint,
-) (uint, error) {
-	resolved, needExists, err := domain.ResolveBannerPartitionID(bannerType, partitionID)
+// ensureBannerPartition 只取得分区存在性事实；类型与分区组合由 Banner 保护。
+func (s *BannerService) ensureBannerPartition(ctx context.Context, banner *contentopsentity.Banner) error {
+	if !banner.NeedsPartitionCheck() {
+		return nil
+	}
+	exists, err := s.partitions.Exists(ctx, banner.PartitionID)
 	if err != nil {
-		return 0, &PartitionResolveError{Err: err}
+		return &PartitionResolveError{Err: err}
 	}
-
-	if !needExists {
-		return resolved, nil
-	}
-
-	exists, err := s.partitions.Exists(ctx, resolved)
-	if err != nil {
-		return 0, &PartitionResolveError{Err: err}
-	}
-
 	if !exists {
-		return 0, &PartitionResolveError{Err: domain.ErrBannerPartitionNotFound}
+		return &PartitionResolveError{Err: contentopserrors.ErrBannerPartitionNotFound}
 	}
-
-	return resolved, nil
+	return nil
 }
 
 // invalidateCache 清空可见轮播图缓存（写操作成功后调用）。
 func (s *BannerService) invalidateCache() {
-	if s.cache == nil {
-		return
+	if s.cache != nil {
+		s.cache.InvalidateVisible()
 	}
-
-	s.cache.InvalidateVisible()
 }

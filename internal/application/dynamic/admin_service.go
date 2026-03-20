@@ -4,20 +4,22 @@ import (
 	"context"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
+	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
+	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // AdminService 管理端动态用例服务。
 type AdminService struct {
-	dynamics domain.DynamicRepository
+	dynamics dynamicrepo.DynamicRepository
 	txm      tx.Manager
 	comments DynamicCommentPurger
 	query    AdminDynamicQuery
 }
 
 // NewAdminService 构造管理端动态用例服务。
-func NewAdminService(dynamics domain.DynamicRepository, query AdminDynamicQuery, txm tx.Manager, comments DynamicCommentPurger) *AdminService {
+func NewAdminService(dynamics dynamicrepo.DynamicRepository, query AdminDynamicQuery, txm tx.Manager, comments DynamicCommentPurger) *AdminService {
 	return &AdminService{dynamics: dynamics, query: query, txm: txm, comments: comments}
 }
 
@@ -26,7 +28,7 @@ func (s *AdminService) List(
 	ctx context.Context,
 	params AdminDynamicListParams,
 ) ([]DynamicItem, int64, error) {
-	params.Page, params.PageSize = domain.NormalizeAdminPaging(params.Page, params.PageSize)
+	params.Page, params.PageSize = dynamicvo.NormalizeAdminPaging(params.Page, params.PageSize)
 	params.Keyword = strings.TrimSpace(params.Keyword)
 	params.Username = strings.TrimSpace(params.Username)
 
@@ -36,7 +38,7 @@ func (s *AdminService) List(
 // Delete 管理员批量删除动态，返回实际删除行数。
 func (s *AdminService) Delete(ctx context.Context, dynamicIDs []uint) (int64, error) {
 	if len(dynamicIDs) == 0 {
-		return 0, domain.ErrDynamicIDsRequired
+		return 0, dynamicerrors.ErrDynamicIDsRequired
 	}
 
 	var affected int64

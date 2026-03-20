@@ -3,7 +3,7 @@ package video
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -18,7 +18,7 @@ const (
 // FeedService 首页流 / 综合热门 / 排行榜用例服务。
 type FeedService struct {
 	query   FeedQuery
-	history domain.HistoryRepository
+	history videorepo.HistoryRepository
 	hotRank HotRankCache
 	stats   *StatsService
 }
@@ -26,7 +26,7 @@ type FeedService struct {
 // NewFeedService 构造首页流用例服务。
 func NewFeedService(
 	query FeedQuery,
-	history domain.HistoryRepository,
+	history videorepo.HistoryRepository,
 	hotRank HotRankCache,
 	stats *StatsService,
 ) *FeedService {

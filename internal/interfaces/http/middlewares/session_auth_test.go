@@ -2,30 +2,32 @@ package middlewares
 
 import (
 	"context"
-	identityapp "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/authsession"
-	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	identityapp "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/pkg/authsession"
+	jwts "f_ccg_video_back_ddd/pkg/jwt"
+
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
 
 type middlewareCredentialUsers struct {
-	domain.UserRepository
-	user    *domain.User
+	identityrepo.UserRepository
+	user    *identityentity.User
 	queries int
 }
 
-func (r *middlewareCredentialUsers) FindByID(context.Context, uint) (*domain.User, error) {
+func (r *middlewareCredentialUsers) FindByID(context.Context, uint) (*identityentity.User, error) {
 	r.queries++
 	u := *r.user
 	return &u, nil
@@ -33,7 +35,7 @@ func (r *middlewareCredentialUsers) FindByID(context.Context, uint) (*domain.Use
 
 func TestAuthenticationReusesRequestValidation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	user := &domain.User{ID: 7, Username: "current-name", Password: "hash", Status: enum.UserStatusActive}
+	user := &identityentity.User{ID: 7, Username: "current-name", Password: "hash", Status: enum.UserStatusActive}
 	users := &middlewareCredentialUsers{user: user}
 	provider := infraconfig.NewProvider(&config.Config{Jwt: &config.Jwt{AccessSecret: "key"}})
 	mw := New(provider, nil, identityapp.NewUserStatusService(nil, users), nil, nil, nil, nil, nil, zap.NewNop())
@@ -65,7 +67,7 @@ func TestAuthenticationReusesRequestValidation(t *testing.T) {
 }
 func TestInitialPasswordGateAndCredentialRevocation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	user := &domain.User{ID: 7, Username: "admin", Password: "original-hash", MustChangePassword: true, Status: enum.UserStatusActive}
+	user := &identityentity.User{ID: 7, Username: "admin", Password: "original-hash", MustChangePassword: true, Status: enum.UserStatusActive}
 	users := &middlewareCredentialUsers{user: user}
 	statuses := identityapp.NewUserStatusService(nil, users)
 	provider := infraconfig.NewProvider(&config.Config{Jwt: &config.Jwt{AccessSecret: "access-key"}})
@@ -99,7 +101,7 @@ func TestInitialPasswordGateAndCredentialRevocation(t *testing.T) {
 }
 func TestWebsocketPreflightPreservesRevocationValidator(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	user := &domain.User{ID: 7, Password: "hash", Status: enum.UserStatusActive}
+	user := &identityentity.User{ID: 7, Password: "hash", Status: enum.UserStatusActive}
 	provider := infraconfig.NewProvider(&config.Config{Jwt: &config.Jwt{AccessSecret: "key"}})
 	statuses := identityapp.NewUserStatusService(nil, &middlewareCredentialUsers{user: user})
 	mw := New(provider, nil, statuses, nil, nil, nil, nil, nil, zap.NewNop())

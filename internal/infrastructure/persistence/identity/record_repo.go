@@ -5,7 +5,9 @@ import (
 	"errors"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -19,7 +21,7 @@ type ExpRecordRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.ExpRecordRepository = (*ExpRecordRepository)(nil)
+var _ identityrepo.ExpRecordRepository = (*ExpRecordRepository)(nil)
 
 // NewExpRecordRepository 构造经验流水仓储。
 func NewExpRecordRepository(db *gorm.DB) *ExpRecordRepository {
@@ -37,7 +39,7 @@ func (r *ExpRecordRepository) Create(ctx context.Context, userID uint, delta int
 
 	if err := gormx.DB(ctx, r.db).Create(&rec).Error; err != nil {
 		if dedupKey != nil && gormx.IsDuplicateKeyError(err) {
-			return domain.ErrDuplicateRecord
+			return identityerrors.ErrDuplicateRecord
 		}
 
 		return err
@@ -68,7 +70,7 @@ type CoinRecordRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.CoinRecordRepository = (*CoinRecordRepository)(nil)
+var _ identityrepo.CoinRecordRepository = (*CoinRecordRepository)(nil)
 
 // NewCoinRecordRepository 构造硬币流水仓储。
 func NewCoinRecordRepository(db *gorm.DB) *CoinRecordRepository {
@@ -86,7 +88,7 @@ func (r *CoinRecordRepository) Create(ctx context.Context, userID uint, delta fl
 
 	if err := gormx.DB(ctx, r.db).Create(&rec).Error; err != nil {
 		if dedupKey != nil && gormx.IsDuplicateKeyError(err) {
-			return domain.ErrDuplicateRecord
+			return identityerrors.ErrDuplicateRecord
 		}
 
 		return err
@@ -100,7 +102,7 @@ type BanRecordRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.BanRecordRepository = (*BanRecordRepository)(nil)
+var _ identityrepo.BanRecordRepository = (*BanRecordRepository)(nil)
 
 // NewBanRecordRepository 构造封禁记录仓储。
 func NewBanRecordRepository(db *gorm.DB) *BanRecordRepository {
@@ -108,7 +110,7 @@ func NewBanRecordRepository(db *gorm.DB) *BanRecordRepository {
 }
 
 // Create 写入封禁记录并回填自增 ID 与时间戳。
-func (r *BanRecordRepository) Create(ctx context.Context, record *domain.BanRecord) error {
+func (r *BanRecordRepository) Create(ctx context.Context, record *identityentity.BanRecord) error {
 	row := toPOBanRecord(record)
 	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
 		return err
@@ -122,7 +124,7 @@ func (r *BanRecordRepository) Create(ctx context.Context, record *domain.BanReco
 }
 
 // FindLatestByUserID 读取用户最近一条未解封封禁记录；无记录时返回 (nil, nil)。
-func (r *BanRecordRepository) FindLatestByUserID(ctx context.Context, userID uint) (*domain.BanRecord, error) {
+func (r *BanRecordRepository) FindLatestByUserID(ctx context.Context, userID uint) (*identityentity.BanRecord, error) {
 	var row po.UserBanRecord
 	if err := gormx.DB(ctx, r.db).
 		Where("user_id = ? AND is_unbanned = ?", userID, false).
@@ -143,7 +145,7 @@ func (r *BanRecordRepository) FindLatestUnreleasedForUpdate(
 	ctx context.Context,
 	userID uint,
 	statuses []enum.UserStatus,
-) (*domain.BanRecord, error) {
+) (*identityentity.BanRecord, error) {
 	var row po.UserBanRecord
 	if err := gormx.DB(ctx, r.db).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -173,7 +175,7 @@ type LoginRecordRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.LoginRecordRepository = (*LoginRecordRepository)(nil)
+var _ identityrepo.LoginRecordRepository = (*LoginRecordRepository)(nil)
 
 // NewLoginRecordRepository 构造登录记录仓储。
 func NewLoginRecordRepository(db *gorm.DB) *LoginRecordRepository {

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoservice "f_ccg_video_back_ddd/internal/domain/video/service"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -20,7 +22,7 @@ const videoLikeNotificationTitle = "有人点赞了你的视频"
 // ToggleLike 点赞/取消点赞（唯一键翻转，stats 失败则回滚关系表）。
 func (s *InteractionService) ToggleLike(ctx context.Context, videoID, userID uint) (*LikeResult, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
 	if err := s.videos.EnsurePublished(ctx, videoID); err != nil {
@@ -44,7 +46,7 @@ func (s *InteractionService) ToggleLike(ctx context.Context, videoID, userID uin
 		return &LikeResult{Likes: stats.Likes}, nil
 	}
 
-	stats, err := s.stats.ApplyDelta(ctx, videoID, domain.StatsDelta{Likes: delta})
+	stats, err := s.stats.ApplyDelta(ctx, videoID, videovo.StatsDelta{Likes: delta})
 	if err != nil {
 		// Redis/DB stats 与关系表非同一事务：失败时回滚关系，避免 likes 漂移。
 		if compErr := s.compensateLikeFlip(ctx, videoID, userID, delta); compErr != nil {
@@ -84,7 +86,7 @@ func (s *InteractionService) compensateLikeFlip(ctx context.Context, videoID, us
 	case delta < 0:
 		// 刚取消成功但 stats 失败 → 恢复关系
 		err := s.likes.Create(ctx, videoID, userID)
-		if errors.Is(err, domain.ErrDuplicateLike) {
+		if errors.Is(err, videoerrors.ErrDuplicateLike) {
 			return nil
 		}
 
@@ -100,7 +102,7 @@ func (s *InteractionService) recordLikeHotScoreAsync(parent context.Context, vid
 	}
 
 	s.tasks.Go(parent, likeActionAsyncGrace, func(hotCtx context.Context) {
-		s.stats.RecordHotScoreDelta(hotCtx, videoID, domain.HotScoreLikeWeight, delta)
+		s.stats.RecordHotScoreDelta(hotCtx, videoID, videoservice.HotScoreLikeWeight, delta)
 	})
 }
 

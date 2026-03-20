@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -85,7 +85,7 @@ type dashSegmentTimelineXML struct {
 	} `xml:"S"`
 }
 
-type dashVideoProbe func(context.Context, string) (media.VideoMeta, error)
+type dashVideoProbe func(context.Context, string) (mediavo.VideoMeta, error)
 
 // validateDASHOutput 在独立预算内核验清单、引用文件与探测时长，不因为 FFmpeg 退出码为 0 就直接接受产物。
 // 完整性检查在发布资源前执行，避免把仅写出 MPD 或时长截断的目录暴露为可播放结果。
@@ -98,7 +98,7 @@ func validateDASHOutput(
 	validationCtx, cancel := context.WithTimeout(ctx, dashOutputValidationTimeout)
 	defer cancel()
 
-	probe := func(ctx context.Context, path string) (media.VideoMeta, error) {
+	probe := func(ctx context.Context, path string) (mediavo.VideoMeta, error) {
 		return ProbeVideo(ctx, path, logger)
 	}
 
@@ -138,7 +138,7 @@ func validateDASHOutputWithProbe(
 		return err
 	}
 
-	if err := media.ValidateTranscodedDuration(sourceDuration, inspection.durationSec); err != nil {
+	if err := mediavo.ValidateTranscodedDuration(sourceDuration, inspection.durationSec); err != nil {
 		return fmt.Errorf("validate DASH manifest duration: %w", err)
 	}
 
@@ -151,7 +151,7 @@ func validateDASHOutputWithProbe(
 		)
 	}
 
-	if err := media.ValidateTranscodedDuration(sourceDuration, meta.Duration); err != nil {
+	if err := mediavo.ValidateTranscodedDuration(sourceDuration, meta.Duration); err != nil {
 		return fmt.Errorf("validate DASH video representation: %w", err)
 	}
 
@@ -159,7 +159,7 @@ func validateDASHOutputWithProbe(
 }
 
 func inspectDASHManifest(dir string) (dashManifestInspection, error) {
-	mpdPath := filepath.Join(dir, media.DashManifestName)
+	mpdPath := filepath.Join(dir, mediavo.DashManifestName)
 	info, err := os.Stat(mpdPath)
 	if err != nil {
 		return dashManifestInspection{}, fmt.Errorf("stat DASH manifest: %w", err)
@@ -347,7 +347,7 @@ func validateDASHTimelineDuration(end, scale uint64, sourceDuration int) error {
 	if seconds >= float64(math.MaxInt) {
 		return errors.New("DASH timeline duration overflows")
 	}
-	if err := media.ValidateTranscodedDuration(sourceDuration, int(math.Round(seconds))); err != nil {
+	if err := mediavo.ValidateTranscodedDuration(sourceDuration, int(math.Round(seconds))); err != nil {
 		return fmt.Errorf("segment timeline does not cover presentation: %w", err)
 	}
 	return nil

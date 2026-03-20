@@ -3,7 +3,9 @@ package rbac_test
 import (
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacservice "f_ccg_video_back_ddd/internal/domain/rbac/service"
+	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
 )
 
@@ -11,8 +13,8 @@ import (
 //
 // 权限覆盖判定必须使用与 Casbin 模型相同的 globMatch 语义；
 // 该集成测试位于 infrastructure 层，domain 层不依赖具体匹配器。
-func newEvaluator() *domain.PermissionEvaluator {
-	return domain.NewPermissionEvaluator(infra.NewGlobPathMatcher())
+func newEvaluator() *rbacservice.PermissionEvaluator {
+	return rbacservice.NewPermissionEvaluator(infra.NewGlobPathMatcher())
 }
 
 func TestPermissionCovers(t *testing.T) {
@@ -87,44 +89,44 @@ func TestPermissionCovers(t *testing.T) {
 }
 
 func TestCheckPermissionsAlreadyOwned(t *testing.T) {
-	owned := []domain.PermissionItem{
+	owned := []rbacvo.PermissionItem{
 		{Resource: "/v1/common/**", Action: "*"},
 	}
-	targets := []domain.PermissionItem{
+	targets := []rbacvo.PermissionItem{
 		{Resource: "/v1/common/**", Action: "GET"},
 	}
 
-	if err := newEvaluator().CheckAlreadyOwned(owned, targets); err != domain.ErrPermissionAlreadyOwned {
+	if err := newEvaluator().CheckAlreadyOwned(owned, targets); err != rbacerrors.ErrPermissionAlreadyOwned {
 		t.Fatalf("expected ErrPermissionAlreadyOwned, got %v", err)
 	}
 }
 
 func TestCheckInternalPermissionRedundancy(t *testing.T) {
-	items := []domain.PermissionItem{
+	items := []rbacvo.PermissionItem{
 		{Resource: "/v1/admin/**", Action: "*"},
 		{Resource: "/v1/admin/banner", Action: "GET"},
 	}
 
-	if err := newEvaluator().CheckInternalRedundancy(items); err != domain.ErrPermissionAlreadyOwned {
+	if err := newEvaluator().CheckInternalRedundancy(items); err != rbacerrors.ErrPermissionAlreadyOwned {
 		t.Fatalf("expected ErrPermissionAlreadyOwned, got %v", err)
 	}
 }
 
 func TestNormalizePermissionVariants(t *testing.T) {
 	// 三种入口对空列表采用不同的约定，需分别验证。
-	if got, err := domain.NormalizeNewPermissions(nil); err != nil || got != nil {
+	if got, err := rbacservice.NormalizeNewPermissions(nil); err != nil || got != nil {
 		t.Fatalf("NormalizeNewPermissions(nil) = (%v, %v), want (nil, nil)", got, err)
 	}
 
-	if got, err := domain.NormalizeReplacementPermissions(nil); err != nil || got == nil || len(got) != 0 {
+	if got, err := rbacservice.NormalizeReplacementPermissions(nil); err != nil || got == nil || len(got) != 0 {
 		t.Fatalf("NormalizeReplacementPermissions(nil) = (%v, %v), want (empty slice, nil)", got, err)
 	}
 
-	if _, err := domain.CollectPermissions(nil); err != domain.ErrPermissionsRequired {
+	if _, err := rbacservice.CollectPermissions(nil); err != rbacerrors.ErrPermissionsRequired {
 		t.Fatalf("CollectPermissions(nil) error = %v, want ErrPermissionsRequired", err)
 	}
 
-	if _, err := domain.CollectPermissions([]domain.PermissionItem{{Resource: " ", Action: "GET"}}); err != domain.ErrPermissionParamIncomplete {
+	if _, err := rbacservice.CollectPermissions([]rbacvo.PermissionItem{{Resource: " ", Action: "GET"}}); err != rbacerrors.ErrPermissionParamIncomplete {
 		t.Fatalf("CollectPermissions(blank resource) error = %v, want ErrPermissionParamIncomplete", err)
 	}
 }

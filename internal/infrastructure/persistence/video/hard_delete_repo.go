@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -22,9 +23,9 @@ const hardDeleteBatchSize = 500
 func (r *VideoRepository) HardDelete(
 	ctx context.Context,
 	videoIDs []uint,
-) (*domain.HardDeleteResult, []domain.StorageDeleteTarget, error) {
+) (*videorepo.HardDeleteResult, []videorepo.StorageDeleteTarget, error) {
 	db := gormx.DB(ctx, r.db)
-	result := &domain.HardDeleteResult{}
+	result := &videorepo.HardDeleteResult{}
 
 	targets, err := collectStorageDeleteTargets(db, videoIDs)
 	if err != nil {
@@ -178,7 +179,7 @@ func deleteTableByBatches(db *gorm.DB, table, whereColumn string, ids []uint) (i
 }
 
 // collectStorageDeleteTargets 收集待清理的对象存储目标（封面 + 视频资源 + 分P资源）。
-func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.StorageDeleteTarget, error) {
+func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]videorepo.StorageDeleteTarget, error) {
 	var videos []po.Video
 
 	if err := forEachIDBatch(videoIDs, func(batch []uint) error {
@@ -198,7 +199,7 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 	}
 
 	videoStorage := make(map[uint]enum.VideoStorageType, len(videos))
-	targets := make([]domain.StorageDeleteTarget, 0)
+	targets := make([]videorepo.StorageDeleteTarget, 0)
 	seen := make(map[string]struct{})
 
 	addTarget := func(storageType enum.VideoStorageType, storedPath string) {
@@ -214,7 +215,7 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 
 		seen[key] = struct{}{}
 
-		targets = append(targets, domain.StorageDeleteTarget{
+		targets = append(targets, videorepo.StorageDeleteTarget{
 			StorageType: storageType,
 			Path:        storedPath,
 		})
@@ -327,10 +328,10 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 func addDashPrefixTarget(
 	storageType enum.VideoStorageType,
 	manifestURL string,
-	targets *[]domain.StorageDeleteTarget,
+	targets *[]videorepo.StorageDeleteTarget,
 	seen map[string]struct{},
 ) {
-	prefix := domain.DashDirPrefix(manifestURL)
+	prefix := videovo.DashDirPrefix(manifestURL)
 	if prefix == "" {
 		return
 	}
@@ -342,7 +343,7 @@ func addDashPrefixTarget(
 
 	seen[key] = struct{}{}
 
-	*targets = append(*targets, domain.StorageDeleteTarget{
+	*targets = append(*targets, videorepo.StorageDeleteTarget{
 		StorageType:   storageType,
 		Path:          prefix,
 		DashDirPrefix: prefix,

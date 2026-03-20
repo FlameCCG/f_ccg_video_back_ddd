@@ -7,17 +7,17 @@
 package contentops
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/contentops"
+	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainBanner 把轮播图 PO 转为领域实体（字段逐一显式映射）。
-func toDomainBanner(row *po.Banner) *domain.Banner {
+func toDomainBanner(row *po.Banner) *contentopsentity.Banner {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Banner{
+	return &contentopsentity.Banner{
 		ID:          row.ID,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
@@ -33,12 +33,12 @@ func toDomainBanner(row *po.Banner) *domain.Banner {
 //
 // GORM Find 的空结果是非 nil 空切片，响应体序列化为 data:[]。
 // 未经 Find 的 nil 入参仍返回 nil，保留空值与空集合的区别。
-func toDomainBanners(rows []po.Banner) []domain.Banner {
+func toDomainBanners(rows []po.Banner) []contentopsentity.Banner {
 	if rows == nil {
 		return nil
 	}
 
-	out := make([]domain.Banner, 0, len(rows))
+	out := make([]contentopsentity.Banner, 0, len(rows))
 	for i := range rows {
 		out = append(out, *toDomainBanner(&rows[i]))
 	}
@@ -47,7 +47,7 @@ func toDomainBanners(rows []po.Banner) []domain.Banner {
 }
 
 // toPOBanner 把轮播图领域实体转为 PO。
-func toPOBanner(banner *domain.Banner) *po.Banner {
+func toPOBanner(banner *contentopsentity.Banner) *po.Banner {
 	if banner == nil {
 		return nil
 	}
@@ -67,7 +67,7 @@ func toPOBanner(banner *domain.Banner) *po.Banner {
 }
 
 // toPOBannerChanges 将部分更新集合转换为轮播图的 GORM 更新列。
-func toPOBannerChanges(changes domain.BannerChanges) map[string]any {
+func toPOBannerChanges(changes contentopsentity.BannerChanges) map[string]any {
 	updates := map[string]any{}
 	if changes.Cover != nil {
 		updates["cover"] = *changes.Cover

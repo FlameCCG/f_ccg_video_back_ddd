@@ -8,14 +8,16 @@ import (
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 )
 
 // UpdateService 改稿用例服务。
 type UpdateService struct {
 	txm         tx.Manager
-	videos      domain.VideoRepository
-	partitions  domain.PartitionRepository
+	videos      videorepo.VideoRepository
+	partitions  videorepo.PartitionRepository
 	schedule    ScheduleStore
 	authors     *AuthorService
 	vectors     *VectorSyncService
@@ -25,8 +27,8 @@ type UpdateService struct {
 // NewUpdateService 构造改稿用例服务。
 func NewUpdateService(
 	txm tx.Manager,
-	videos domain.VideoRepository,
-	partitions domain.PartitionRepository,
+	videos videorepo.VideoRepository,
+	partitions videorepo.PartitionRepository,
 	schedule ScheduleStore,
 	authors *AuthorService,
 	vectors *VectorSyncService,
@@ -54,16 +56,16 @@ func (s *UpdateService) UpdateVideo(
 	opts UpdateVideoOpts,
 ) (*UpdatedVideo, error) {
 	if opts.VideoID == 0 {
-		return nil, domain.ErrVideoIDRequired
+		return nil, videoerrors.ErrVideoIDRequired
 	}
 
 	var (
-		video     *domain.Video
-		tags      []domain.Tag
-		partition *domain.Partition
+		video     *videoentity.Video
+		tags      []videoentity.Tag
+		partition *videoentity.Partition
 	)
 	now := time.Now()
-	change := domain.Revision{
+	change := videoentity.Revision{
 		Title: opts.Title, Description: opts.Description, Cover: opts.CoverURL,
 		PartitionID: opts.PartitionID, IsOriginal: opts.IsOriginal,
 		IsPrivate: opts.IsPrivate, PublishTime: opts.PublishTime,
@@ -88,9 +90,9 @@ func (s *UpdateService) UpdateVideo(
 			}
 			if err := partition.EnsureSubmittable(); err != nil {
 				switch {
-				case errors.Is(err, domain.ErrPartitionNotFound):
+				case errors.Is(err, videoerrors.ErrPartitionNotFound):
 					return errPartitionMissing
-				case errors.Is(err, domain.ErrPartitionInactive):
+				case errors.Is(err, videoerrors.ErrPartitionInactive):
 					return errPartitionDisabled
 				default:
 					return err
@@ -115,7 +117,7 @@ func (s *UpdateService) UpdateVideo(
 		}
 		// 计划与状态同库提交；失败会一起回滚，不留下无发布任务的 Scheduled 视频。
 		if opts.IsPrivate != nil || opts.PublishTime != nil {
-			if opts.PublishTime != nil && domain.ShouldScheduleVideoPublish(now, *opts.PublishTime, video.Status == enum.VideoStatusPrivate) {
+			if opts.PublishTime != nil && videoentity.ShouldScheduleVideoPublish(now, *opts.PublishTime, video.Status == enum.VideoStatusPrivate) {
 				if err := s.schedule.Add(txCtx, video.ID, *opts.PublishTime); err != nil {
 					return err
 				}
@@ -143,9 +145,9 @@ func (s *UpdateService) contentReviewEnabled() bool {
 
 // buildUpdatedVideo 组装改稿响应体。
 func buildUpdatedVideo(
-	video *domain.Video,
-	tags []domain.Tag,
-	partition *domain.Partition,
+	video *videoentity.Video,
+	tags []videoentity.Tag,
+	partition *videoentity.Partition,
 ) *UpdatedVideo {
 	out := &UpdatedVideo{
 		ID:             video.ID,

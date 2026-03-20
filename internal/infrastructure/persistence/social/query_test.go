@@ -6,7 +6,8 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/social"
-	domain "f_ccg_video_back_ddd/internal/domain/social"
+	socialerrors "f_ccg_video_back_ddd/internal/domain/social/domainerr"
+	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/social"
 
@@ -95,7 +96,7 @@ func TestRelationQueryExistsAndRelation(t *testing.T) {
 		t.Errorf("relation(2,1) = %+v, want fans only", relation)
 	}
 
-	if got := query.Relation(ctx, 0, 2); got != (domain.Relation{}) {
+	if got := query.Relation(ctx, 0, 2); got != (socialentity.Relation{}) {
 		t.Errorf("relation(0,2) = %+v, want zero", got)
 	}
 }
@@ -119,7 +120,7 @@ func TestRelationQueryCounts(t *testing.T) {
 		t.Errorf("counts(2,false).FansCount = %d, want 1", counts.FansCount)
 	}
 
-	if got := query.Counts(ctx, 0, false); got != (domain.RelationCounts{}) {
+	if got := query.Counts(ctx, 0, false); got != (socialentity.RelationCounts{}) {
 		t.Errorf("counts(0) = %+v, want zero", got)
 	}
 }
@@ -206,7 +207,7 @@ func TestFocusRepositoryCreateAndDelete(t *testing.T) {
 	repo, _, _, _ := newFixture(t)
 	ctx := t.Context()
 
-	focus, err := domain.NewFocus(2, 3)
+	focus, err := socialentity.NewFocus(2, 3)
 	if err != nil {
 		t.Fatalf("NewFocus: %v", err)
 	}
@@ -219,9 +220,9 @@ func TestFocusRepositoryCreateAndDelete(t *testing.T) {
 		t.Error("Create 应回填自增 ID")
 	}
 
-	again, _ := domain.NewFocus(2, 3)
-	if err := repo.Create(ctx, again); !errors.Is(err, domain.ErrAlreadyFocused) {
-		t.Fatalf("重复关注 err = %v, want %v", err, domain.ErrAlreadyFocused)
+	again, _ := socialentity.NewFocus(2, 3)
+	if err := repo.Create(ctx, again); !errors.Is(err, socialerrors.ErrAlreadyFocused) {
+		t.Fatalf("重复关注 err = %v, want %v", err, socialerrors.ErrAlreadyFocused)
 	}
 
 	affected, err := repo.Delete(ctx, 2, 3)

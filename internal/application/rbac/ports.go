@@ -3,7 +3,7 @@ package rbac
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
 )
 
 // 端口阅读：应用经 Enforcer 访问授权引擎，经资源元数据与菜单建议端口使用外部能力。
@@ -61,12 +61,12 @@ type Enforcer interface {
 // 端口由应用层声明，适配器位于 interfaces，由 bootstrap 绑定，保持 interfaces → application 的依赖方向。
 type RouteLister interface {
 	// Routes 返回引擎注册的全部路由。
-	Routes() []domain.RouteInfo
+	Routes() []rbacentity.RouteInfo
 }
 
 // ResourceMetaLoader OpenAPI 资源说明加载端口（文件 IO + YAML 解析属基础设施关注点）。
 type ResourceMetaLoader interface {
 	// Load 读取并解析 OpenAPI 文档，返回以「METHOD path」为键的说明表。
 	// 失败时返回空表与错误，调用方降级为默认说明。
-	Load() (map[string]domain.ResourceMeta, error)
+	Load() (map[string]rbacentity.ResourceMeta, error)
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -86,7 +86,7 @@ func (q *UserRelationQuery) DynamicCount(ctx context.Context, userID uint) int64
 // ActionPrivacy 读取最近点赞/投币是否公开（配置缺失时默认公开）。
 func (q *UserRelationQuery) ActionPrivacy(ctx context.Context, userID uint) (app.UserActionPrivacy, error) {
 	if userID == 0 {
-		return app.UserActionPrivacy{}, domain.ErrUserIDRequired
+		return app.UserActionPrivacy{}, identityerrors.ErrUserIDRequired
 	}
 
 	type row struct {

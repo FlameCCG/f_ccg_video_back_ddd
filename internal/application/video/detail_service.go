@@ -3,7 +3,8 @@ package video
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 )
 
 // DetailService 视频详情用例服务。
@@ -33,7 +34,7 @@ func NewDetailService(
 // 用户自己的点赞/收藏/投币标记在 mergeDetail 中按请求补充，不能放入所有用户共享的 meta。
 func (s *DetailService) GetVideoDetail(ctx context.Context, videoID, viewerID uint) (*VideoDetail, error) {
 	if videoID == 0 {
-		return nil, domain.ErrVideoIDRequired
+		return nil, videoerrors.ErrVideoIDRequired
 	}
 
 	if meta, _ := s.meta.Load(ctx, videoID); meta != nil && meta.Status == videoStatusPublished {
@@ -73,7 +74,7 @@ func (s *DetailService) GetVideoDetail(ctx context.Context, videoID, viewerID ui
 // 管理端资源清单会解析 DASH MPD，展开各 Representation（分辨率/码率/文件名）。
 func (s *DetailService) GetVideoDetailAdmin(ctx context.Context, videoID uint) (*VideoDetail, error) {
 	if videoID == 0 {
-		return nil, domain.ErrVideoIDRequired
+		return nil, videoerrors.ErrVideoIDRequired
 	}
 
 	meta, stats, err := s.query.LoadAny(ctx, videoID)
@@ -97,7 +98,7 @@ func (s *DetailService) GetVideoDetailAdmin(ctx context.Context, videoID uint) (
 func (s *DetailService) loadForViewer(
 	ctx context.Context,
 	videoID, viewerID uint,
-) (*DetailMeta, *domain.Stats, error) {
+) (*DetailMeta, *videovo.Stats, error) {
 	meta, stats, err := s.query.LoadPublished(ctx, videoID)
 	if err == nil {
 		return meta, stats, nil
@@ -115,7 +116,7 @@ func (s *DetailService) loadForViewer(
 func (s *DetailService) mergeDetail(
 	ctx context.Context,
 	meta *DetailMeta,
-	stats *domain.Stats,
+	stats *videovo.Stats,
 	userID uint,
 ) *VideoDetail {
 	if meta == nil {
@@ -162,13 +163,13 @@ func (s *DetailService) mergeDetail(
 }
 
 // enrichDASHVariants 逐个解析 DASH 资源的 MPD（最佳努力，失败仅记录日志）。
-func (s *DetailService) enrichDASHVariants(ctx context.Context, resources []domain.ResourceBrief) {
+func (s *DetailService) enrichDASHVariants(ctx context.Context, resources []videovo.ResourceBrief) {
 	if len(resources) == 0 || s.dash == nil {
 		return
 	}
 
 	for i := range resources {
-		if !domain.IsDASHResource(resources[i]) {
+		if !videovo.IsDASHResource(resources[i]) {
 			continue
 		}
 
@@ -180,7 +181,7 @@ func (s *DetailService) enrichDASHVariants(ctx context.Context, resources []doma
 		resources[i].Variants = variants
 		// 父行：库内 bitrate 为 0 时展示最大视频码率。
 		if resources[i].Bitrate <= 0 {
-			if maxBr := domain.MaxVariantBitrateKbps(variants, "video"); maxBr > 0 {
+			if maxBr := videovo.MaxVariantBitrateKbps(variants, "video"); maxBr > 0 {
 				resources[i].Bitrate = maxBr
 			}
 		}

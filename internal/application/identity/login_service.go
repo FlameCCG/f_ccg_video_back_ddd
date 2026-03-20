@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/encrypt"
@@ -22,7 +24,7 @@ const (
 // LoginService 密码登录与令牌刷新用例服务。
 type LoginService struct {
 	cfgProvider  shared.ConfigReader
-	users        domain.UserAccountRepository
+	users        identityrepo.UserAccountRepository
 	roles        UserRoleQuery
 	tokens       *TokenService
 	folders      DefaultFolderEnsurer
@@ -34,7 +36,7 @@ type LoginService struct {
 // NewLoginService 构造密码登录服务。
 func NewLoginService(
 	cfgProvider shared.ConfigReader,
-	users domain.UserAccountRepository,
+	users identityrepo.UserAccountRepository,
 	roles UserRoleQuery,
 	tokens *TokenService,
 	folders DefaultFolderEnsurer,
@@ -115,11 +117,11 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 	}
 
 	if user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, identityerrors.ErrUserNotFound
 	}
 
 	if user.IsBanned() {
-		return nil, domain.ErrAccountBanned
+		return nil, identityerrors.ErrAccountBanned
 	}
 
 	token, err := s.tokens.Rotate(ctx, user, refreshToken, s.users)
@@ -139,7 +141,7 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 }
 
 // authenticate 校验账号密码与封禁状态；logScope 用于区分前台/后台登录日志。
-func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, logScope string) (*domain.User, error) {
+func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, logScope string) (*identityentity.User, error) {
 	user, err := s.users.FindByUsernameOrEmail(ctx, in.Identifier)
 	if err != nil {
 		s.logger.Error("query user error", zap.Error(err))
@@ -150,17 +152,17 @@ func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, logSc
 	if user == nil {
 		s.logger.Warn(logScope+" user not found", zap.String("username", in.Identifier))
 
-		return nil, domain.ErrCredentialsInvalid
+		return nil, identityerrors.ErrCredentialsInvalid
 	}
 
 	if !encrypt.ValidatePasswordHash(in.Password, user.Password) {
 		s.logger.Warn(logScope+" password error", zap.String("username", in.Identifier))
 
-		return nil, domain.ErrCredentialsInvalid
+		return nil, identityerrors.ErrCredentialsInvalid
 	}
 
 	if user.IsBanned() {
-		return nil, domain.ErrAccountBanned
+		return nil, identityerrors.ErrAccountBanned
 	}
 
 	return user, nil
@@ -169,7 +171,7 @@ func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, logSc
 // finishLogin 兜底创建默认收藏夹、异步记录登录 IP，并签发令牌。
 func (s *LoginService) finishLogin(
 	ctx context.Context,
-	user *domain.User,
+	user *identityentity.User,
 	in PwdLoginInput,
 	loginType string,
 ) (*jwts.JwtToken, error) {

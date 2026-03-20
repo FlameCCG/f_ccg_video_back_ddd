@@ -3,7 +3,8 @@ package media
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 
 	"go.uber.org/zap"
 )
@@ -13,15 +14,15 @@ import (
 // 视频被硬删除时：先同步取消本实例在途任务（登记表），再向其它实例广播；
 // Redis 不可用时只做本地取消并记日志。
 type CancelService struct {
-	registry    *domain.TaskRegistry
-	broadcaster domain.CancelBroadcaster
+	registry    *mediaruntime.TaskRegistry
+	broadcaster mediaport.CancelBroadcaster
 	logger      *zap.Logger
 }
 
 // NewCancelService 构造转码取消协调服务。
 func NewCancelService(
-	registry *domain.TaskRegistry,
-	broadcaster domain.CancelBroadcaster,
+	registry *mediaruntime.TaskRegistry,
+	broadcaster mediaport.CancelBroadcaster,
 	logger *zap.Logger,
 ) *CancelService {
 	return &CancelService{registry: registry, broadcaster: broadcaster, logger: logger}
@@ -29,7 +30,7 @@ func NewCancelService(
 
 // NotifyVideoDeleted 取消本地在途任务并广播取消事件。
 func (s *CancelService) NotifyVideoDeleted(ctx context.Context, videoIDs []uint) error {
-	ids := domain.NormalizeVideoIDs(videoIDs)
+	ids := mediaruntime.NormalizeVideoIDs(videoIDs)
 	if len(ids) == 0 {
 		return nil
 	}

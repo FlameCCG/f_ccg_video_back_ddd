@@ -8,17 +8,17 @@
 package identity
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainUser 把用户 PO 转为领域实体。
-func toDomainUser(row *po.User) *domain.User {
+func toDomainUser(row *po.User) *identityentity.User {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.User{
+	return &identityentity.User{
 		ID:                 row.ID,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
@@ -46,12 +46,12 @@ func toDomainUser(row *po.User) *domain.User {
 }
 
 // toDomainBanRecord 把封禁记录 PO 转为领域实体。
-func toDomainBanRecord(row *po.UserBanRecord) *domain.BanRecord {
+func toDomainBanRecord(row *po.UserBanRecord) *identityentity.BanRecord {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.BanRecord{
+	return &identityentity.BanRecord{
 		ID:         row.ID,
 		CreatedAt:  row.CreatedAt,
 		UpdatedAt:  row.UpdatedAt,
@@ -67,7 +67,7 @@ func toDomainBanRecord(row *po.UserBanRecord) *domain.BanRecord {
 }
 
 // toPOBanRecord 把封禁记录领域实体转为 PO。
-func toPOBanRecord(record *domain.BanRecord) *po.UserBanRecord {
+func toPOBanRecord(record *identityentity.BanRecord) *po.UserBanRecord {
 	if record == nil {
 		return nil
 	}

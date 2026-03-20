@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
-	domain "f_ccg_video_back_ddd/internal/domain/platform"
+	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -40,15 +40,15 @@ func (s *HotRankStore) Size(ctx context.Context) (int64, error) {
 }
 
 // Entries 返回榜单全部成员及分值（ZRANGE 0 -1 WITHSCORES）。
-func (s *HotRankStore) Entries(ctx context.Context) ([]domain.HotRankEntry, error) {
+func (s *HotRankStore) Entries(ctx context.Context) ([]platformservice.HotRankEntry, error) {
 	members, err := s.redis.ZRangeWithScores(ctx, constants.VideoHotRankZSetKey, 0, -1).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
 
-	entries := make([]domain.HotRankEntry, 0, len(members))
+	entries := make([]platformservice.HotRankEntry, 0, len(members))
 	for _, member := range members {
-		entries = append(entries, domain.HotRankEntry{
+		entries = append(entries, platformservice.HotRankEntry{
 			// go-redis 返回的成员类型为 any，使用 fmt.Sprint 归一化为字符串。
 			Member: fmt.Sprint(member.Member),
 			Score:  member.Score,
@@ -59,7 +59,7 @@ func (s *HotRankStore) Entries(ctx context.Context) ([]domain.HotRankEntry, erro
 }
 
 // ApplyDecay 在同一管线内按入参顺序写回新分值或移出成员。
-func (s *HotRankStore) ApplyDecay(ctx context.Context, updates []domain.HotRankUpdate) error {
+func (s *HotRankStore) ApplyDecay(ctx context.Context, updates []platformservice.HotRankUpdate) error {
 	if len(updates) == 0 {
 		return nil
 	}

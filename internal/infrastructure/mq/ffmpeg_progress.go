@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
 )
 
 // attachFFmpegProgress 把 cmd.Stderr 接到一个 tee 上：既缓存错误文本，又解析进度。
@@ -19,7 +19,7 @@ import (
 // 会注入 "-progress pipe:2"，使 FFmpeg 即便在 -loglevel error 下也向 stderr 输出进度。
 func attachFFmpegProgress(
 	cmd *exec.Cmd,
-	onProgress media.ProgressCallback,
+	onProgress mediaruntime.ProgressCallback,
 ) (stderrBuf *strings.Builder, afterStart func(), waitProgress func()) {
 	if cmd == nil {
 		b := &strings.Builder{}
@@ -28,7 +28,7 @@ func attachFFmpegProgress(
 	}
 
 	// 确保进度写到 stderr (fd 2)。
-	cmd.Args = media.InjectFFmpegProgressArgs(cmd.Args)
+	cmd.Args = mediaruntime.InjectFFmpegProgressArgs(cmd.Args)
 
 	pr, pw := io.Pipe()
 	cmd.Stderr = pw
@@ -58,7 +58,7 @@ func attachFFmpegProgress(
 }
 
 // parseFFmpegProgressStream 逐行读取 FFmpeg stderr：缓存错误文本并按节流回调进度。
-func parseFFmpegProgressStream(r io.Reader, errBuf *strings.Builder, onProgress media.ProgressCallback) {
+func parseFFmpegProgressStream(r io.Reader, errBuf *strings.Builder, onProgress mediaruntime.ProgressCallback) {
 	scanner := bufio.NewScanner(r)
 	// FFmpeg 进度行很短；放宽上限以容纳错误转储。
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -76,10 +76,10 @@ func parseFFmpegProgressStream(r io.Reader, errBuf *strings.Builder, onProgress 
 			}
 		}
 
-		outSec, ok := media.ParseFFmpegProgressLine(line)
+		outSec, ok := mediaruntime.ParseFFmpegProgressLine(line)
 		if !ok {
 			// 兼容经典 stderr "time=HH:MM:SS.xx"
-			if sec, ok2 := media.ParseFFmpegTimeEquals(line); ok2 {
+			if sec, ok2 := mediaruntime.ParseFFmpegTimeEquals(line); ok2 {
 				outSec, ok = sec, true
 			}
 		}
@@ -104,27 +104,12 @@ func parseFFmpegProgressStream(r io.Reader, errBuf *strings.Builder, onProgress 
 	}
 }
 
-// progressCbFromTracker 返回绑定 tracker 与 ctx 的阶段级进度回调。
-func progressCbFromTracker(ctx context.Context, tracker *media.TranscodeProgressTracker) media.ProgressCallback {
-	if tracker == nil {
-		return nil
-	}
-
-	return func(outTimeSec float64) {
-		if ctx != nil && ctx.Err() != nil {
-			return
-		}
-
-		tracker.UpdateFFmpegProgress(ctx, outTimeSec)
-	}
-}
-
 // progressCbForPipeline 返回绑定 tracker 与某条管线的进度回调。
 func progressCbForPipeline(
 	ctx context.Context,
-	tracker *media.TranscodeProgressTracker,
+	tracker *mediaruntime.TranscodeProgressTracker,
 	pipeline string,
-) media.ProgressCallback {
+) mediaruntime.ProgressCallback {
 	if tracker == nil || pipeline == "" {
 		return nil
 	}

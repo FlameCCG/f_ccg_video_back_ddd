@@ -2,7 +2,7 @@ package search
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -27,7 +27,7 @@ func buildVideoQuery(keyword string) elastic.Query {
 		return elastic.NewMatchAllQuery()
 	}
 
-	lower := domain.LowerKeyword(keyword)
+	lower := searchvo.LowerKeyword(keyword)
 	should := []elastic.Query{
 		elastic.NewMatchQuery("title", keyword).Boost(5).MinimumShouldMatch("80%"),
 		elastic.NewMatchQuery("title.pinyin", keyword).Boost(3),
@@ -38,7 +38,7 @@ func buildVideoQuery(keyword string) elastic.Query {
 	}
 
 	// 中间片段匹配（如标题/标签内嵌 id 段），复用 keyword 倒排，不新增 ngram 字段。
-	if escaped, ok := domain.EscapeESWildcard(lower); ok {
+	if escaped, ok := searchvo.EscapeESWildcard(lower); ok {
 		should = append(should,
 			elastic.NewWildcardQuery("title.keyword", "*"+escaped+"*").Boost(2),
 			elastic.NewWildcardQuery("tags.keyword", "*"+escaped+"*").Boost(2),
@@ -53,7 +53,7 @@ func buildUserQuery(keyword string) elastic.Query {
 		return elastic.NewMatchAllQuery()
 	}
 
-	lower := domain.LowerKeyword(keyword)
+	lower := searchvo.LowerKeyword(keyword)
 	should := []elastic.Query{
 		elastic.NewTermQuery("username.keyword", lower).Boost(10),
 		elastic.NewPrefixQuery("username.keyword", lower).Boost(8),
@@ -62,7 +62,7 @@ func buildUserQuery(keyword string) elastic.Query {
 	}
 
 	// 支持 c / ce / ce6 命中 毛民_ce6ffa… 这类中间片段。
-	if escaped, ok := domain.EscapeESWildcard(lower); ok {
+	if escaped, ok := searchvo.EscapeESWildcard(lower); ok {
 		should = append(should, elastic.NewWildcardQuery("username.keyword", "*"+escaped+"*").Boost(4))
 	}
 
@@ -85,15 +85,15 @@ func buildHighlight(fields []string) *elastic.Highlight {
 }
 
 func applyVideoSortToSource(source *elastic.SearchSource, sortField, sortOrder int) {
-	ascending := sortOrder == domain.SortOrderAsc
+	ascending := sortOrder == searchvo.SortOrderAsc
 
 	switch sortField {
-	case domain.VideoSortViews:
+	case searchvo.VideoSortViews:
 		// 非相关性排序时，先按业务字段排，再按 _score 兜底，保证同值时更相关的内容优先。
 		source.Sort("views", ascending)
-	case domain.VideoSortDanmu:
+	case searchvo.VideoSortDanmu:
 		source.Sort("danmu_count", ascending)
-	case domain.VideoSortDuration:
+	case searchvo.VideoSortDuration:
 		source.Sort("duration", ascending)
 	default:
 		// 相关性排序直接按 ES 默认 _score 倒序。
@@ -106,15 +106,15 @@ func applyVideoSortToSource(source *elastic.SearchSource, sortField, sortOrder i
 }
 
 func applyUserSortToSource(source *elastic.SearchSource, sortField, sortOrder int) {
-	ascending := sortOrder == domain.SortOrderAsc
+	ascending := sortOrder == searchvo.SortOrderAsc
 
 	switch sortField {
-	case domain.UserSortFollowers:
+	case searchvo.UserSortFollowers:
 		// 非相关性排序时，先按业务字段排，再按 _score 兜底，保证同值时更相关的用户优先。
 		source.Sort("follower_count", ascending)
-	case domain.UserSortLevel:
+	case searchvo.UserSortLevel:
 		source.Sort("level", ascending)
-	case domain.UserSortCreatedAt:
+	case searchvo.UserSortCreatedAt:
 		source.Sort("created_at", ascending)
 	default:
 		// 相关性排序直接按 ES 默认 _score 倒序。
@@ -166,7 +166,7 @@ func buildUserSearchRequest(opts app.SearchOptions, from int) *elastic.SearchReq
 
 // suggestIndexFor 返回联想查询命中的索引名。
 func suggestIndexFor(docType string) string {
-	if docType == domain.DocTypeUser {
+	if docType == searchvo.DocTypeUser {
 		return constants.UserSearchIndex
 	}
 
@@ -175,14 +175,14 @@ func suggestIndexFor(docType string) string {
 
 // suggestPublishedOnly 报告该联想维度是否只取已发布视频（用户维度不过滤）。
 func suggestPublishedOnly(docType string) bool {
-	return docType != domain.DocTypeUser
+	return docType != searchvo.DocTypeUser
 }
 
 func suggestSourceFields(docType string) []string {
 	switch docType {
-	case domain.DocTypeUser:
+	case searchvo.DocTypeUser:
 		return []string{"username"}
-	case domain.DocTypeTag:
+	case searchvo.DocTypeTag:
 		return []string{"tags"}
 	default:
 		return []string{"title"}
@@ -193,9 +193,9 @@ func suggestSourceFields(docType string) []string {
 // 通配仅在 keyword 上做，避免新增 ngram 字段带来的空间膨胀。
 func buildSuggestQuery(docType, keyword string) elastic.Query {
 	switch docType {
-	case domain.DocTypeUser:
+	case searchvo.DocTypeUser:
 		return buildSuggestFieldQuery(keyword, "username", "username.keyword", "username.pinyin")
-	case domain.DocTypeTag:
+	case searchvo.DocTypeTag:
 		return buildSuggestFieldQuery(keyword, "tags", "tags.keyword", "tags.pinyin")
 	default:
 		return buildSuggestFieldQuery(keyword, "title", "title.keyword", "title.pinyin")
@@ -203,7 +203,7 @@ func buildSuggestQuery(docType, keyword string) elastic.Query {
 }
 
 func buildSuggestFieldQuery(keyword, textField, keywordField, pinyinField string) elastic.Query {
-	lower := domain.LowerKeyword(keyword)
+	lower := searchvo.LowerKeyword(keyword)
 	if lower == "" {
 		return elastic.NewMatchNoneQuery()
 	}
@@ -217,7 +217,7 @@ func buildSuggestFieldQuery(keyword, textField, keywordField, pinyinField string
 	}
 
 	// 中间片段：毛民_ce6ffa… 用 c/ce/ce6 命中。短查询也允许，靠 _score + size 控制噪音。
-	if escaped, ok := domain.EscapeESWildcard(lower); ok {
+	if escaped, ok := searchvo.EscapeESWildcard(lower); ok {
 		should = append(should, elastic.NewWildcardQuery(keywordField, "*"+escaped+"*").Boost(4))
 	}
 

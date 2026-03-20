@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -13,9 +15,9 @@ import (
 
 // ReportService 举报用例服务。
 type ReportService struct {
-	videos   domain.VideoRepository
-	danmus   domain.DanmuRepository
-	reports  domain.ReportRepository
+	videos   videorepo.VideoRepository
+	danmus   videorepo.DanmuRepository
+	reports  videorepo.ReportRepository
 	query    ReportQuery
 	notify   NotifySourceQuery
 	notifier VideoNotifier
@@ -25,9 +27,9 @@ type ReportService struct {
 
 // NewReportService 构造举报用例服务。
 func NewReportService(
-	videos domain.VideoRepository,
-	danmus domain.DanmuRepository,
-	reports domain.ReportRepository,
+	videos videorepo.VideoRepository,
+	danmus videorepo.DanmuRepository,
+	reports videorepo.ReportRepository,
 	query ReportQuery,
 	notify NotifySourceQuery,
 	notifier VideoNotifier,
@@ -54,21 +56,21 @@ func (s *ReportService) CreateVideoReport(
 	images []string,
 ) (*VideoReportDTO, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
 	if videoID == 0 {
-		return nil, domain.ErrVideoIDRequired
+		return nil, videoerrors.ErrVideoIDRequired
 	}
 
-	reason, detail, err := domain.NormalizeReportInput(reason, detail)
+	reason, detail, err := videoentity.NormalizeReportInput(reason, detail)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := s.videos.EnsurePublished(ctx, videoID); err != nil {
 		if isRecordNotFound(err) {
-			return nil, domain.ErrVideoNotPublished
+			return nil, videoerrors.ErrVideoNotPublished
 		}
 
 		return nil, err
@@ -76,10 +78,10 @@ func (s *ReportService) CreateVideoReport(
 
 	reporter, ok := s.notify.ActionUser(ctx, userID)
 	if !ok {
-		return nil, domain.ErrUserNotFound
+		return nil, videoerrors.ErrUserNotFound
 	}
 
-	report := &domain.VideoReport{
+	report := &videoentity.VideoReport{
 		ReporterUsername: reporter.Username,
 		VideoID:          videoID,
 		Reason:           reason,
@@ -112,14 +114,14 @@ func (s *ReportService) CreateDanmuReport(
 	reason, detail string,
 ) (*DanmuReportDTO, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
 	if danmuID == 0 {
-		return nil, domain.ErrDanmuIDRequired
+		return nil, videoerrors.ErrDanmuIDRequired
 	}
 
-	reason, detail, err := domain.NormalizeReportInput(reason, detail)
+	reason, detail, err := videoentity.NormalizeReportInput(reason, detail)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +133,7 @@ func (s *ReportService) CreateDanmuReport(
 
 	if err := s.videos.EnsurePublished(ctx, danmu.VideoID); err != nil {
 		if isRecordNotFound(err) {
-			return nil, domain.ErrVideoNotPublished
+			return nil, videoerrors.ErrVideoNotPublished
 		}
 
 		return nil, err
@@ -139,10 +141,10 @@ func (s *ReportService) CreateDanmuReport(
 
 	reporter, ok := s.notify.ActionUser(ctx, userID)
 	if !ok {
-		return nil, domain.ErrUserNotFound
+		return nil, videoerrors.ErrUserNotFound
 	}
 
-	report := &domain.DanmuReport{
+	report := &videoentity.DanmuReport{
 		ReporterUsername: reporter.Username,
 		VideoID:          danmu.VideoID,
 		DanmuID:          danmu.ID,
@@ -190,23 +192,23 @@ func (s *ReportService) AdminDanmuReports(
 
 // ValidateReportListStatus 校验举报列表筛选状态（0 表示不筛选）。
 func (s *ReportService) ValidateReportListStatus(status enum.ReportStatus) error {
-	return domain.ValidateReportListStatus(status)
+	return videoentity.ValidateReportListStatus(status)
 }
 
 // HandleReports 管理员批量处理举报记录，并异步通知举报人。
 func (s *ReportService) HandleReports(
 	ctx context.Context,
-	handleType domain.ReportHandleType,
+	handleType videoentity.ReportHandleType,
 	reportIDs []uint,
 	status enum.ReportStatus,
 	handleNote string,
 	handlerID uint,
 ) (int64, error) {
 	if len(reportIDs) == 0 {
-		return 0, domain.ErrReportIDsRequired
+		return 0, videoerrors.ErrReportIDsRequired
 	}
 
-	note, err := domain.ValidateReportHandle(status, handleNote)
+	note, err := videoentity.ValidateReportHandle(status, handleNote)
 	if err != nil {
 		return 0, err
 	}
@@ -216,12 +218,12 @@ func (s *ReportService) HandleReports(
 	var resultRows int64
 
 	switch handleType {
-	case domain.ReportHandleTypeVideo:
+	case videoentity.ReportHandleTypeVideo:
 		resultRows, err = s.reports.HandleVideoReports(ctx, reportIDs, status, note, handlerID, now)
-	case domain.ReportHandleTypeDanmu:
+	case videoentity.ReportHandleTypeDanmu:
 		resultRows, err = s.reports.HandleDanmuReports(ctx, reportIDs, status, note, handlerID, now)
 	default:
-		return 0, domain.ErrReportTypeInvalid
+		return 0, videoerrors.ErrReportTypeInvalid
 	}
 
 	if err != nil {
@@ -240,7 +242,7 @@ func (s *ReportService) HandleReports(
 // notifyReportHandled 向举报人批量发送处理结果系统通知。
 func (s *ReportService) notifyReportHandled(
 	ctx context.Context,
-	handleType domain.ReportHandleType,
+	handleType videoentity.ReportHandleType,
 	reportIDs []uint,
 	status enum.ReportStatus,
 	handleNote string,
@@ -250,7 +252,7 @@ func (s *ReportService) notifyReportHandled(
 		return
 	}
 
-	text, ok := domain.BuildReportHandledNotification(handleType, status, handleNote)
+	text, ok := videoentity.BuildReportHandledNotification(handleType, status, handleNote)
 	if !ok {
 		return
 	}

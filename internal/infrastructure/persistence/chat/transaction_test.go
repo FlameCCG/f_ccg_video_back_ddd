@@ -5,7 +5,8 @@ import (
 	"testing"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/chat"
+	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
@@ -21,7 +22,7 @@ func TestSendMessageTransaction(t *testing.T) {
 			mtest.CreateCommandErrorResponse(mtest.CommandError{Code: 121, Message: "summary rejected"}),
 			mtest.CreateSuccessResponse(),
 		)
-		msg := &domain.Message{ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: domain.MessageTypeText, Text: "hello", CreatedAt: time.Now()}
+		msg := &chatentity.Message{ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "hello", CreatedAt: time.Now()}
 		if err := store.SendMessage(context.Background(), msg, "hello"); err == nil {
 			mt.Fatal("expected summary error")
 		}
@@ -44,11 +45,11 @@ func TestSendMessageTransaction(t *testing.T) {
 		now := time.Now().Truncate(time.Millisecond)
 		mt.AddMockResponses(
 			mtest.CreateCursorResponse(0, mt.DB.Name()+"."+chatMessagesCol, mtest.FirstBatch, bson.D{
-				{Key: "_id", Value: oid}, {Key: fieldConversationID, Value: "1_2"}, {Key: fieldSenderID, Value: 1}, {Key: fieldReceiverID, Value: 2}, {Key: "type", Value: domain.MessageTypeText}, {Key: "text", Value: "hello"}, {Key: fieldCreatedAt, Value: now},
+				{Key: "_id", Value: oid}, {Key: fieldConversationID, Value: "1_2"}, {Key: fieldSenderID, Value: 1}, {Key: fieldReceiverID, Value: 2}, {Key: "type", Value: chatentity.MessageTypeText}, {Key: "text", Value: "hello"}, {Key: fieldCreatedAt, Value: now},
 			}),
 			mtest.CreateSuccessResponse(),
 		)
-		msg := &domain.Message{ID: oid.Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: domain.MessageTypeText, Text: "hello"}
+		msg := &chatentity.Message{ID: oid.Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "hello"}
 		if err := NewStore(mt.DB).SendMessage(context.Background(), msg, "hello"); err != nil {
 			mt.Fatal(err)
 		}

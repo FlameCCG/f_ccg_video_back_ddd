@@ -5,7 +5,11 @@ import (
 	"fmt"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identityservice "f_ccg_video_back_ddd/internal/domain/identity/service"
+	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/constants"
@@ -33,7 +37,7 @@ const (
 type OAuthLoginService struct {
 	cfgProvider  shared.ConfigReader
 	txm          tx.Manager
-	users        domain.UserAccountRepository
+	users        identityrepo.UserAccountRepository
 	roles        UserRoleQuery
 	binder       UserRoleBinder
 	states       OAuthStateStore
@@ -52,7 +56,7 @@ type OAuthLoginService struct {
 func NewOAuthLoginService(
 	cfgProvider shared.ConfigReader,
 	txm tx.Manager,
-	users domain.UserAccountRepository,
+	users identityrepo.UserAccountRepository,
 	roles UserRoleQuery,
 	binder UserRoleBinder,
 	states OAuthStateStore,
@@ -134,7 +138,7 @@ func (s *OAuthLoginService) Login(ctx context.Context, in OAuthLoginInput) (*jwt
 		return nil, ErrOAuthProviderFailed
 	}
 
-	user, err := s.findOrCreateUser(ctx, domain.OAuthProfile{
+	user, err := s.findOrCreateUser(ctx, identityvo.OAuthProfile{
 		RegisterSource: in.Provider,
 		OpenID:         info.OpenID,
 		Email:          info.Email,
@@ -173,7 +177,7 @@ func (s *OAuthLoginService) fetchUser(ctx context.Context, in OAuthLoginInput) (
 // findOrCreateUser 按 openID+来源、再按邮箱查找账号；均不存在时创建新账号。
 //
 // 负责 OAuth 用户查找、创建、事务写入与 Casbin 权限补偿。
-func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain.OAuthProfile) (*domain.User, error) {
+func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile identityvo.OAuthProfile) (*identityentity.User, error) {
 	profile, err := profile.Normalize()
 	if err != nil {
 		return nil, err
@@ -204,8 +208,8 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain
 		return user, nil
 	}
 
-	created := &domain.User{
-		Username:       domain.GenerateUsername(),
+	created := &identityentity.User{
+		Username:       identityservice.GenerateUsername(),
 		Email:          email,
 		Avatar:         profile.Avatar,
 		OpenID:         profile.OpenID,
@@ -252,11 +256,11 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain
 // completeLogin 校验封禁状态、异步记录登录并签发令牌。
 func (s *OAuthLoginService) completeLogin(
 	ctx context.Context,
-	user *domain.User,
+	user *identityentity.User,
 	in OAuthLoginInput,
 ) (*jwts.JwtToken, error) {
 	if user.IsBanned() {
-		return nil, domain.ErrAccountBanned
+		return nil, identityerrors.ErrAccountBanned
 	}
 
 	// 角色关联不可读时拒绝登录。

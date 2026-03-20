@@ -2,12 +2,12 @@ package chat
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/chat"
-	domain "f_ccg_video_back_ddd/internal/domain/chat"
+	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 )
 
 // toPOMedia 领域媒体信息 → Mongo 文档结构。
-func toPOMedia(media *domain.Media) *mongopo.ChatMessageMedia {
+func toPOMedia(media *chatentity.Media) *mongopo.ChatMessageMedia {
 	if media == nil {
 		return nil
 	}
@@ -71,12 +71,12 @@ func toLastMessageItem(last *mongopo.ChatConversationLastMessage) *app.LastMessa
 }
 
 // toDomainLastMessage Mongo 会话摘要 → 领域摘要。
-func toDomainLastMessage(last *mongopo.ChatConversationLastMessage) *domain.LastMessage {
+func toDomainLastMessage(last *mongopo.ChatConversationLastMessage) *chatentity.LastMessage {
 	if last == nil {
 		return nil
 	}
 
-	return &domain.LastMessage{
+	return &chatentity.LastMessage{
 		MsgID:     last.MsgID.Hex(),
 		Type:      last.Type,
 		Preview:   last.Preview,
@@ -86,12 +86,12 @@ func toDomainLastMessage(last *mongopo.ChatConversationLastMessage) *domain.Last
 }
 
 // toDomainConversation Mongo 会话文档 → 领域聚合。
-func toDomainConversation(row *mongopo.ChatConversation) *domain.Conversation {
+func toDomainConversation(row *mongopo.ChatConversation) *chatentity.Conversation {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Conversation{
+	return &chatentity.Conversation{
 		ID:          row.ID,
 		MemberA:     toDomainMember(row.MemberA),
 		MemberB:     toDomainMember(row.MemberB),
@@ -101,8 +101,8 @@ func toDomainConversation(row *mongopo.ChatConversation) *domain.Conversation {
 	}
 }
 
-func toDomainMember(member mongopo.ChatConversationMember) domain.Member {
-	return domain.Member{
+func toDomainMember(member mongopo.ChatConversationMember) chatentity.Member {
+	return chatentity.Member{
 		UserID:  member.UserID,
 		Unread:  member.Unread,
 		Visible: member.Visible,

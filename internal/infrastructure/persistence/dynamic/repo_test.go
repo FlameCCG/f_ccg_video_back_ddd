@@ -6,7 +6,9 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/dynamic"
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
+	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
+	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/dynamic"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -142,7 +144,7 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 
-	created, err := domain.NewDynamic(1, "  hello  ", " img.png ")
+	created, err := dynamicentity.NewDynamic(1, "  hello  ", " img.png ")
 	if err != nil {
 		t.Fatalf("NewDynamic: %v", err)
 	}
@@ -297,7 +299,7 @@ func TestReadRepository(t *testing.T) {
 	}
 
 	at := time.Now().Add(-time.Hour).Truncate(time.Second)
-	record := &domain.ReadRecord{
+	record := &dynamicentity.ReadRecord{
 		UserID:           2,
 		AuthorID:         1,
 		LastReadWorkType: enum.WorkTypeDynamic,
@@ -452,7 +454,7 @@ func TestFeedQuery(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 
-	sources := domain.BuildFeedSources(0)
+	sources := dynamicvo.BuildFeedSources(0)
 
 	rows, err := f.feed.ListAuthorWorks(ctx, app.AuthorFeedParams{
 		AuthorID:       1,
@@ -501,14 +503,14 @@ func TestFeedQuery(t *testing.T) {
 
 	// 仅视频 / 仅动态。
 	rows, err = f.feed.ListAuthorWorks(ctx, app.AuthorFeedParams{
-		AuthorID: 1, AuthorUsername: "alice", Sources: domain.BuildFeedSources(1), Limit: 10,
+		AuthorID: 1, AuthorUsername: "alice", Sources: dynamicvo.BuildFeedSources(1), Limit: 10,
 	})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("仅视频 = %d 行, %v", len(rows), err)
 	}
 
 	rows, err = f.feed.ListAuthorWorks(ctx, app.AuthorFeedParams{
-		AuthorID: 1, AuthorUsername: "alice", Sources: domain.BuildFeedSources(2), Limit: 10,
+		AuthorID: 1, AuthorUsername: "alice", Sources: dynamicvo.BuildFeedSources(2), Limit: 10,
 	})
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("仅动态 = %d 行, %v", len(rows), err)
@@ -562,7 +564,7 @@ func TestFeedQueryOwnerViewIncludesUnpublished(t *testing.T) {
 	}
 
 	params := app.AuthorFeedParams{
-		AuthorID: 1, AuthorUsername: "alice", Sources: domain.BuildFeedSources(1), Limit: 10,
+		AuthorID: 1, AuthorUsername: "alice", Sources: dynamicvo.BuildFeedSources(1), Limit: 10,
 	}
 
 	rows, err := f.feed.ListAuthorWorks(ctx, params)
@@ -671,8 +673,8 @@ func TestFeedServiceFollowingAggregate(t *testing.T) {
 		})
 	}
 
-	if _, _, err := service.ListFeed(ctx, 0, 0, 0, 1, 20); err != domain.ErrUserNotLogin {
-		t.Fatalf("anonymous following feed error = %v, want %v", err, domain.ErrUserNotLogin)
+	if _, _, err := service.ListFeed(ctx, 0, 0, 0, 1, 20); err != dynamicerrors.ErrUserNotLogin {
+		t.Fatalf("anonymous following feed error = %v, want %v", err, dynamicerrors.ErrUserNotLogin)
 	}
 }
 

@@ -12,7 +12,8 @@ import (
 	"time"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	arkrtmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -98,7 +99,7 @@ func (g *responseReadGate) Read(buffer []byte) (int, error) {
 
 // parseAPIError 把上游错误响应解析为领域 APIError。
 func parseAPIError(statusCode int, body []byte) error {
-	apiErr := &domain.APIError{
+	apiErr := &aierrors.APIError{
 		StatusCode: statusCode,
 		Body:       strings.TrimSpace(string(body)),
 	}
@@ -113,7 +114,7 @@ func parseAPIError(statusCode int, body []byte) error {
 
 	if err := json.Unmarshal(body, &payload); err == nil {
 		apiErr.Code = strings.TrimSpace(payload.Error.Code)
-		apiErr.Message = domain.FirstNonEmpty(
+		apiErr.Message = aivo.FirstNonEmpty(
 			strings.TrimSpace(payload.Error.Message),
 			strings.TrimSpace(payload.Message),
 		)
@@ -134,7 +135,7 @@ func wrapArkError(err error) error {
 
 	var apiErr *arkrtmodel.APIError
 	if errors.As(err, &apiErr) && apiErr != nil {
-		return &domain.APIError{
+		return &aierrors.APIError{
 			StatusCode: apiErr.HTTPStatusCode,
 			Code:       apiErr.Code,
 			Message:    apiErr.Message,
@@ -144,7 +145,7 @@ func wrapArkError(err error) error {
 
 	var reqErr *arkrtmodel.RequestError
 	if errors.As(err, &reqErr) && reqErr != nil {
-		return &domain.APIError{
+		return &aierrors.APIError{
 			StatusCode: reqErr.HTTPStatusCode,
 			Message:    reqErr.Error(),
 			Body:       reqErr.Error(),

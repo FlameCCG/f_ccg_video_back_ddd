@@ -9,7 +9,7 @@ import (
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 
 	"go.uber.org/zap"
 )
@@ -20,7 +20,7 @@ const defaultSchedulerInterval = 5 * time.Second
 // Scheduler 视频定时发布调度器，由 bootstrap 加入 App 的后台组件序列，统一管理启停顺序。
 type Scheduler struct {
 	txm         tx.Manager
-	videos      domain.VideoRepository
+	videos      videorepo.VideoRepository
 	store       ScheduleStore
 	vectors     *VectorSyncService
 	cfgProvider shared.ConfigReader
@@ -36,7 +36,7 @@ type Scheduler struct {
 // NewScheduler 构造视频定时发布调度器。
 func NewScheduler(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos videorepo.VideoRepository,
 	store ScheduleStore,
 	vectors *VectorSyncService,
 	cfgProvider shared.ConfigReader,
@@ -161,42 +161,36 @@ func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) 
 		if err != nil {
 			return err
 		}
+		if video.IsPublished() {
+			drop = true
+			return nil // 已发布稿件保留原计划时间。
+		}
+		var publishAt *time.Time
+		var previousStatus enum.VideoStatus
 		if video != nil {
-			if video.Status == enum.VideoStatusPublished {
-				drop = true
-				return nil // 其它实例已发布，保留原计划时间，不能把历史信息当作过期任务清掉。
-			}
-			publishAt, err := s.store.PublishTime(txCtx, videoID)
+			previousStatus = video.Status
+			publishAt, err = s.store.PublishTime(txCtx, videoID)
 			if err != nil {
 				return err
 			}
-			if publishAt == nil {
-				drop = true
-				return nil
+		}
+		decision := video.PublishWhenDue(publishAt, time.Now(), contentReviewEnabled(s.cfgProvider))
+		if decision.Published {
+			rows, err := s.videos.UpdateStatusFrom(txCtx, videoID, previousStatus, video.Status)
+			if err != nil {
+				return err
 			}
-			if publishAt.After(time.Now()) {
-				return nil // 列出到期任务后已被作者改期。
-			}
-			switch domain.ResolveScheduledPublishOutcome(video.Status, contentReviewEnabled(s.cfgProvider)) {
-			case domain.ScheduledPublishFromScheduled, domain.ScheduledPublishFromReview:
-				rows, err := s.videos.UpdateStatusFrom(txCtx, videoID, video.Status, enum.VideoStatusPublished)
-				if err != nil {
-					return err
-				}
-				if rows == 0 {
-					return fmt.Errorf("video %d status changed during scheduled publish", videoID)
-				}
-				published = true
-				drop = true
-				return nil // 保留计划时间和定时标识供后台查看；已发布状态不会再次进入到期列表。
-			case domain.ScheduledPublishKeepReview:
-				return nil // 待审作品保留原计划时间，审核通过时再决定立即或定时发布。
+			if rows == 0 {
+				return fmt.Errorf("video %d status changed during scheduled publish", videoID)
 			}
 		}
-		if err := s.store.Remove(txCtx, videoID); err != nil {
-			return err
+		if decision.RemovePlan {
+			if err := s.store.Remove(txCtx, videoID); err != nil {
+				return err
+			}
 		}
-		drop = true
+		published = decision.Published
+		drop = decision.Handled
 		return nil
 	})
 	if err != nil {

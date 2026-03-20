@@ -5,7 +5,8 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -38,9 +39,9 @@ func (q *UserVideoQuery) ListByAuthor(
 	query = applyUserVideoAuditFilter(query, isOwnerView, auditStatus)
 
 	switch sort {
-	case domain.UserVideoSortViews:
+	case videovo.UserVideoSortViews:
 		query = query.Order("views DESC, id DESC")
-	case domain.UserVideoSortFavorite:
+	case videovo.UserVideoSortFavorite:
 		query = query.Order("favorite_count DESC, id DESC")
 	default:
 		query = query.Order("created_at DESC, id DESC")
@@ -84,16 +85,16 @@ func applyUserVideoAuditFilter(query *gorm.DB, isOwnerView bool, auditStatus int
 	}
 
 	switch auditStatus {
-	case domain.UserVideoAuditPublished:
+	case videovo.UserVideoAuditPublished:
 		return query.Where("status = ?", enum.VideoStatusPublished)
-	case domain.UserVideoAuditPrivate:
+	case videovo.UserVideoAuditPrivate:
 		return query.Where("status = ?", enum.VideoStatusPrivate)
-	case domain.UserVideoAuditReviewing:
+	case videovo.UserVideoAuditReviewing:
 		return query.Where("status = ?", enum.VideoStatusReview)
-	case domain.UserVideoAuditScheduled:
+	case videovo.UserVideoAuditScheduled:
 		return query.Where("status = ?", enum.VideoStatusScheduled)
 	default:
-		return query.Where("status IN ?", domain.OwnerVisibleStatuses())
+		return query.Where("status IN ?", videoentity.OwnerVisibleStatuses())
 	}
 }
 
@@ -108,7 +109,7 @@ func (q *UserVideoQuery) RecentActionVideos(
 		Select("v.id, v.title, v.cover, v.views, v.likes, v.favorite_count, " +
 			"v.duration, v.danmu_count, v.created_at, v.author_username")
 
-	if action == domain.ActionLike {
+	if action == videovo.ActionLike {
 		query = query.Table("video_likes vl").
 			Joins("JOIN videos v ON v.id = vl.video_id").
 			Where("vl.user_id = ?", userID).

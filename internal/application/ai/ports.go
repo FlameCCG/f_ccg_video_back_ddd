@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 
 	"github.com/cloudwego/eino/schema"
 )
@@ -117,7 +117,7 @@ type PromptVideoQuery interface {
 	// LatestPublishedIDs 最新发布作品 ID（关键词未命中时的回退）。
 	LatestPublishedIDs(ctx context.Context, limit int) ([]uint, error)
 	// Load 按给定 ID 顺序加载候选作品原始数据（缺失的 ID 直接跳过）。
-	Load(ctx context.Context, ids []uint) ([]domain.VideoCandidateInput, error)
+	Load(ctx context.Context, ids []uint) ([]aivo.VideoCandidateInput, error)
 }
 
 // VideoVectorSearch 站内视频向量召回端口（跨上下文）。

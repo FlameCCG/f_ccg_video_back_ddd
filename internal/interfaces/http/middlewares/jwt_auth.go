@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
 	"f_ccg_video_back_ddd/pkg/authsession"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -112,7 +112,7 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 type requestAuthentication struct {
 	token  string
 	secret string
-	user   *domain.User
+	user   *identityentity.User
 	err    error
 }
 
@@ -120,7 +120,7 @@ const requestAuthenticationKey = "middlewares.jwt.authentication"
 
 // resolveAccessUser only reuses validation within this request and for the same
 // token and signing key. Long-lived session validators deliberately bypass it.
-func (m *Middlewares) resolveAccessUser(c *gin.Context, token string) (*domain.User, error) {
+func (m *Middlewares) resolveAccessUser(c *gin.Context, token string) (*identityentity.User, error) {
 	secret := m.accessSecret()
 	if cached, ok := c.Get(requestAuthenticationKey); ok {
 		if result, ok := cached.(requestAuthentication); ok && result.token == token && result.secret == secret {

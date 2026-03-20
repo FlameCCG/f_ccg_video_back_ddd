@@ -3,7 +3,9 @@ package social
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/social"
+	socialerrors "f_ccg_video_back_ddd/internal/domain/social/domainerr"
+	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
+	socialvo "f_ccg_video_back_ddd/internal/domain/social/valueobject"
 )
 
 // RelationService 关注关系读侧用例服务。
@@ -45,32 +47,32 @@ func (s *RelationService) RelationCounts(
 	ctx context.Context,
 	userID uint,
 	withDynamic bool,
-) domain.RelationCounts {
+) socialentity.RelationCounts {
 	return s.query.Counts(ctx, userID, withDynamic)
 }
 
 // FollowPrivacy 读取关注/粉丝列表公开性。
-func (s *RelationService) FollowPrivacy(ctx context.Context, userID uint) (domain.FollowPrivacy, error) {
+func (s *RelationService) FollowPrivacy(ctx context.Context, userID uint) (socialvo.FollowPrivacy, error) {
 	if userID == 0 {
-		return domain.FollowPrivacy{}, domain.ErrUserIDRequired
+		return socialvo.FollowPrivacy{}, socialerrors.ErrUserIDRequired
 	}
 
 	return s.query.FollowPrivacy(ctx, userID)
 }
 
 // ActionPrivacy 读取最近点赞/投币公开性。
-func (s *RelationService) ActionPrivacy(ctx context.Context, userID uint) (domain.ActionPrivacy, error) {
+func (s *RelationService) ActionPrivacy(ctx context.Context, userID uint) (socialvo.ActionPrivacy, error) {
 	if userID == 0 {
-		return domain.ActionPrivacy{}, domain.ErrUserIDRequired
+		return socialvo.ActionPrivacy{}, socialerrors.ErrUserIDRequired
 	}
 
 	return s.query.ActionPrivacy(ctx, userID)
 }
 
 // FocusStatus 查询当前用户与目标用户的关注关系（查询自己时返回领域错误）。
-func (s *RelationService) FocusStatus(ctx context.Context, viewerID uint, targetID int) (domain.Relation, error) {
-	if err := domain.EnsureRelationQueryable(int(viewerID), targetID); err != nil {
-		return domain.Relation{}, err
+func (s *RelationService) FocusStatus(ctx context.Context, viewerID uint, targetID int) (socialentity.Relation, error) {
+	if err := socialvo.EnsureRelationQueryable(int(viewerID), targetID); err != nil {
+		return socialentity.Relation{}, err
 	}
 
 	return s.query.Relation(ctx, viewerID, uint(targetID)), nil
@@ -84,16 +86,16 @@ func (s *RelationService) FocusList(
 	privacy, err := s.FollowPrivacy(ctx, uint(params.OwnerID))
 	if err != nil {
 		// 读取隐私配置失败一律按「用户不存在」对外呈现。
-		return nil, 0, domain.ErrUserNotFound
+		return nil, 0, socialerrors.ErrUserNotFound
 	}
 
-	if err := domain.EnsureFollowListVisible(privacy, params.ViewerID, params.OwnerID, params.Page); err != nil {
+	if err := privacy.EnsureFollowListVisible(params.ViewerID, params.OwnerID, params.Page); err != nil {
 		return nil, 0, err
 	}
 
 	rows, total, err := s.query.ListFocus(ctx, uint(params.OwnerID), params.Page, params.PageSize, params.Keyword)
 	if err != nil {
-		return nil, 0, domain.ErrListQueryFailed
+		return nil, 0, socialerrors.ErrListQueryFailed
 	}
 
 	return rows, total, nil
@@ -106,16 +108,16 @@ func (s *RelationService) FansList(
 ) ([]SocialListUser, int64, error) {
 	privacy, err := s.FollowPrivacy(ctx, uint(params.OwnerID))
 	if err != nil {
-		return nil, 0, domain.ErrUserNotFound
+		return nil, 0, socialerrors.ErrUserNotFound
 	}
 
-	if err := domain.EnsureFansListVisible(privacy, params.ViewerID, params.OwnerID, params.Page); err != nil {
+	if err := privacy.EnsureFansListVisible(params.ViewerID, params.OwnerID, params.Page); err != nil {
 		return nil, 0, err
 	}
 
 	rows, total, err := s.query.ListFans(ctx, uint(params.OwnerID), params.Page, params.PageSize, params.Keyword)
 	if err != nil {
-		return nil, 0, domain.ErrListQueryFailed
+		return nil, 0, socialerrors.ErrListQueryFailed
 	}
 
 	return rows, total, nil

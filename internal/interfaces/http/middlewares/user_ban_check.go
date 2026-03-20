@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -24,7 +24,7 @@ func (m *Middlewares) UserBanCheck() gin.HandlerFunc {
 
 		status, err := m.userStatus.CachedStatus(c.Request.Context(), uid)
 		if err != nil {
-			if errors.Is(err, identitydomain.ErrUserRecordNotFound) {
+			if errors.Is(err, identityerrors.ErrUserRecordNotFound) {
 				res.FailWithMsg("用户不存在", c)
 			} else {
 				res.FailWithMsg("查询用户失败", c)

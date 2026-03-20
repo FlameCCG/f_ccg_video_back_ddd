@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/chat"
+	chatrepo "f_ccg_video_back_ddd/internal/domain/chat/repository"
 
 	"go.uber.org/zap"
 )
@@ -16,12 +16,12 @@ const indexInitTimeout = 10 * time.Second
 //
 // 由 bootstrap 纳入 App 启动序列，避免数据库客户端依赖业务上下文。
 type IndexInitializer struct {
-	repo   domain.Repository
+	repo   chatrepo.Repository
 	logger *zap.Logger
 }
 
 // NewIndexInitializer 构造索引初始化组件。
-func NewIndexInitializer(repo domain.Repository, logger *zap.Logger) *IndexInitializer {
+func NewIndexInitializer(repo chatrepo.Repository, logger *zap.Logger) *IndexInitializer {
 	return &IndexInitializer{repo: repo, logger: logger}
 }
 

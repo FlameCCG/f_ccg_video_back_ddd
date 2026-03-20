@@ -11,7 +11,8 @@ import (
 	"errors"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/notification"
+	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
+	notificationrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -25,19 +26,19 @@ type Repository struct {
 	db *gorm.DB
 }
 
-var _ domain.Repository = (*Repository)(nil)
+var _ notificationrepo.Repository = (*Repository)(nil)
 
 // NewRepository 构造通知仓储。
 func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func toDomain(row *po.UserGlobalNotification) *domain.Notification {
+func toDomain(row *po.UserGlobalNotification) *notificationentity.Notification {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Notification{
+	return &notificationentity.Notification{
 		ID:               row.ID,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
@@ -56,7 +57,7 @@ func toDomain(row *po.UserGlobalNotification) *domain.Notification {
 	}
 }
 
-func toPO(notice *domain.Notification) *po.UserGlobalNotification {
+func toPO(notice *notificationentity.Notification) *po.UserGlobalNotification {
 	if notice == nil {
 		return nil
 	}
@@ -82,8 +83,8 @@ func toPO(notice *domain.Notification) *po.UserGlobalNotification {
 	}
 }
 
-func toDomainList(rows []po.UserGlobalNotification) []domain.Notification {
-	out := make([]domain.Notification, 0, len(rows))
+func toDomainList(rows []po.UserGlobalNotification) []notificationentity.Notification {
+	out := make([]notificationentity.Notification, 0, len(rows))
 	for i := range rows {
 		out = append(out, *toDomain(&rows[i]))
 	}
@@ -92,7 +93,7 @@ func toDomainList(rows []po.UserGlobalNotification) []domain.Notification {
 }
 
 // Create 写入通知并回填自增 ID 与时间戳。
-func (r *Repository) Create(ctx context.Context, notice *domain.Notification) error {
+func (r *Repository) Create(ctx context.Context, notice *notificationentity.Notification) error {
 	row := toPO(notice)
 	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
 		return err
@@ -106,7 +107,7 @@ func (r *Repository) Create(ctx context.Context, notice *domain.Notification) er
 }
 
 // CreateBatch 批量写入通知，失败时整批不生效。
-func (r *Repository) CreateBatch(ctx context.Context, notices []domain.Notification) error {
+func (r *Repository) CreateBatch(ctx context.Context, notices []notificationentity.Notification) error {
 	if len(notices) == 0 {
 		return nil
 	}
@@ -130,7 +131,7 @@ func (r *Repository) CreateBatch(ctx context.Context, notices []domain.Notificat
 }
 
 // FindByID 按主键读取通知；不存在时返回 (nil, nil)。
-func (r *Repository) FindByID(ctx context.Context, id uint) (*domain.Notification, error) {
+func (r *Repository) FindByID(ctx context.Context, id uint) (*notificationentity.Notification, error) {
 	var row po.UserGlobalNotification
 	if err := gormx.DB(ctx, r.db).First(&row, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -149,9 +150,9 @@ func (r *Repository) ListForReceiver(
 	receiverID int,
 	types []enum.Type,
 	page, pageSize int,
-) ([]domain.Notification, int64, error) {
+) ([]notificationentity.Notification, int64, error) {
 	db := gormx.DB(ctx, r.db).Model(&po.UserGlobalNotification{}).
-		Where("receiver_id IN (?, ?)", receiverID, domain.BroadcastReceiverID).
+		Where("receiver_id IN (?, ?)", receiverID, notificationentity.BroadcastReceiverID).
 		Where("type IN ?", types)
 
 	var total int64
@@ -171,7 +172,7 @@ func (r *Repository) ListForReceiver(
 }
 
 // ListSystem 分页查询系统通知（管理端）。
-func (r *Repository) ListSystem(ctx context.Context, page, pageSize int) ([]domain.Notification, int64, error) {
+func (r *Repository) ListSystem(ctx context.Context, page, pageSize int) ([]notificationentity.Notification, int64, error) {
 	db := gormx.DB(ctx, r.db).Model(&po.UserGlobalNotification{})
 
 	var total int64
@@ -196,7 +197,7 @@ func (r *Repository) VisibleIDs(ctx context.Context, receiverID int, ids []uint)
 	var validIDs []uint
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.UserGlobalNotification{}).
-		Where("id IN ? AND receiver_id IN (?, ?)", ids, receiverID, domain.BroadcastReceiverID).
+		Where("id IN ? AND receiver_id IN (?, ?)", ids, receiverID, notificationentity.BroadcastReceiverID).
 		Pluck("id", &validIDs).Error; err != nil {
 		return nil, err
 	}
@@ -272,7 +273,7 @@ func (r *Repository) DistinctReceivers(ctx context.Context, ids []uint) ([]int, 
 }
 
 // UpdateSystemContent 管理端更新系统通知内容，返回更新前的接收者。
-func (r *Repository) UpdateSystemContent(ctx context.Context, notice *domain.Notification) (int, error) {
+func (r *Repository) UpdateSystemContent(ctx context.Context, notice *notificationentity.Notification) (int, error) {
 	if notice == nil || notice.ID == 0 {
 		return 0, gorm.ErrRecordNotFound
 	}
@@ -344,7 +345,7 @@ func (r *Repository) ReadSet(ctx context.Context, userID uint, ids []uint) (map[
 
 // CountUnreadGrouped 按类型统计未读数量（未读 = 内容可见且无已读行）。
 func (r *Repository) CountUnreadGrouped(ctx context.Context, receiverID int) (map[enum.Type]int64, error) {
-	result := make(map[enum.Type]int64, len(domain.AllTypes()))
+	result := make(map[enum.Type]int64, len(notificationentity.AllTypes()))
 
 	type row struct {
 		Type  enum.Type `gorm:"column:type"`
@@ -356,9 +357,9 @@ func (r *Repository) CountUnreadGrouped(ctx context.Context, receiverID int) (ma
 		Table("user_global_notifications AS n").
 		Select("n.type, COUNT(*) AS total").
 		Joins("LEFT JOIN notification_user_reads AS r ON r.notification_id = n.id AND r.user_id = ?", receiverID).
-		Where("n.receiver_id IN (?, ?)", receiverID, domain.BroadcastReceiverID).
+		Where("n.receiver_id IN (?, ?)", receiverID, notificationentity.BroadcastReceiverID).
 		Where("r.notification_id IS NULL").
-		Where("n.type IN ?", domain.AllTypes()).
+		Where("n.type IN ?", notificationentity.AllTypes()).
 		Group("n.type").
 		Scan(&rows).Error; err != nil {
 		return nil, err

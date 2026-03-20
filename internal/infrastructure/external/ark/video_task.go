@@ -8,7 +8,7 @@ import (
 	"time"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	arkrtmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -54,15 +54,15 @@ func (c *VideoTaskClient) Create(ctx context.Context, inv aiapp.VideoInvocation)
 		Content: content,
 	}
 
-	if resolution := domain.NormalizeVideoResolution(inv.Resolution); resolution != "" {
+	if resolution := aivo.NormalizeVideoResolution(inv.Resolution); resolution != "" {
 		payload.Resolution = &resolution
 	}
 
-	if ratio := domain.NormalizeVideoRatio(domain.FirstNonEmpty(inv.AspectRatio, inv.Size)); ratio != "" {
+	if ratio := aivo.NormalizeVideoRatio(aivo.FirstNonEmpty(inv.AspectRatio, inv.Size)); ratio != "" {
 		payload.Ratio = &ratio
 	}
 
-	if duration, ok := domain.ResolveDuration(inv.Duration, inv.Seconds); ok {
+	if duration, ok := aivo.ResolveDuration(inv.Duration, inv.Seconds); ok {
 		d := int64(duration)
 		payload.Duration = &d
 	}

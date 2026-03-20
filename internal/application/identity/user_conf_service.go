@@ -6,13 +6,16 @@ import (
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
 )
 
 // UserConfService 用户配置用例服务。
 type UserConfService struct {
 	cfgProvider shared.ConfigReader
-	confs       domain.UserConfRepository
+	confs       identityrepo.UserConfRepository
 	query       UserConfQuery
 	banners     UserBannerCatalog
 }
@@ -20,7 +23,7 @@ type UserConfService struct {
 // NewUserConfService 构造用户配置服务。
 func NewUserConfService(
 	cfgProvider shared.ConfigReader,
-	confs domain.UserConfRepository,
+	confs identityrepo.UserConfRepository,
 	query UserConfQuery,
 	banners UserBannerCatalog,
 ) *UserConfService {
@@ -31,7 +34,7 @@ func NewUserConfService(
 func (s *UserConfService) View(ctx context.Context, userID uint) (*UserConfView, error) {
 	view, err := s.query.View(ctx, userID)
 	if err != nil || view == nil {
-		return nil, domain.ErrUserConfNotFound
+		return nil, identityerrors.ErrUserConfNotFound
 	}
 
 	return view, nil
@@ -43,10 +46,10 @@ func (s *UserConfService) View(ctx context.Context, userID uint) (*UserConfView,
 func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) error {
 	conf, err := s.confs.FindByUserID(ctx, in.UserID)
 	if err != nil || conf == nil {
-		return domain.ErrUserConfNotFound
+		return identityerrors.ErrUserConfNotFound
 	}
 
-	changes := domain.UserConfChanges{
+	changes := identityentity.UserConfChanges{
 		OpenCollect:   in.OpenCollect,
 		OpenFans:      in.OpenFans,
 		OpenFollow:    in.OpenFollow,
@@ -55,7 +58,7 @@ func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) er
 	}
 
 	if in.LikeTags != nil {
-		normalized := domain.NormalizeLikeTags(*in.LikeTags)
+		normalized := identityvo.NormalizeLikeTags(*in.LikeTags)
 		changes.LikeTags = &normalized
 	}
 
@@ -64,7 +67,7 @@ func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) er
 	switch {
 	case in.BannerID != nil:
 		if err = s.ensureSystemDefaultBannerSelectable(ctx, *in.BannerID); err != nil {
-			return domain.ErrSystemDefaultBannerNotFound
+			return identityerrors.ErrSystemDefaultBannerNotFound
 		}
 
 		bannerID := *in.BannerID
@@ -76,7 +79,7 @@ func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) er
 	}
 
 	if changes.IsEmpty() {
-		return domain.ErrNoFieldsToUpdate
+		return identityerrors.ErrNoFieldsToUpdate
 	}
 
 	if err = s.confs.Update(ctx, in.UserID, changes); err != nil {
@@ -89,16 +92,16 @@ func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) er
 // ensureSystemDefaultBannerSelectable 校验横幅位于系统默认列表中且可见。
 func (s *UserConfService) ensureSystemDefaultBannerSelectable(ctx context.Context, bannerID uint) error {
 	if bannerID == 0 {
-		return domain.ErrBannerIDRequired
+		return identityerrors.ErrBannerIDRequired
 	}
 
 	configuredBannerIDs := s.systemDefaultBannerIDs()
 	if len(configuredBannerIDs) == 0 {
-		return domain.ErrSystemDefaultBannerNotFound
+		return identityerrors.ErrSystemDefaultBannerNotFound
 	}
 
 	if !slices.Contains(configuredBannerIDs, bannerID) {
-		return domain.ErrSystemDefaultBannerNotFound
+		return identityerrors.ErrSystemDefaultBannerNotFound
 	}
 
 	list, err := s.banners.ListVisible(ctx, []uint{bannerID})
@@ -107,7 +110,7 @@ func (s *UserConfService) ensureSystemDefaultBannerSelectable(ctx context.Contex
 	}
 
 	if len(list) != 1 {
-		return domain.ErrSystemDefaultBannerNotFound
+		return identityerrors.ErrSystemDefaultBannerNotFound
 	}
 
 	return nil
@@ -120,5 +123,5 @@ func (s *UserConfService) systemDefaultBannerIDs() []uint {
 		return []uint{}
 	}
 
-	return domain.SystemDefaultUserBannerIDs(cfg.Site.DefaultUserBannerIDs, cfg.Site.DefaultUserBannerID)
+	return identityvo.SystemDefaultUserBannerIDs(cfg.Site.DefaultUserBannerIDs, cfg.Site.DefaultUserBannerID)
 }

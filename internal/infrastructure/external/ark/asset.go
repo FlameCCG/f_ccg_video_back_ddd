@@ -9,7 +9,8 @@ import (
 	"strings"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 )
 
 // AssetProxy 上游资源流代理适配器。
@@ -72,10 +73,10 @@ func validateAssetRedirect(req *http.Request, via []*http.Request) error {
 		return errors.New("AI 资源重定向次数过多")
 	}
 	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-		return domain.ErrUnsupportedAssetScheme
+		return aierrors.ErrUnsupportedAssetScheme
 	}
-	if !domain.IsAllowedAssetHost(req.URL.Hostname()) {
-		return domain.ErrAssetHostNotAllowed
+	if !aivo.IsAllowedAssetHost(req.URL.Hostname()) {
+		return aierrors.ErrAssetHostNotAllowed
 	}
 
 	return nil

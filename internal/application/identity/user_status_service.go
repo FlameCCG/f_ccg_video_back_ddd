@@ -2,11 +2,14 @@ package identity
 
 import (
 	"context"
-	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"strconv"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	jwts "f_ccg_video_back_ddd/pkg/jwt"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -15,8 +18,8 @@ import (
 //
 // 请求合并通过服务实例内的 singleflight.Group 协调。
 type UserStatusService struct {
-	cache domain.UserStatusCache
-	users domain.UserRepository
+	cache identityport.UserStatusCache
+	users identityrepo.UserRepository
 	group singleflight.Group
 }
 
@@ -24,7 +27,7 @@ type UserStatusService struct {
 var _ UserStatusReader = (*UserStatusService)(nil)
 
 // NewUserStatusService 构造用户状态缓存服务。
-func NewUserStatusService(cache domain.UserStatusCache, users domain.UserRepository) *UserStatusService {
+func NewUserStatusService(cache identityport.UserStatusCache, users identityrepo.UserRepository) *UserStatusService {
 	return &UserStatusService{cache: cache, users: users}
 }
 
@@ -55,7 +58,7 @@ func (s *UserStatusService) CachedStatus(ctx context.Context, userID uint) (enum
 		}
 
 		if user == nil {
-			return enum.UserStatus(0), domain.ErrUserRecordNotFound
+			return enum.UserStatus(0), identityerrors.ErrUserRecordNotFound
 		}
 
 		s.cache.StoreIfGenerationMatch(ctx, userID, user.Status, expectedGen)
@@ -94,27 +97,27 @@ func (s *UserStatusService) Invalidate(userID uint) {
 
 // ValidateAccessToken checks current DB credential state on every authenticated
 // request so password changes revoke tokens across all server instances.
-func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secret string) (*domain.User, error) {
+func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secret string) (*identityentity.User, error) {
 	claims, err := jwts.ParseAccessToken(token, secret)
 	if err != nil {
 		return nil, err
 	}
 	id, err := strconv.ParseUint(claims.UID, 10, strconv.IntSize)
 	if err != nil || id == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, identityerrors.ErrUserNotLogin
 	}
 	user, err := s.users.FindByID(ctx, uint(id))
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, identityerrors.ErrUserNotFound
 	}
 	if err := claims.CheckPasswordVersion(secret, user.Password); err != nil {
 		return nil, err
 	}
 	if user.IsBanned() {
-		return nil, domain.ErrAccountBanned
+		return nil, identityerrors.ErrAccountBanned
 	}
 	return user, nil
 }

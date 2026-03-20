@@ -9,17 +9,19 @@
 package video
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainVideo 把视频 PO 转为领域实体。
-func toDomainVideo(row *po.Video) *domain.Video {
+func toDomainVideo(row *po.Video) *videoentity.Video {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Video{
+	return &videoentity.Video{
 		ID:             row.ID,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
@@ -44,7 +46,7 @@ func toDomainVideo(row *po.Video) *domain.Video {
 }
 
 // toPOVideo 把视频领域实体转为 PO（仅投稿写入路径使用，不含关联）。
-func toPOVideo(video *domain.Video) *po.Video {
+func toPOVideo(video *videoentity.Video) *po.Video {
 	if video == nil {
 		return nil
 	}
@@ -76,12 +78,12 @@ func toPOVideo(video *domain.Video) *po.Video {
 }
 
 // toDomainStats 把视频 PO 的行内计数转为统计值对象。
-func toDomainStats(row *po.Video) *domain.Stats {
+func toDomainStats(row *po.Video) *videovo.Stats {
 	if row == nil {
-		return &domain.Stats{}
+		return &videovo.Stats{}
 	}
 
-	return &domain.Stats{
+	return &videovo.Stats{
 		Views:         row.Views,
 		Likes:         row.Likes,
 		CommentCount:  row.CommentCount,
@@ -92,26 +94,26 @@ func toDomainStats(row *po.Video) *domain.Stats {
 }
 
 // toDomainTag 把标签 PO 转为领域实体。
-func toDomainTag(row *po.Tag) *domain.Tag {
+func toDomainTag(row *po.Tag) *videoentity.Tag {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Tag{ID: row.ID, Name: row.Name}
+	return &videoentity.Tag{ID: row.ID, Name: row.Name}
 }
 
 // toDomainTags 批量转换标签 PO。
-func toDomainTags(rows []po.Tag) []domain.Tag {
-	tags := make([]domain.Tag, 0, len(rows))
+func toDomainTags(rows []po.Tag) []videoentity.Tag {
+	tags := make([]videoentity.Tag, 0, len(rows))
 	for i := range rows {
-		tags = append(tags, domain.Tag{ID: rows[i].ID, Name: rows[i].Name})
+		tags = append(tags, videoentity.Tag{ID: rows[i].ID, Name: rows[i].Name})
 	}
 
 	return tags
 }
 
 // toPOTags 批量把标签领域实体转为 PO（供 many2many 关联替换使用）。
-func toPOTags(tags []domain.Tag) []po.Tag {
+func toPOTags(tags []videoentity.Tag) []po.Tag {
 	rows := make([]po.Tag, 0, len(tags))
 	for _, tag := range tags {
 		rows = append(rows, po.Tag{Model: po.Model{ID: tag.ID}, Name: tag.Name})
@@ -121,12 +123,12 @@ func toPOTags(tags []domain.Tag) []po.Tag {
 }
 
 // toDomainPartition 把分区 PO 转为领域实体。
-func toDomainPartition(row *po.VideoPartition) *domain.Partition {
+func toDomainPartition(row *po.VideoPartition) *videoentity.Partition {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Partition{
+	return &videoentity.Partition{
 		ID:            row.ID,
 		Name:          row.Name,
 		Icon:          row.Icon,
@@ -137,7 +139,7 @@ func toDomainPartition(row *po.VideoPartition) *domain.Partition {
 }
 
 // toPOPartition 把分区领域实体转为 PO。
-func toPOPartition(p *domain.Partition) *po.VideoPartition {
+func toPOPartition(p *videoentity.Partition) *po.VideoPartition {
 	if p == nil {
 		return nil
 	}
@@ -153,10 +155,10 @@ func toPOPartition(p *domain.Partition) *po.VideoPartition {
 }
 
 // toDomainPartitions 批量转换分区 PO。
-func toDomainPartitions(rows []po.VideoPartition) []domain.Partition {
-	partitions := make([]domain.Partition, 0, len(rows))
+func toDomainPartitions(rows []po.VideoPartition) []videoentity.Partition {
+	partitions := make([]videoentity.Partition, 0, len(rows))
 	for i := range rows {
-		partitions = append(partitions, domain.Partition{
+		partitions = append(partitions, videoentity.Partition{
 			ID:            rows[i].ID,
 			Name:          rows[i].Name,
 			Icon:          rows[i].Icon,
@@ -170,12 +172,12 @@ func toDomainPartitions(rows []po.VideoPartition) []domain.Partition {
 }
 
 // toDomainFolder 把收藏夹 PO 转为领域实体。
-func toDomainFolder(row *po.FavoriteFolder) *domain.FavoriteFolder {
+func toDomainFolder(row *po.FavoriteFolder) *videoentity.FavoriteFolder {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.FavoriteFolder{
+	return &videoentity.FavoriteFolder{
 		ID:        row.ID,
 		UserID:    row.UserID,
 		Name:      row.Name,
@@ -184,7 +186,7 @@ func toDomainFolder(row *po.FavoriteFolder) *domain.FavoriteFolder {
 }
 
 // toPOFolder 把收藏夹领域实体转为 PO。
-func toPOFolder(folder *domain.FavoriteFolder) *po.FavoriteFolder {
+func toPOFolder(folder *videoentity.FavoriteFolder) *po.FavoriteFolder {
 	if folder == nil {
 		return nil
 	}
@@ -198,12 +200,12 @@ func toPOFolder(folder *domain.FavoriteFolder) *po.FavoriteFolder {
 }
 
 // toDomainPlayHistory 把播放历史 PO 转为领域实体。
-func toDomainPlayHistory(row *po.VideoPlayHistory) *domain.PlayHistory {
+func toDomainPlayHistory(row *po.VideoPlayHistory) *videorepo.PlayHistory {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.PlayHistory{
+	return &videorepo.PlayHistory{
 		UserID:    row.UserID,
 		VideoID:   row.VideoID,
 		Progress:  row.Progress,
@@ -213,12 +215,12 @@ func toDomainPlayHistory(row *po.VideoPlayHistory) *domain.PlayHistory {
 }
 
 // toDomainDanmu 把弹幕 PO 转为领域实体。
-func toDomainDanmu(row *po.Danmu) *domain.Danmu {
+func toDomainDanmu(row *po.Danmu) *videoentity.Danmu {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Danmu{
+	return &videoentity.Danmu{
 		ID:          row.ID,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
@@ -235,7 +237,7 @@ func toDomainDanmu(row *po.Danmu) *domain.Danmu {
 }
 
 // toPODanmu 把弹幕领域实体转为 PO。
-func toPODanmu(record *domain.Danmu) *po.Danmu {
+func toPODanmu(record *videoentity.Danmu) *po.Danmu {
 	if record == nil {
 		return nil
 	}
@@ -259,8 +261,8 @@ func toPODanmu(record *domain.Danmu) *po.Danmu {
 }
 
 // toDomainDanmus 批量转换弹幕 PO。
-func toDomainDanmus(rows []po.Danmu) []domain.Danmu {
-	list := make([]domain.Danmu, 0, len(rows))
+func toDomainDanmus(rows []po.Danmu) []videoentity.Danmu {
+	list := make([]videoentity.Danmu, 0, len(rows))
 	for i := range rows {
 		if converted := toDomainDanmu(&rows[i]); converted != nil {
 			list = append(list, *converted)
@@ -271,7 +273,7 @@ func toDomainDanmus(rows []po.Danmu) []domain.Danmu {
 }
 
 // toPOVideoPart 把分P领域实体转为 PO。
-func toPOVideoPart(part domain.VideoPart, videoID uint) po.VideoPart {
+func toPOVideoPart(part videoentity.VideoPart, videoID uint) po.VideoPart {
 	return po.VideoPart{
 		Model:       po.Model{ID: part.ID},
 		VideoID:     videoID,
@@ -284,7 +286,7 @@ func toPOVideoPart(part domain.VideoPart, videoID uint) po.VideoPart {
 }
 
 // toPOVideoResource 把初始资源草稿转为视频资源 PO；draft 为 nil 时返回 nil。
-func toPOVideoResource(draft *domain.ResourceDraft, videoID uint) *po.VideoResource {
+func toPOVideoResource(draft *videoentity.ResourceDraft, videoID uint) *po.VideoResource {
 	if draft == nil || videoID == 0 {
 		return nil
 	}
@@ -304,7 +306,7 @@ func toPOVideoResource(draft *domain.ResourceDraft, videoID uint) *po.VideoResou
 }
 
 // toPOVideoPartResource 把初始资源草稿转为分P资源 PO；draft 为 nil 时返回 nil。
-func toPOVideoPartResource(draft *domain.ResourceDraft, partID uint) *po.VideoPartResource {
+func toPOVideoPartResource(draft *videoentity.ResourceDraft, partID uint) *po.VideoPartResource {
 	if draft == nil || partID == 0 {
 		return nil
 	}

@@ -3,7 +3,8 @@ package social
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/social"
+	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
+	socialvo "f_ccg_video_back_ddd/internal/domain/social/valueobject"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,13 +21,13 @@ type RelationQuery interface {
 	// Exists 判定 userID 是否关注了 targetUserID。
 	Exists(ctx context.Context, userID, targetUserID uint) bool
 	// Relation 一次查询取回双向关注关系。
-	Relation(ctx context.Context, userID, targetUserID uint) domain.Relation
+	Relation(ctx context.Context, userID, targetUserID uint) socialentity.Relation
 	// Counts 统计关注数/粉丝数（withDynamic 为真时附带动态数）；查询失败返回零值。
-	Counts(ctx context.Context, userID uint, withDynamic bool) domain.RelationCounts
+	Counts(ctx context.Context, userID uint, withDynamic bool) socialentity.RelationCounts
 	// FollowPrivacy 读取关注/粉丝列表公开性；缺省视为公开。
-	FollowPrivacy(ctx context.Context, userID uint) (domain.FollowPrivacy, error)
+	FollowPrivacy(ctx context.Context, userID uint) (socialvo.FollowPrivacy, error)
 	// ActionPrivacy 读取最近点赞/投币公开性；缺省视为公开。
-	ActionPrivacy(ctx context.Context, userID uint) (domain.ActionPrivacy, error)
+	ActionPrivacy(ctx context.Context, userID uint) (socialvo.ActionPrivacy, error)
 	// ListFocus 分页列出 userID 关注的用户。
 	ListFocus(ctx context.Context, userID uint, page, pageSize int, keyword string) ([]SocialListUser, int64, error)
 	// ListFans 分页列出关注了 userID 的用户。

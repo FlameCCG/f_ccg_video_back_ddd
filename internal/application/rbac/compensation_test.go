@@ -7,11 +7,15 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
+
 	"go.uber.org/zap"
 )
 
@@ -56,7 +60,7 @@ func roleServiceFor(s *suite, e app.Enforcer, m tx.Manager) *app.RoleService {
 func TestCreateRollsBackPartialPolicy(t *testing.T) {
 	s := newSuite(t)
 	enforcer := &failingPolicy{Enforcer: s.enforcer, failAddAt: 2}
-	err := roleServiceFor(s, enforcer, gormx.NewTxManager(s.db)).Create(context.Background(), app.CreateRoleParams{Name: "partial", Permissions: []domain.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}})
+	err := roleServiceFor(s, enforcer, gormx.NewTxManager(s.db)).Create(context.Background(), app.CreateRoleParams{Name: "partial", Permissions: []rbacvo.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}})
 	if err == nil {
 		t.Fatal("expected add failure")
 	}
@@ -68,7 +72,7 @@ func TestCreateRollsBackPartialPolicy(t *testing.T) {
 func TestPermissionReplacementRestoresPreviousSet(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := domain.NewRole("replace", "")
+	role := rbacentity.NewRole("replace", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +80,7 @@ func TestPermissionReplacementRestoresPreviousSet(t *testing.T) {
 	previous, _ := s.enforcer.GetPolicy()
 	enforcer := &failingPolicy{Enforcer: s.enforcer, failAddAt: 2}
 	svc := app.NewPermissionService(s.roleRepo, infra.NewRoleMenuRepository(s.db), infra.NewApiResourceRepository(s.db), enforcer, app.NewRoleGraph(enforcer), infra.NewPermissionEvaluator(), zap.NewNop())
-	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID, Permissions: []domain.PermissionItem{{Resource: "/new1", Action: "GET"}, {Resource: "/new2", Action: "POST"}}}); err == nil {
+	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID, Permissions: []rbacvo.PermissionItem{{Resource: "/new1", Action: "GET"}, {Resource: "/new2", Action: "POST"}}}); err == nil {
 		t.Fatal("expected second add failure")
 	}
 	if got, _ := s.enforcer.GetPolicy(); !reflect.DeepEqual(got, previous) {
@@ -87,18 +91,18 @@ func TestPermissionReplacementRestoresPreviousSet(t *testing.T) {
 func TestPermissionReplacementRestoresInheritedMenus(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := domain.NewRole("break-inheritance", "")
+	role := rbacentity.NewRole("break-inheritance", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
 	}
 	menus := infra.NewRoleMenuRepository(s.db)
-	if err := menus.CreateIgnoreConflict(ctx, domain.NewInheritedRoleMenus(role.ID, []uint{99})); err != nil {
+	if err := menus.CreateIgnoreConflict(ctx, rbacentity.NewInheritedRoleMenus(role.ID, []uint{99})); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = s.enforcer.AddRoleForUser(role.Name, "parent")
 	enforcer := &failingPolicy{Enforcer: s.enforcer, failAddAt: 2}
 	svc := app.NewPermissionService(s.roleRepo, menus, infra.NewApiResourceRepository(s.db), enforcer, app.NewRoleGraph(enforcer), infra.NewPermissionEvaluator(), zap.NewNop())
-	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID, BreakInheritance: true, Permissions: []domain.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}}); err == nil {
+	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID, BreakInheritance: true, Permissions: []rbacvo.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}}); err == nil {
 		t.Fatal("expected failure")
 	}
 	inherited, err := menus.InheritedMenuIDs(ctx, role.ID)
@@ -116,7 +120,7 @@ func TestPermissionReplacementRestoresInheritedMenus(t *testing.T) {
 func TestUserRoleCommitFailureNeverChangesCasbin(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := domain.NewRole("grant", "")
+	role := rbacentity.NewRole("grant", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +145,7 @@ func TestUserRoleCommitFailureNeverChangesCasbin(t *testing.T) {
 func TestUserRoleSaveFailureCompensatesBothStores(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := domain.NewRole("grant", "")
+	role := rbacentity.NewRole("grant", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +169,7 @@ func TestUserRoleSaveFailureCompensatesBothStores(t *testing.T) {
 func TestDeletePolicyFailureLeavesRoleRetryable(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := domain.NewRole("delete", "")
+	role := rbacentity.NewRole("delete", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
 	}
@@ -185,22 +189,24 @@ func TestDeletePolicyFailureLeavesRoleRetryable(t *testing.T) {
 	}
 }
 
-type failingInheritedMenus struct{ domain.RoleMenuRepository }
+type failingInheritedMenus struct {
+	rbacrepo.RoleMenuRepository
+}
 
 func (failingInheritedMenus) DistinctMenuIDsByRole(context.Context, uint) ([]uint, error) {
 	return []uint{1}, nil
 }
 func (failingInheritedMenus) MenuIDsByRole(context.Context, uint) ([]uint, error) { return nil, nil }
-func (failingInheritedMenus) CreateIgnoreConflict(context.Context, []domain.RoleMenu) error {
+func (failingInheritedMenus) CreateIgnoreConflict(context.Context, []rbacentity.RoleMenu) error {
 	return injectedFailure
 }
 
 func TestInheritanceMenuFailureRemovesNewEdge(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	child := domain.NewRole("child", "")
-	parent := domain.NewRole("parent", "")
-	for _, role := range []*domain.Role{child, parent} {
+	child := rbacentity.NewRole("child", "")
+	parent := rbacentity.NewRole("parent", "")
+	for _, role := range []*rbacentity.Role{child, parent} {
 		if err := s.roleRepo.Create(ctx, role); err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +218,7 @@ func TestInheritanceMenuFailureRemovesNewEdge(t *testing.T) {
 	if len(s.enforcer.groups) != 0 {
 		t.Fatalf("failed inheritance remains effective: %v", s.enforcer.groups)
 	}
-	if err := svc.Assign(ctx, child.ID, parent.ID); !errors.Is(err, domain.ErrInheritFailed) {
+	if err := svc.Assign(ctx, child.ID, parent.ID); !errors.Is(err, rbacerrors.ErrInheritFailed) {
 		t.Fatalf("retry must attempt menus again, got %v", err)
 	}
 }

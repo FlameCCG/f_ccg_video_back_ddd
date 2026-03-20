@@ -3,30 +3,35 @@ package identity
 import (
 	"context"
 	"errors"
-	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"go.uber.org/zap"
 	"sync"
 	"testing"
+
+	"f_ccg_video_back_ddd/internal/config"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+
+	"go.uber.org/zap"
 )
 
 type securityAccountRepo struct {
-	domain.UserAccountRepository
+	identityrepo.UserAccountRepository
 	mu   sync.Mutex
-	user *domain.User
+	user *identityentity.User
 }
 
-func (r *securityAccountRepo) FindByID(context.Context, uint) (*domain.User, error) {
+func (r *securityAccountRepo) FindByID(context.Context, uint) (*identityentity.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	u := *r.user
 	return &u, nil
 }
-func (r *securityAccountRepo) FindByOpenIDAndSource(context.Context, string, string) (*domain.User, error) {
+func (r *securityAccountRepo) FindByOpenIDAndSource(context.Context, string, string) (*identityentity.User, error) {
 	return nil, nil
 }
-func (r *securityAccountRepo) FindByEmail(context.Context, string) (*domain.User, error) {
+func (r *securityAccountRepo) FindByEmail(context.Context, string) (*identityentity.User, error) {
 	return r.user, nil
 }
 func (r *securityAccountRepo) SetRefreshToken(_ context.Context, id uint, pwd, digest string) (bool, error) {
@@ -49,11 +54,11 @@ func (r *securityAccountRepo) RotateRefreshToken(_ context.Context, id uint, pwd
 }
 
 type securityStatusRepo struct {
-	domain.UserRepository
+	identityrepo.UserRepository
 	account *securityAccountRepo
 }
 
-func (r securityStatusRepo) FindByID(ctx context.Context, id uint) (*domain.User, error) {
+func (r securityStatusRepo) FindByID(ctx context.Context, id uint) (*identityentity.User, error) {
 	return r.account.FindByID(ctx, id)
 }
 func newSecurityTokens() (*TokenService, loginConfigReaderStub) {
@@ -61,16 +66,16 @@ func newSecurityTokens() (*TokenService, loginConfigReaderStub) {
 	return NewTokenService(reader), reader
 }
 func TestOAuthDoesNotLinkPreexistingEmailAccount(t *testing.T) {
-	repo := &securityAccountRepo{user: &domain.User{ID: 9, Email: "victim@example.com"}}
+	repo := &securityAccountRepo{user: &identityentity.User{ID: 9, Email: "victim@example.com"}}
 	service := &OAuthLoginService{users: repo}
-	user, err := service.findOrCreateUser(t.Context(), domain.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"})
+	user, err := service.findOrCreateUser(t.Context(), identityvo.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"})
 	if !errors.Is(err, ErrOAuthAccountBindingRequired) || user != nil {
 		t.Fatalf("account linked: user=%v error=%v", user, err)
 	}
 }
 func TestPasswordChangeRevokesAccessAndRefreshAcrossServices(t *testing.T) {
 	tokens, _ := newSecurityTokens()
-	repo := &securityAccountRepo{user: &domain.User{ID: 7, Username: "tester", Password: "salted-old-hash", Status: enum.UserStatusActive}}
+	repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Username: "tester", Password: "salted-old-hash", Status: enum.UserStatusActive}}
 	pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +94,7 @@ func TestPasswordChangeRevokesAccessAndRefreshAcrossServices(t *testing.T) {
 }
 func TestRefreshTokenRotationIsSingleUseAndReplayRevokesSuccessor(t *testing.T) {
 	tokens, reader := newSecurityTokens()
-	repo := &securityAccountRepo{user: &domain.User{ID: 7, Username: "tester", Password: "hash", Status: enum.UserStatusActive}}
+	repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Username: "tester", Password: "hash", Status: enum.UserStatusActive}}
 	original, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +116,7 @@ func TestRefreshTokenRotationIsSingleUseAndReplayRevokesSuccessor(t *testing.T) 
 }
 func TestConcurrentRefreshHasOneWinner(t *testing.T) {
 	tokens, _ := newSecurityTokens()
-	repo := &securityAccountRepo{user: &domain.User{ID: 7, Password: "hash"}}
+	repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Password: "hash"}}
 	pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -144,28 +149,28 @@ func TestConcurrentRefreshHasOneWinner(t *testing.T) {
 func TestBanBlocksRefreshIncludingTemporaryBan(t *testing.T) {
 	for _, state := range []enum.UserStatus{enum.UserStatusBanned, enum.UserStatusPermanentlyBanned} {
 		tokens, _ := newSecurityTokens()
-		repo := &securityAccountRepo{user: &domain.User{ID: 7, Password: "hash", Status: state}}
+		repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Password: "hash", Status: state}}
 		pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 		if err != nil {
 			t.Fatal(err)
 		}
 		service := &LoginService{tokens: tokens, users: repo, logger: zap.NewNop()}
-		if _, err := service.RefreshToken(t.Context(), pair.RefreshToken); !errors.Is(err, domain.ErrAccountBanned) {
+		if _, err := service.RefreshToken(t.Context(), pair.RefreshToken); !errors.Is(err, identityerrors.ErrAccountBanned) {
 			t.Fatalf("ban did not reject refresh: %v", err)
 		}
 	}
 }
 
 func TestOAuthCanAssociateExplicitlyVerifiedEmail(t *testing.T) {
-	repo := &securityAccountRepo{user: &domain.User{ID: 9, Email: "owner@example.com"}}
+	repo := &securityAccountRepo{user: &identityentity.User{ID: 9, Email: "owner@example.com"}}
 	service := &OAuthLoginService{users: repo}
-	user, err := service.findOrCreateUser(t.Context(), domain.OAuthProfile{RegisterSource: "github", OpenID: "owner", Email: "owner@example.com", EmailVerified: true})
+	user, err := service.findOrCreateUser(t.Context(), identityvo.OAuthProfile{RegisterSource: "github", OpenID: "owner", Email: "owner@example.com", EmailVerified: true})
 	if err != nil || user == nil || user.ID != 9 {
 		t.Fatalf("verified association user=%v err=%v", user, err)
 	}
 }
 func TestUnverifiedOAuthEmailUsesProviderFallback(t *testing.T) {
-	profile := domain.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"}
+	profile := identityvo.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"}
 	if got := profile.ResolvedEmail(); got == "victim@example.com" {
 		t.Fatal("unverified email stored as owned")
 	}

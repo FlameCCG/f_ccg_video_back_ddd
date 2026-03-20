@@ -41,7 +41,7 @@ f_ccg_video_back_ddd/
 │   ├── bootstrap/                  # 组合根：wire.go(wireinject) + wire_gen.go + App 生命周期
 │   ├── domain/
 │   │   ├── shared/enum/            # 共享内核：跨上下文枚举
-│   │   └── <ctx>/                  # 实体、值对象、业务规则、仓储接口
+│   │   └── <ctx>/                  # 按 entity/valueobject/repository/service 等职责分包
 │   ├── application/<ctx>/          # 应用服务/用例、DTO（含读模型）、查询端口、事务编排、ProviderSet
 │   ├── infrastructure/
 │   │   ├── config/                 # Viper 加载/热更新与 Provider；数据结构在 internal/config
@@ -74,6 +74,10 @@ f_ccg_video_back_ddd/
 ```
 
 `internal/config` 是配置**数据契约**，`internal/infrastructure/config` 是读取、监听和发布配置的**机制**；应用层经 `shared.ConfigReader/ConfigStore` 端口访问。`config_dev.yaml` 是可按示例创建的本地文件，不是仓库要求存在的固定资产。`gin.Context` 停在 HTTP 适配层，向用例传 `context.Context` 与显式参数。
+
+业务模块内部统一遵循以下约定：`entity` 承载实体及其行为，`valueobject` 承载值与独立策略，`repository` 只声明领域状态仓储，`service` 承载不自然属于单个对象的领域操作。事件放 `event`，非仓储能力接口放 `port`，共享业务错误放 `domainerr`。目录按实际职责建立，实体不能反向依赖领域服务、仓储或能力端口。
+
+主要写路径通过模型行为表达，例如 `Comment.SetPinned`、`Video.Review` / `PublishWhenDue`、`User.ApplyCoinChange` / `ApplyExperience`、`Banner.ChangePlacement` 和 `Menu.Revise`。应用层负责取得事实、事务与提交后的协作；对象自身的约束不会因拆目录而转移到领域服务中。
 
 ## 2. 限界上下文映射
 

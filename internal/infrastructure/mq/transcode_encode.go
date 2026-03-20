@@ -11,7 +11,8 @@ import (
 	"time"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -36,7 +37,7 @@ func (e *TranscodeEngine) EncodeMP4Targets(
 	defer releaseCkpt()
 
 	// 深拷贝目标：编码阶段会回填 MapLabel，不能改动调用方共享状态。
-	targets := append([]media.TranscodeTarget(nil), req.Targets...)
+	targets := append([]mediavo.TranscodeTarget(nil), req.Targets...)
 
 	validate := mp4CheckpointValidator(req.SourceDuration, e.logger)
 	localPaths := make([]string, len(targets))
@@ -88,7 +89,7 @@ func (e *TranscodeEngine) encodeDirectMP4(
 	ctx context.Context,
 	req mediaapp.MP4EncodeRequest,
 	ckpt *transcodeCheckpoint,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 	outputNames, localPaths []string,
 	pending []int,
 	validate transcodeOutputValidator,
@@ -100,7 +101,7 @@ func (e *TranscodeEngine) encodeDirectMP4(
 
 	defer func() { _ = os.RemoveAll(attemptDir) }()
 
-	encTargets := make([]media.TranscodeTarget, 0, len(pending))
+	encTargets := make([]mediavo.TranscodeTarget, 0, len(pending))
 	encOutputs := make([]string, 0, len(pending))
 
 	for _, idx := range pending {
@@ -116,20 +117,20 @@ func (e *TranscodeEngine) encodeDirectMP4(
 	)
 
 	srcBytes := sourceBytesHint(req.SourcePath)
-	encodeTimeout := media.CalcPipelineEncodeTimeout(req.SourceDuration, len(encTargets), req.UseGPU, srcBytes)
-	stallLimit := media.CalcProgressStallTimeout(req.SourceDuration)
+	encodeTimeout := mediaruntime.CalcPipelineEncodeTimeout(req.SourceDuration, len(encTargets), req.UseGPU, srcBytes)
+	stallLimit := mediaruntime.CalcProgressStallTimeout(req.SourceDuration)
 
 	encodeCtx, cancelEncode := context.WithTimeout(ctx, encodeTimeout)
 	defer cancelEncode()
 
-	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
+	runCtx, cancelRun, wrapProgress := mediaruntime.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
 	defer cancelRun()
 
 	cmd := exec.CommandContext(runCtx, "ffmpeg", args...)
 	cmd.Stdout = io.Discard
 
-	tracker := media.ProgressTrackerFromContext(ctx)
-	progressCb := wrapProgress(progressCbForPipeline(ctx, tracker, media.TranscodePipelineMP4))
+	tracker := mediaruntime.ProgressTrackerFromContext(ctx)
+	progressCb := wrapProgress(progressCbForPipeline(ctx, tracker, mediavo.TranscodePipelineMP4))
 	stderrBuf, startProgressRead, waitProgress := attachFFmpegProgress(cmd, progressCb)
 
 	e.logger.Info("ffmpeg multi-output pipeline uses checkpoint attempt dir",
@@ -154,7 +155,7 @@ func (e *TranscodeEngine) encodeDirectMP4(
 	waitProgress()
 
 	if waitErr != nil {
-		return media.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String())
+		return mediaruntime.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String())
 	}
 
 	// 逐文件校验后原子提交：提交即「已编码」标记，之后的上传失败不会再触发重编码。
@@ -179,11 +180,11 @@ func (e *TranscodeEngine) encodeChunkedMP4(
 	ctx context.Context,
 	req mediaapp.MP4EncodeRequest,
 	ckpt *transcodeCheckpoint,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 	outputNames, localPaths []string,
 	pending []int,
 ) error {
-	encTargets := make([]media.TranscodeTarget, 0, len(pending))
+	encTargets := make([]mediavo.TranscodeTarget, 0, len(pending))
 
 	for _, idx := range pending {
 		target := targets[idx]
@@ -249,8 +250,8 @@ func (e *TranscodeEngine) EncodeDASHDir(ctx context.Context, req mediaapp.DASHEn
 
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	targets := append([]media.TranscodeTarget(nil), req.Targets...)
-	mpdPath := filepath.Join(tmpDir, media.DashManifestName)
+	targets := append([]mediavo.TranscodeTarget(nil), req.Targets...)
+	mpdPath := filepath.Join(tmpDir, mediavo.DashManifestName)
 	fileHash := req.Task.DashRepresentationPrefix()
 
 	if len(req.ChunkPlan) > 0 {
@@ -272,7 +273,7 @@ func (e *TranscodeEngine) EncodeDASHDir(ctx context.Context, req mediaapp.DASHEn
 	}
 
 	// 完整 DASH 已提交为最终断点单元，块产物即刻回收磁盘。
-	discardTranscodeChunks(ckpt, media.TranscodePipelineDASH)
+	discardTranscodeChunks(ckpt, mediavo.TranscodePipelineDASH)
 
 	return committedDir, nil
 }
@@ -281,7 +282,7 @@ func (e *TranscodeEngine) EncodeDASHDir(ctx context.Context, req mediaapp.DASHEn
 func (e *TranscodeEngine) encodeDirectDASH(
 	ctx context.Context,
 	req mediaapp.DASHEncodeRequest,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 	tmpDir, mpdPath, fileHash string,
 ) error {
 	filter := buildFilterComplex(targets, req.UseGPU, false)
@@ -291,13 +292,13 @@ func (e *TranscodeEngine) encodeDirectDASH(
 	)
 
 	srcBytes := sourceBytesHint(req.SourcePath)
-	encodeTimeout := media.CalcPipelineEncodeTimeout(req.SourceDuration, len(targets), req.UseGPU, srcBytes)
-	stallLimit := media.CalcProgressStallTimeout(req.SourceDuration)
+	encodeTimeout := mediaruntime.CalcPipelineEncodeTimeout(req.SourceDuration, len(targets), req.UseGPU, srcBytes)
+	stallLimit := mediaruntime.CalcProgressStallTimeout(req.SourceDuration)
 
 	encodeCtx, cancelEncode := context.WithTimeout(ctx, encodeTimeout)
 	defer cancelEncode()
 
-	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
+	runCtx, cancelRun, wrapProgress := mediaruntime.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
 	defer cancelRun()
 
 	cmd := exec.CommandContext(runCtx, "ffmpeg", args...)
@@ -305,8 +306,8 @@ func (e *TranscodeEngine) encodeDirectDASH(
 	cmd.Dir = tmpDir
 	cmd.Stdout = io.Discard
 
-	tracker := media.ProgressTrackerFromContext(ctx)
-	progressCb := wrapProgress(progressCbForPipeline(ctx, tracker, media.TranscodePipelineDASH))
+	tracker := mediaruntime.ProgressTrackerFromContext(ctx)
+	progressCb := wrapProgress(progressCbForPipeline(ctx, tracker, mediavo.TranscodePipelineDASH))
 	stderrBuf, startProgressRead, waitProgress := attachFFmpegProgress(cmd, progressCb)
 
 	e.logger.Info("dash pipeline start",
@@ -329,7 +330,7 @@ func (e *TranscodeEngine) encodeDirectDASH(
 	waitProgress()
 
 	if waitErr != nil {
-		return media.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String())
+		return mediaruntime.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String())
 	}
 
 	return nil
@@ -340,7 +341,7 @@ func (e *TranscodeEngine) encodeChunkedDASH(
 	ctx context.Context,
 	req mediaapp.DASHEncodeRequest,
 	ckpt *transcodeCheckpoint,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 	tmpDir, mpdPath, fileHash string,
 ) error {
 	segDur := req.Policy.SegDurationOrDefault()
@@ -358,7 +359,7 @@ func (e *TranscodeEngine) encodeChunkedDASH(
 	)
 
 	perChunk, err := e.encodeChunkedTargets(ctx, chunkedEncodeRequest{
-		pipelineName:   media.TranscodePipelineDASH,
+		pipelineName:   mediavo.TranscodePipelineDASH,
 		task:           req.Task,
 		policy:         req.Policy,
 		srcPath:        req.SourcePath,

@@ -2,9 +2,9 @@ package notification
 
 import (
 	"errors"
-	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 
-	domain "f_ccg_video_back_ddd/internal/domain/notification"
+	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -28,7 +28,7 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	if err := h.svc.Delete(c.Request.Context(), int(uid), req.IDs); err != nil {
-		if errors.Is(err, domain.ErrSystemNotificationNotDeletable) {
+		if errors.Is(err, notificationentity.ErrSystemNotificationNotDeletable) {
 			res.FailWithMsg(clienterror.Message(err), c)
 
 			return

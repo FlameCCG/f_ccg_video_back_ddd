@@ -9,7 +9,8 @@
 package rbac
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
 )
 
 // CreateRoleParams 创建角色用例参数。
@@ -17,7 +18,7 @@ type CreateRoleParams struct {
 	Name        string
 	Desc        string
 	MenuIDs     []uint
-	Permissions []domain.PermissionItem
+	Permissions []rbacvo.PermissionItem
 	CopyRoleID  uint
 }
 
@@ -63,20 +64,20 @@ type UpdateMenuParams struct {
 // AssignPermissionParams 分配/移除角色权限用例参数。
 type AssignPermissionParams struct {
 	RoleName    string
-	Permissions []domain.PermissionItem
+	Permissions []rbacvo.PermissionItem
 }
 
 // UpdateRolePermissionsParams 替换角色直接权限用例参数。
 type UpdateRolePermissionsParams struct {
 	RoleID           uint
-	Permissions      []domain.PermissionItem
+	Permissions      []rbacvo.PermissionItem
 	BreakInheritance bool
 }
 
 // RoleMenusResp 角色菜单详情响应（直连 + 继承，各自成树）。
 type RoleMenusResp struct {
-	DirectMenus  []*domain.Menu `json:"directMenus"`
-	InheritMenus []*domain.Menu `json:"inheritMenus"`
+	DirectMenus  []*rbacentity.Menu `json:"directMenus"`
+	InheritMenus []*rbacentity.Menu `json:"inheritMenus"`
 }
 
 // RolePermissionSource 权限来源。
@@ -89,8 +90,6 @@ const (
 	RolePermissionSourceInheritDirect RolePermissionSource = "inherit_direct"
 	// RolePermissionSourceInheritIndirect 来自间接祖先角色
 	RolePermissionSourceInheritIndirect RolePermissionSource = "inherit_indirect"
-	// RolePermissionSourceInherited 兼容旧值（等同 inherit 类）
-	RolePermissionSourceInherited RolePermissionSource = "inherited"
 )
 
 // EffectivePermissionItem 角色有效权限项（含来源）。

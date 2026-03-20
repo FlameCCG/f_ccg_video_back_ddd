@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/platform"
+	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
@@ -57,7 +57,7 @@ func (s *AutoUnbanService) Run(ctx context.Context) {
 		return
 	}
 
-	plan := domain.PlanAutoUnban(expired)
+	plan := platformservice.PlanAutoUnban(expired)
 	if plan.Empty() {
 		return
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 
 	"github.com/cloudwego/eino/schema"
 )
@@ -97,11 +97,11 @@ func splitContentParts(content any) (string, []string) {
 			}
 		case map[string]any:
 			switch strings.TrimSpace(conversationString(value["type"])) {
-			case "", domain.ContentTypeText, "input_text", "output_text":
+			case "", aivo.ContentTypeText, "input_text", "output_text":
 				if text := strings.TrimSpace(conversationString(value["text"])); text != "" {
 					texts = append(texts, text)
 				}
-			case domain.ContentTypeImageURL, "input_image", "image":
+			case aivo.ContentTypeImageURL, "input_image", "image":
 				if imageURL := conversationImageURL(value); imageURL != "" {
 					images = append(images, imageURL)
 				}
@@ -115,10 +115,10 @@ func splitContentParts(content any) (string, []string) {
 }
 
 func conversationImageURL(part map[string]any) string {
-	if imageURL := strings.TrimSpace(conversationString(part[domain.ContentTypeImageURL])); imageURL != "" {
+	if imageURL := strings.TrimSpace(conversationString(part[aivo.ContentTypeImageURL])); imageURL != "" {
 		return imageURL
 	}
-	if nested, ok := part[domain.ContentTypeImageURL].(map[string]any); ok {
+	if nested, ok := part[aivo.ContentTypeImageURL].(map[string]any); ok {
 		if imageURL := strings.TrimSpace(conversationString(nested["url"])); imageURL != "" {
 			return imageURL
 		}
@@ -305,7 +305,7 @@ func (c conversation) transcript(maxMessages, maxCharsPerMessage int) string {
 		if message.Role == schema.Assistant {
 			speaker = "助手"
 		}
-		lines = append(lines, speaker+": "+domain.TrimPromptText(messageText(message), maxCharsPerMessage))
+		lines = append(lines, speaker+": "+aivo.TrimPromptText(messageText(message), maxCharsPerMessage))
 	}
 
 	return strings.Join(lines, "\n")

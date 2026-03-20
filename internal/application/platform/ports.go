@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/platform"
+	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -26,7 +26,7 @@ type UserStatusWriter interface {
 // 实现可直读 users / user_ban_records 表。
 type BanMaintenanceRepository interface {
 	// ListExpiredBans 查询每个用户最新一条封禁记录中已到期、且用户仍处于封禁态的条目。
-	ListExpiredBans(ctx context.Context, now time.Time) ([]domain.ExpiredBan, error)
+	ListExpiredBans(ctx context.Context, now time.Time) ([]platformservice.ExpiredBan, error)
 	// ActivateBannedUsers 将仍处于封禁态的指定用户批量置为正常状态。
 	ActivateBannedUsers(ctx context.Context, userIDs []uint) error
 	// MarkBanRecordsUnbanned 批量标记原封禁记录已解封。
@@ -40,9 +40,9 @@ type HotRankStore interface {
 	// Size 返回榜单当前成员数。
 	Size(ctx context.Context) (int64, error)
 	// Entries 返回榜单全部成员及分值，按分值升序（与 ZRANGE 0 -1 一致）。
-	Entries(ctx context.Context) ([]domain.HotRankEntry, error)
+	Entries(ctx context.Context) ([]platformservice.HotRankEntry, error)
 	// ApplyDecay 按入参顺序在同一管线内写回新分值或移出成员。
-	ApplyDecay(ctx context.Context, updates []domain.HotRankUpdate) error
+	ApplyDecay(ctx context.Context, updates []platformservice.HotRankUpdate) error
 	// TrimLowest 移除分值最低的 count 个成员。
 	TrimLowest(ctx context.Context, count int64) error
 }

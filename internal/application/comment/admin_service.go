@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/comment"
+	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
+	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentvo "f_ccg_video_back_ddd/internal/domain/comment/valueobject"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -14,7 +16,7 @@ import (
 //
 // 管理端不需要 isLiked（视作未登录），但点赞数仍以 Redis 缓存为主。
 func (s *Service) AdminList(ctx context.Context, params AdminListParams) ([]CommentItem, int64, error) {
-	page, pageSize := domain.NormalizeAdminPaging(params.Page, params.PageSize)
+	page, pageSize := commentvo.NormalizeAdminPaging(params.Page, params.PageSize)
 
 	rows, total, err := s.query.AdminList(ctx, AdminListQuery{
 		UserID:   params.UserID,
@@ -36,7 +38,7 @@ func (s *Service) AdminList(ctx context.Context, params AdminListParams) ([]Comm
 // 返回实际删除的评论数（含被连带删除的回复）。
 func (s *Service) AdminDelete(ctx context.Context, commentIDs []uint) (int64, error) {
 	if len(commentIDs) == 0 {
-		return 0, domain.ErrCommentIDsRequired
+		return 0, commenterrors.ErrCommentIDsRequired
 	}
 
 	comments, err := s.comments.BriefByIDs(ctx, commentIDs)
@@ -72,7 +74,7 @@ func (s *Service) AdminDelete(ctx context.Context, commentIDs []uint) (int64, er
 	}
 
 	// 如果删除了根评论，需要把子评论一并删除
-	var children []domain.Comment
+	var children []commententity.Comment
 
 	if len(rootIDs) > 0 {
 		children, err = s.comments.ChildrenBrief(ctx, rootIDs)
@@ -86,7 +88,7 @@ func (s *Service) AdminDelete(ctx context.Context, commentIDs []uint) (int64, er
 
 	var idsToDelete []uint
 
-	push := func(c domain.Comment) {
+	push := func(c commententity.Comment) {
 		if c.ID == 0 {
 			return
 		}

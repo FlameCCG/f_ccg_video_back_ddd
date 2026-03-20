@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 )
 
 // ResponsesRequest 表示聊天/文本生成请求，也是路由层泛型参数绑定的目标。
@@ -94,7 +94,7 @@ func (ref *ImageRef) UnmarshalJSON(data []byte) error {
 	var rawString string
 	if err := json.Unmarshal(data, &rawString); err == nil {
 		ref.URL = strings.TrimSpace(rawString)
-		ref.Type = domain.ContentTypeImageURL
+		ref.Type = aivo.ContentTypeImageURL
 
 		return nil
 	}
@@ -110,7 +110,7 @@ func (ref *ImageRef) UnmarshalJSON(data []byte) error {
 
 	ref.Type = strings.TrimSpace(parsed.Type)
 	if ref.URL != "" && ref.Type == "" {
-		ref.Type = domain.ContentTypeImageURL
+		ref.Type = aivo.ContentTypeImageURL
 	}
 
 	return nil
@@ -125,7 +125,7 @@ func (ref ImageRef) MarshalJSON() ([]byte, error) {
 		Type: strings.TrimSpace(ref.Type),
 	}
 	if payload.Type == "" {
-		payload.Type = domain.ContentTypeImageURL
+		payload.Type = aivo.ContentTypeImageURL
 	}
 
 	return json.Marshal(payload)
@@ -140,13 +140,13 @@ func (ref ImageRef) IsZero() bool {
 //
 // 选项列表元素为 domain.Option，以 label/value 字段返回选项。
 type PublicOptions struct {
-	ChatModel       string          `json:"chatModel"`
-	ChatModels      []domain.Option `json:"chatModels"`
-	ThinkingEnabled bool            `json:"thinkingEnabled"`
-	ThinkingEffort  string          `json:"thinkingEffort"`
-	ThinkingEfforts []domain.Option `json:"thinkingEfforts"`
-	ImageModel      string          `json:"imageModel"`
-	ImageModels     []domain.Option `json:"imageModels"`
-	VideoModel      string          `json:"videoModel"`
-	VideoModels     []domain.Option `json:"videoModels"`
+	ChatModel       string        `json:"chatModel"`
+	ChatModels      []aivo.Option `json:"chatModels"`
+	ThinkingEnabled bool          `json:"thinkingEnabled"`
+	ThinkingEffort  string        `json:"thinkingEffort"`
+	ThinkingEfforts []aivo.Option `json:"thinkingEfforts"`
+	ImageModel      string        `json:"imageModel"`
+	ImageModels     []aivo.Option `json:"imageModels"`
+	VideoModel      string        `json:"videoModel"`
+	VideoModels     []aivo.Option `json:"videoModels"`
 }

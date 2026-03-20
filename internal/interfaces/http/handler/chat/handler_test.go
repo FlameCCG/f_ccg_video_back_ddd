@@ -9,7 +9,8 @@ import (
 	"time"
 
 	chatapp "f_ccg_video_back_ddd/internal/application/chat"
-	domain "f_ccg_video_back_ddd/internal/domain/chat"
+	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
+	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -135,7 +136,7 @@ func TestConversationListViewSurfacesServiceError(t *testing.T) {
 	newHandler(&stubRepository{available: false}, &stubQuery{}).ConversationListView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.FailServiceCode || body.Msg != domain.ErrStoreUnavailable.Error() {
+	if body.Code != res.FailServiceCode || body.Msg != chaterrors.ErrStoreUnavailable.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -161,10 +162,10 @@ func TestCreateConversationViewReturnsItem(t *testing.T) {
 	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	repo := &stubRepository{
 		available: true,
-		conversation: &domain.Conversation{
+		conversation: &chatentity.Conversation{
 			ID:        "1_2",
-			MemberA:   domain.Member{UserID: 1, Unread: 4},
-			MemberB:   domain.Member{UserID: 2, Unread: 1},
+			MemberA:   chatentity.Member{UserID: 1, Unread: 4},
+			MemberB:   chatentity.Member{UserID: 2, Unread: 1},
 			CreatedAt: created,
 			UpdatedAt: created,
 		},
@@ -206,7 +207,7 @@ func TestCreateConversationViewRejectsSelf(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).CreateConversationView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != domain.ErrSelfConversation.Error() {
+	if body := decodeResponse(t, recorder); body.Msg != chaterrors.ErrSelfConversation.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -267,8 +268,8 @@ func TestMessageListViewReturnsCursorEnvelope(t *testing.T) {
 	t.Parallel()
 
 	query := &stubQuery{messages: []chatapp.MessageItem{
-		{ID: "652f1a2b3c4d5e6f70819202", ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: domain.MessageTypeText, Text: "b"},
-		{ID: "652f1a2b3c4d5e6f70819201", ConversationID: "1_2", SenderID: 2, ReceiverID: 1, Type: domain.MessageTypeText, Text: "a"},
+		{ID: "652f1a2b3c4d5e6f70819202", ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "b"},
+		{ID: "652f1a2b3c4d5e6f70819201", ConversationID: "1_2", SenderID: 2, ReceiverID: 1, Type: chatentity.MessageTypeText, Text: "a"},
 	}}
 
 	recorder, ctx := newTestContext(http.MethodGet, "/v1/common/chat/messages")
@@ -327,7 +328,7 @@ func TestMessageListViewRejectsInvalidCursor(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MessageListView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != domain.ErrInvalidCursor.Error() {
+	if body := decodeResponse(t, recorder); body.Msg != chaterrors.ErrInvalidCursor.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -378,7 +379,7 @@ func TestMarkReadViewRejectsSelfPeer(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MarkReadView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != domain.ErrInvalidPeerID.Error() {
+	if body := decodeResponse(t, recorder); body.Msg != chaterrors.ErrInvalidPeerID.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -425,7 +426,7 @@ func TestWSViewRequiresLogin(t *testing.T) {
 type stubRepository struct {
 	available bool
 
-	conversation *domain.Conversation
+	conversation *chatentity.Conversation
 	matched      bool
 
 	hiddenFor  uint
@@ -438,15 +439,15 @@ func (s *stubRepository) Available() bool { return s.available }
 
 func (s *stubRepository) EnsureIndexes(context.Context) error { return nil }
 
-func (s *stubRepository) InsertMessage(_ context.Context, msg *domain.Message) error {
+func (s *stubRepository) InsertMessage(_ context.Context, msg *chatentity.Message) error {
 	msg.ID = "652f1a2b3c4d5e6f70819200"
 
 	return nil
 }
 
-func (s *stubRepository) ApplySend(context.Context, *domain.Message, string) error { return nil }
+func (s *stubRepository) ApplySend(context.Context, *chatentity.Message, string) error { return nil }
 
-func (s *stubRepository) SendMessage(ctx context.Context, msg *domain.Message, preview string) error {
+func (s *stubRepository) SendMessage(ctx context.Context, msg *chatentity.Message, preview string) error {
 	if err := s.InsertMessage(ctx, msg); err != nil {
 		return err
 	}
@@ -457,9 +458,9 @@ func (s *stubRepository) UpsertConversation(
 	context.Context,
 	uint, uint,
 	time.Time,
-) (*domain.Conversation, error) {
+) (*chatentity.Conversation, error) {
 	if s.conversation == nil {
-		return nil, domain.ErrConversationNotFound
+		return nil, chaterrors.ErrConversationNotFound
 	}
 
 	return s.conversation, nil

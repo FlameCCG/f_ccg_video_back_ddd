@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
@@ -35,7 +37,7 @@ func (g *fakeMenuGenerator) GenerateMenuSuggestion(
 	}
 	g.menuJSON = append([]byte(nil), menuTableJSON...)
 
-	suggestion := &domain.MenuSuggestion{
+	suggestion := &rbacvo.MenuSuggestion{
 		TitleEn:   "Users",
 		TitleJa:   "ユーザー",
 		Icon:      "<svg></svg>",
@@ -52,7 +54,7 @@ func TestMenuServiceCreateOrdersAndGrantsCreatorRole(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := domain.NewRole("创建者", "")
+	role := rbacentity.NewRole("创建者", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
@@ -68,7 +70,7 @@ func TestMenuServiceCreateOrdersAndGrantsCreatorRole(t *testing.T) {
 	}
 
 	for index, title := range []string{"A", "B", "C"} {
-		menu := domain.NewMenu(title, "", "", "", "", "", "", false, nil, uint(index+1))
+		menu := rbacentity.NewMenu(title, "", "", "", "", "", "", false, nil, uint(index+1))
 		if err := s.menus.Create(ctx, app.CreateMenuParams{
 			Title:     menu.Title,
 			SortOrder: menu.SortOrder,
@@ -125,7 +127,7 @@ func TestMenuServiceCreateRejectsUnsafeIcon(t *testing.T) {
 		"<a href=\"javascript:alert(1)\">x</a>",
 	} {
 		err := s.menus.Create(ctx, app.CreateMenuParams{Title: "X", Icon: icon})
-		if !errors.Is(err, domain.ErrMenuIconUnsafe) {
+		if !errors.Is(err, rbacvo.ErrMenuIconUnsafe) {
 			t.Fatalf("create with icon %q: err = %v, want ErrMenuIconUnsafe", icon, err)
 		}
 	}
@@ -145,13 +147,13 @@ func TestMenuServiceUpdateRejectsUnsafeIcon(t *testing.T) {
 
 	unsafe := "<script>alert(1)</script>"
 	err := s.menus.Update(ctx, app.UpdateMenuParams{ID: 1, Icon: &unsafe})
-	if !errors.Is(err, domain.ErrMenuIconUnsafe) {
+	if !errors.Is(err, rbacvo.ErrMenuIconUnsafe) {
 		t.Fatalf("update with unsafe icon: err = %v, want ErrMenuIconUnsafe", err)
 	}
 
 	tooLong := strings.Repeat("a", 2049)
 	err = s.menus.Update(ctx, app.UpdateMenuParams{ID: 1, Icon: &tooLong})
-	if !errors.Is(err, domain.ErrMenuIconTooLong) {
+	if !errors.Is(err, rbacvo.ErrMenuIconTooLong) {
 		t.Fatalf("update with oversized icon: err = %v, want ErrMenuIconTooLong", err)
 	}
 }
@@ -160,7 +162,7 @@ func TestMenuServiceCreateAcceptsSafeIconAndPersists(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := domain.NewRole("创建者", "")
+	role := rbacentity.NewRole("创建者", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
@@ -201,8 +203,8 @@ func TestMenuServiceCreateRollsBackWithoutCreatorRole(t *testing.T) {
 		Title:     "orphan",
 		SortOrder: 1,
 		CreatorID: 999,
-	}); err != domain.ErrMenuCreatorRoleMissing {
-		t.Fatalf("create error = %v, want %v", err, domain.ErrMenuCreatorRoleMissing)
+	}); err != rbacerrors.ErrMenuCreatorRoleMissing {
+		t.Fatalf("create error = %v, want %v", err, rbacerrors.ErrMenuCreatorRoleMissing)
 	}
 
 	var count int64
@@ -218,7 +220,7 @@ func TestMenuServiceMoveAndRejectParentCycle(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := domain.NewRole("创建者", "")
+	role := rbacentity.NewRole("创建者", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
@@ -270,8 +272,8 @@ func TestMenuServiceMoveAndRejectParentCycle(t *testing.T) {
 		ID:             ids[0],
 		ParentID:       &child,
 		ParentProvided: true,
-	}); err != domain.ErrMenuParentCycle {
-		t.Fatalf("parent cycle error = %v, want %v", err, domain.ErrMenuParentCycle)
+	}); err != rbacerrors.ErrMenuParentCycle {
+		t.Fatalf("parent cycle error = %v, want %v", err, rbacerrors.ErrMenuParentCycle)
 	}
 }
 
@@ -279,7 +281,7 @@ func TestMenuServiceGenerateUsesCompleteMenuData(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	menu := domain.NewMenu("系统管理", "System", "システム", "<svg></svg>", "/system", "System", "Layout", false, nil, 1)
+	menu := rbacentity.NewMenu("系统管理", "System", "システム", "<svg></svg>", "/system", "System", "Layout", false, nil, 1)
 	if err := s.db.Create(&po.Menu{
 		Title:     menu.Title,
 		TitleEn:   menu.TitleEn,

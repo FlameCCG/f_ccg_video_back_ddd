@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	domain "f_ccg_video_back_ddd/internal/domain/platform"
+	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
@@ -65,7 +65,7 @@ func (s *CommentLikeSyncService) Run(ctx context.Context) {
 			return
 		}
 
-		intents, decodeOK := domain.FoldCommentLikeIntents(s.decodeCommentLikeEvents(items))
+		intents, decodeOK := platformservice.FoldCommentLikeIntents(s.decodeCommentLikeEvents(items))
 		if !decodeOK {
 			// 整批都是坏消息：直接 ack 丢掉，避免堵死
 			if err := s.queue.Ack(ctx, len(items)); err != nil {
@@ -90,11 +90,11 @@ func (s *CommentLikeSyncService) Run(ctx context.Context) {
 }
 
 // decodeCommentLikeEvents 按入队顺序解码原始消息，解码失败的条目记录警告后丢弃。
-func (s *CommentLikeSyncService) decodeCommentLikeEvents(items []string) []domain.CommentLikeEvent {
-	events := make([]domain.CommentLikeEvent, 0, len(items))
+func (s *CommentLikeSyncService) decodeCommentLikeEvents(items []string) []platformservice.CommentLikeEvent {
+	events := make([]platformservice.CommentLikeEvent, 0, len(items))
 
 	for _, raw := range items {
-		var evt domain.CommentLikeEvent
+		var evt platformservice.CommentLikeEvent
 		if err := json.Unmarshal([]byte(raw), &evt); err != nil {
 			s.logger.Warn("unmarshal comment like event failed", zap.Error(err))
 
@@ -108,9 +108,9 @@ func (s *CommentLikeSyncService) decodeCommentLikeEvents(items []string) []domai
 }
 
 // applyIntents 逐条落库最终意图，任一条失败即终止本批并携带定位信息返回。
-func (s *CommentLikeSyncService) applyIntents(ctx context.Context, intents map[domain.CommentLikeIntentKey]string) error {
+func (s *CommentLikeSyncService) applyIntents(ctx context.Context, intents map[platformservice.CommentLikeIntentKey]string) error {
 	for key, action := range intents {
-		evt := domain.CommentLikeEvent{
+		evt := platformservice.CommentLikeEvent{
 			CommentID: key.CommentID,
 			UserID:    key.UserID,
 			Action:    action,
@@ -126,7 +126,7 @@ func (s *CommentLikeSyncService) applyIntents(ctx context.Context, intents map[d
 // applyFinalIntent 按最终意图相对 DB 行状态在一个事务内写一次：
 // like + 无行 → INSERT + count+1；unlike + 有行 → DELETE + count-1；其余 noop。
 // 评论已删除时直接跳过，避免堵队列 / 复活孤儿 comment_likes。
-func (s *CommentLikeSyncService) applyFinalIntent(ctx context.Context, evt domain.CommentLikeEvent) error {
+func (s *CommentLikeSyncService) applyFinalIntent(ctx context.Context, evt platformservice.CommentLikeEvent) error {
 	return s.txm.Do(ctx, func(txCtx context.Context) error {
 		exists, err := s.projection.CommentExists(txCtx, evt.CommentID)
 		if err != nil {
@@ -138,7 +138,7 @@ func (s *CommentLikeSyncService) applyFinalIntent(ctx context.Context, evt domai
 		}
 
 		switch evt.Action {
-		case domain.LikeActionLike:
+		case platformservice.LikeActionLike:
 			inserted, insertErr := s.projection.InsertLike(txCtx, evt.CommentID, evt.UserID)
 			if insertErr != nil {
 				return insertErr
@@ -150,7 +150,7 @@ func (s *CommentLikeSyncService) applyFinalIntent(ctx context.Context, evt domai
 			}
 
 			return s.projection.IncrLikeCount(txCtx, evt.CommentID)
-		case domain.LikeActionUnlike:
+		case platformservice.LikeActionUnlike:
 			deleted, deleteErr := s.projection.DeleteLike(txCtx, evt.CommentID, evt.UserID)
 			if deleteErr != nil {
 				return deleteErr

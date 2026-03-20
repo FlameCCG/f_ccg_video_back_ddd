@@ -14,14 +14,15 @@ import (
 	applicationSearch "f_ccg_video_back_ddd/internal/application/search"
 	applicationSocial "f_ccg_video_back_ddd/internal/application/social"
 	applicationVideo "f_ccg_video_back_ddd/internal/application/video"
-	domainChat "f_ccg_video_back_ddd/internal/domain/chat"
-	domainComment "f_ccg_video_back_ddd/internal/domain/comment"
-	domainContentops "f_ccg_video_back_ddd/internal/domain/contentops"
-	domainDynamic "f_ccg_video_back_ddd/internal/domain/dynamic"
-	domainMedia "f_ccg_video_back_ddd/internal/domain/media"
-	domainRbac "f_ccg_video_back_ddd/internal/domain/rbac"
-	domainSocial "f_ccg_video_back_ddd/internal/domain/social"
-	domainVideo "f_ccg_video_back_ddd/internal/domain/video"
+	chatrepo "f_ccg_video_back_ddd/internal/domain/chat/repository"
+	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
+	contentopsrepo "f_ccg_video_back_ddd/internal/domain/contentops/repository"
+	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	mediarepo "f_ccg_video_back_ddd/internal/domain/media/repository"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	socialrepo "f_ccg_video_back_ddd/internal/domain/social/repository"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	infrastructureCacheChat "f_ccg_video_back_ddd/internal/infrastructure/cache/chat"
 	infrastructureCacheComment "f_ccg_video_back_ddd/internal/infrastructure/cache/comment"
 	infrastructureCacheContentops "f_ccg_video_back_ddd/internal/infrastructure/cache/contentops"
@@ -79,13 +80,13 @@ var RbacProviderSet = wire.NewSet(
 	infrastructurePersistenceRbac.NewRoleMenuRepository,
 	infrastructurePersistenceRbac.NewRoleRepository,
 	infrastructurePersistenceRbac.NewUserRoleRepository,
-	wire.Bind(new(domainRbac.ApiResourceRepository), new(*infrastructurePersistenceRbac.ApiResourceRepository)),
+	wire.Bind(new(rbacrepo.ApiResourceRepository), new(*infrastructurePersistenceRbac.ApiResourceRepository)),
 	wire.Bind(new(applicationRbac.Enforcer), new(*infrastructurePersistenceRbac.CasbinEnforcer)),
-	wire.Bind(new(domainRbac.MenuRepository), new(*infrastructurePersistenceRbac.MenuRepository)),
+	wire.Bind(new(rbacrepo.MenuRepository), new(*infrastructurePersistenceRbac.MenuRepository)),
 	wire.Bind(new(applicationRbac.ResourceMetaLoader), new(*infrastructurePersistenceRbac.OpenAPIMetaLoader)),
-	wire.Bind(new(domainRbac.RoleMenuRepository), new(*infrastructurePersistenceRbac.RoleMenuRepository)),
-	wire.Bind(new(domainRbac.RoleRepository), new(*infrastructurePersistenceRbac.RoleRepository)),
-	wire.Bind(new(domainRbac.UserRoleRepository), new(*infrastructurePersistenceRbac.UserRoleRepository)),
+	wire.Bind(new(rbacrepo.RoleMenuRepository), new(*infrastructurePersistenceRbac.RoleMenuRepository)),
+	wire.Bind(new(rbacrepo.RoleRepository), new(*infrastructurePersistenceRbac.RoleRepository)),
+	wire.Bind(new(rbacrepo.UserRoleRepository), new(*infrastructurePersistenceRbac.UserRoleRepository)),
 	// internal/interfaces/http/handler/rbac
 	interfacesHttpHandlerRbac.NewHandler,
 )
@@ -100,7 +101,7 @@ var ContentOpsProviderSet = wire.NewSet(
 	infrastructurePersistenceContentops.NewBannerRepository,
 	infrastructurePersistenceContentops.NewConfigFileWriter,
 	infrastructurePersistenceContentops.NewVideoPartitionQuery,
-	wire.Bind(new(domainContentops.BannerRepository), new(*infrastructurePersistenceContentops.BannerRepository)),
+	wire.Bind(new(contentopsrepo.BannerRepository), new(*infrastructurePersistenceContentops.BannerRepository)),
 	wire.Bind(new(applicationContentops.ConfigFileWriter), new(*infrastructurePersistenceContentops.ConfigFileWriter)),
 	wire.Bind(new(applicationIdentity.ConfigFileWriter), new(*infrastructurePersistenceContentops.ConfigFileWriter)),
 	wire.Bind(new(applicationContentops.VideoPartitionQuery), new(*infrastructurePersistenceContentops.VideoPartitionQuery)),
@@ -125,8 +126,8 @@ var CommentProviderSet = wire.NewSet(
 	infrastructurePersistenceComment.NewRelatedQuery,
 	infrastructurePersistenceComment.NewRepository,
 	infrastructurePersistenceComment.NewPurgeRepository,
-	wire.Bind(new(domainComment.Repository), new(*infrastructurePersistenceComment.Repository)),
-	wire.Bind(new(domainComment.LikeRepository), new(*infrastructurePersistenceComment.LikeRepository)),
+	wire.Bind(new(commentrepo.Repository), new(*infrastructurePersistenceComment.Repository)),
+	wire.Bind(new(commentrepo.LikeRepository), new(*infrastructurePersistenceComment.LikeRepository)),
 	wire.Bind(new(applicationComment.Query), new(*infrastructurePersistenceComment.Query)),
 	wire.Bind(new(applicationComment.RelatedQuery), new(*infrastructurePersistenceComment.RelatedQuery)),
 	// internal/infrastructure/cache/comment
@@ -152,9 +153,9 @@ var DynamicProviderSet = wire.NewSet(
 	infrastructurePersistenceDynamic.NewUserProfileQuery,
 	infrastructurePersistenceDynamic.NewVideoOwnershipQuery,
 	wire.Bind(new(applicationDynamic.ActivityQuery), new(*infrastructurePersistenceDynamic.ActivityQuery)),
-	wire.Bind(new(domainDynamic.DynamicRepository), new(*infrastructurePersistenceDynamic.DynamicRepository)),
-	wire.Bind(new(domainDynamic.LikeRepository), new(*infrastructurePersistenceDynamic.LikeRepository)),
-	wire.Bind(new(domainDynamic.ReadRepository), new(*infrastructurePersistenceDynamic.ReadRepository)),
+	wire.Bind(new(dynamicrepo.DynamicRepository), new(*infrastructurePersistenceDynamic.DynamicRepository)),
+	wire.Bind(new(dynamicrepo.LikeRepository), new(*infrastructurePersistenceDynamic.LikeRepository)),
+	wire.Bind(new(dynamicrepo.ReadRepository), new(*infrastructurePersistenceDynamic.ReadRepository)),
 	wire.Bind(new(applicationDynamic.FeedQuery), new(*infrastructurePersistenceDynamic.FeedQuery)),
 	wire.Bind(new(applicationDynamic.AdminDynamicQuery), new(*infrastructurePersistenceDynamic.AdminDynamicQuery)),
 	wire.Bind(new(applicationDynamic.UserProfileQuery), new(*infrastructurePersistenceDynamic.UserProfileQuery)),
@@ -176,7 +177,7 @@ var SocialProviderSet = wire.NewSet(
 	infrastructurePersistenceSocial.NewFocusRepository,
 	infrastructurePersistenceSocial.NewRelationQuery,
 	infrastructurePersistenceSocial.NewUserExistsQuery,
-	wire.Bind(new(domainSocial.FocusRepository), new(*infrastructurePersistenceSocial.FocusRepository)),
+	wire.Bind(new(socialrepo.FocusRepository), new(*infrastructurePersistenceSocial.FocusRepository)),
 	wire.Bind(new(applicationSocial.RelationQuery), new(*infrastructurePersistenceSocial.RelationQuery)),
 	wire.Bind(new(applicationSocial.UserExistsQuery), new(*infrastructurePersistenceSocial.UserExistsQuery)),
 	// internal/interfaces/http/handler/social
@@ -194,7 +195,7 @@ var ChatProviderSet = wire.NewSet(
 	infrastructurePersistenceChat.NewStore,
 	wire.Bind(new(applicationChat.FollowRelationQuery), new(*infrastructurePersistenceChat.FollowRelationQuery)),
 	wire.Bind(new(applicationChat.Query), new(*infrastructurePersistenceChat.Store)),
-	wire.Bind(new(domainChat.Repository), new(*infrastructurePersistenceChat.Store)),
+	wire.Bind(new(chatrepo.Repository), new(*infrastructurePersistenceChat.Store)),
 	wire.Bind(new(applicationNotification.ChatUnreadCounter), new(*infrastructurePersistenceChat.Store)),
 	// internal/infrastructure/cache/chat
 	infrastructureCacheChat.NewEventBus,
@@ -261,19 +262,19 @@ var MediaProviderSet = wire.NewSet(
 	applicationMedia.ProviderSet,
 	// internal/infrastructure/persistence/media
 	infrastructurePersistenceMedia.NewTranscodeResourceRepository,
-	wire.Bind(new(domainMedia.TranscodeResourceRepository), new(*infrastructurePersistenceMedia.TranscodeResourceRepository)),
+	wire.Bind(new(mediarepo.TranscodeResourceRepository), new(*infrastructurePersistenceMedia.TranscodeResourceRepository)),
 	// internal/infrastructure/cache/media
 	infrastructureCacheMedia.NewCancelBroadcaster,
 	infrastructureCacheMedia.NewCancelSubscriber,
 	infrastructureCacheMedia.NewProgressCache,
 	infrastructureCacheMedia.NewVideoDetailCache,
-	wire.Bind(new(domainMedia.CancelBroadcaster), new(*infrastructureCacheMedia.CancelBroadcaster)),
-	wire.Bind(new(domainMedia.ProgressReader), new(*infrastructureCacheMedia.ProgressCache)),
-	wire.Bind(new(domainMedia.ProgressStore), new(*infrastructureCacheMedia.ProgressCache)),
-	wire.Bind(new(domainMedia.VideoDetailCacheInvalidator), new(*infrastructureCacheMedia.VideoDetailCache)),
+	wire.Bind(new(mediaport.CancelBroadcaster), new(*infrastructureCacheMedia.CancelBroadcaster)),
+	wire.Bind(new(mediaport.ProgressReader), new(*infrastructureCacheMedia.ProgressCache)),
+	wire.Bind(new(mediaport.ProgressStore), new(*infrastructureCacheMedia.ProgressCache)),
+	wire.Bind(new(mediaport.VideoDetailCacheInvalidator), new(*infrastructureCacheMedia.VideoDetailCache)),
 	// internal/infrastructure/mq
 	infrastructureMq.ProviderSet,
-	wire.Bind(new(domainMedia.TaskPublisher), new(*infrastructureMq.MQService)),
+	wire.Bind(new(mediaport.TaskPublisher), new(*infrastructureMq.MQService)),
 	wire.Bind(new(applicationMedia.MediaProber), new(*infrastructureMq.TranscodeEngine)),
 	wire.Bind(new(applicationMedia.CheckpointManager), new(*infrastructureMq.TranscodeEngine)),
 	wire.Bind(new(applicationMedia.SourceStager), new(*infrastructureMq.TranscodeEngine)),
@@ -282,7 +283,7 @@ var MediaProviderSet = wire.NewSet(
 	wire.Bind(new(infrastructureMq.CancelSubscriberPort), new(*infrastructureCacheMedia.CancelSubscriber)),
 	// internal/infrastructure/storage
 	infrastructureStorage.ProviderSet,
-	wire.Bind(new(domainMedia.StorageResolver), new(*infrastructureStorage.Resolver)),
+	wire.Bind(new(mediaport.StorageResolver), new(*infrastructureStorage.Resolver)),
 	wire.Bind(new(applicationVideo.UploadGarbageScanner), new(*infrastructureStorage.UploadGarbageScanner)),
 )
 
@@ -317,22 +318,22 @@ var VideoProviderSet = wire.NewSet(
 	infrastructurePersistenceVideo.NewScheduleStore,
 	wire.Bind(new(applicationVideo.AdminVideoQuery), new(*infrastructurePersistenceVideo.AdminVideoQuery)),
 	wire.Bind(new(applicationVideo.DanmuQuery), new(*infrastructurePersistenceVideo.DanmuQuery)),
-	wire.Bind(new(domainVideo.DanmuRepository), new(*infrastructurePersistenceVideo.DanmuRepository)),
+	wire.Bind(new(videorepo.DanmuRepository), new(*infrastructurePersistenceVideo.DanmuRepository)),
 	wire.Bind(new(applicationVideo.VideoDetailQuery), new(*infrastructurePersistenceVideo.DetailQuery)),
 	wire.Bind(new(applicationVideo.FeedQuery), new(*infrastructurePersistenceVideo.FeedQuery)),
 	wire.Bind(new(applicationVideo.FolderQuery), new(*infrastructurePersistenceVideo.FolderQuery)),
-	wire.Bind(new(domainVideo.FolderRepository), new(*infrastructurePersistenceVideo.FolderRepository)),
+	wire.Bind(new(videorepo.FolderRepository), new(*infrastructurePersistenceVideo.FolderRepository)),
 	wire.Bind(new(applicationVideo.HistoryQuery), new(*infrastructurePersistenceVideo.HistoryQuery)),
-	wire.Bind(new(domainVideo.HistoryRepository), new(*infrastructurePersistenceVideo.HistoryRepository)),
-	wire.Bind(new(domainVideo.LikeRepository), new(*infrastructurePersistenceVideo.LikeRepository)),
-	wire.Bind(new(domainVideo.CoinRepository), new(*infrastructurePersistenceVideo.CoinRepository)),
+	wire.Bind(new(videorepo.HistoryRepository), new(*infrastructurePersistenceVideo.HistoryRepository)),
+	wire.Bind(new(videorepo.LikeRepository), new(*infrastructurePersistenceVideo.LikeRepository)),
+	wire.Bind(new(videorepo.CoinRepository), new(*infrastructurePersistenceVideo.CoinRepository)),
 	wire.Bind(new(applicationVideo.NotifySourceQuery), new(*infrastructurePersistenceVideo.NotifySourceQuery)),
-	wire.Bind(new(domainVideo.PartitionRepository), new(*infrastructurePersistenceVideo.PartitionRepository)),
+	wire.Bind(new(videorepo.PartitionRepository), new(*infrastructurePersistenceVideo.PartitionRepository)),
 	wire.Bind(new(applicationVideo.RecommendQuery), new(*infrastructurePersistenceVideo.RecommendQuery)),
 	wire.Bind(new(applicationVideo.ReportQuery), new(*infrastructurePersistenceVideo.ReportQuery)),
-	wire.Bind(new(domainVideo.ReportRepository), new(*infrastructurePersistenceVideo.ReportRepository)),
+	wire.Bind(new(videorepo.ReportRepository), new(*infrastructurePersistenceVideo.ReportRepository)),
 	wire.Bind(new(applicationVideo.UserVideoQuery), new(*infrastructurePersistenceVideo.UserVideoQuery)),
-	wire.Bind(new(domainVideo.VideoRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
+	wire.Bind(new(videorepo.VideoRepository), new(*infrastructurePersistenceVideo.VideoRepository)),
 	// internal/infrastructure/cache/video
 	infrastructureCacheVideo.NewUploadQuotaStore,
 	infrastructureCacheVideo.NewUploadHashGuard,

@@ -31,11 +31,6 @@ func NewProducerPool(logger *zap.Logger) *ProducerPool {
 	return &ProducerPool{factory: sarama.NewSyncProducer, logger: logger}
 }
 
-// newProducerPoolWithFactory 用自定义工厂创建生产者缓存（测试用）。
-func newProducerPoolWithFactory(factory ProducerFactory, logger *zap.Logger) *ProducerPool {
-	return &ProducerPool{factory: factory, logger: logger}
-}
-
 // Producer 初始化（或复用）Kafka 同步生产者。
 func (p *ProducerPool) Producer(cfg *config.Kafka) (sarama.SyncProducer, error) {
 	if p == nil {

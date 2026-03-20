@@ -7,9 +7,9 @@ import (
 	"time"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config"
-	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
 )
@@ -32,7 +32,7 @@ type TranscodeConsumerComponent struct {
 	configs    shared.ConfigReader
 	cfg        *config.Kafka
 	service    *mediaapp.TranscodeService
-	registry   *media.TaskRegistry
+	registry   *mediaruntime.TaskRegistry
 	subscriber CancelSubscriberPort
 	producers  *ProducerPool
 	logger     *zap.Logger
@@ -48,7 +48,7 @@ func NewTranscodeConsumerComponent(
 	configs shared.ConfigReader,
 	cfg *config.Kafka,
 	service *mediaapp.TranscodeService,
-	registry *media.TaskRegistry,
+	registry *mediaruntime.TaskRegistry,
 	subscriber CancelSubscriberPort,
 	producers *ProducerPool,
 	logger *zap.Logger,

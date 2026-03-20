@@ -4,7 +4,7 @@ import (
 	"context"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -39,7 +39,7 @@ func (q *SearchFallbackQuery) SearchVideos(
 		return nil, 0, nil
 	}
 
-	keyword := domain.NormalizeKeyword(opts.Keyword)
+	keyword := searchvo.NormalizeKeyword(opts.Keyword)
 	if keyword == "" {
 		return nil, 0, nil
 	}
@@ -92,7 +92,7 @@ func (q *SearchFallbackQuery) SearchUsers(
 		return nil, 0, nil
 	}
 
-	keyword := domain.NormalizeKeyword(opts.Keyword)
+	keyword := searchvo.NormalizeKeyword(opts.Keyword)
 	if keyword == "" {
 		return nil, 0, nil
 	}
@@ -120,9 +120,9 @@ func (q *SearchFallbackQuery) SearchUsers(
 		Where("users.username LIKE ?", like)
 
 	switch opts.UserSort {
-	case domain.UserSortLevel:
+	case searchvo.UserSortLevel:
 		query = query.Order("users.level " + sqlSortDirection(opts.UserOrder))
-	case domain.UserSortCreatedAt:
+	case searchvo.UserSortCreatedAt:
 		query = query.Order("users.created_at " + sqlSortDirection(opts.UserOrder))
 	default:
 		query = query.Order("follower_count " + sqlSortDirection(opts.UserOrder))
@@ -149,7 +149,7 @@ func (q *SearchFallbackQuery) CountUsers(ctx context.Context, keyword string) (i
 		return 0, nil
 	}
 
-	keyword = domain.NormalizeKeyword(keyword)
+	keyword = searchvo.NormalizeKeyword(keyword)
 	if keyword == "" {
 		return 0, nil
 	}
@@ -189,11 +189,11 @@ func applyVideoFallbackSort(query *gorm.DB, opts app.SearchOptions, keyword, pre
 	}
 
 	switch opts.VideoSort {
-	case domain.VideoSortViews:
+	case searchvo.VideoSortViews:
 		query = query.Order("views " + sqlSortDirection(opts.VideoOrder))
-	case domain.VideoSortDanmu:
+	case searchvo.VideoSortDanmu:
 		query = query.Order("danmu_count " + sqlSortDirection(opts.VideoOrder))
-	case domain.VideoSortDuration:
+	case searchvo.VideoSortDuration:
 		query = query.Order("duration " + sqlSortDirection(opts.VideoOrder))
 	default:
 		query = query.Order(clause.Expr{
@@ -213,7 +213,7 @@ ELSE 4
 
 // sqlSortDirection 把排序方向枚举翻译成 SQL 关键字。
 func sqlSortDirection(order int) string {
-	if order == domain.SortOrderAsc {
+	if order == searchvo.SortOrderAsc {
 		return "ASC"
 	}
 

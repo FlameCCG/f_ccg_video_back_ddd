@@ -3,7 +3,9 @@ package video
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -14,9 +16,9 @@ import (
 //
 // publish_at 与 is_scheduled 同步写入视频行；事务不回滚已上传对象，也不保证提交后的 Kafka 投递。
 // 源文件名超长等数据库错误经 domain.MapSourceFileNameDBError 转为用户可读文案。
-func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraft) error {
+func (r *VideoRepository) Persist(ctx context.Context, draft *videoentity.PublishDraft) error {
 	if draft == nil || draft.Video == nil {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	row := toPOVideo(draft.Video)
@@ -25,7 +27,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 
 	err := gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if createErr := tx.Create(row).Error; createErr != nil {
-			return domain.ErrCreateVideoFailed
+			return videoerrors.ErrCreateVideoFailed
 		}
 		if len(draft.TagIDs) > 0 {
 			tags := make([]po.Tag, 0, len(draft.TagIDs))
@@ -39,7 +41,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 			}
 
 			if assocErr := tx.Model(row).Association("Tags").Replace(values...); assocErr != nil {
-				return domain.ErrCreateVideoTagsFailed
+				return videoerrors.ErrCreateVideoTagsFailed
 			}
 		}
 
@@ -50,7 +52,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 			}
 
 			if createErr := tx.Create(&parts).Error; createErr != nil {
-				return domain.ErrCreatePartsFailed
+				return videoerrors.ErrCreatePartsFailed
 			}
 
 			// 回填自增 ID 供调用方派发转码任务
@@ -62,22 +64,22 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 			}
 
 			if resErr := createInitialPartResources(tx, draft, parts); resErr != nil {
-				if domain.IsSourceFileNameError(resErr) {
+				if videovo.IsSourceFileNameError(resErr) {
 					return resErr
 				}
 
-				return domain.ErrCreatePartResourcesFailed
+				return videoerrors.ErrCreatePartResourcesFailed
 			}
 
 			return nil
 		}
 
 		if resErr := createInitialVideoResource(tx, draft, row.ID); resErr != nil {
-			if domain.IsSourceFileNameError(resErr) {
+			if videovo.IsSourceFileNameError(resErr) {
 				return resErr
 			}
 
-			return domain.ErrCreateVideoResourceFailed
+			return videoerrors.ErrCreateVideoResourceFailed
 		}
 
 		return nil
@@ -96,7 +98,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 }
 
 // createInitialPartResources 逐个分P写入初始（源片）资源行。
-func createInitialPartResources(tx *gorm.DB, draft *domain.PublishDraft, parts []po.VideoPart) error {
+func createInitialPartResources(tx *gorm.DB, draft *videoentity.PublishDraft, parts []po.VideoPart) error {
 	for idx := range parts {
 		if idx >= len(draft.PartResources) {
 			continue
@@ -108,7 +110,7 @@ func createInitialPartResources(tx *gorm.DB, draft *domain.PublishDraft, parts [
 		}
 
 		if err := tx.Create(&resource).Error; err != nil {
-			return domain.MapSourceFileNameDBError(err, resource.SourceFileName)
+			return videovo.MapSourceFileNameDBError(err, resource.SourceFileName)
 		}
 	}
 
@@ -116,14 +118,14 @@ func createInitialPartResources(tx *gorm.DB, draft *domain.PublishDraft, parts [
 }
 
 // createInitialVideoResource 为单视频作品写入初始（源片）资源行。
-func createInitialVideoResource(tx *gorm.DB, draft *domain.PublishDraft, videoID uint) error {
+func createInitialVideoResource(tx *gorm.DB, draft *videoentity.PublishDraft, videoID uint) error {
 	resource := toPOVideoResource(draft.VideoResource, videoID)
 	if resource == nil {
 		return nil
 	}
 
 	if err := tx.Create(resource).Error; err != nil {
-		return domain.MapSourceFileNameDBError(err, resource.SourceFileName)
+		return videovo.MapSourceFileNameDBError(err, resource.SourceFileName)
 	}
 
 	return nil

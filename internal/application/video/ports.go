@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 )
 
 // ============================================================================
@@ -22,14 +22,14 @@ import (
 // 不进入领域层（见 architecture.md 第 4 节）。
 type VideoDetailQuery interface {
 	// LoadPublished 读取已发布视频的详情 meta 与统计；不存在时返回 domain.ErrRecordNotFound。
-	LoadPublished(ctx context.Context, videoID uint) (*DetailMeta, *domain.Stats, error)
+	LoadPublished(ctx context.Context, videoID uint) (*DetailMeta, *videovo.Stats, error)
 	// LoadOwnerPreview 读取作者本人的非公开（私密/待审/定时）视频详情；
 	// 不存在时返回 domain.ErrRecordNotFound。
-	LoadOwnerPreview(ctx context.Context, videoID, viewerID uint) (*DetailMeta, *domain.Stats, error)
+	LoadOwnerPreview(ctx context.Context, videoID, viewerID uint) (*DetailMeta, *videovo.Stats, error)
 	// LoadAny 读取任意状态的视频详情（管理端使用）；不存在时返回 domain.ErrRecordNotFound。
-	LoadAny(ctx context.Context, videoID uint) (*DetailMeta, *domain.Stats, error)
+	LoadAny(ctx context.Context, videoID uint) (*DetailMeta, *videovo.Stats, error)
 	// UserFlags 读取当前用户对视频的点赞/收藏/投币标记。
-	UserFlags(ctx context.Context, videoID, userID uint) domain.UserFlags
+	UserFlags(ctx context.Context, videoID, userID uint) videovo.UserFlags
 }
 
 // FeedQuery 首页/热门/排行/推荐的列表读模型查询端口。
@@ -136,15 +136,15 @@ type StatsCache interface {
 	// Available 报告 Redis 是否可用；不可用时应用层直接写 DB。
 	Available() bool
 	// Load 读取权威计数；未命中返回 (nil, false)。
-	Load(ctx context.Context, videoID uint) (*domain.Stats, bool)
+	Load(ctx context.Context, videoID uint) (*videovo.Stats, bool)
 	// LoadBatch 批量读取权威计数（MGET），缺失项不出现在结果里。
-	LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*domain.Stats
+	LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*videovo.Stats
 	// Seed 仅在缺失时回填计数（SETNX + TTL）。
-	Seed(ctx context.Context, videoID uint, stats *domain.Stats)
+	Seed(ctx context.Context, videoID uint, stats *videovo.Stats)
 	// ApplyDelta 原子应用增量并标记 dirty + 递增 version；base 为冷缓存时的基线 payload。
-	ApplyDelta(ctx context.Context, videoID uint, delta domain.StatsDelta, basePayload string) (*domain.Stats, error)
+	ApplyDelta(ctx context.Context, videoID uint, delta videovo.StatsDelta, basePayload string) (*videovo.Stats, error)
 	// ApplyDeltaIfExists 仅在 key 已存在时应用增量；key 不存在返回 (nil, false, nil)。
-	ApplyDeltaIfExists(ctx context.Context, videoID uint, delta domain.StatsDelta) (*domain.Stats, bool, error)
+	ApplyDeltaIfExists(ctx context.Context, videoID uint, delta videovo.StatsDelta) (*videovo.Stats, bool, error)
 	// RawPayload 读取当前 stats key 的原始字符串；不存在返回 ("", false, nil)。
 	RawPayload(ctx context.Context, videoID uint) (string, bool, error)
 	// Clear 删除 stats / version / legacy synced key 并移出 dirty 集合。

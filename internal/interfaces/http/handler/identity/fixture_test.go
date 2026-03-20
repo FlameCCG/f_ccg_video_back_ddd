@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -85,25 +84,6 @@ func decodeResponseData(t *testing.T, response res.Response, out any) {
 	if err = json.Unmarshal(payload, out); err != nil {
 		t.Fatalf("unmarshal response data failed: %v", err)
 	}
-}
-
-// stubTxManager 用真实 sqlite 事务实现 tx.Manager，把事务句柄放进 context。
-//
-// 语义与 gormx.TxManager 一致（仓储经 gormx.DB(ctx, root) 取库）；
-// db 为 nil 时退化为直接执行，供不需要事务的用例复用。
-type stubTxManager struct {
-	db *gorm.DB
-}
-
-// Do 在事务内执行 fn。
-func (m stubTxManager) Do(ctx context.Context, fn func(context.Context) error) error {
-	if m.db == nil {
-		return fn(ctx)
-	}
-
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return fn(gormx.WithTx(ctx, tx))
-	})
 }
 
 // seedUserConf 直接写入用户配置行（跳过 GORM 钩子）。

@@ -82,11 +82,6 @@ func (c *AccessClaims) CheckPasswordVersion(secret, passwordHash string) error {
 	return nil
 }
 
-// CreateJwtToken 签发 access/refresh token；secret 为空或签名失败时返回错误。
-func CreateJwtToken(uid, username string, exp time.Duration, secret string, refreshExp time.Duration, refreshSecret string) (*JwtToken, error) {
-	return CreateJwtTokenWithPassword(uid, username, "", false, exp, secret, refreshExp, refreshSecret)
-}
-
 // CreateJwtTokenWithPassword binds both tokens to the current credential state.
 func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange bool, exp time.Duration, secret string, refreshExp time.Duration, refreshSecret string) (*JwtToken, error) {
 	if strings.TrimSpace(secret) == "" {
@@ -136,57 +131,6 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 		RefreshToken:       rToken,
 		RefreshExp:         rExp,
 	}, nil
-}
-
-// ParseJwtToken 复用访问令牌解析逻辑，返回用户 ID 与用户名；不查询数据库或角色策略。
-func ParseJwtToken(tokenString, secret string) (uid, username string, err error) {
-	uid, username, err = ParseJwtTokenWithRole(tokenString, secret)
-	return uid, username, err
-}
-
-// ParseJwtTokenWithRole 验证 HMAC 签名、声明形状与过期时间后返回 uid/username。
-// 名称保留历史叫法，当前实现不返回角色；角色权限仍需经服务端 Casbin 策略判断。
-func ParseJwtTokenWithRole(tokenString, secret string) (uid, username string, err error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		return []byte(secret), nil
-	})
-	if err != nil {
-		return uid, username, err
-	}
-
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		uid, err = claimString(claims, "uid")
-		if err != nil {
-			return uid, username, err
-		}
-
-		username, err = claimString(claims, "username")
-		if err != nil {
-			return uid, username, err
-		}
-
-		var exp int64
-
-		exp, err = claimUnix(claims, "exp")
-		if err != nil {
-			return "", "", err
-		}
-
-		if exp <= time.Now().Unix() {
-			err = errors.New("token expired")
-			return uid, username, err
-		}
-
-		return uid, username, err
-	}
-
-	err = errors.New("invalid token")
-
-	return uid, username, err
 }
 
 // ParseRefreshToken 使用调用方给定的刷新密钥验证令牌并提取 uid/exp，不要求 username 声明。

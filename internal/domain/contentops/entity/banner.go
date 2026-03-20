@@ -1,0 +1,122 @@
+package entity
+
+import (
+	"time"
+
+	contentopserrors "f_ccg_video_back_ddd/internal/domain/contentops/domainerr"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+)
+
+// Banner 轮播图实体，其 JSON 同时用于 HTTP 响应与 Redis 可见缓存。
+//
+// 字段顺序、JSON 字段名与空值表现属于外部契约；CreatedAt / UpdatedAt 标记为 json:"-"，不对外暴露。
+type Banner struct {
+	ID          uint            `json:"id"`
+	CreatedAt   time.Time       `json:"-"`
+	UpdatedAt   time.Time       `json:"-"`
+	Cover       string          `json:"cover"`
+	Href        string          `json:"href"`
+	Show        bool            `json:"show"`
+	Type        enum.BannerType `json:"type"`
+	PartitionID uint            `json:"partitionId"`
+}
+
+// BannerChanges 轮播图部分字段更新集合，nil 表示不更新。
+//
+// 仓储将该结构转换为 GORM 更新集，数据库列名只在持久化层使用。
+type BannerChanges struct {
+	Cover       *string
+	Href        *string
+	Show        *bool
+	Type        *enum.BannerType
+	PartitionID *uint
+}
+
+// IsEmpty 报告是否没有任何待更新字段。
+func (c BannerChanges) IsEmpty() bool {
+	return c.Cover == nil && c.Href == nil && c.Show == nil && c.Type == nil && c.PartitionID == nil
+}
+
+// BannerAdminQuery 后台轮播图分页查询条件。
+type BannerAdminQuery struct {
+	// Page 页码，从 1 开始。
+	Page int
+	// PageSize 每页条数。
+	PageSize int
+	// Type 轮播图类型；0 表示不限类型。
+	Type enum.BannerType
+	// PartitionID 分区 ID；nil 表示不限分区。
+	PartitionID *uint
+	// Show 显示状态；nil 表示不限显示状态。
+	Show *bool
+}
+
+// 后台分页默认值。
+const (
+	bannerAdminDefaultPageSize = 20
+	bannerAdminMaxPageSize     = 100
+)
+
+// Normalize 归一化分页参数：页码非正回落 1，每页条数非正或超过 100 回落 20。
+func (q *BannerAdminQuery) Normalize() {
+	if q == nil {
+		return
+	}
+
+	if q.Page <= 0 {
+		q.Page = 1
+	}
+
+	if q.PageSize <= 0 || q.PageSize > bannerAdminMaxPageSize {
+		q.PageSize = bannerAdminDefaultPageSize
+	}
+}
+
+// ResolveBannerPartitionID 依据轮播图类型裁定分区 ID。
+//
+// 规则：
+//   - 非首页类型不允许携带分区 ID（携带即报 ErrBannerPartitionTypeUnsupported），一律归零；
+//   - 首页类型的 0 表示首页本身，无需校验分区是否存在；
+//   - 首页类型的非 0 分区需要调用方另行校验分区存在性，此时 needExists 为 true。
+//
+// 领域层只裁定规则，分区存在性属于 IO，由应用层经查询端口完成。
+func resolveBannerPartitionID(bannerType enum.BannerType, partitionID uint) (resolved uint, needExists bool, err error) {
+	if bannerType != enum.BannerTypeHome {
+		if partitionID > 0 {
+			return 0, false, contentopserrors.ErrBannerPartitionTypeUnsupported
+		}
+
+		return 0, false, nil
+	}
+
+	if partitionID == 0 {
+		return 0, false, nil
+	}
+
+	return partitionID, true, nil
+}
+
+// ChangePlacement 统一维护类型与分区：切换为非首页类型时清除旧分区，
+// 显式为非首页指定分区则拒绝。校验失败时实体保持不变。
+func (b *Banner) ChangePlacement(bannerType *enum.BannerType, partitionID *uint) error {
+	nextType, nextPartition := b.Type, b.PartitionID
+	if bannerType != nil && *bannerType > 0 {
+		nextType = *bannerType
+	}
+	if partitionID != nil {
+		nextPartition = *partitionID
+	} else if nextType != enum.BannerTypeHome {
+		nextPartition = 0
+	}
+	resolved, _, err := resolveBannerPartitionID(nextType, nextPartition)
+	if err != nil {
+		return err
+	}
+	b.Type, b.PartitionID = nextType, resolved
+	return nil
+}
+
+// NeedsPartitionCheck 告诉调用方是否需要从视频上下文取得分区存在性事实。
+func (b *Banner) NeedsPartitionCheck() bool {
+	return b.Type == enum.BannerTypeHome && b.PartitionID > 0
+}

@@ -2,17 +2,18 @@ package chat
 
 import (
 	"context"
-	"golang.org/x/sync/errgroup"
 	"os"
 	"testing"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/chat"
+	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/sync/errgroup"
 )
 
 // CHAT_TEST_MONGO_URI points to a disposable transaction-capable Mongo instance.
@@ -38,7 +39,7 @@ func TestSendMessageRealMongoTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewStore(db)
-	msg := &domain.Message{ID: primitive.NewObjectID().Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: domain.MessageTypeText, Text: "transaction", CreatedAt: time.Now().Truncate(time.Millisecond)}
+	msg := &chatentity.Message{ID: primitive.NewObjectID().Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "transaction", CreatedAt: time.Now().Truncate(time.Millisecond)}
 	if err := store.SendMessage(ctx, msg, "transaction"); err == nil {
 		t.Fatal("summary validation must fail")
 	}

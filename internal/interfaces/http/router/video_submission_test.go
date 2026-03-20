@@ -13,7 +13,9 @@ import (
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
-	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	identityhandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/identity"
@@ -27,7 +29,7 @@ import (
 )
 
 type submissionStatusCache struct {
-	identitydomain.UserStatusCache
+	identityport.UserStatusCache
 	status enum.UserStatus
 }
 
@@ -35,10 +37,12 @@ func (s *submissionStatusCache) Load(context.Context, uint) (enum.UserStatus, bo
 	return s.status, true
 }
 
-type routeSubmissionUsers struct{ identitydomain.UserRepository }
+type routeSubmissionUsers struct {
+	identityrepo.UserRepository
+}
 
-func (*routeSubmissionUsers) FindByID(context.Context, uint) (*identitydomain.User, error) {
-	return &identitydomain.User{ID: 7, Username: "admin", Status: enum.UserStatusActive}, nil
+func (*routeSubmissionUsers) FindByID(context.Context, uint) (*identityentity.User, error) {
+	return &identityentity.User{ID: 7, Username: "admin", Status: enum.UserStatusActive}, nil
 }
 
 type routeSubmissionRoles struct {
@@ -66,7 +70,7 @@ func TestVideoSubmissionRoutesEnforcePolicyBeforeBinding(t *testing.T) {
 	handler := videohandler.NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, uploads, nil, nil, nil, nil, provider, nil, nil, identityapp.NewUserStatusService(statuses, &routeSubmissionUsers{}))
 	registerVideoCommonRoutes(engine.Group("/v1/common"), mw, handler)
 	registerIdentityCommonRoutes(engine.Group("/v1/common"), mw, &identityhandler.Handler{})
-	token, err := jwts.CreateJwtToken("7", "admin", time.Hour, secret, time.Hour, secret)
+	token, err := jwts.CreateJwtTokenWithPassword("7", "admin", "", false, time.Hour, secret, time.Hour, secret)
 	if err != nil {
 		t.Fatal(err)
 	}

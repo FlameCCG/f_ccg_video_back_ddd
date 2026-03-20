@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -58,7 +58,7 @@ type UserStatusCache struct {
 	logger *zap.Logger
 }
 
-var _ domain.UserStatusCache = (*UserStatusCache)(nil)
+var _ identityport.UserStatusCache = (*UserStatusCache)(nil)
 
 // NewUserStatusCache 构造用户状态缓存适配器。
 func NewUserStatusCache(redisClient *redis.Client, logger *zap.Logger) *UserStatusCache {

@@ -17,9 +17,8 @@ import (
 	"strings"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
-
 	app "f_ccg_video_back_ddd/internal/application/video"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -150,7 +149,7 @@ func (c *StatsCache) Available() bool {
 }
 
 // Load 读取权威计数；未命中返回 (nil, false)。
-func (c *StatsCache) Load(ctx context.Context, videoID uint) (*domain.Stats, bool) {
+func (c *StatsCache) Load(ctx context.Context, videoID uint) (*videovo.Stats, bool) {
 	if !c.Available() {
 		return nil, false
 	}
@@ -169,7 +168,7 @@ func (c *StatsCache) Load(ctx context.Context, videoID uint) (*domain.Stats, boo
 		return nil, false
 	}
 
-	var stats domain.Stats
+	var stats videovo.Stats
 	if err := json.Unmarshal(data, &stats); err != nil {
 		c.logger.Warn("unmarshal video stats cache failed", zap.Error(err), zap.Uint("videoId", videoID))
 
@@ -182,7 +181,7 @@ func (c *StatsCache) Load(ctx context.Context, videoID uint) (*domain.Stats, boo
 }
 
 // LoadBatch 批量读取权威计数（MGET），缺失项不出现在结果里。
-func (c *StatsCache) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*domain.Stats {
+func (c *StatsCache) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*videovo.Stats {
 	if !c.Available() || len(videoIDs) == 0 {
 		return nil
 	}
@@ -217,7 +216,7 @@ func (c *StatsCache) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*d
 		return nil
 	}
 
-	out := make(map[uint]*domain.Stats, len(uniqueIDs))
+	out := make(map[uint]*videovo.Stats, len(uniqueIDs))
 
 	for i, raw := range values {
 		if raw == nil {
@@ -235,7 +234,7 @@ func (c *StatsCache) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*d
 			continue
 		}
 
-		var stats domain.Stats
+		var stats videovo.Stats
 		if err := json.Unmarshal(data, &stats); err != nil {
 			continue
 		}
@@ -247,7 +246,7 @@ func (c *StatsCache) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*d
 }
 
 // Seed 仅在缺失时回填计数（SETNX + TTL）。
-func (c *StatsCache) Seed(ctx context.Context, videoID uint, stats *domain.Stats) {
+func (c *StatsCache) Seed(ctx context.Context, videoID uint, stats *videovo.Stats) {
 	if !c.Available() || stats == nil {
 		return
 	}
@@ -272,9 +271,9 @@ func (c *StatsCache) Seed(ctx context.Context, videoID uint, stats *domain.Stats
 func (c *StatsCache) ApplyDelta(
 	ctx context.Context,
 	videoID uint,
-	delta domain.StatsDelta,
+	delta videovo.StatsDelta,
 	basePayload string,
-) (*domain.Stats, error) {
+) (*videovo.Stats, error) {
 	if !c.Available() {
 		return nil, nil
 	}
@@ -296,7 +295,7 @@ func (c *StatsCache) ApplyDelta(
 		return nil, err
 	}
 
-	var stats domain.Stats
+	var stats videovo.Stats
 	if unmarshalErr := json.Unmarshal([]byte(res), &stats); unmarshalErr != nil {
 		// 返回 (nil, nil) 让应用层按「Lua 返回值无法解析」重试。
 		return nil, nil
@@ -309,8 +308,8 @@ func (c *StatsCache) ApplyDelta(
 func (c *StatsCache) ApplyDeltaIfExists(
 	ctx context.Context,
 	videoID uint,
-	delta domain.StatsDelta,
-) (*domain.Stats, bool, error) {
+	delta videovo.StatsDelta,
+) (*videovo.Stats, bool, error) {
 	if !c.Available() {
 		return nil, false, nil
 	}
@@ -337,7 +336,7 @@ func (c *StatsCache) ApplyDeltaIfExists(
 		return nil, false, err
 	}
 
-	var stats domain.Stats
+	var stats videovo.Stats
 	if unmarshalErr := json.Unmarshal([]byte(res), &stats); unmarshalErr != nil {
 		return nil, true, nil
 	}

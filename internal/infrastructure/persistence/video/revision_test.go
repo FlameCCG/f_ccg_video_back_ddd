@@ -13,7 +13,9 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -78,32 +80,32 @@ func (revisionAuthorIDs) Invalidate(context.Context, uint) {}
 
 // 除失败注入外，使用真实仓储；锁定读取和保存必须拿到同一个事务句柄。
 type revisionRepository struct {
-	domain.VideoRepository
+	videorepo.VideoRepository
 	readCtx  context.Context
 	failTags error
 }
 
-func (r *revisionRepository) FindByIDAndAuthorForUpdate(ctx context.Context, id uint, author string) (*domain.Video, error) {
+func (r *revisionRepository) FindByIDAndAuthorForUpdate(ctx context.Context, id uint, author string) (*videoentity.Video, error) {
 	if gormx.TxFrom(ctx) == nil {
 		return nil, errors.New("revision read outside transaction")
 	}
 	r.readCtx = ctx
 	return r.VideoRepository.FindByIDAndAuthorForUpdate(ctx, id, author)
 }
-func (r *revisionRepository) SaveRevision(ctx context.Context, v *domain.Video) error {
+func (r *revisionRepository) SaveRevision(ctx context.Context, v *videoentity.Video) error {
 	if r.readCtx != ctx || gormx.TxFrom(ctx) == nil {
 		return errors.New("revision write outside read transaction")
 	}
 	return r.VideoRepository.SaveRevision(ctx, v)
 }
-func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []domain.Tag) error {
+func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []videoentity.Tag) error {
 	if r.failTags != nil {
 		return r.failTags
 	}
 	return r.VideoRepository.ReplaceTags(ctx, id, tags)
 }
 
-func (f *fixture) revisionService(repo domain.VideoRepository, effects *revisionEffects) *app.UpdateService {
+func (f *fixture) revisionService(repo videorepo.VideoRepository, effects *revisionEffects) *app.UpdateService {
 	effects.ScheduleStore = infra.NewScheduleStore(f.db)
 	authors := app.NewAuthorService(repo, revisionAuthorIDs{}, revisionMeta{effects: effects}, nil, zap.NewNop())
 	return app.NewUpdateService(gormx.NewTxManager(f.db), repo, f.partitions, effects, authors,
@@ -120,7 +122,7 @@ func TestUpdateRevisionPersistsZeroValuesAndClearsTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.videos.ReplaceTags(t.Context(), row.ID, []domain.Tag{*tag}); err != nil {
+	if err := f.videos.ReplaceTags(t.Context(), row.ID, []videoentity.Tag{*tag}); err != nil {
 		t.Fatal(err)
 	}
 	effects := &revisionEffects{}
@@ -204,7 +206,7 @@ func TestUpdateRevisionVisibilityAndOwnership(t *testing.T) {
 			future := time.Now().Add(time.Hour)
 			_, err := f.revisionService(&revisionRepository{VideoRepository: f.videos}, effects).UpdateVideo(t.Context(), tt.author,
 				app.UpdateVideoOpts{VideoID: row.ID, PublishTime: &future})
-			if tt.wantErr && !errors.Is(err, domain.ErrRecordNotFound) {
+			if tt.wantErr && !errors.Is(err, videoerrors.ErrRecordNotFound) {
 				t.Fatalf("error=%v", err)
 			}
 			if !tt.wantErr && err != nil {

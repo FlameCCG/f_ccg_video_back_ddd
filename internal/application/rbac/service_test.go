@@ -6,7 +6,10 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacservice "f_ccg_video_back_ddd/internal/domain/rbac/service"
+	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
@@ -304,7 +307,7 @@ func TestRoleServiceCreate(t *testing.T) {
 	if err := s.roles.Create(ctx, app.CreateRoleParams{
 		Name: "运营",
 		Desc: "运营角色",
-		Permissions: []domain.PermissionItem{
+		Permissions: []rbacvo.PermissionItem{
 			{Resource: " /v1/admin/banner ", Action: " GET "},
 		},
 	}); err != nil {
@@ -319,21 +322,21 @@ func TestRoleServiceCreate(t *testing.T) {
 		t.Fatalf("unexpected policy: %+v", got)
 	}
 
-	if err := s.roles.Create(ctx, app.CreateRoleParams{Name: "运营"}); err != domain.ErrRoleNameExists {
+	if err := s.roles.Create(ctx, app.CreateRoleParams{Name: "运营"}); err != rbacerrors.ErrRoleNameExists {
 		t.Fatalf("expected ErrRoleNameExists, got %v", err)
 	}
 
 	// 权限参数不完整时报错文案必须原样下发。
 	err := s.roles.Create(ctx, app.CreateRoleParams{
 		Name:        "审核",
-		Permissions: []domain.PermissionItem{{Resource: "", Action: "GET"}},
+		Permissions: []rbacvo.PermissionItem{{Resource: "", Action: "GET"}},
 	})
-	if err != domain.ErrPermissionParamIncomplete {
+	if err != rbacerrors.ErrPermissionParamIncomplete {
 		t.Fatalf("expected ErrPermissionParamIncomplete, got %v", err)
 	}
 
 	// 模板角色不存在时整个事务回滚，不应留下半成品角色。
-	if err := s.roles.Create(ctx, app.CreateRoleParams{Name: "临时", CopyRoleID: 9999}); err != domain.ErrTemplateRoleNotFound {
+	if err := s.roles.Create(ctx, app.CreateRoleParams{Name: "临时", CopyRoleID: 9999}); err != rbacerrors.ErrTemplateRoleNotFound {
 		t.Fatalf("expected ErrTemplateRoleNotFound, got %v", err)
 	}
 
@@ -346,7 +349,7 @@ func TestRoleServiceCreateFromTemplate(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	template := domain.NewRole("模板", "")
+	template := rbacentity.NewRole("模板", "")
 	if err := s.roleRepo.Create(ctx, template); err != nil {
 		t.Fatalf("seed template role: %v", err)
 	}
@@ -373,7 +376,7 @@ func TestRoleServiceUpdateRenamesCasbin(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := domain.NewRole("旧名", "")
+	role := rbacentity.NewRole("旧名", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
@@ -409,7 +412,7 @@ func TestRoleServiceUpdateRenamesCasbin(t *testing.T) {
 	}
 
 	// 无可更新字段时文案必须保持原样。
-	if err := s.roles.Update(ctx, app.UpdateRoleParams{RoleID: role.ID}); err != domain.ErrNoUpdatableFields {
+	if err := s.roles.Update(ctx, app.UpdateRoleParams{RoleID: role.ID}); err != rbacerrors.ErrNoUpdatableFields {
 		t.Fatalf("expected ErrNoUpdatableFields, got %v", err)
 	}
 }
@@ -418,7 +421,7 @@ func TestRoleServiceDeleteRejectsRoleInUse(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := domain.NewRole("在用角色", "")
+	role := rbacentity.NewRole("在用角色", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
@@ -432,11 +435,11 @@ func TestRoleServiceDeleteRejectsRoleInUse(t *testing.T) {
 		t.Fatalf("seed user role: %v", err)
 	}
 
-	if err := s.roles.Delete(ctx, role.ID); err != domain.ErrRoleHasUsers {
+	if err := s.roles.Delete(ctx, role.ID); err != rbacerrors.ErrRoleHasUsers {
 		t.Fatalf("expected ErrRoleHasUsers, got %v", err)
 	}
 
-	if err := s.roles.Delete(ctx, role.ID+999); err != domain.ErrRoleNotFound {
+	if err := s.roles.Delete(ctx, role.ID+999); err != rbacerrors.ErrRoleNotFound {
 		t.Fatalf("expected ErrRoleNotFound, got %v", err)
 	}
 }
@@ -445,7 +448,7 @@ func TestPermissionServiceAssignRejectsCoveredPermission(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := domain.NewRole("受限角色", "")
+	role := rbacentity.NewRole("受限角色", "")
 	if err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
@@ -456,28 +459,28 @@ func TestPermissionServiceAssignRejectsCoveredPermission(t *testing.T) {
 
 	err := s.permissions.Assign(ctx, app.AssignPermissionParams{
 		RoleName:    "受限角色",
-		Permissions: []domain.PermissionItem{{Resource: "/v1/admin/banner", Action: "DELETE"}},
+		Permissions: []rbacvo.PermissionItem{{Resource: "/v1/admin/banner", Action: "DELETE"}},
 	})
-	if err != domain.ErrPermissionAlreadyOwned {
+	if err != rbacerrors.ErrPermissionAlreadyOwned {
 		t.Fatalf("expected ErrPermissionAlreadyOwned, got %v", err)
 	}
 
 	// 列表内部冗余同样被拒。
 	err = s.permissions.Assign(ctx, app.AssignPermissionParams{
 		RoleName: "受限角色",
-		Permissions: []domain.PermissionItem{
+		Permissions: []rbacvo.PermissionItem{
 			{Resource: "/v1/common/**", Action: "*"},
 			{Resource: "/v1/common/video", Action: "GET"},
 		},
 	})
-	if err != domain.ErrPermissionAlreadyOwned {
+	if err != rbacerrors.ErrPermissionAlreadyOwned {
 		t.Fatalf("expected ErrPermissionAlreadyOwned for internal redundancy, got %v", err)
 	}
 
 	if err := s.permissions.Assign(ctx, app.AssignPermissionParams{
 		RoleName:    "不存在",
-		Permissions: []domain.PermissionItem{{Resource: "/v1/x", Action: "GET"}},
-	}); err != domain.ErrRoleNotFound {
+		Permissions: []rbacvo.PermissionItem{{Resource: "/v1/x", Action: "GET"}},
+	}); err != rbacerrors.ErrRoleNotFound {
 		t.Fatalf("expected ErrRoleNotFound, got %v", err)
 	}
 }
@@ -487,7 +490,7 @@ func TestPermissionServiceRolePermissionsSources(t *testing.T) {
 	ctx := context.Background()
 
 	for _, name := range []string{"超级管理员", "大会员", "普通用户"} {
-		if err := s.roleRepo.Create(ctx, domain.NewRole(name, "")); err != nil {
+		if err := s.roleRepo.Create(ctx, rbacentity.NewRole(name, "")); err != nil {
 			t.Fatalf("seed role %s: %v", name, err)
 		}
 	}
@@ -546,17 +549,17 @@ func TestInheritServiceAssignAndRemove(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	child := domain.NewRole("子角色", "")
-	parent := domain.NewRole("父角色", "")
-	grand := domain.NewRole("祖角色", "")
+	child := rbacentity.NewRole("子角色", "")
+	parent := rbacentity.NewRole("父角色", "")
+	grand := rbacentity.NewRole("祖角色", "")
 
-	for _, role := range []*domain.Role{child, parent, grand} {
+	for _, role := range []*rbacentity.Role{child, parent, grand} {
 		if err := s.roleRepo.Create(ctx, role); err != nil {
 			t.Fatalf("seed role: %v", err)
 		}
 	}
 
-	if err := s.inherits.Assign(ctx, child.ID, child.ID); err != domain.ErrParentRoleIsSelf {
+	if err := s.inherits.Assign(ctx, child.ID, child.ID); err != rbacerrors.ErrParentRoleIsSelf {
 		t.Fatalf("expected ErrParentRoleIsSelf, got %v", err)
 	}
 
@@ -570,18 +573,18 @@ func TestInheritServiceAssignAndRemove(t *testing.T) {
 
 	// 重复继承直接父：文案含「已直接继承」。
 	err := s.inherits.Assign(ctx, child.ID, parent.ID)
-	if err == nil || err.Error() != domain.FormatAlreadyInheritedMsg("父角色", domain.InheritKindDirect, "父角色") {
+	if err == nil || err.Error() != rbacservice.FormatAlreadyInheritedMsg("父角色", rbacservice.InheritKindDirect, "父角色") {
 		t.Fatalf("unexpected duplicate inherit error: %v", err)
 	}
 
 	// 间接继承祖角色：拒绝并提示顶层父角色。
 	err = s.inherits.Assign(ctx, child.ID, grand.ID)
-	if err == nil || err.Error() != domain.FormatAlreadyInheritedMsg("祖角色", domain.InheritKindIndirect, "父角色") {
+	if err == nil || err.Error() != rbacservice.FormatAlreadyInheritedMsg("祖角色", rbacservice.InheritKindIndirect, "父角色") {
 		t.Fatalf("unexpected indirect inherit error: %v", err)
 	}
 
 	// 环检测：祖角色不能再继承子角色。
-	if err := s.inherits.Assign(ctx, grand.ID, child.ID); err != domain.ErrInheritCycle {
+	if err := s.inherits.Assign(ctx, grand.ID, child.ID); err != rbacerrors.ErrInheritCycle {
 		t.Fatalf("expected ErrInheritCycle, got %v", err)
 	}
 
@@ -600,7 +603,7 @@ func TestInheritServiceAssignAndRemove(t *testing.T) {
 
 	// 解除间接继承应被拒绝并给出顶层父角色提示。
 	err = s.inherits.Remove(ctx, child.ID, grand.ID)
-	if err == nil || err.Error() != domain.FormatIndirectUnlinkMsg("祖角色", "父角色") {
+	if err == nil || err.Error() != rbacservice.FormatIndirectUnlinkMsg("祖角色", "父角色") {
 		t.Fatalf("unexpected indirect unlink error: %v", err)
 	}
 
@@ -612,7 +615,7 @@ func TestInheritServiceAssignAndRemove(t *testing.T) {
 		t.Fatalf("expected inherit removed, got %+v", parents)
 	}
 
-	if err := s.inherits.Remove(ctx, child.ID, parent.ID); err != domain.ErrNotDirectInherit {
+	if err := s.inherits.Remove(ctx, child.ID, parent.ID); err != rbacerrors.ErrNotDirectInherit {
 		t.Fatalf("expected ErrNotDirectInherit, got %v", err)
 	}
 }
@@ -621,10 +624,10 @@ func TestInheritServiceCopiesParentMenus(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	child := domain.NewRole("子", "")
-	parent := domain.NewRole("父", "")
+	child := rbacentity.NewRole("子", "")
+	parent := rbacentity.NewRole("父", "")
 
-	for _, role := range []*domain.Role{child, parent} {
+	for _, role := range []*rbacentity.Role{child, parent} {
 		if err := s.roleRepo.Create(ctx, role); err != nil {
 			t.Fatalf("seed role: %v", err)
 		}
@@ -670,10 +673,10 @@ func TestPermissionServiceUpdateRolePermissionsBreakInheritance(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	child := domain.NewRole("子角色", "")
-	parent := domain.NewRole("父角色", "")
+	child := rbacentity.NewRole("子角色", "")
+	parent := rbacentity.NewRole("父角色", "")
 
-	for _, role := range []*domain.Role{child, parent} {
+	for _, role := range []*rbacentity.Role{child, parent} {
 		if err := s.roleRepo.Create(ctx, role); err != nil {
 			t.Fatalf("seed role: %v", err)
 		}
@@ -699,16 +702,16 @@ func TestPermissionServiceUpdateRolePermissionsBreakInheritance(t *testing.T) {
 	// 未解除继承时，被继承权限覆盖的直接权限写入应被拒。
 	err := s.permissions.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{
 		RoleID:      child.ID,
-		Permissions: []domain.PermissionItem{{Resource: "/v1/admin/banner", Action: "GET"}},
+		Permissions: []rbacvo.PermissionItem{{Resource: "/v1/admin/banner", Action: "GET"}},
 	})
-	if err != domain.ErrPermissionAlreadyOwned {
+	if err != rbacerrors.ErrPermissionAlreadyOwned {
 		t.Fatalf("expected ErrPermissionAlreadyOwned, got %v", err)
 	}
 
 	// 解除继承后同样的写入应成功，并清掉继承关系与继承菜单。
 	if err := s.permissions.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{
 		RoleID:           child.ID,
-		Permissions:      []domain.PermissionItem{{Resource: "/v1/admin/banner", Action: "GET"}},
+		Permissions:      []rbacvo.PermissionItem{{Resource: "/v1/admin/banner", Action: "GET"}},
 		BreakInheritance: true,
 	}); err != nil {
 		t.Fatalf("update with break inheritance: %v", err)
@@ -737,10 +740,10 @@ func TestRoleServiceUserRoleLifecycle(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	vip := domain.NewRole("大会员", "")
-	common := domain.NewRole("普通用户", "")
+	vip := rbacentity.NewRole("大会员", "")
+	common := rbacentity.NewRole("普通用户", "")
 
-	for _, role := range []*domain.Role{vip, common} {
+	for _, role := range []*rbacentity.Role{vip, common} {
 		if err := s.roleRepo.Create(ctx, role); err != nil {
 			t.Fatalf("seed role: %v", err)
 		}
@@ -765,11 +768,11 @@ func TestRoleServiceUserRoleLifecycle(t *testing.T) {
 		t.Fatalf("unexpected duplicate assign error: %v", err)
 	}
 
-	if err := s.roles.AssignUserRoles(ctx, user.ID+999, []uint{vip.ID}); err != domain.ErrUserNotFound {
+	if err := s.roles.AssignUserRoles(ctx, user.ID+999, []uint{vip.ID}); err != rbacerrors.ErrUserNotFound {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
 
-	if err := s.roles.AssignUserRoles(ctx, user.ID, []uint{9999}); err != domain.ErrSomeRolesNotFound {
+	if err := s.roles.AssignUserRoles(ctx, user.ID, []uint{9999}); err != rbacerrors.ErrSomeRolesNotFound {
 		t.Fatalf("expected ErrSomeRolesNotFound, got %v", err)
 	}
 

@@ -4,7 +4,8 @@ import (
 	"context"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
+	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"go.uber.org/zap"
@@ -36,7 +37,7 @@ func (s *FeedService) ListFeed(
 	userID, authorID uint,
 	workType, page, pageSize int,
 ) ([]WorkFeedItem, int64, error) {
-	page, pageSize = domain.NormalizeFeedPaging(page, pageSize)
+	page, pageSize = dynamicvo.NormalizeFeedPaging(page, pageSize)
 	offset := max((page-1)*pageSize, 0)
 
 	if authorID > 0 {
@@ -44,7 +45,7 @@ func (s *FeedService) ListFeed(
 	}
 
 	if userID == 0 {
-		return nil, 0, domain.ErrUserNotLogin
+		return nil, 0, dynamicerrors.ErrUserNotLogin
 	}
 
 	return s.listFollowingFeed(ctx, userID, workType, offset, pageSize)
@@ -55,7 +56,7 @@ func (s *FeedService) listFollowingFeed(
 	viewerID uint,
 	workType, offset, limit int,
 ) ([]WorkFeedItem, int64, error) {
-	sources := domain.BuildFeedSources(workType)
+	sources := dynamicvo.BuildFeedSources(workType)
 	if !sources.Any() {
 		return []WorkFeedItem{}, 0, nil
 	}
@@ -108,12 +109,12 @@ func (s *FeedService) listAuthorFeed(
 	}
 
 	if author == nil {
-		return nil, 0, domain.ErrRecordNotFound
+		return nil, 0, dynamicerrors.ErrRecordNotFound
 	}
 
 	isOwnerView := viewerID > 0 && viewerID == authorID
 
-	sources := domain.BuildFeedSources(workType)
+	sources := dynamicvo.BuildFeedSources(workType)
 	if !sources.Any() {
 		return []WorkFeedItem{}, 0, nil
 	}

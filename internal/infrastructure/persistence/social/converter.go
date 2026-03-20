@@ -7,17 +7,17 @@
 package social
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/social"
+	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainFocus 把关注关系 PO 转为领域实体。
-func toDomainFocus(row *po.UserFocus) *domain.Focus {
+func toDomainFocus(row *po.UserFocus) *socialentity.Focus {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Focus{
+	return &socialentity.Focus{
 		ID:          row.ID,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
@@ -27,7 +27,7 @@ func toDomainFocus(row *po.UserFocus) *domain.Focus {
 }
 
 // toPOFocus 把关注关系领域实体转为 PO。
-func toPOFocus(focus *domain.Focus) *po.UserFocus {
+func toPOFocus(focus *socialentity.Focus) *po.UserFocus {
 	if focus == nil {
 		return nil
 	}

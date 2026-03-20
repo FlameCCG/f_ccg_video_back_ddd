@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -19,7 +21,7 @@ type ReportRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.ReportRepository = (*ReportRepository)(nil)
+var _ videorepo.ReportRepository = (*ReportRepository)(nil)
 
 // NewReportRepository 构造举报仓储。
 func NewReportRepository(db *gorm.DB) *ReportRepository {
@@ -27,9 +29,9 @@ func NewReportRepository(db *gorm.DB) *ReportRepository {
 }
 
 // CreateVideoReport 写入视频举报并回填 ID/时间。
-func (r *ReportRepository) CreateVideoReport(ctx context.Context, report *domain.VideoReport) error {
+func (r *ReportRepository) CreateVideoReport(ctx context.Context, report *videoentity.VideoReport) error {
 	if report == nil {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	row := po.VideoReport{
@@ -56,9 +58,9 @@ func (r *ReportRepository) CreateVideoReport(ctx context.Context, report *domain
 }
 
 // CreateDanmuReport 写入弹幕举报并回填 ID/时间。
-func (r *ReportRepository) CreateDanmuReport(ctx context.Context, report *domain.DanmuReport) error {
+func (r *ReportRepository) CreateDanmuReport(ctx context.Context, report *videoentity.DanmuReport) error {
 	if report == nil {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	row := po.DanmuReport{
@@ -121,7 +123,7 @@ func (r *ReportRepository) HandleDanmuReports(
 // ReporterUsernames 读取给定举报记录的举报人用户名列表。
 func (r *ReportRepository) ReporterUsernames(
 	ctx context.Context,
-	handleType domain.ReportHandleType,
+	handleType videoentity.ReportHandleType,
 	reportIDs []uint,
 ) ([]string, error) {
 	if len(reportIDs) == 0 {
@@ -131,12 +133,12 @@ func (r *ReportRepository) ReporterUsernames(
 	var table string
 
 	switch handleType {
-	case domain.ReportHandleTypeVideo:
+	case videoentity.ReportHandleTypeVideo:
 		table = "video_reports"
-	case domain.ReportHandleTypeDanmu:
+	case videoentity.ReportHandleTypeDanmu:
 		table = "danmu_reports"
 	default:
-		return nil, domain.ErrReportTypeInvalid
+		return nil, videoerrors.ErrReportTypeInvalid
 	}
 
 	type row struct {

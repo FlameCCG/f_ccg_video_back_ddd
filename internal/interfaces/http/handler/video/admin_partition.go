@@ -2,7 +2,7 @@ package video
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/video"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -43,7 +43,7 @@ type DeletePartitionReq struct {
 func (h *AdminHandler) CreatePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[CreatePartitionReq](c)
 
-	p := domain.Partition{
+	p := videoentity.Partition{
 		Name:          req.Name,
 		Icon:          req.Icon,
 		SortOrder:     req.SortOrder,
@@ -70,7 +70,7 @@ func (h *AdminHandler) CreatePartitionView(c *gin.Context) {
 func (h *AdminHandler) UpdatePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[UpdatePartitionReq](c)
 
-	p := domain.Partition{
+	p := videoentity.Partition{
 		ID:            req.ID,
 		Name:          req.Name,
 		Icon:          req.Icon,

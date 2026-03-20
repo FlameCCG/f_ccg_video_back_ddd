@@ -7,7 +7,12 @@ import (
 	"sync"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
+	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	mediaservice "f_ccg_video_back_ddd/internal/domain/media/service"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -28,15 +33,15 @@ type pipelineRunResult struct {
 // MP4 失败即整任务失败；DASH 在 MP4 也运行时失败只记录日志跳过。
 func (s *TranscodeService) executeConfiguredPipelines(
 	ctx context.Context,
-	task domain.TranscodeTask,
-	meta domain.VideoMeta,
-	policy *domain.TranscodePolicy,
+	task mediaentity.TranscodeTask,
+	meta mediavo.VideoMeta,
+	policy *mediavo.TranscodePolicy,
 	initialSrcPath string,
-	driver domain.StorageDriver,
-	tracker *domain.TranscodeProgressTracker,
+	driver mediaport.StorageDriver,
+	tracker *mediaruntime.TranscodeProgressTracker,
 	ckpt Checkpoint,
 ) (string, bool, error) {
-	plan := domain.PlanPipelines(task, meta, policy)
+	plan := mediaservice.PlanPipelines(task, meta, policy)
 
 	if plan.NotPlayableReason != "" {
 		s.logger.Info("source requires browser-compatible normalization",
@@ -53,19 +58,13 @@ func (s *TranscodeService) executeConfiguredPipelines(
 
 	if len(plan.MP4Targets) > 0 {
 		tracker.ConfigurePipeline(
-			ctx,
-			domain.TranscodePipelineMP4,
-			"等待 MP4 Pipeline",
-			domain.PipelineResolutionsFromTargets(plan.MP4Targets),
+			ctx, mediavo.TranscodePipelineMP4, "等待 MP4 Pipeline", mediaservice.PipelineResolutionsFromTargets(plan.MP4Targets),
 		)
 	}
 
 	if len(plan.DashResolutions) > 0 {
 		tracker.ConfigurePipeline(
-			ctx,
-			domain.TranscodePipelineDASH,
-			"等待 DASH Pipeline",
-			domain.UniqueResolutions(plan.DashResolutions),
+			ctx, mediavo.TranscodePipelineDASH, "等待 DASH Pipeline", mediaservice.UniqueResolutions(plan.DashResolutions),
 		)
 	}
 
@@ -115,12 +114,12 @@ func (s *TranscodeService) executeConfiguredPipelines(
 
 	for result := range resultCh {
 		switch result.name {
-		case domain.TranscodePipelineMP4:
+		case mediavo.TranscodePipelineMP4:
 			mp4Err = result.err
 			if result.currentSourceURL != "" {
 				currentSourceURL = result.currentSourceURL
 			}
-		case domain.TranscodePipelineDASH:
+		case mediavo.TranscodePipelineDASH:
 			dashErr = result.err
 		}
 	}
@@ -143,20 +142,20 @@ func (s *TranscodeService) executeConfiguredPipelines(
 }
 
 // logPipelineMode 输出 MP4 与 DASH 均关闭时的日志。
-func (s *TranscodeService) logPipelineMode(task domain.TranscodeTask, plan domain.PipelinePlan) {
+func (s *TranscodeService) logPipelineMode(task mediaentity.TranscodeTask, plan mediaservice.PipelinePlan) {
 	switch plan.Mode {
-	case domain.PipelineModeSourceOnly:
+	case mediaservice.PipelineModeSourceOnly:
 		s.logger.Info("mp4Enable and dashEnable both false, run source-only normalize",
 			zap.Uint("videoId", task.VideoID),
 			zap.Uint16("pixelHeight", plan.PixelHeight),
 			zap.Uint16("classHeight", plan.ClassHeight),
 			zap.Bool("highBitrate", plan.HighBitrate),
 		)
-	case domain.PipelineModeNone:
+	case mediaservice.PipelineModeNone:
 		s.logger.Info("mp4Enable and dashEnable both false, source already browser-playable",
 			zap.Uint("videoId", task.VideoID),
 		)
-	case domain.PipelineModeMP4Super, domain.PipelineModeDashOnly:
+	case mediaservice.PipelineModeMP4Super, mediaservice.PipelineModeDashOnly:
 	}
 }
 
@@ -166,21 +165,21 @@ func (s *TranscodeService) logPipelineMode(task domain.TranscodeTask, plan domai
 // 编码检查点是另一层复用：有本地产物时可跳过编码，但上传和资源保存仍需按状态继续。
 func (s *TranscodeService) runMP4SuperPipeline(
 	ctx context.Context,
-	task domain.TranscodeTask,
-	meta domain.VideoMeta,
-	policy *domain.TranscodePolicy,
+	task mediaentity.TranscodeTask,
+	meta mediavo.VideoMeta,
+	policy *mediavo.TranscodePolicy,
 	srcPath string,
-	driver domain.StorageDriver,
-	tracker *domain.TranscodeProgressTracker,
-	targets []domain.TranscodeTarget,
+	driver mediaport.StorageDriver,
+	tracker *mediaruntime.TranscodeProgressTracker,
+	targets []mediavo.TranscodeTarget,
 	ckpt Checkpoint,
 ) pipelineRunResult {
-	tracker.StartPipeline(ctx, domain.TranscodePipelineMP4, "生成 MP4 多输出资源")
+	tracker.StartPipeline(ctx, mediavo.TranscodePipelineMP4, "生成 MP4 多输出资源")
 
 	// 断点续传 L1：资源行 + 远端对象都在的目标彻底跳过（不编码、不上传、不落库）。
 	saved := 0
 	currentSourceURL := srcPath
-	pending := make([]domain.TranscodeTarget, 0, len(targets))
+	pending := make([]mediavo.TranscodeTarget, 0, len(targets))
 
 	for _, target := range targets {
 		if persistedURL, ok := s.artifacts.TargetPersisted(ctx, task, target, driver); ok {
@@ -205,10 +204,10 @@ func (s *TranscodeService) runMP4SuperPipeline(
 	}
 
 	if len(pending) == 0 {
-		tracker.MarkPipelineUploading(ctx, domain.TranscodePipelineMP4, "保存 MP4 资源")
-		tracker.CompletePipeline(ctx, domain.TranscodePipelineMP4, nil)
+		tracker.MarkPipelineUploading(ctx, mediavo.TranscodePipelineMP4, "保存 MP4 资源")
+		tracker.CompletePipeline(ctx, mediavo.TranscodePipelineMP4, nil)
 
-		return pipelineRunResult{name: domain.TranscodePipelineMP4, currentSourceURL: currentSourceURL}
+		return pipelineRunResult{name: mediavo.TranscodePipelineMP4, currentSourceURL: currentSourceURL}
 	}
 
 	results, runErr := s.executeVariantPipeline(ctx, variantPipelineRequest{
@@ -220,15 +219,15 @@ func (s *TranscodeService) runMP4SuperPipeline(
 		driver:     driver,
 		meta:       meta,
 	})
-	tracker.MarkPipelineUploading(ctx, domain.TranscodePipelineMP4, "保存 MP4 资源")
+	tracker.MarkPipelineUploading(ctx, mediavo.TranscodePipelineMP4, "保存 MP4 资源")
 
-	if domain.TaskWasDeleted(ctx, runErr) {
+	if mediaruntime.TaskWasDeleted(ctx, runErr) {
 		s.cleanupDeletedMP4Outputs(ctx, targets, driver)
 
-		runErr = domain.ErrVideoDeleted
-		tracker.CompletePipeline(ctx, domain.TranscodePipelineMP4, runErr)
+		runErr = mediaerrors.ErrVideoDeleted
+		tracker.CompletePipeline(ctx, mediavo.TranscodePipelineMP4, runErr)
 
-		return pipelineRunResult{name: domain.TranscodePipelineMP4, currentSourceURL: srcPath, err: runErr}
+		return pipelineRunResult{name: mediavo.TranscodePipelineMP4, currentSourceURL: srcPath, err: runErr}
 	}
 
 	sourceName := task.SourceDisplayName()
@@ -270,31 +269,31 @@ func (s *TranscodeService) runMP4SuperPipeline(
 		runErr = fmt.Errorf("MP4 pipeline produced %d/%d outputs", saved, len(targets))
 	}
 
-	if domain.TaskWasDeleted(ctx, runErr) {
+	if mediaruntime.TaskWasDeleted(ctx, runErr) {
 		s.cleanupDeletedMP4Outputs(ctx, targets, driver)
 
-		runErr = domain.ErrVideoDeleted
+		runErr = mediaerrors.ErrVideoDeleted
 		currentSourceURL = srcPath
 	}
 
-	tracker.CompletePipeline(ctx, domain.TranscodePipelineMP4, runErr)
+	tracker.CompletePipeline(ctx, mediavo.TranscodePipelineMP4, runErr)
 
-	return pipelineRunResult{name: domain.TranscodePipelineMP4, currentSourceURL: currentSourceURL, err: runErr}
+	return pipelineRunResult{name: mediavo.TranscodePipelineMP4, currentSourceURL: currentSourceURL, err: runErr}
 }
 
 // runDASHOutputPipeline 运行 DASH 管线：L1 跳过已入库整套 → 编码 → 上传 → 落库。
 func (s *TranscodeService) runDASHOutputPipeline(
 	ctx context.Context,
-	task domain.TranscodeTask,
-	meta domain.VideoMeta,
-	policy *domain.TranscodePolicy,
+	task mediaentity.TranscodeTask,
+	meta mediavo.VideoMeta,
+	policy *mediavo.TranscodePolicy,
 	srcPath string,
-	driver domain.StorageDriver,
-	tracker *domain.TranscodeProgressTracker,
-	plan domain.PipelinePlan,
+	driver mediaport.StorageDriver,
+	tracker *mediaruntime.TranscodeProgressTracker,
+	plan mediaservice.PipelinePlan,
 	ckpt Checkpoint,
 ) pipelineRunResult {
-	tracker.StartPipeline(ctx, domain.TranscodePipelineDASH, "生成 DASH 自适应流")
+	tracker.StartPipeline(ctx, mediavo.TranscodePipelineDASH, "生成 DASH 自适应流")
 
 	// 断点续传 L1：自适应资源行 + manifest 对象都在 → 整套 DASH 跳过。
 	// manifest 最后上传，它存在即代表各 representation 均已完整上传。
@@ -303,9 +302,9 @@ func (s *TranscodeService) runDASHOutputPipeline(
 			zap.Uint("videoId", task.VideoID),
 			zap.Uint("partId", task.VideoPartID),
 		)
-		tracker.CompletePipeline(ctx, domain.TranscodePipelineDASH, nil)
+		tracker.CompletePipeline(ctx, mediavo.TranscodePipelineDASH, nil)
 
-		return pipelineRunResult{name: domain.TranscodePipelineDASH}
+		return pipelineRunResult{name: mediavo.TranscodePipelineDASH}
 	}
 
 	mpdURL, size, err := s.runDASHPipeline(ctx, dashPipelineRequest{
@@ -322,22 +321,22 @@ func (s *TranscodeService) runDASHOutputPipeline(
 		err = s.resources.SaveDASHResource(ctx, task, task.SourceDisplayName(), mpdURL, size)
 	}
 
-	if domain.TaskWasDeleted(ctx, err) {
+	if mediaruntime.TaskWasDeleted(ctx, err) {
 		s.cleanupDeletedDASHOutputs(ctx, task, driver)
 
-		err = domain.ErrVideoDeleted
+		err = mediaerrors.ErrVideoDeleted
 	}
 
-	tracker.CompletePipeline(ctx, domain.TranscodePipelineDASH, err)
+	tracker.CompletePipeline(ctx, mediavo.TranscodePipelineDASH, err)
 
-	return pipelineRunResult{name: domain.TranscodePipelineDASH, err: err}
+	return pipelineRunResult{name: mediavo.TranscodePipelineDASH, err: err}
 }
 
 // cleanupDeletedMP4Outputs 视频被删除时清理已上传的 MP4 产物。
 func (s *TranscodeService) cleanupDeletedMP4Outputs(
 	ctx context.Context,
-	targets []domain.TranscodeTarget,
-	driver domain.StorageDriver,
+	targets []mediavo.TranscodeTarget,
+	driver mediaport.StorageDriver,
 ) {
 	if driver == nil {
 		return
@@ -363,8 +362,8 @@ func (s *TranscodeService) cleanupDeletedMP4Outputs(
 // cleanupDeletedDASHOutputs 视频被删除时清理整个 DASH 前缀。
 func (s *TranscodeService) cleanupDeletedDASHOutputs(
 	ctx context.Context,
-	task domain.TranscodeTask,
-	driver domain.StorageDriver,
+	task mediaentity.TranscodeTask,
+	driver mediaport.StorageDriver,
 ) {
 	if driver == nil || strings.TrimSpace(task.OutputPath) == "" {
 		return

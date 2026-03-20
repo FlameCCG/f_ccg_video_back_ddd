@@ -67,7 +67,7 @@ flowchart TB
 │   ├── server/                 # HTTP 服务与初始化任务入口
 │   └── transcode-consumer/     # 独立转码消费者入口
 ├── internal/
-│   ├── domain/                 # 领域模型、规则与仓储接口
+│   ├── domain/                 # 按上下文及 entity/valueobject/repository/service 等职责组织
 │   ├── application/            # 应用用例、DTO 与协作端口
 │   ├── infrastructure/         # 数据库、缓存、消息、存储与外部服务适配
 │   ├── interfaces/             # HTTP、WebSocket 与 CLI 接口
@@ -80,6 +80,8 @@ flowchart TB
 ├── config.example.yaml         # 应用配置示例
 └── docker-compose.yaml         # 本地依赖服务参考配置
 ```
+
+领域模块的职责、依赖方向、行为归属与阅读入口见[架构说明](docs/architecture.md)。
 
 ## 快速开始
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -39,9 +39,9 @@ func NewSuggestService(
 
 // Suggest 返回联想候选项；ES 不可用或查询失败时回退 MySQL LIKE 查询。
 func (s *SuggestService) Suggest(ctx context.Context, prefix string, size int) ([]SuggestionItem, error) {
-	size = domain.NormalizeSuggestSize(size)
+	size = searchvo.NormalizeSuggestSize(size)
 
-	prefix = domain.NormalizeKeyword(prefix)
+	prefix = searchvo.NormalizeKeyword(prefix)
 	if prefix == "" {
 		return []SuggestionItem{}, nil
 	}
@@ -144,7 +144,7 @@ func (s *SuggestService) fallbackSuggest(ctx context.Context, prefix string, siz
 
 	ctx = ensureContext(ctx)
 
-	prefix = domain.NormalizeKeyword(prefix)
+	prefix = searchvo.NormalizeKeyword(prefix)
 	if prefix == "" {
 		return []SuggestionItem{}, nil
 	}
@@ -207,7 +207,7 @@ func buildSuggestionItems(values []string, prefix, docType string) []SuggestionI
 
 		items = append(items, SuggestionItem{
 			Value:     value,
-			Highlight: domain.HighlightSuggestion(value, prefix),
+			Highlight: searchvo.HighlightSuggestion(value, prefix),
 			DocType:   docType,
 		})
 	}
@@ -241,5 +241,5 @@ func mergeSuggestionPriority(size int, groups ...[]SuggestionItem) []SuggestionI
 
 // suggestCacheKey 生成联想缓存键（小写前缀 + 候选数）。
 func suggestCacheKey(prefix string, size int) string {
-	return domain.LowerKeyword(prefix) + "|" + strconv.Itoa(size)
+	return searchvo.LowerKeyword(prefix) + "|" + strconv.Itoa(size)
 }

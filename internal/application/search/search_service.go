@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -44,9 +44,9 @@ func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery, logger 
 // 标签总量是本次视频命中派生的标签数，不是独立搜索整个标签表的总数。
 // ES 超时后的 SQL 回退使用父 context，既避免复用已过期的子预算，也仍受请求总取消约束。
 func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
-	page := domain.NormalizePagination(opts.Page, opts.PageSize)
-	videoSort := domain.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
-	userSort := domain.NormalizeUserSort(opts.UserSort, opts.UserOrder)
+	page := searchvo.NormalizePagination(opts.Page, opts.PageSize)
+	videoSort := searchvo.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
+	userSort := searchvo.NormalizeUserSort(opts.UserSort, opts.UserOrder)
 	opts = applyNormalized(opts, page, videoSort, userSort)
 
 	if !s.index.Available() {
@@ -89,8 +89,8 @@ func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*Search
 
 // SearchVideos 仅返回视频结果，同时返回用户总量（用于前端展示）。
 func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*VideoSearchResult, error) {
-	page := domain.NormalizePagination(opts.Page, opts.PageSize)
-	videoSort := domain.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
+	page := searchvo.NormalizePagination(opts.Page, opts.PageSize)
+	videoSort := searchvo.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
 	opts.Page, opts.PageSize = page.Page, page.PageSize
 	opts.VideoSort, opts.VideoOrder = videoSort.Field, videoSort.Order
 
@@ -144,8 +144,8 @@ func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*
 
 // SearchUsers 仅返回用户结果。
 func (s *SearchService) SearchUsers(ctx context.Context, opts SearchOptions) (*UserSearchResult, error) {
-	page := domain.NormalizePagination(opts.Page, opts.PageSize)
-	userSort := domain.NormalizeUserSort(opts.UserSort, opts.UserOrder)
+	page := searchvo.NormalizePagination(opts.Page, opts.PageSize)
+	userSort := searchvo.NormalizeUserSort(opts.UserSort, opts.UserOrder)
 	opts.Page, opts.PageSize = page.Page, page.PageSize
 	opts.UserSort, opts.UserOrder = userSort.Field, userSort.Order
 
@@ -200,7 +200,7 @@ func (s *SearchService) fallbackSearchVideos(ctx context.Context, opts SearchOpt
 
 	ctx = ensureContext(ctx)
 
-	if domain.NormalizeKeyword(opts.Keyword) == "" {
+	if searchvo.NormalizeKeyword(opts.Keyword) == "" {
 		return &VideoSearchResult{Videos: []SearchVideoHit{}}, nil
 	}
 
@@ -232,7 +232,7 @@ func (s *SearchService) fallbackSearchUsers(ctx context.Context, opts SearchOpti
 
 	ctx = ensureContext(ctx)
 
-	if domain.NormalizeKeyword(opts.Keyword) == "" {
+	if searchvo.NormalizeKeyword(opts.Keyword) == "" {
 		return &UserSearchResult{Users: []SearchUserHit{}}, nil
 	}
 
@@ -250,7 +250,7 @@ func (s *SearchService) fallbackSearchUsers(ctx context.Context, opts SearchOpti
 
 // userTotalBestEffort 尽力取用户命中总量：优先 ES，失败退 MySQL COUNT，再失败记 0。
 func (s *SearchService) userTotalBestEffort(ctx context.Context, keyword string) int64 {
-	keyword = domain.NormalizeKeyword(keyword)
+	keyword = searchvo.NormalizeKeyword(keyword)
 	if keyword == "" {
 		return 0
 	}
@@ -374,7 +374,7 @@ func buildRelatedTags(videos []SearchVideoHit) []SearchTagHit {
 }
 
 // applyNormalized 把规范化后的分页与排序写回搜索参数。
-func applyNormalized(opts SearchOptions, page domain.Pagination, videoSort, userSort domain.SortSpec) SearchOptions {
+func applyNormalized(opts SearchOptions, page searchvo.Pagination, videoSort, userSort searchvo.SortSpec) SearchOptions {
 	opts.Page, opts.PageSize = page.Page, page.PageSize
 	opts.VideoSort, opts.VideoOrder = videoSort.Field, videoSort.Order
 	opts.UserSort, opts.UserOrder = userSort.Field, userSort.Order

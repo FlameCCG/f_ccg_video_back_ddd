@@ -4,18 +4,19 @@ import (
 	"context"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/pkg/encrypt"
 )
 
 // AccountService 账号凭据与角色切换用例服务。
 type AccountService struct {
-	users domain.UserAccountRepository
+	users identityrepo.UserAccountRepository
 	roles UserRoleQuery
 }
 
 // NewAccountService 构造账号凭据服务。
-func NewAccountService(users domain.UserAccountRepository, roles UserRoleQuery) *AccountService {
+func NewAccountService(users identityrepo.UserAccountRepository, roles UserRoleQuery) *AccountService {
 	return &AccountService{users: users, roles: roles}
 }
 
@@ -24,7 +25,7 @@ func NewAccountService(users domain.UserAccountRepository, roles UserRoleQuery) 
 func (s *AccountService) BindEmail(ctx context.Context, in BindEmailInput) (alreadyBound bool, err error) {
 	user, err := s.users.FindByID(ctx, in.UserID)
 	if err != nil || user == nil {
-		return false, domain.ErrUserNotFound
+		return false, identityerrors.ErrUserNotFound
 	}
 
 	if user.Email != "" && user.Email == in.Email {
@@ -34,7 +35,7 @@ func (s *AccountService) BindEmail(ctx context.Context, in BindEmailInput) (alre
 	// 统计失败时按「未占用」继续（唯一索引兜底）。
 	count, _ := s.users.CountByEmailExcluding(ctx, in.Email, user.ID)
 	if count > 0 {
-		return false, domain.ErrEmailOccupied
+		return false, identityerrors.ErrEmailOccupied
 	}
 
 	if err = s.users.UpdateEmail(ctx, user.ID, in.Email); err != nil {
@@ -52,12 +53,12 @@ func (s *AccountService) ResetPassword(ctx context.Context, in ResetPasswordInpu
 	}
 
 	if user == nil {
-		return domain.ErrEmailNotRegistered
+		return identityerrors.ErrEmailNotRegistered
 	}
 
 	passwordHash, err := encrypt.GenPasswordHash([]byte(in.NewPassword))
 	if err != nil {
-		return domain.ErrPasswordHashFailed
+		return identityerrors.ErrPasswordHashFailed
 	}
 
 	if err = s.users.UpdatePassword(ctx, user.ID, string(passwordHash)); err != nil {
@@ -71,16 +72,16 @@ func (s *AccountService) ResetPassword(ctx context.Context, in ResetPasswordInpu
 func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordInput) error {
 	user, err := s.users.FindByID(ctx, in.UserID)
 	if err != nil || user == nil {
-		return domain.ErrUserNotFound
+		return identityerrors.ErrUserNotFound
 	}
 
 	if user.RequiresOldPassword() {
 		if strings.TrimSpace(in.OldPassword) == "" {
-			return domain.ErrOldPasswordRequired
+			return identityerrors.ErrOldPasswordRequired
 		}
 
 		if !encrypt.ValidatePasswordHash(in.OldPassword, user.Password) {
-			return domain.ErrOldPasswordIncorrect
+			return identityerrors.ErrOldPasswordIncorrect
 		}
 	}
 
@@ -89,7 +90,7 @@ func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordIn
 	}
 	passwordHash, err := encrypt.GenPasswordHash([]byte(in.NewPassword))
 	if err != nil {
-		return domain.ErrPasswordHashFailed
+		return identityerrors.ErrPasswordHashFailed
 	}
 
 	if err = s.users.UpdatePassword(ctx, user.ID, string(passwordHash)); err != nil {
@@ -107,7 +108,7 @@ func (s *AccountService) SwitchRole(ctx context.Context, userID, roleID uint) er
 	}
 
 	if !hasRole {
-		return domain.ErrRoleNotOwned
+		return identityerrors.ErrRoleNotOwned
 	}
 
 	if err = s.users.UpdateCurrentRole(ctx, userID, roleID); err != nil {

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 )
 
 // 本文件是 ES `_source` 的弱类型解码工具：同一字段在 dump / binlog / 手工写入下
@@ -170,27 +170,8 @@ func toStringSlice(val any) []string {
 			return []string{}
 		}
 
-		return domain.SplitTags(v)
+		return searchvo.SplitTags(v)
 	default:
 		return []string{}
-	}
-}
-
-func toFloat64(value any) float64 {
-	switch v := value.(type) {
-	case float64:
-		return v
-	case float32:
-		return float64(v)
-	case int:
-		return float64(v)
-	case int64:
-		return float64(v)
-	case json.Number:
-		n, _ := v.Float64()
-
-		return n
-	default:
-		return 0
 	}
 }

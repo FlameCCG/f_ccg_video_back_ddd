@@ -31,7 +31,7 @@ const (
 	ResolutionAuto      VideoResolution = "自适应" // DASH 自适应流(多码率)，FileURL 指向 .mpd
 )
 
-// VideoStorageType 是已落库资源使用的驱动类别；历史枚举值不代表当前 Resolver 都提供对应实现。
+// VideoStorageType 是已落库资源使用的驱动类别，当前实现支持本地与 MinIO。
 type VideoStorageType string
 
 const (
@@ -39,8 +39,4 @@ const (
 	StorageTypeLocal VideoStorageType = "本地"
 	// StorageTypeMinio 标记 MinIO 对象存储驱动。
 	StorageTypeMinio VideoStorageType = "Minio"
-	// StorageTypeQiniu 保留七牛云 Kodo 类型值，实际支持需查看存储 Resolver。
-	StorageTypeQiniu   VideoStorageType = "七牛云Kodo"
-	StorageTypeTencent VideoStorageType = "腾讯云COS"
-	StorageTypeOss     VideoStorageType = "阿里云OSS"
 )

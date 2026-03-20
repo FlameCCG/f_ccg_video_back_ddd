@@ -7,19 +7,19 @@ import (
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
 	searchapp "f_ccg_video_back_ddd/internal/application/search"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
-	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // VideoStorageResolver 把 media 存储驱动接口窄化为 video 上下文所需的方法集。
 type VideoStorageResolver struct {
-	resolver mediadomain.StorageResolver
+	resolver mediaport.StorageResolver
 }
 
 var _ videoapp.StorageResolver = (*VideoStorageResolver)(nil)
 
 // NewVideoStorageResolver 构造视频存储适配器。
-func NewVideoStorageResolver(resolver mediadomain.StorageResolver) *VideoStorageResolver {
+func NewVideoStorageResolver(resolver mediaport.StorageResolver) *VideoStorageResolver {
 	return &VideoStorageResolver{resolver: resolver}
 }
 

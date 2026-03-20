@@ -5,15 +5,19 @@ import (
 	"strings"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videoservice "f_ccg_video_back_ddd/internal/domain/video/service"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 
 	"go.uber.org/zap"
 )
 
 // DanmuService 弹幕用例服务。
 type DanmuService struct {
-	videos      domain.VideoRepository
-	danmus      domain.DanmuRepository
+	videos      videorepo.VideoRepository
+	danmus      videorepo.DanmuRepository
 	query       DanmuQuery
 	recent      DanmuRecentCache
 	stats       *StatsService
@@ -28,8 +32,8 @@ type DanmuService struct {
 //
 // broadcaster 在 bootstrap 构造 WebSocket Hub 后经 SetBroadcaster 回填。
 func NewDanmuService(
-	videos domain.VideoRepository,
-	danmus domain.DanmuRepository,
+	videos videorepo.VideoRepository,
+	danmus videorepo.DanmuRepository,
 	query DanmuQuery,
 	recent DanmuRecentCache,
 	stats *StatsService,
@@ -64,7 +68,7 @@ func (s *DanmuService) EnsureVideoAvailable(ctx context.Context, videoID uint) e
 // ResolveDanmuPart 校验视频与分P关系，返回可用的 VideoPartID（单视频返回 0）。
 func (s *DanmuService) ResolveDanmuPart(ctx context.Context, videoID, partID uint) (uint, error) {
 	if videoID == 0 {
-		return 0, domain.ErrVideoIDRequired
+		return 0, videoerrors.ErrVideoIDRequired
 	}
 
 	row, err := s.danmus.PartAvailability(orTODO(ctx), videoID, partID)
@@ -72,18 +76,18 @@ func (s *DanmuService) ResolveDanmuPart(ctx context.Context, videoID, partID uin
 		return 0, err
 	}
 
-	return domain.ResolveDanmuPart(partID, row)
+	return videoentity.ResolveDanmuPart(partID, row)
 }
 
 // Send 发送弹幕。
 func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuParams) (*DanmuDTO, error) {
 	if s.authorizer == nil {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 	if err := s.authorizer.EnsureCanPublish(ctx, userID); err != nil {
 		return nil, err
 	}
-	cmd, err := domain.NormalizeSendDanmu(userID, domain.SendDanmuCommand{
+	cmd, err := (videoentity.SendDanmuCommand{
 		VideoID:     params.VideoID,
 		VideoPartID: params.VideoPartID,
 		Content:     params.Content,
@@ -91,7 +95,7 @@ func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuPa
 		Color:       params.Color,
 		FontSize:    params.FontSize,
 		Position:    params.Position,
-	})
+	}).Normalize(userID)
 	if err != nil {
 		return nil, err
 	}
@@ -101,29 +105,24 @@ func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuPa
 		return nil, err
 	}
 
-	record := &domain.Danmu{
-		UserID:      userID,
-		VideoID:     cmd.VideoID,
-		VideoPartID: partID,
-		Content:     cmd.Content,
-		TimeOffset:  cmd.TimeOffset,
-		Color:       cmd.Color,
-		FontSize:    cmd.FontSize,
-		Position:    cmd.Position,
+	cmd.VideoPartID = partID
+	record, err := videoentity.NewDanmu(userID, cmd)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := s.danmus.Create(ctx, record); err != nil {
 		return nil, err
 	}
 
-	if _, err := s.stats.ApplyDelta(ctx, cmd.VideoID, domain.StatsDelta{DanmuCount: 1}); err != nil {
+	if _, err := s.stats.ApplyDelta(ctx, cmd.VideoID, videovo.StatsDelta{DanmuCount: 1}); err != nil {
 		// 弹幕已落库，stats 失败不回滚发送结果，仅告警。
 		s.logger.Warn("apply video stats delta after send danmu failed",
 			zap.Error(err),
 			zap.Uint("videoId", cmd.VideoID),
 		)
 	} else {
-		s.stats.RecordHotScoreDelta(ctx, cmd.VideoID, domain.HotScoreDanmuWeight, 1)
+		s.stats.RecordHotScoreDelta(ctx, cmd.VideoID, videoservice.HotScoreDanmuWeight, 1)
 	}
 
 	if authorID, authorErr := s.authors.AuthorID(ctx, cmd.VideoID); authorErr == nil {
@@ -144,7 +143,7 @@ func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuPa
 // 时间区间/排序以 DB 为准，不用 recent list 作为 History 权威数据源。
 func (s *DanmuService) History(ctx context.Context, params DanmuHistoryParams) ([]DanmuDTO, error) {
 	if params.VideoID == 0 {
-		return nil, domain.ErrVideoIDRequired
+		return nil, videoerrors.ErrVideoIDRequired
 	}
 
 	partID, err := s.ResolveDanmuPart(ctx, params.VideoID, params.VideoPartID)
@@ -152,7 +151,7 @@ func (s *DanmuService) History(ctx context.Context, params DanmuHistoryParams) (
 		return nil, err
 	}
 
-	start, end, limit := domain.NormalizeDanmuHistoryRange(params.Start, params.End, params.Limit)
+	start, end, limit := videoentity.NormalizeDanmuHistoryRange(params.Start, params.End, params.Limit)
 
 	result, err := s.query.History(ctx, params.VideoID, partID, start, end, limit)
 	if err != nil {
@@ -197,14 +196,14 @@ func (s *DanmuService) MonthDates(
 	month, startRaw, endRaw string,
 ) (DanmuMonthDates, error) {
 	if videoID == 0 {
-		return DanmuMonthDates{}, domain.ErrVideoIDRequired
+		return DanmuMonthDates{}, videoerrors.ErrVideoIDRequired
 	}
 
-	if _, _, err := domain.ParseDanmuMonthRange(month); err != nil {
+	if _, _, err := videoentity.ParseDanmuMonthRange(month); err != nil {
 		return DanmuMonthDates{}, err
 	}
 
-	start, end, err := domain.ParseDanmuInstantRange(startRaw, endRaw)
+	start, end, err := videoentity.ParseDanmuInstantRange(startRaw, endRaw)
 	if err != nil {
 		return DanmuMonthDates{}, err
 	}
@@ -234,7 +233,7 @@ func (s *DanmuService) RoomList(
 	params DanmuRoomListParams,
 ) ([]DanmuRoomItem, int64, error) {
 	if params.VideoID == 0 {
-		return nil, 0, domain.ErrVideoIDRequired
+		return nil, 0, videoerrors.ErrVideoIDRequired
 	}
 
 	ctx = orTODO(ctx)
@@ -249,7 +248,7 @@ func (s *DanmuService) RoomList(
 	}
 
 	if params.UseTimeRange {
-		pageSize, segErr := domain.NormalizeDanmuRoomSegment(params.Start, params.End, params.PageSize)
+		pageSize, segErr := videoentity.NormalizeDanmuRoomSegment(params.Start, params.End, params.PageSize)
 		if segErr != nil {
 			return nil, 0, segErr
 		}
@@ -257,7 +256,7 @@ func (s *DanmuService) RoomList(
 		params.PageSize = pageSize
 	} else {
 		// 历史弹幕：固定返回最近 500 条，忽略 page/pageSize
-		params.PageSize = domain.DanmuRoomHistoryLimit
+		params.PageSize = videoentity.DanmuRoomHistoryLimit
 	}
 
 	queryParams := DanmuRoomQueryParams{
@@ -271,7 +270,7 @@ func (s *DanmuService) RoomList(
 	}
 
 	if params.Date != "" {
-		start, end, dateErr := domain.ParseDanmuDateRange(params.Date)
+		start, end, dateErr := videoentity.ParseDanmuDateRange(params.Date)
 		if dateErr != nil {
 			return nil, 0, dateErr
 		}
@@ -315,11 +314,11 @@ func (s *DanmuService) RoomList(
 // ToggleLike 点赞/取消点赞弹幕。
 func (s *DanmuService) ToggleLike(ctx context.Context, userID, danmuID uint) (*DanmuLikeResult, error) {
 	if userID == 0 {
-		return nil, domain.ErrLoginRequired
+		return nil, videoerrors.ErrLoginRequired
 	}
 
 	if danmuID == 0 {
-		return nil, domain.ErrDanmuIDRequired
+		return nil, videoerrors.ErrDanmuIDRequired
 	}
 
 	ctx = orTODO(ctx)
@@ -348,11 +347,11 @@ func (s *DanmuService) ToggleLike(ctx context.Context, userID, danmuID uint) (*D
 // DeleteByUser 用户删除自己的弹幕。
 func (s *DanmuService) DeleteByUser(ctx context.Context, userID, danmuID uint) error {
 	if userID == 0 {
-		return domain.ErrLoginRequired
+		return videoerrors.ErrLoginRequired
 	}
 
 	if danmuID == 0 {
-		return domain.ErrDanmuIDRequired
+		return videoerrors.ErrDanmuIDRequired
 	}
 
 	ctx = orTODO(ctx)
@@ -363,16 +362,16 @@ func (s *DanmuService) DeleteByUser(ctx context.Context, userID, danmuID uint) e
 	}
 
 	if !danmu.OwnedBy(userID) {
-		return domain.ErrDanmuDeleteForbidden
+		return videoerrors.ErrDanmuDeleteForbidden
 	}
 
-	return s.deleteDanmus(ctx, []domain.Danmu{*danmu})
+	return s.deleteDanmus(ctx, []videoentity.Danmu{*danmu})
 }
 
 // AdminDelete 管理员批量删除弹幕。
 func (s *DanmuService) AdminDelete(ctx context.Context, danmuIDs []uint) (int64, error) {
 	if len(danmuIDs) == 0 {
-		return 0, domain.ErrDanmuIDsRequired
+		return 0, videoerrors.ErrDanmuIDsRequired
 	}
 
 	ctx = orTODO(ctx)
@@ -406,8 +405,8 @@ func (s *DanmuService) AdminList(
 		params.PageSize = 20
 	}
 
-	params.Keyword = domain.TrimKeyword(params.Keyword)
-	params.Username = domain.TrimKeyword(params.Username)
+	params.Keyword = videoentity.TrimKeyword(params.Keyword)
+	params.Username = videoentity.TrimKeyword(params.Username)
 
 	return s.query.AdminList(ctx, params)
 }
@@ -420,7 +419,7 @@ func (s *DanmuService) CreatorList(
 	keyword string,
 ) ([]CreatorDanmuItem, int64, error) {
 	if authorID == 0 {
-		return nil, 0, domain.ErrParamInvalid
+		return nil, 0, videoerrors.ErrParamInvalid
 	}
 
 	if page < 1 {
@@ -433,14 +432,14 @@ func (s *DanmuService) CreatorList(
 
 	username := s.authors.UsernameByID(ctx, authorID)
 	if username == "" {
-		return nil, 0, domain.ErrUserNotFound
+		return nil, 0, videoerrors.ErrUserNotFound
 	}
 
-	return s.query.CreatorList(ctx, username, page, pageSize, sort, domain.TrimKeyword(keyword))
+	return s.query.CreatorList(ctx, username, page, pageSize, sort, videoentity.TrimKeyword(keyword))
 }
 
 // deleteDanmus 删除弹幕并同步视频/分P 弹幕数、热度、创作中心指标与缓存。
-func (s *DanmuService) deleteDanmus(ctx context.Context, danmus []domain.Danmu) error {
+func (s *DanmuService) deleteDanmus(ctx context.Context, danmus []videoentity.Danmu) error {
 	if len(danmus) == 0 {
 		return nil
 	}
@@ -481,14 +480,14 @@ func (s *DanmuService) deleteDanmus(ctx context.Context, danmus []domain.Danmu) 
 			continue
 		}
 
-		if _, err := s.stats.ApplyDelta(ctx, videoID, domain.StatsDelta{DanmuCount: -dec}); err != nil {
+		if _, err := s.stats.ApplyDelta(ctx, videoID, videovo.StatsDelta{DanmuCount: -dec}); err != nil {
 			s.logger.Warn("apply video stats delta after delete danmu failed",
 				zap.Error(err),
 				zap.Uint("videoId", videoID),
 				zap.Int64("danmuDelta", -dec),
 			)
 		} else {
-			s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreDanmuWeight, -dec)
+			s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreDanmuWeight, -dec)
 		}
 
 		if authorID, err := s.authors.AuthorID(ctx, videoID); err == nil {
@@ -516,7 +515,7 @@ func (s *DanmuService) deleteDanmus(ctx context.Context, danmus []domain.Danmu) 
 }
 
 // toDanmuDTO 把弹幕实体转为响应 DTO。
-func toDanmuDTO(record *domain.Danmu) DanmuDTO {
+func toDanmuDTO(record *videoentity.Danmu) DanmuDTO {
 	return DanmuDTO{
 		ID:          record.ID,
 		VideoID:     record.VideoID,

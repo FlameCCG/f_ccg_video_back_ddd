@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -33,17 +35,17 @@ import (
 // chunkedEncodeRequest 是一次块级编码的参数集合。
 type chunkedEncodeRequest struct {
 	pipelineName   string
-	task           media.TranscodeTask
-	policy         *media.TranscodePolicy
+	task           mediaentity.TranscodeTask
+	policy         *mediavo.TranscodePolicy
 	srcPath        string
-	targets        []media.TranscodeTarget
+	targets        []mediavo.TranscodeTarget
 	useGPU         bool
 	forceKFSec     int
 	sourceBitrate  int
 	sourceDuration int
 	sourceCodec    string
 	checkpoint     *transcodeCheckpoint
-	plan           []media.TranscodeChunk
+	plan           []mediavo.TranscodeChunk
 }
 
 // encodeChunkedTargets 按切块计划逐块编码 targets（纯视频多输出），返回每块的产物路径表。
@@ -66,7 +68,7 @@ func (e *TranscodeEngine) encodeChunkedTargets(
 	perChunk := make([]map[string]string, len(req.plan))
 	reused := 0
 
-	tracker := media.ProgressTrackerFromContext(ctx)
+	tracker := mediaruntime.ProgressTrackerFromContext(ctx)
 	baseCb := progressCbForPipeline(ctx, tracker, req.pipelineName)
 
 	for ci, chunk := range req.plan {
@@ -74,7 +76,7 @@ func (e *TranscodeEngine) encodeChunkedTargets(
 			return nil, fmt.Errorf("chunked encode canceled at chunk %d: %w", chunk.Index, err)
 		}
 
-		dirName := media.ChunkArtifactDirName(req.pipelineName, req.useGPU, chunk.Index)
+		dirName := mediavo.ChunkArtifactDirName(req.pipelineName, req.useGPU, chunk.Index)
 		if files, ok := committedChunkFiles(req.checkpoint, dirName, names); ok {
 			perChunk[ci] = files
 			reused++
@@ -111,10 +113,10 @@ func (e *TranscodeEngine) encodeChunkedTargets(
 func (e *TranscodeEngine) runOneChunk(
 	ctx context.Context,
 	req chunkedEncodeRequest,
-	chunk media.TranscodeChunk,
+	chunk mediavo.TranscodeChunk,
 	dirName string,
 	names []string,
-	baseCb media.ProgressCallback,
+	baseCb mediaruntime.ProgressCallback,
 ) (map[string]string, error) {
 	ckpt := req.checkpoint
 
@@ -133,13 +135,13 @@ func (e *TranscodeEngine) runOneChunk(
 	useHardwareScale := req.policy.UseHardwareScale(req.useGPU)
 	filter := buildFilterComplex(req.targets, req.useGPU, useHardwareScale)
 
-	span := &media.FFmpegChunkSpan{
+	span := &mediavo.FFmpegChunkSpan{
 		StartSec:              chunk.StartSec,
 		LenSec:                chunk.LenSec,
 		VideoOnly:             true,
 		ForceKeyframeEverySec: req.forceKFSec,
 	}
-	if media.IsLastChunk(req.plan, chunk) {
+	if mediavo.IsLastChunk(req.plan, chunk) {
 		// 末块编到源结尾（不加 -t）：ffprobe 时长整数截断的小数尾巴不能丢。
 		span.LenSec = 0
 	}
@@ -156,13 +158,13 @@ func (e *TranscodeEngine) runOneChunk(
 		chunkSrcBytes = srcBytes * int64(chunk.LenSec) / int64(req.sourceDuration)
 	}
 
-	encodeTimeout := media.CalcPipelineEncodeTimeout(chunk.LenSec, len(req.targets), req.useGPU, chunkSrcBytes)
-	stallLimit := media.CalcProgressStallTimeout(chunk.LenSec)
+	encodeTimeout := mediaruntime.CalcPipelineEncodeTimeout(chunk.LenSec, len(req.targets), req.useGPU, chunkSrcBytes)
+	stallLimit := mediaruntime.CalcProgressStallTimeout(chunk.LenSec)
 
 	encodeCtx, cancelEncode := context.WithTimeout(ctx, encodeTimeout)
 	defer cancelEncode()
 
-	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
+	runCtx, cancelRun, wrapProgress := mediaruntime.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
 	defer cancelRun()
 
 	cmd := exec.CommandContext(runCtx, "ffmpeg", args...)
@@ -201,8 +203,7 @@ func (e *TranscodeEngine) runOneChunk(
 
 	if waitErr != nil {
 		return nil, fmt.Errorf("chunk %d [%ds,+%ds): %w",
-			chunk.Index, chunk.StartSec, chunk.LenSec,
-			media.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String()),
+			chunk.Index, chunk.StartSec, chunk.LenSec, mediaruntime.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String()),
 		)
 	}
 
@@ -212,7 +213,7 @@ func (e *TranscodeEngine) runOneChunk(
 			return nil, fmt.Errorf("probe chunk %d output %s: %w", chunk.Index, req.targets[i].ID, err)
 		}
 
-		if err := media.ValidateTranscodedDuration(chunk.LenSec, meta.Duration); err != nil {
+		if err := mediavo.ValidateTranscodedDuration(chunk.LenSec, meta.Duration); err != nil {
 			return nil, fmt.Errorf("validate chunk %d output %s: %w", chunk.Index, req.targets[i].ID, err)
 		}
 	}
@@ -245,9 +246,9 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 	ckpt.audioMu.Lock()
 	defer ckpt.audioMu.Unlock()
 
-	if p, ok := ckpt.CommittedFilePath(media.TranscodeAudioTrackName); ok {
+	if p, ok := ckpt.CommittedFilePath(mediavo.TranscodeAudioTrackName); ok {
 		dur, err := probeContainerDurationSec(ctx, p)
-		if err == nil && media.ValidateTranscodedDuration(sourceDurationSec, dur) == nil {
+		if err == nil && mediavo.ValidateTranscodedDuration(sourceDurationSec, dur) == nil {
 			return p, nil
 		}
 
@@ -255,7 +256,7 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 			zap.String("path", p),
 			zap.Error(err),
 		)
-		ckpt.DiscardCommitted(media.TranscodeAudioTrackName)
+		ckpt.DiscardCommitted(mediavo.TranscodeAudioTrackName)
 	}
 
 	attemptDir, err := ckpt.AttemptDir("audio")
@@ -265,9 +266,9 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 
 	defer func() { _ = os.RemoveAll(attemptDir) }()
 
-	outPath := filepath.Join(attemptDir, media.TranscodeAudioTrackName)
+	outPath := filepath.Join(attemptDir, mediavo.TranscodeAudioTrackName)
 
-	encodeCtx, cancel := context.WithTimeout(ctx, media.CalcAudioEncodeTimeout(sourceDurationSec))
+	encodeCtx, cancel := context.WithTimeout(ctx, mediaruntime.CalcAudioEncodeTimeout(sourceDurationSec))
 	defer cancel()
 
 	var stderr bytes.Buffer
@@ -285,11 +286,11 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 		return "", fmt.Errorf("probe shared audio track: %w", err)
 	}
 
-	if err := media.ValidateTranscodedDuration(sourceDurationSec, dur); err != nil {
+	if err := mediavo.ValidateTranscodedDuration(sourceDurationSec, dur); err != nil {
 		return "", fmt.Errorf("validate shared audio track: %w", err)
 	}
 
-	return ckpt.CommitFile(outPath, media.TranscodeAudioTrackName)
+	return ckpt.CommitFile(outPath, mediavo.TranscodeAudioTrackName)
 }
 
 // -----------------------------------------------------------------------------
@@ -301,10 +302,10 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 	ctx context.Context,
 	req mediaapp.MP4EncodeRequest,
 	ckpt *transcodeCheckpoint,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 ) (map[string]string, error) {
 	perChunk, err := e.encodeChunkedTargets(ctx, chunkedEncodeRequest{
-		pipelineName:   media.TranscodePipelineMP4,
+		pipelineName:   mediavo.TranscodePipelineMP4,
 		task:           req.Task,
 		policy:         req.Policy,
 		srcPath:        req.SourcePath,
@@ -368,7 +369,7 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 		}
 
 		outPath := filepath.Join(asmDir, name)
-		timeout := media.CalcAssembleTimeout(sumFileSizes(append(chunkPaths, audioPath)...))
+		timeout := mediaruntime.CalcAssembleTimeout(sumFileSizes(append(chunkPaths, audioPath)...))
 		args := buildChunkConcatMP4Args(listPath, audioPath, outPath)
 
 		if err := runFFmpegCopyMux(ctx, args, "", timeout, "mp4 "+target.ID); err != nil {
@@ -380,7 +381,7 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 			return nil, fmt.Errorf("probe assembled output %s: %w", target.ID, err)
 		}
 
-		if err := media.ValidateTranscodedDuration(req.SourceDuration, meta.Duration); err != nil {
+		if err := mediavo.ValidateTranscodedDuration(req.SourceDuration, meta.Duration); err != nil {
 			return nil, fmt.Errorf("validate assembled output %s: %w", target.ID, err)
 		}
 
@@ -393,7 +394,7 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 	}
 
 	// 全部目标已拼装并提交为最终断点单元，块产物即刻回收磁盘。
-	discardTranscodeChunks(ckpt, media.TranscodePipelineMP4)
+	discardTranscodeChunks(ckpt, mediavo.TranscodePipelineMP4)
 
 	return results, nil
 }
@@ -403,7 +404,7 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 func (e *TranscodeEngine) muxChunkedDASH(
 	ctx context.Context,
 	ckpt *transcodeCheckpoint,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 	perChunk []map[string]string,
 	audioPath, tmpDir, mpdPath, fileHash string,
 	segDur int,
@@ -442,7 +443,7 @@ func (e *TranscodeEngine) muxChunkedDASH(
 		}
 	}
 
-	timeout := media.CalcAssembleTimeout(sumFileSizes(append(allChunkFiles, audioPath)...))
+	timeout := mediaruntime.CalcAssembleTimeout(sumFileSizes(append(allChunkFiles, audioPath)...))
 	args := buildChunkedDASHMuxArgs(listPaths, audioPath, mpdPath, fileHash, segDur)
 
 	return runFFmpegCopyMux(ctx, args, tmpDir, timeout, "dash")

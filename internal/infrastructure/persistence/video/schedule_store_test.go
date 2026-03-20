@@ -11,7 +11,8 @@ import (
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -225,7 +226,7 @@ func TestPublishPersistsTimeWithVideo(t *testing.T) {
 				}
 			}
 			future := time.Now().Add(time.Hour)
-			draft := &domain.PublishDraft{Video: &domain.Video{Title: "scheduled", AuthorUsername: "alice", Status: enum.VideoStatusScheduled}, PublishAt: &future}
+			draft := &videoentity.PublishDraft{Video: &videoentity.Video{Title: "scheduled", AuthorUsername: "alice", Status: enum.VideoStatusScheduled}, PublishAt: &future}
 			err := f.videos.Persist(t.Context(), draft)
 			if (err != nil) != fail {
 				t.Fatalf("error=%v, want fail=%v", err, fail)
@@ -306,14 +307,16 @@ func TestReviewUsesVideoPublishTime(t *testing.T) {
 
 func TestImmediatePublishHasNoScheduledTime(t *testing.T) {
 	f := newRevisionFixture(t)
-	draft := &domain.PublishDraft{Video: &domain.Video{Title: "immediate", AuthorUsername: "alice", Status: enum.VideoStatusReview}}
+	draft := &videoentity.PublishDraft{Video: &videoentity.Video{Title: "immediate", AuthorUsername: "alice", Status: enum.VideoStatusReview}}
 	if err := f.videos.Persist(t.Context(), draft); err != nil {
 		t.Fatal(err)
 	}
 	requirePublishTime(t, infra.NewScheduleStore(f.db), draft.Video.ID, nil)
 }
 
-type deletingVideoRepository struct{ domain.VideoRepository }
+type deletingVideoRepository struct {
+	videorepo.VideoRepository
+}
 
 func (deletingVideoRepository) UsernameByUserID(context.Context, uint) (string, error) {
 	return "alice", nil

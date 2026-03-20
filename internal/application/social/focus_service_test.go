@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/social"
+	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
 
 	"go.uber.org/zap"
 )
@@ -13,7 +13,7 @@ type focusRepoStub struct {
 	deleted int64
 }
 
-func (r *focusRepoStub) Create(context.Context, *domain.Focus) error { return nil }
+func (r *focusRepoStub) Create(context.Context, *socialentity.Focus) error { return nil }
 
 func (r *focusRepoStub) Delete(context.Context, uint, uint) (int64, error) {
 	return r.deleted, nil

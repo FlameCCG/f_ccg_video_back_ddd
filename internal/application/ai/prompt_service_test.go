@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -81,7 +81,7 @@ type promptQueryFake struct {
 	available  bool
 	keyword    []uint
 	latest     []uint
-	inputs     []domain.VideoCandidateInput
+	inputs     []aivo.VideoCandidateInput
 	keywordErr error
 	latestErr  error
 	loadErr    error
@@ -105,7 +105,7 @@ func (f *promptQueryFake) LatestPublishedIDs(context.Context, int) ([]uint, erro
 func (f *promptQueryFake) Load(
 	_ context.Context,
 	ids []uint,
-) ([]domain.VideoCandidateInput, error) {
+) ([]aivo.VideoCandidateInput, error) {
 	f.loadedIDs = append([]uint(nil), ids...)
 
 	return f.inputs, f.loadErr
@@ -161,7 +161,7 @@ func TestAnalyzeVideoQueryUsesBoundedTranscriptWithoutBase64(t *testing.T) {
 	if analysis.Intent != "find_video" || !reflect.DeepEqual(analysis.Keywords, []string{"Go"}) {
 		t.Fatalf("analysis = %+v", analysis)
 	}
-	if text.last.MaxTokens != domain.AnalysisMaxOutputTokens || len(text.last.Messages) != 2 {
+	if text.last.MaxTokens != aivo.AnalysisMaxOutputTokens || len(text.last.Messages) != 2 {
 		t.Fatalf("invocation = %+v", text.last)
 	}
 	if text.last.Runtime != runtime {
@@ -188,7 +188,7 @@ func TestSearchPromptVideoIDsUsesOriginalTextAndFirstImage(t *testing.T) {
 	}
 
 	ids, mode := service.searchPromptVideoIDs(context.Background(), conv, []string{"跑车"}, 4)
-	if !reflect.DeepEqual(ids, []uint{9}) || mode != domain.RetrievalModeImageVector {
+	if !reflect.DeepEqual(ids, []uint{9}) || mode != aivo.RetrievalModeImageVector {
 		t.Fatalf("ids=%v mode=%q", ids, mode)
 	}
 	want := VideoVectorQuery{
@@ -207,7 +207,7 @@ func TestLoadPromptVideoCandidatesFallsBackToLatestAfterRecallErrors(t *testing.
 		available:  true,
 		keywordErr: errors.New("mysql recall failed"),
 		latest:     []uint{7},
-		inputs: []domain.VideoCandidateInput{{
+		inputs: []aivo.VideoCandidateInput{{
 			VideoID: 7,
 			Title:   "最新作品",
 		}},
@@ -223,7 +223,7 @@ func TestLoadPromptVideoCandidatesFallsBackToLatestAfterRecallErrors(t *testing.
 	if err != nil {
 		t.Fatalf("loadPromptVideoCandidates: %v", err)
 	}
-	if set.RetrievalMode != domain.RetrievalModeLatest || len(set.Candidates) != 1 {
+	if set.RetrievalMode != aivo.RetrievalModeLatest || len(set.Candidates) != 1 {
 		t.Fatalf("candidate set = %+v", set)
 	}
 	if !reflect.DeepEqual(prompts.loadedIDs, []uint{7}) {

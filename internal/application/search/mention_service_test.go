@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -183,8 +183,8 @@ func TestSuggestFollowUsersPropagatesRelationError(t *testing.T) {
 }
 
 // mentionPage 构造测试用的规范化分页参数。
-func mentionPage(page, pageSize int) domain.Pagination {
-	return domain.NormalizeMentionPagination(page, pageSize)
+func mentionPage(page, pageSize int) searchvo.Pagination {
+	return searchvo.NormalizeMentionPagination(page, pageSize)
 }
 
 func mentionIDs(users []MentionUser) []uint {

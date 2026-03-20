@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	mediarepo "f_ccg_video_back_ddd/internal/domain/media/repository"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
@@ -106,7 +109,7 @@ func (m *checkpointManager) disabled() bool {
 
 // open 打开（或创建）任务的断点目录。
 // 禁用断点续传时退化为一次性临时目录，行为与历史版本一致。
-func (m *checkpointManager) open(task media.TranscodeTask) (*transcodeCheckpoint, error) {
+func (m *checkpointManager) open(task mediaentity.TranscodeTask) (*transcodeCheckpoint, error) {
 	if m.disabled() {
 		dir, err := os.MkdirTemp("", "transcode-ephemeral-*")
 		if err != nil {
@@ -259,7 +262,7 @@ func mp4CheckpointValidator(sourceDuration int, logger *zap.Logger) transcodeOut
 			return fmt.Errorf("probe committed output: %w", err)
 		}
 
-		return media.ValidateTranscodedDuration(sourceDuration, meta.Duration)
+		return mediavo.ValidateTranscodedDuration(sourceDuration, meta.Duration)
 	}
 }
 
@@ -267,7 +270,7 @@ func mp4CheckpointValidator(sourceDuration int, logger *zap.Logger) transcodeOut
 func reusableCommittedOutput(
 	ctx context.Context,
 	ckpt *transcodeCheckpoint,
-	target media.TranscodeTarget,
+	target mediavo.TranscodeTarget,
 	validate transcodeOutputValidator,
 ) (string, bool) {
 	if !ckpt.persistent() {
@@ -335,10 +338,10 @@ func reusableCommittedDashDir(ctx context.Context, ckpt *transcodeCheckpoint, so
 // 任何查询/Stat 失败都按「未完成」处理（宁可重做，不可漏产物）。
 func transcodeTargetPersisted(
 	ctx context.Context,
-	resources media.TranscodeResourceRepository,
-	task media.TranscodeTask,
-	target media.TranscodeTarget,
-	driver media.StorageDriver,
+	resources mediarepo.TranscodeResourceRepository,
+	task mediaentity.TranscodeTask,
+	target mediavo.TranscodeTarget,
+	driver mediaport.StorageDriver,
 	logger *zap.Logger,
 ) (string, bool) {
 	if logger == nil {
@@ -366,7 +369,7 @@ func transcodeTargetPersisted(
 	}
 
 	for _, storedURL := range urls {
-		if !media.StoredPathMatchesRelative(storedURL, target.RelativePath) {
+		if !mediavo.StoredPathMatchesRelative(storedURL, target.RelativePath) {
 			continue
 		}
 
@@ -392,9 +395,9 @@ func transcodeTargetPersisted(
 // manifest 最后上传，因此它存在即代表各 representation 均已上传完成。
 func dashOutputPersisted(
 	ctx context.Context,
-	resources media.TranscodeResourceRepository,
-	task media.TranscodeTask,
-	driver media.StorageDriver,
+	resources mediarepo.TranscodeResourceRepository,
+	task mediaentity.TranscodeTask,
+	driver mediaport.StorageDriver,
 	logger *zap.Logger,
 ) bool {
 	if logger == nil {
@@ -418,7 +421,7 @@ func dashOutputPersisted(
 	}
 
 	for _, storedURL := range urls {
-		if !media.StoredPathMatchesRelative(storedURL, expectedRel) {
+		if !mediavo.StoredPathMatchesRelative(storedURL, expectedRel) {
 			continue
 		}
 

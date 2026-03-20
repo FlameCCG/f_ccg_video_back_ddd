@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 
 	"go.uber.org/zap"
 )
@@ -18,12 +20,12 @@ type loginConfigReaderStub struct {
 func (s loginConfigReaderStub) Get() *config.Config { return s.config }
 
 type refreshUserRepositoryStub struct {
-	domain.UserAccountRepository
-	user *domain.User
+	identityrepo.UserAccountRepository
+	user *identityentity.User
 	err  error
 }
 
-func (s refreshUserRepositoryStub) FindByID(context.Context, uint) (*domain.User, error) {
+func (s refreshUserRepositoryStub) FindByID(context.Context, uint) (*identityentity.User, error) {
 	return s.user, s.err
 }
 
@@ -37,7 +39,7 @@ func TestLoginServiceRefreshTokenDistinguishesQueryFailure(t *testing.T) {
 		RefreshSecret: "test-refresh-secret",
 	}}}
 	tokens := NewTokenService(reader)
-	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: "tester"})
+	pair, err := tokens.issueCredentialPair(&identityentity.User{ID: 7, Username: "tester"})
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
@@ -69,7 +71,7 @@ func TestLoginServiceRefreshTokenReportsMissingUser(t *testing.T) {
 		RefreshSecret: "test-refresh-secret",
 	}}}
 	tokens := NewTokenService(reader)
-	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: "tester"})
+	pair, err := tokens.issueCredentialPair(&identityentity.User{ID: 7, Username: "tester"})
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
@@ -85,7 +87,7 @@ func TestLoginServiceRefreshTokenReportsMissingUser(t *testing.T) {
 		zap.NewNop(),
 	)
 
-	if _, err := service.RefreshToken(context.Background(), pair.RefreshToken); !errors.Is(err, domain.ErrUserNotFound) {
+	if _, err := service.RefreshToken(context.Background(), pair.RefreshToken); !errors.Is(err, identityerrors.ErrUserNotFound) {
 		t.Fatalf("RefreshToken error = %v, want ErrUserNotFound", err)
 	}
 }

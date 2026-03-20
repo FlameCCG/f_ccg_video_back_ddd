@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 
-	domain "f_ccg_video_back_ddd/internal/domain/contentops"
+	contentopserrors "f_ccg_video_back_ddd/internal/domain/contentops/domainerr"
+	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsrepo "f_ccg_video_back_ddd/internal/domain/contentops/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -20,7 +22,7 @@ type BannerRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ domain.BannerRepository = (*BannerRepository)(nil)
+var _ contentopsrepo.BannerRepository = (*BannerRepository)(nil)
 
 // NewBannerRepository 构造轮播图仓储。
 func NewBannerRepository(db *gorm.DB) *BannerRepository {
@@ -32,7 +34,7 @@ func (r *BannerRepository) ListVisible(
 	ctx context.Context,
 	bannerType enum.BannerType,
 	partitionID *uint,
-) ([]domain.Banner, error) {
+) ([]contentopsentity.Banner, error) {
 	query := gormx.DB(ctx, r.db).Model(&po.Banner{}).
 		Where("`show` = ?", true)
 	if bannerType > 0 {
@@ -54,8 +56,8 @@ func (r *BannerRepository) ListVisible(
 // ListAdmin 后台分页列表：先取总数，总数为 0 时直接返回空列表。
 func (r *BannerRepository) ListAdmin(
 	ctx context.Context,
-	q domain.BannerAdminQuery,
-) ([]domain.Banner, int64, error) {
+	q contentopsentity.BannerAdminQuery,
+) ([]contentopsentity.Banner, int64, error) {
 	query := gormx.DB(ctx, r.db).Model(&po.Banner{})
 	if q.Type > 0 {
 		query = query.Where("type = ?", q.Type)
@@ -75,7 +77,7 @@ func (r *BannerRepository) ListAdmin(
 	}
 
 	if total == 0 {
-		return []domain.Banner{}, 0, nil
+		return []contentopsentity.Banner{}, 0, nil
 	}
 
 	var list []po.Banner
@@ -94,9 +96,9 @@ func (r *BannerRepository) ListVisibleByIDs(
 	ctx context.Context,
 	bannerType enum.BannerType,
 	ids []uint,
-) ([]domain.Banner, error) {
+) ([]contentopsentity.Banner, error) {
 	if len(ids) == 0 {
-		return []domain.Banner{}, nil
+		return []contentopsentity.Banner{}, nil
 	}
 
 	query := gormx.DB(ctx, r.db).
@@ -112,12 +114,12 @@ func (r *BannerRepository) ListVisibleByIDs(
 		return nil, err
 	}
 
-	bannerMap := make(map[uint]domain.Banner, len(list))
+	bannerMap := make(map[uint]contentopsentity.Banner, len(list))
 	for i := range list {
 		bannerMap[list[i].ID] = *toDomainBanner(&list[i])
 	}
 
-	ordered := make([]domain.Banner, 0, len(list))
+	ordered := make([]contentopsentity.Banner, 0, len(list))
 
 	for _, id := range ids {
 		banner, ok := bannerMap[id]
@@ -132,7 +134,7 @@ func (r *BannerRepository) ListVisibleByIDs(
 }
 
 // FindByID 按主键读取轮播图；不存在时返回 (nil, nil)。
-func (r *BannerRepository) FindByID(ctx context.Context, bannerID uint) (*domain.Banner, error) {
+func (r *BannerRepository) FindByID(ctx context.Context, bannerID uint) (*contentopsentity.Banner, error) {
 	var row po.Banner
 	if err := gormx.DB(ctx, r.db).First(&row, bannerID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -146,9 +148,9 @@ func (r *BannerRepository) FindByID(ctx context.Context, bannerID uint) (*domain
 }
 
 // Create 新增轮播图，并把自增主键与时间戳回填到入参实体。
-func (r *BannerRepository) Create(ctx context.Context, banner *domain.Banner) error {
+func (r *BannerRepository) Create(ctx context.Context, banner *contentopsentity.Banner) error {
 	if banner == nil {
-		return domain.ErrBannerInvalidParam
+		return contentopserrors.ErrBannerInvalidParam
 	}
 
 	row := toPOBanner(banner)
@@ -164,14 +166,14 @@ func (r *BannerRepository) Create(ctx context.Context, banner *domain.Banner) er
 }
 
 // Update 按主键部分更新轮播图字段。
-func (r *BannerRepository) Update(ctx context.Context, bannerID uint, changes domain.BannerChanges) error {
+func (r *BannerRepository) Update(ctx context.Context, bannerID uint, changes contentopsentity.BannerChanges) error {
 	if bannerID == 0 {
-		return domain.ErrBannerInvalidParam
+		return contentopserrors.ErrBannerInvalidParam
 	}
 
 	updates := toPOBannerChanges(changes)
 	if len(updates) == 0 {
-		return domain.ErrBannerNoUpdatableField
+		return contentopserrors.ErrBannerNoUpdatableField
 	}
 
 	return gormx.DB(ctx, r.db).

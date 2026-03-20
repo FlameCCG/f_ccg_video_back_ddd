@@ -3,13 +3,16 @@ package dynamic
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
+	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
+	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
+	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // ReadService 「最新作品已读」用例服务。
 type ReadService struct {
-	reads    domain.ReadRepository
+	reads    dynamicrepo.ReadRepository
 	follows  FollowRelationQuery
 	activity ActivityQuery
 	users    UserProfileQuery
@@ -19,7 +22,7 @@ type ReadService struct {
 
 // NewReadService 构造已读用例服务。
 func NewReadService(
-	reads domain.ReadRepository,
+	reads dynamicrepo.ReadRepository,
 	follows FollowRelationQuery,
 	activity ActivityQuery,
 	users UserProfileQuery,
@@ -54,11 +57,11 @@ func (s *ReadService) ReadLatestAndList(
 // 仅当浏览者是作者本人、或已关注该作者时才写入已读位点（未关注直接返回 nil）。
 func (s *ReadService) MarkLatestRead(ctx context.Context, userID, authorID uint) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return dynamicerrors.ErrUserNotLogin
 	}
 
 	if authorID == 0 {
-		return domain.ErrAuthorIDRequired
+		return dynamicerrors.ErrAuthorIDRequired
 	}
 
 	if userID != authorID {
@@ -115,24 +118,24 @@ func (s *ReadService) MaybeMarkReadByVideo(ctx context.Context, userID, videoID 
 //
 // 两条明细查询的错误被忽略（按「无作品」处理），
 // 只有用户名查询失败或用户不存在才返回错误。
-func (s *ReadService) latestWork(ctx context.Context, authorID uint) (domain.LatestWork, bool, error) {
+func (s *ReadService) latestWork(ctx context.Context, authorID uint) (dynamicvo.LatestWork, bool, error) {
 	if authorID == 0 {
-		return domain.LatestWork{}, false, domain.ErrAuthorIDRequired
+		return dynamicvo.LatestWork{}, false, dynamicerrors.ErrAuthorIDRequired
 	}
 
 	username, err := s.users.UsernameByID(ctx, authorID)
 	if err != nil {
-		return domain.LatestWork{}, false, err
+		return dynamicvo.LatestWork{}, false, err
 	}
 
 	if username == "" {
-		return domain.LatestWork{}, false, domain.ErrUserNotFound
+		return dynamicvo.LatestWork{}, false, dynamicerrors.ErrUserNotFound
 	}
 
 	video, _ := s.activity.LatestVideoWork(ctx, username)
 	dynamic, _ := s.activity.LatestDynamicWork(ctx, authorID)
 
-	latest, ok := domain.PickLatestWork(video, dynamic)
+	latest, ok := dynamicvo.PickLatestWork(video, dynamic)
 
 	return latest, ok, nil
 }
@@ -141,7 +144,7 @@ func (s *ReadService) latestWork(ctx context.Context, authorID uint) (domain.Lat
 func (s *ReadService) upsertRead(
 	ctx context.Context,
 	userID, authorID uint,
-	latest domain.LatestWork,
+	latest dynamicvo.LatestWork,
 ) error {
 	if userID == 0 || authorID == 0 || latest.WorkID == 0 || latest.CreatedAt.IsZero() {
 		return nil
@@ -153,7 +156,7 @@ func (s *ReadService) upsertRead(
 	}
 
 	if record == nil {
-		if err := s.reads.Create(ctx, &domain.ReadRecord{
+		if err := s.reads.Create(ctx, &dynamicentity.ReadRecord{
 			UserID:           userID,
 			AuthorID:         authorID,
 			LastReadWorkType: latest.WorkType,

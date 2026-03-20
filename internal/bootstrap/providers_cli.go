@@ -3,8 +3,8 @@ package bootstrap
 import (
 	provisioningapp "f_ccg_video_back_ddd/internal/application/provisioning"
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
-	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	rbacdomainrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/internal/infrastructure/auth"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
@@ -57,7 +57,7 @@ var BannerTaskProviderSet = wire.NewSet(
 	ctxutil.NewDetachedTaskGroup,
 	storage.NewMinIOClientPool,
 	storage.NewResolver,
-	wire.Bind(new(mediadomain.StorageResolver), new(*storage.Resolver)),
+	wire.Bind(new(mediaport.StorageResolver), new(*storage.Resolver)),
 	provisioningrepo.NewBannerRepository,
 	wire.Bind(new(provisioningapp.BannerRepository), new(*provisioningrepo.BannerRepository)),
 	NewBannerStorageResolverAdapter,
@@ -100,11 +100,11 @@ var RBACInitTaskProviderSet = wire.NewSet(
 	rbacrepo.NewCasbinEnforcer,
 	wire.Bind(new(rbacapp.Enforcer), new(*rbacrepo.CasbinEnforcer)),
 	rbacrepo.NewRoleRepository,
-	wire.Bind(new(rbacdomain.RoleRepository), new(*rbacrepo.RoleRepository)),
+	wire.Bind(new(rbacdomainrepo.RoleRepository), new(*rbacrepo.RoleRepository)),
 	rbacrepo.NewMenuRepository,
-	wire.Bind(new(rbacdomain.MenuRepository), new(*rbacrepo.MenuRepository)),
+	wire.Bind(new(rbacdomainrepo.MenuRepository), new(*rbacrepo.MenuRepository)),
 	rbacrepo.NewRoleMenuRepository,
-	wire.Bind(new(rbacdomain.RoleMenuRepository), new(*rbacrepo.RoleMenuRepository)),
+	wire.Bind(new(rbacdomainrepo.RoleMenuRepository), new(*rbacrepo.RoleMenuRepository)),
 	rbacapp.NewInitService,
 	wire.Bind(new(cli.RBACInitializer), new(*rbacapp.InitService)),
 	cli.NewRBACInitExecutor,
@@ -114,7 +114,7 @@ var RBACInitTaskProviderSet = wire.NewSet(
 var ResourceSyncTaskProviderSet = wire.NewSet(
 	CLIDatabaseProviderSet,
 	rbacrepo.NewApiResourceRepository,
-	wire.Bind(new(rbacdomain.ApiResourceRepository), new(*rbacrepo.ApiResourceRepository)),
+	wire.Bind(new(rbacdomainrepo.ApiResourceRepository), new(*rbacrepo.ApiResourceRepository)),
 	rbacrepo.NewOpenAPIMetaLoader,
 	wire.Bind(new(rbacapp.ResourceMetaLoader), new(*rbacrepo.OpenAPIMetaLoader)),
 	validate.New,

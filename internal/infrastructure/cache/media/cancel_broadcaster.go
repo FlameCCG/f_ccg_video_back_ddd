@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -29,7 +30,7 @@ type CancelBroadcaster struct {
 	redis *redis.Client
 }
 
-var _ domain.CancelBroadcaster = (*CancelBroadcaster)(nil)
+var _ mediaport.CancelBroadcaster = (*CancelBroadcaster)(nil)
 
 // NewCancelBroadcaster 构造取消事件广播器。
 func NewCancelBroadcaster(redisClient *redis.Client) *CancelBroadcaster {
@@ -71,7 +72,7 @@ func (b *CancelBroadcaster) PublishVideoDeleted(ctx context.Context, videoIDs []
 // Redis 客户端与任务登记表均由构造函数注入。
 type CancelSubscriber struct {
 	client   *redis.Client
-	registry *domain.TaskRegistry
+	registry *mediaruntime.TaskRegistry
 	logger   *zap.Logger
 
 	mu      sync.Mutex
@@ -84,7 +85,7 @@ type CancelSubscriber struct {
 // NewCancelSubscriber 创建进程级取消事件订阅者。
 func NewCancelSubscriber(
 	client *redis.Client,
-	registry *domain.TaskRegistry,
+	registry *mediaruntime.TaskRegistry,
 	logger *zap.Logger,
 ) *CancelSubscriber {
 	return &CancelSubscriber{client: client, registry: registry, logger: logger}

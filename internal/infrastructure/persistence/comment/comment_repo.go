@@ -5,7 +5,9 @@ import (
 	"errors"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/comment"
+	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
+	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -18,7 +20,7 @@ type Repository struct {
 	db *gorm.DB
 }
 
-var _ domain.Repository = (*Repository)(nil)
+var _ commentrepo.Repository = (*Repository)(nil)
 
 // NewRepository 构造评论仓储。
 func NewRepository(db *gorm.DB) *Repository {
@@ -26,27 +28,27 @@ func NewRepository(db *gorm.DB) *Repository {
 }
 
 // FindByID 读取完整评论；不存在时返回 (nil, nil)。
-func (r *Repository) FindByID(ctx context.Context, commentID uint) (*domain.Comment, error) {
+func (r *Repository) FindByID(ctx context.Context, commentID uint) (*commententity.Comment, error) {
 	return r.findOne(ctx, commentID, nil)
 }
 
 // FindPinTarget 只读 id/video_id/dynamic_id/root_id，供置顶鉴权使用。
-func (r *Repository) FindPinTarget(ctx context.Context, commentID uint) (*domain.Comment, error) {
+func (r *Repository) FindPinTarget(ctx context.Context, commentID uint) (*commententity.Comment, error) {
 	return r.findOne(ctx, commentID, []string{"id", "video_id", "dynamic_id", "root_id"})
 }
 
 // FindLikeTarget 只读 id/video_id/like_count，供点赞前置校验使用。
-func (r *Repository) FindLikeTarget(ctx context.Context, commentID uint) (*domain.Comment, error) {
+func (r *Repository) FindLikeTarget(ctx context.Context, commentID uint) (*commententity.Comment, error) {
 	return r.findOne(ctx, commentID, []string{"id", "video_id", "like_count"})
 }
 
 // FindNoticeSource 只读 id/user_id/video_id/dynamic_id/content，供点赞通知渲染使用。
-func (r *Repository) FindNoticeSource(ctx context.Context, commentID uint) (*domain.Comment, error) {
+func (r *Repository) FindNoticeSource(ctx context.Context, commentID uint) (*commententity.Comment, error) {
 	return r.findOne(ctx, commentID, []string{"id", "user_id", "video_id", "dynamic_id", "content"})
 }
 
 // findOne 按主键读取单条评论；columns 为空表示读取全部列。
-func (r *Repository) findOne(ctx context.Context, commentID uint, columns []string) (*domain.Comment, error) {
+func (r *Repository) findOne(ctx context.Context, commentID uint, columns []string) (*commententity.Comment, error) {
 	query := gormx.DB(ctx, r.db)
 	if len(columns) > 0 {
 		query = query.Select(columns)
@@ -65,7 +67,7 @@ func (r *Repository) findOne(ctx context.Context, commentID uint, columns []stri
 }
 
 // BriefByIDs 批量只读 id/video_id/root_id。
-func (r *Repository) BriefByIDs(ctx context.Context, commentIDs []uint) ([]domain.Comment, error) {
+func (r *Repository) BriefByIDs(ctx context.Context, commentIDs []uint) ([]commententity.Comment, error) {
 	if len(commentIDs) == 0 {
 		return nil, nil
 	}
@@ -81,7 +83,7 @@ func (r *Repository) BriefByIDs(ctx context.Context, commentIDs []uint) ([]domai
 }
 
 // ChildrenBrief 批量只读指定根评论下子评论的 id/video_id/root_id。
-func (r *Repository) ChildrenBrief(ctx context.Context, rootIDs []uint) ([]domain.Comment, error) {
+func (r *Repository) ChildrenBrief(ctx context.Context, rootIDs []uint) ([]commententity.Comment, error) {
 	if len(rootIDs) == 0 {
 		return nil, nil
 	}
@@ -109,7 +111,7 @@ func (r *Repository) ChildIDs(ctx context.Context, rootID uint) ([]uint, error) 
 }
 
 // Create 写入评论并回填自增 ID 与创建时间。
-func (r *Repository) Create(ctx context.Context, c *domain.Comment) error {
+func (r *Repository) Create(ctx context.Context, c *commententity.Comment) error {
 	if c == nil {
 		return nil
 	}
@@ -223,7 +225,7 @@ type LikeRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.LikeRepository = (*LikeRepository)(nil)
+var _ commentrepo.LikeRepository = (*LikeRepository)(nil)
 
 // NewLikeRepository 构造评论点赞仓储。
 func NewLikeRepository(db *gorm.DB) *LikeRepository {
@@ -231,7 +233,7 @@ func NewLikeRepository(db *gorm.DB) *LikeRepository {
 }
 
 // Find 查询单条点赞记录；不存在时返回 (nil, nil)。
-func (r *LikeRepository) Find(ctx context.Context, commentID, userID uint) (*domain.Like, error) {
+func (r *LikeRepository) Find(ctx context.Context, commentID, userID uint) (*commententity.Like, error) {
 	var row po.CommentLike
 	if err := gormx.DB(ctx, r.db).
 		Clauses(clause.Locking{Strength: "UPDATE"}).Where("comment_id = ? AND user_id = ?", commentID, userID).
@@ -247,7 +249,7 @@ func (r *LikeRepository) Find(ctx context.Context, commentID, userID uint) (*dom
 }
 
 // Create 写入点赞记录并回填自增 ID。
-func (r *LikeRepository) Create(ctx context.Context, like *domain.Like) error {
+func (r *LikeRepository) Create(ctx context.Context, like *commententity.Like) error {
 	if like == nil {
 		return nil
 	}
@@ -258,7 +260,7 @@ func (r *LikeRepository) Create(ctx context.Context, like *domain.Like) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domain.ErrLikeDuplicated
+		return commenterrors.ErrLikeDuplicated
 	}
 
 	like.ID = row.ID

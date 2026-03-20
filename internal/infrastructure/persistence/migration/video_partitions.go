@@ -15,9 +15,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// VideoPartitionsSQLFile 分区种子 SQL 的默认路径。
-const VideoPartitionsSQLFile = "init_resource/sql/video_partitions.sql"
-
 type videoPartitionSeedRow struct {
 	SeedOrder     int    `gorm:"column:seed_order"`
 	ID            uint   `gorm:"column:id"`

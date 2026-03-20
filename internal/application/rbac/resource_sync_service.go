@@ -4,14 +4,16 @@ import (
 	"context"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
 
 	"go.uber.org/zap"
 )
 
 // ResourceSyncService 接口资源同步用例（供 CLI -rs 使用）。
 type ResourceSyncService struct {
-	resources domain.ApiResourceRepository
+	resources rbacrepo.ApiResourceRepository
 	routes    RouteLister
 	meta      ResourceMetaLoader
 	logger    *zap.Logger
@@ -19,7 +21,7 @@ type ResourceSyncService struct {
 
 // NewResourceSyncService 构造接口资源同步用例。
 func NewResourceSyncService(
-	resources domain.ApiResourceRepository,
+	resources rbacrepo.ApiResourceRepository,
 	routes RouteLister,
 	meta ResourceMetaLoader,
 	logger *zap.Logger,
@@ -31,7 +33,7 @@ func NewResourceSyncService(
 func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyncResult, error) {
 	routes := s.routes.Routes()
 	if len(routes) == 0 {
-		return ResourceSyncResult{}, domain.ErrNoRouteFound
+		return ResourceSyncResult{}, rbacerrors.ErrNoRouteFound
 	}
 
 	metaMap, err := s.meta.Load()
@@ -39,7 +41,7 @@ func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyn
 		s.logger.Warn("加载 OpenAPI 资源失败，使用默认说明", zap.Error(err))
 	}
 
-	items := domain.BuildApiResources(routes, metaMap)
+	items := rbacentity.BuildApiResources(routes, metaMap)
 
 	existing, err := s.resources.ListAll(ctx)
 	if err != nil {
@@ -48,15 +50,15 @@ func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyn
 
 	result := ResourceSyncResult{Total: len(items)}
 
-	existingMap := make(map[string]*domain.ApiResource, len(existing))
+	existingMap := make(map[string]*rbacentity.ApiResource, len(existing))
 	for _, r := range existing {
-		existingMap[domain.ResourceKey(r.Method, r.Path)] = r
+		existingMap[rbacentity.ResourceKey(r.Method, r.Path)] = r
 	}
 
 	keep := make(map[string]struct{}, len(items))
 
 	for _, item := range items {
-		key := domain.ResourceKey(item.Method, item.Path)
+		key := rbacentity.ResourceKey(item.Method, item.Path)
 		keep[key] = struct{}{}
 
 		old, ok := existingMap[key]
@@ -83,7 +85,7 @@ func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyn
 	}
 
 	for _, old := range existing {
-		if _, ok := keep[domain.ResourceKey(old.Method, old.Path)]; ok {
+		if _, ok := keep[rbacentity.ResourceKey(old.Method, old.Path)]; ok {
 			continue
 		}
 
@@ -100,7 +102,7 @@ func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyn
 // diffResource 比较既有资源与目标资源，返回需要更新的 summary 与 tags（nil 表示无需更新）。
 //
 // summary 比较去首尾空白，tags 按 JSON 语义比较。
-func diffResource(old, item *domain.ApiResource) (*string, *[]byte) {
+func diffResource(old, item *rbacentity.ApiResource) (*string, *[]byte) {
 	var (
 		summary *string
 		tags    *[]byte
@@ -111,7 +113,7 @@ func diffResource(old, item *domain.ApiResource) (*string, *[]byte) {
 		summary = &value
 	}
 
-	if !domain.JSONEqual(old.Tags, item.Tags) {
+	if !rbacentity.JSONEqual(old.Tags, item.Tags) {
 		value := item.Tags
 		tags = &value
 	}

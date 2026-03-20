@@ -8,6 +8,4 @@ const (
 	VideoCommentType CommentType = "video" // 在视频中评论
 	// DynamicCommentType 表示动态评论，目标通过 dynamic_id 指定。
 	DynamicCommentType CommentType = "dynamic" // 在动态中评论
-	// ArticleCommentType 保留专栏评论的类型值；枚举存在不表示相关入口已经完整实现。
-	ArticleCommentType CommentType = "article" // 在专栏中评论
 )

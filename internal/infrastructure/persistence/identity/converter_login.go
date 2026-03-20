@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toPOUser 把用户领域实体转为 PO（逐字段显式映射，注册/OAuth 创建路径使用）。
-func toPOUser(user *domain.User) *po.User {
+func toPOUser(user *identityentity.User) *po.User {
 	if user == nil {
 		return nil
 	}
@@ -44,12 +44,12 @@ func toPOUser(user *domain.User) *po.User {
 }
 
 // toDomainUserConf 把用户配置 PO 转为领域实体（LikeTags 在此解析）。
-func toDomainUserConf(row *po.UserConf) *domain.UserConf {
+func toDomainUserConf(row *po.UserConf) *identityentity.UserConf {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.UserConf{
+	return &identityentity.UserConf{
 		UserID:        row.UserID,
 		LikeTags:      decodeLikeTags(row.LikeTags),
 		BannerID:      row.BannerID,

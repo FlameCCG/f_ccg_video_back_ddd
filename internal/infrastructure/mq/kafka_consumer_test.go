@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -284,7 +284,7 @@ func TestHandleMessagePermanentErrorSkipsRetry(t *testing.T) {
 		fn: func(sarama.ConsumerGroupSession, *sarama.ConsumerMessage) error {
 			attempts++
 
-			return media.PermanentMessage(errors.New("bad payload"))
+			return mediaerrors.PermanentMessage(errors.New("bad payload"))
 		},
 	}
 
@@ -293,7 +293,7 @@ func TestHandleMessagePermanentErrorSkipsRetry(t *testing.T) {
 		&sarama.ConsumerMessage{Topic: "transcode"},
 	)
 
-	var permanentErr *media.PermanentMessageError
+	var permanentErr *mediaerrors.PermanentMessageError
 	if !errors.As(err, &permanentErr) {
 		t.Fatalf("error = %v, want PermanentMessageError", err)
 	}
@@ -383,7 +383,7 @@ func TestDeadLetterFailureDoesNotCommitPoison(t *testing.T) {
 	messages <- &sarama.ConsumerMessage{Topic: "source"}
 	close(messages)
 	handler := consumerGroupHandler{producer: &trackingDLQProducer{fail: true}, dlqTopic: "source.dlq", fn: func(s sarama.ConsumerGroupSession, m *sarama.ConsumerMessage) error {
-		return media.PermanentMessage(errors.New("invalid"))
+		return mediaerrors.PermanentMessage(errors.New("invalid"))
 	}}
 	if err := handler.ConsumeClaim(session, stubConsumerGroupClaim{messages: messages}); err == nil {
 		t.Fatal("expected dlq failure")

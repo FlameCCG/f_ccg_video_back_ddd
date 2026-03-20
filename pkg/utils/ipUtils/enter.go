@@ -1,39 +1,14 @@
-// Package ipUtils 组合 IP 识别、地址分类和地区查询。
+// Package ipUtils 解析请求客户端 IP、地址分类和地区查询。
 //
-// 本地/公网地址探测与请求 IP 归属地是不同用途，涉及外部查询的函数要检查超时和回退。
 // RegionResolver 通过端口注入，避免每次调用都构造 ip2region 资源；代理来源可信度由 HTTP 层配置负责。
 package ipUtils
 
 import (
-	"context"
-	"errors"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-	"fmt"
-	"io"
 	"net"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
-
-// GetLocalIPv4 枚举本机网卡并返回首个非回环 IPv4；不保证它就是服务对外可达的地址。
-func GetLocalIPv4() (string, error) {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return "", err
-	}
-
-	for _, addr := range addrs {
-		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String(), nil
-			}
-		}
-	}
-
-	return "", errors.New("no ipv4 found")
-}
 
 // HasLocalIPAddr 解析文本 IP 后按回环、私网、链路本地或未指定地址规则判断。
 func HasLocalIPAddr(ip string) bool {
@@ -64,34 +39,6 @@ func HasLocalIP(ip net.IP) bool {
 		(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) || // 172.16.0.0/12
 		(ip4[0] == 169 && ip4[1] == 254) || // 169.254.0.0/16
 		(ip4[0] == 192 && ip4[1] == 168) // 192.168.0.0/16
-}
-
-// GetPublicIP 向外部 IP 服务查询本机出网地址，使用独立短超时；它不是当前请求客户端的 IP。
-func GetPublicIP() (string, error) {
-	client := &http.Client{Timeout: ctxutil.ExternalShortTimeout}
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://ipinfo.io/ip", nil)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := client.Do(req)
-	if err != nil || resp == nil {
-		return "", err
-	}
-
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		return "", fmt.Errorf("get public ip failed: %s", resp.Status)
-	}
-
-	ip, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return string(ip), nil
 }
 
 // RegionResolver 归属地解析端口，由基础设施层的 ip2region 适配器实现。
@@ -134,24 +81,6 @@ func ResolveClientIP(c *gin.Context) string {
 
 	// ClientIP applies Gin's configured TrustedProxies boundary.
 	return normalizeIPString(c.ClientIP())
-}
-
-// firstValidIPFromHeader 从单个 header 中解析第一个合法 IP。
-// X-Forwarded-For 形如 "client, proxy1, proxy2"，取最左侧客户端。
-func firstValidIPFromHeader(header string) string {
-	header = strings.TrimSpace(header)
-	if header == "" {
-		return ""
-	}
-
-	parts := strings.Split(header, ",")
-	for _, part := range parts {
-		if ip := normalizeIPString(part); ip != "" {
-			return ip
-		}
-	}
-
-	return ""
 }
 
 // normalizeIPString 清洗 IP 字符串：去空白、去端口、IPv6 括号、IPv4-mapped IPv6。

@@ -9,7 +9,8 @@ import (
 
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/ai"
+	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
+	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -189,7 +190,7 @@ func (s *Service) GetVideo(ctx context.Context, requestID string) (any, error) {
 	}
 
 	if strings.TrimSpace(requestID) == "" {
-		return nil, domain.ErrEmptyRequestID
+		return nil, aierrors.ErrEmptyRequestID
 	}
 
 	if err = requireDoubaoAPIKey(&snapshot.settings); err != nil {
@@ -216,11 +217,11 @@ func (s *Service) OpenAssetStream(
 	}
 
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return nil, domain.ErrUnsupportedAssetScheme
+		return nil, aierrors.ErrUnsupportedAssetScheme
 	}
 
-	if !domain.IsAllowedAssetHost(parsed.Hostname()) {
-		return nil, domain.ErrAssetHostNotAllowed
+	if !aivo.IsAllowedAssetHost(parsed.Hostname()) {
+		return nil, aierrors.ErrAssetHostNotAllowed
 	}
 
 	return s.assets.Open(ctx, snapshot.runtime, parsed.String(), incomingHeaders)
@@ -236,14 +237,14 @@ func (s *Service) PublicOptions() (PublicOptions, error) {
 
 	return PublicOptions{
 		ChatModel:       strings.TrimSpace(cfg.ChatModel),
-		ChatModels:      domain.CloneOptions(toOptions(cfg.ChatModels)),
+		ChatModels:      aivo.CloneOptions(toOptions(cfg.ChatModels)),
 		ThinkingEnabled: cfg.ThinkingEnabled,
-		ThinkingEffort:  domain.FirstNonEmpty(strings.TrimSpace(cfg.ThinkingEffort), "high"),
-		ThinkingEfforts: domain.CloneOptions(toOptions(cfg.ThinkingEfforts)),
+		ThinkingEffort:  aivo.FirstNonEmpty(strings.TrimSpace(cfg.ThinkingEffort), "high"),
+		ThinkingEfforts: aivo.CloneOptions(toOptions(cfg.ThinkingEfforts)),
 		ImageModel:      strings.TrimSpace(cfg.ImageModel),
-		ImageModels:     domain.CloneOptions(toOptions(cfg.ImageModels)),
+		ImageModels:     aivo.CloneOptions(toOptions(cfg.ImageModels)),
 		VideoModel:      strings.TrimSpace(cfg.VideoModel),
-		VideoModels:     domain.CloneOptions(toOptions(cfg.VideoModels)),
+		VideoModels:     aivo.CloneOptions(toOptions(cfg.VideoModels)),
 	}, nil
 }
 
@@ -260,12 +261,12 @@ func (s *Service) prepareResponsesRequest(
 		return req, conv, err
 	}
 
-	if !domain.HasRawJSON(req.Input) {
-		return req, conv, domain.ErrEmptyInput
+	if !aivo.HasRawJSON(req.Input) {
+		return req, conv, aierrors.ErrEmptyInput
 	}
 
 	var err error
-	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ChatModel, toOptions(cfg.ChatModels), "聊天")
+	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.ChatModel, toOptions(cfg.ChatModels), "聊天")
 	if err != nil {
 		return req, conv, err
 	}
@@ -281,7 +282,7 @@ func (s *Service) prepareResponsesRequest(
 	}
 	conv = conv.trimHistory(cfg)
 	if !conv.HasMessages() {
-		return req, conv, domain.ErrNoUserMessage
+		return req, conv, aierrors.ErrNoUserMessage
 	}
 
 	prompt, promptErr := s.buildResponsesSystemPrompt(ctx, cfg, runtime, conv, req.Model)
@@ -289,7 +290,7 @@ func (s *Service) prepareResponsesRequest(
 		s.logger.Warn("build AI responses system prompt failed", zap.Error(promptErr))
 	}
 
-	conv = conv.prependSystem(domain.FirstNonEmpty(prompt, cfg.SystemPrompt))
+	conv = conv.prependSystem(aivo.FirstNonEmpty(prompt, cfg.SystemPrompt))
 
 	return req, conv, nil
 }
@@ -302,12 +303,12 @@ func prepareImageGenerationRequest(
 		return req, err
 	}
 
-	if err := domain.ValidateImageGeneration(req.Prompt, req.N); err != nil {
+	if err := aivo.ValidateImageGeneration(req.Prompt, req.N); err != nil {
 		return req, err
 	}
 
 	var err error
-	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
+	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
 	if err != nil {
 		return req, err
 	}
@@ -321,12 +322,12 @@ func prepareImageEditRequest(cfg *config.AI, req ImageEditRequest) (ImageEditReq
 	}
 
 	hasImage := req.Image != nil && !req.Image.IsZero()
-	if err := domain.ValidateImageEdit(req.Prompt, hasImage, len(req.Images), req.N); err != nil {
+	if err := aivo.ValidateImageEdit(req.Prompt, hasImage, len(req.Images), req.N); err != nil {
 		return req, err
 	}
 
 	var err error
-	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
+	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
 	if err != nil {
 		return req, err
 	}
@@ -345,18 +346,18 @@ func prepareVideoGenerationRequest(
 	hasImage := (req.Image != nil && !req.Image.IsZero()) ||
 		(req.InputReference != nil && !req.InputReference.IsZero())
 
-	if err := domain.ValidateVideoGeneration(req.Prompt, hasImage, len(req.ReferenceImages)); err != nil {
+	if err := aivo.ValidateVideoGeneration(req.Prompt, hasImage, len(req.ReferenceImages)); err != nil {
 		return req, err
 	}
 
 	var err error
-	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.VideoModel, toOptions(cfg.VideoModels), "视频")
+	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.VideoModel, toOptions(cfg.VideoModels), "视频")
 	if err != nil {
 		return req, err
 	}
 
-	if duration, ok := domain.ResolveDuration(req.Duration, req.Seconds); ok {
-		if err = domain.ValidateVideoDuration(req.Model, duration); err != nil {
+	if duration, ok := aivo.ResolveDuration(req.Duration, req.Seconds); ok {
+		if err = aivo.ValidateVideoDuration(req.Model, duration); err != nil {
 			return req, err
 		}
 	}
@@ -372,12 +373,12 @@ func (s *Service) ensureImageResultCount(
 	refs []string,
 	result any,
 ) (any, error) {
-	want := domain.RequestedImageCount(req.N)
+	want := aivo.RequestedImageCount(req.N)
 	if want <= 1 {
 		return result, nil
 	}
 
-	for attempts := 0; domain.ImageResultCount(result) < want && attempts < want; attempts++ {
+	for attempts := 0; aivo.ImageResultCount(result) < want && attempts < want; attempts++ {
 		singleReq := req
 		one := 1
 		singleReq.N = &one
@@ -387,7 +388,7 @@ func (s *Service) ensureImageResultCount(
 			return nil, err
 		}
 
-		merged, grew := domain.MergeImageGenerationResponses(result, next, want)
+		merged, grew := aivo.MergeImageGenerationResponses(result, next, want)
 		if !grew {
 			break
 		}
@@ -402,12 +403,12 @@ func (s *Service) ensureImageResultCount(
 func (s *Service) snapshot() (configSnapshot, error) {
 	root := s.cfgProvider.Get()
 	if root == nil {
-		return configSnapshot{}, domain.ErrConfigMissing
+		return configSnapshot{}, aierrors.ErrConfigMissing
 	}
 
 	source := root.AI
 	if source == nil {
-		return configSnapshot{}, domain.ErrConfigMissing
+		return configSnapshot{}, aierrors.ErrConfigMissing
 	}
 
 	cfg := *source
@@ -415,7 +416,7 @@ func (s *Service) snapshot() (configSnapshot, error) {
 	cfg.ThinkingEfforts = append([]config.AIModel{}, source.ThinkingEfforts...)
 	cfg.ImageModels = append([]config.AIModel{}, source.ImageModels...)
 	cfg.VideoModels = append([]config.AIModel{}, source.VideoModels...)
-	cfg.ChatModelBaseURL = domain.NormalizeBaseURL(cfg.ChatModelBaseURL)
+	cfg.ChatModelBaseURL = aivo.NormalizeBaseURL(cfg.ChatModelBaseURL)
 
 	return configSnapshot{
 		settings: cfg,
@@ -430,7 +431,7 @@ func (s *Service) snapshot() (configSnapshot, error) {
 
 func requireChatAPIKey(cfg *config.AI) error {
 	if cfg == nil || strings.TrimSpace(cfg.ChatModelAPIKey) == "" {
-		return domain.ErrChatAPIKeyMissing
+		return aierrors.ErrChatAPIKeyMissing
 	}
 
 	return nil
@@ -438,7 +439,7 @@ func requireChatAPIKey(cfg *config.AI) error {
 
 func requireDoubaoAPIKey(cfg *config.AI) error {
 	if cfg == nil || strings.TrimSpace(cfg.DoubaoModelAPIKey) == "" {
-		return domain.ErrDoubaoAPIKeyMissing
+		return aierrors.ErrDoubaoAPIKeyMissing
 	}
 
 	return nil
@@ -466,7 +467,7 @@ func normalizeThinkingOptions(cfg *config.AI, req ResponsesRequest) (ResponsesRe
 		return req, nil
 	}
 
-	effort, err := domain.NormalizeConfiguredOption(
+	effort, err := aivo.NormalizeConfiguredOption(
 		req.ThinkingEffort,
 		cfg.ThinkingEffort,
 		toOptions(cfg.ThinkingEfforts),
@@ -572,14 +573,14 @@ func toVideoInvocation(runtime RuntimeConfig, req VideoGenerationRequest) VideoI
 }
 
 // toOptions 配置选项列表 → 领域选项列表。
-func toOptions(src []config.AIModel) []domain.Option {
+func toOptions(src []config.AIModel) []aivo.Option {
 	if len(src) == 0 {
 		return nil
 	}
 
-	out := make([]domain.Option, 0, len(src))
+	out := make([]aivo.Option, 0, len(src))
 	for _, item := range src {
-		out = append(out, domain.Option{Label: item.Label, Value: item.Value})
+		out = append(out, aivo.Option{Label: item.Label, Value: item.Value})
 	}
 
 	return out

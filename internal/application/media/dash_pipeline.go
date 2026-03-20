@@ -9,21 +9,26 @@ import (
 	"path/filepath"
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
+	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	mediaservice "f_ccg_video_back_ddd/internal/domain/media/service"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"go.uber.org/zap"
 )
 
 // dashPipelineRequest 是 DASH 管线的一次运行请求。
 type dashPipelineRequest struct {
-	task       domain.TranscodeTask
-	policy     *domain.TranscodePolicy
+	task       mediaentity.TranscodeTask
+	policy     *mediavo.TranscodePolicy
 	checkpoint Checkpoint
 	srcPath    string
-	driver     domain.StorageDriver
-	meta       domain.VideoMeta
-	plan       domain.PipelinePlan
-	tracker    *domain.TranscodeProgressTracker
+	driver     mediaport.StorageDriver
+	meta       mediavo.VideoMeta
+	plan       mediaservice.PipelinePlan
+	tracker    *mediaruntime.TranscodeProgressTracker
 }
 
 // runDASHPipeline 产出覆盖阶梯各清晰度的 DASH 自适应流，返回 manifest.mpd 的可访问 URL
@@ -71,7 +76,7 @@ func (s *TranscodeService) runDASHAttempt(
 	req dashPipelineRequest,
 	useGPU bool,
 ) (string, int64, error) {
-	targets := domain.BuildDashTargets(
+	targets := mediaservice.BuildDashTargets(
 		req.plan.DashResolutions,
 		req.plan.PixelHeight,
 		req.plan.ClassHeight,
@@ -97,7 +102,7 @@ func (s *TranscodeService) runDASHAttempt(
 		return "", 0, err
 	}
 
-	req.tracker.MarkPipelineUploading(ctx, domain.TranscodePipelineDASH, "上传 DASH 资源")
+	req.tracker.MarkPipelineUploading(ctx, mediavo.TranscodePipelineDASH, "上传 DASH 资源")
 
 	return s.uploadDASHDir(ctx, req.task, req.driver, committedDir)
 }
@@ -108,8 +113,8 @@ func (s *TranscodeService) runDASHAttempt(
 // 保证 manifest 可达时其引用的 representation 均已存在。
 func (s *TranscodeService) uploadDASHDir(
 	ctx context.Context,
-	task domain.TranscodeTask,
-	driver domain.StorageDriver,
+	task mediaentity.TranscodeTask,
+	driver mediaport.StorageDriver,
 	dir string,
 ) (string, int64, error) {
 	entries, err := os.ReadDir(dir)
@@ -122,8 +127,8 @@ func (s *TranscodeService) uploadDASHDir(
 	hasManifest := false
 
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == domain.DashManifestName {
-			if entry.Name() == domain.DashManifestName {
+		if entry.IsDir() || entry.Name() == mediavo.DashManifestName {
+			if entry.Name() == mediavo.DashManifestName {
 				hasManifest = true
 			}
 
@@ -142,7 +147,7 @@ func (s *TranscodeService) uploadDASHDir(
 		return "", 0, errors.New("dash manifest not produced")
 	}
 
-	mpdURL, size, err := s.uploadOneDASHFile(ctx, task, driver, dir, domain.DashManifestName)
+	mpdURL, size, err := s.uploadOneDASHFile(ctx, task, driver, dir, mediavo.DashManifestName)
 	if err != nil {
 		return "", 0, fmt.Errorf("upload dash manifest failed: %w", err)
 	}
@@ -155,8 +160,8 @@ func (s *TranscodeService) uploadDASHDir(
 // uploadOneDASHFile 上传 DASH 目录中的单个文件（按体积估算超时）。
 func (s *TranscodeService) uploadOneDASHFile(
 	ctx context.Context,
-	task domain.TranscodeTask,
-	driver domain.StorageDriver,
+	task mediaentity.TranscodeTask,
+	driver mediaport.StorageDriver,
 	dir, name string,
 ) (string, int64, error) {
 	f, err := os.Open(filepath.Join(dir, name)) //nolint:gosec // 路径来自本进程生成的断点目录产物
@@ -174,7 +179,7 @@ func (s *TranscodeService) uploadOneDASHFile(
 	rel := path.Join(task.DashPrefix(), name)
 	label := fmt.Sprintf("video-%d-dash-%s", task.VideoID, name)
 
-	uploadTimeout := domain.CalcUploadTimeout(fi.Size())
+	uploadTimeout := mediaruntime.CalcUploadTimeout(fi.Size())
 
 	uploadCtx, cancel := context.WithTimeout(ctx, uploadTimeout)
 	defer cancel()
@@ -182,8 +187,7 @@ func (s *TranscodeService) uploadOneDASHFile(
 	url, size, err := driver.SaveTranscodeVideo(uploadCtx, rel, fi.Size(), f, DashContentType(name), label)
 	if err != nil {
 		if errors.Is(uploadCtx.Err(), context.DeadlineExceeded) {
-			return "", 0, fmt.Errorf("%w after %s for %s (%d bytes): %w",
-				domain.ErrTranscodeUploadTimeout, uploadTimeout, name, fi.Size(), err)
+			return "", 0, fmt.Errorf("%w after %s for %s (%d bytes): %w", mediaerrors.ErrTranscodeUploadTimeout, uploadTimeout, name, fi.Size(), err)
 		}
 
 		return "", 0, err

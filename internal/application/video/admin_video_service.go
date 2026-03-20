@@ -2,11 +2,14 @@ package video
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 
 	"go.uber.org/zap"
 )
@@ -14,7 +17,7 @@ import (
 // AdminVideoService 管理端视频用例服务。
 type AdminVideoService struct {
 	txm       tx.Manager
-	videos    domain.VideoRepository
+	videos    videorepo.VideoRepository
 	query     AdminVideoQuery
 	stats     *StatsService
 	authors   *AuthorService
@@ -31,7 +34,7 @@ type AdminVideoService struct {
 // NewAdminVideoService 构造管理端视频用例服务。
 func NewAdminVideoService(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos videorepo.VideoRepository,
 	query AdminVideoQuery,
 	stats *StatsService,
 	authors *AuthorService,
@@ -74,7 +77,7 @@ func (s *AdminVideoService) List(
 		params.PageSize = 20
 	}
 
-	params.Keyword = domain.TrimKeyword(params.Keyword)
+	params.Keyword = videoentity.TrimKeyword(params.Keyword)
 
 	if params.UserID > 0 {
 		username := s.authors.UsernameByID(ctx, params.UserID)
@@ -123,10 +126,10 @@ func (s *AdminVideoService) List(
 // 驳回（Private/Deleted）时取消定时任务。
 func (s *AdminVideoService) Review(ctx context.Context, params AdminVideoReviewParams) (int64, error) {
 	if len(params.VideoIDs) == 0 {
-		return 0, domain.ErrVideoIDsRequired
+		return 0, videoerrors.ErrVideoIDsRequired
 	}
 
-	if err := domain.ValidateReviewTargetStatus(params.Status); err != nil {
+	if err := videoentity.ValidateReviewTargetStatus(params.Status); err != nil {
 		return 0, err
 	}
 
@@ -230,19 +233,22 @@ func (s *AdminVideoService) applyReviewTarget(ctx context.Context, id uint, targ
 		if err != nil || video == nil || video.Status != enum.VideoStatusReview {
 			return err
 		}
-		if *target == enum.VideoStatusPublished {
-			publishAt, err := s.schedule.PublishTime(txCtx, id)
+		var publishAt *time.Time
+		if approval {
+			publishAt, err = s.schedule.PublishTime(txCtx, id)
 			if err != nil {
 				return err
 			}
-			if publishAt != nil && publishAt.After(time.Now()) {
-				*target = enum.VideoStatusScheduled
-			}
 		}
+		changed, err := video.Review(*target, publishAt, time.Now())
+		if err != nil || !changed {
+			return err
+		}
+		*target = video.Status
 		if approval {
-			rows, err = s.videos.Approve(txCtx, id, *target, time.Now())
+			rows, err = s.videos.Approve(txCtx, id, video.Status, *video.ApprovedAt)
 		} else {
-			rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, *target)
+			rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, video.Status)
 		}
 		if err != nil || rows == 0 {
 			return err
@@ -269,16 +275,39 @@ func (s *AdminVideoService) invalidateReviewCaches(ctx context.Context, videoID 
 // Restore 管理员批量恢复上架视频。
 func (s *AdminVideoService) Restore(ctx context.Context, videoIDs []uint) (int64, error) {
 	if len(videoIDs) == 0 {
-		return 0, domain.ErrVideoIDsRequired
+		return 0, videoerrors.ErrVideoIDsRequired
 	}
 
-	rows, err := s.videos.UpdateStatusBatchFrom(ctx, videoIDs, enum.VideoStatusDeleted, enum.VideoStatusPublished)
+	ids := slices.Clone(videoIDs)
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	var rows int64
+	var restoredIDs []uint
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		videos, err := s.videos.FindByIDsForUpdate(txCtx, ids)
+		if err != nil {
+			return err
+		}
+		var target enum.VideoStatus
+		for _, video := range videos {
+			if !video.Restore() {
+				continue
+			}
+			target = video.Status
+			restoredIDs = append(restoredIDs, video.ID)
+		}
+		if len(restoredIDs) == 0 {
+			return nil
+		}
+		rows, err = s.videos.UpdateStatusBatchFrom(txCtx, restoredIDs, enum.VideoStatusDeleted, target)
+		return err
+	})
 	if err != nil {
 		return 0, err
 	}
 
 	if s.metaCache.Available() && rows > 0 {
-		for _, id := range videoIDs {
+		for _, id := range restoredIDs {
 			if id == 0 {
 				continue
 			}
@@ -288,7 +317,7 @@ func (s *AdminVideoService) Restore(ctx context.Context, videoIDs []uint) (int64
 	}
 
 	if rows > 0 {
-		s.vectors.SyncBatchAsync(ctx, videoIDs, enum.VideoStatusPublished)
+		s.vectors.SyncBatchAsync(ctx, restoredIDs, enum.VideoStatusPublished)
 	}
 
 	s.logAdminRestore(rows)

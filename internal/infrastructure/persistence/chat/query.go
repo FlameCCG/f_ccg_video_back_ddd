@@ -4,7 +4,8 @@ import (
 	"context"
 
 	app "f_ccg_video_back_ddd/internal/application/chat"
-	domain "f_ccg_video_back_ddd/internal/domain/chat"
+	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
+	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -39,7 +40,7 @@ func (s *Store) ListConversations(
 	page, pageSize int,
 ) ([]app.ConversationItem, int64, error) {
 	if !s.Available() {
-		return nil, 0, domain.ErrStoreUnavailable
+		return nil, 0, chaterrors.ErrStoreUnavailable
 	}
 
 	col := s.db.Collection(chatConversationsCol)
@@ -118,7 +119,7 @@ func (s *Store) ListConversations(
 // TotalUnread 汇总用户在所有可见会话中的未读总数。
 func (s *Store) TotalUnread(ctx context.Context, userID uint) (int64, error) {
 	if !s.Available() {
-		return 0, domain.ErrStoreUnavailable
+		return 0, chaterrors.ErrStoreUnavailable
 	}
 
 	col := s.db.Collection(chatConversationsCol)
@@ -164,16 +165,16 @@ func (s *Store) ListMessagesBefore(
 	limit int,
 ) ([]app.MessageItem, error) {
 	if !s.Available() {
-		return nil, domain.ErrStoreUnavailable
+		return nil, chaterrors.ErrStoreUnavailable
 	}
 
-	conversationID := domain.BuildConversationID(userID, peerID)
+	conversationID := chatentity.BuildConversationID(userID, peerID)
 	filter := bson.M{fieldConversationID: conversationID}
 
 	if before != "" {
 		oid, err := primitive.ObjectIDFromHex(before)
 		if err != nil {
-			return nil, domain.ErrInvalidCursor
+			return nil, chaterrors.ErrInvalidCursor
 		}
 
 		filter[fieldID] = bson.M{"$lt": oid}

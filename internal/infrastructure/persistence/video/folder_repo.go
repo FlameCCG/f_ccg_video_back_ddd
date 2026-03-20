@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -16,7 +18,7 @@ type FolderRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.FolderRepository = (*FolderRepository)(nil)
+var _ videorepo.FolderRepository = (*FolderRepository)(nil)
 
 // NewFolderRepository 构造收藏夹仓储。
 func NewFolderRepository(db *gorm.DB) *FolderRepository {
@@ -24,7 +26,7 @@ func NewFolderRepository(db *gorm.DB) *FolderRepository {
 }
 
 // FindDefault 读取用户默认收藏夹；不存在时返回 (nil, nil)。
-func (r *FolderRepository) FindDefault(ctx context.Context, userID uint) (*domain.FavoriteFolder, error) {
+func (r *FolderRepository) FindDefault(ctx context.Context, userID uint) (*videoentity.FavoriteFolder, error) {
 	var row po.FavoriteFolder
 
 	err := gormx.DB(ctx, r.db).
@@ -42,9 +44,9 @@ func (r *FolderRepository) FindDefault(ctx context.Context, userID uint) (*domai
 }
 
 // Create 创建收藏夹并回填 ID。
-func (r *FolderRepository) Create(ctx context.Context, folder *domain.FavoriteFolder) error {
+func (r *FolderRepository) Create(ctx context.Context, folder *videoentity.FavoriteFolder) error {
 	if folder == nil {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	row := toPOFolder(folder)
@@ -61,7 +63,7 @@ func (r *FolderRepository) Create(ctx context.Context, folder *domain.FavoriteFo
 func (r *FolderRepository) FindByIDAndUser(
 	ctx context.Context,
 	userID, folderID uint,
-) (*domain.FavoriteFolder, error) {
+) (*videoentity.FavoriteFolder, error) {
 	var row po.FavoriteFolder
 	if err := gormx.DB(ctx, r.db).
 		Where("id = ? AND user_id = ?", folderID, userID).
@@ -73,9 +75,9 @@ func (r *FolderRepository) FindByIDAndUser(
 }
 
 // Update 更新收藏夹（目前仅名称）。
-func (r *FolderRepository) Update(ctx context.Context, folder *domain.FavoriteFolder) error {
+func (r *FolderRepository) Update(ctx context.Context, folder *videoentity.FavoriteFolder) error {
 	if folder == nil || folder.ID == 0 {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	return gormx.DB(ctx, r.db).
@@ -90,10 +92,10 @@ func (r *FolderRepository) Update(ctx context.Context, folder *domain.FavoriteFo
 func (r *FolderRepository) DeleteWithVideos(
 	ctx context.Context,
 	userID uint,
-	folder *domain.FavoriteFolder,
+	folder *videoentity.FavoriteFolder,
 ) ([]uint, error) {
 	if folder == nil {
-		return nil, domain.ErrParamInvalid
+		return nil, videoerrors.ErrParamInvalid
 	}
 
 	db := gormx.DB(ctx, r.db)

@@ -3,17 +3,21 @@ package video
 import (
 	"context"
 	"errors"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 	"path/filepath"
 	"testing"
+
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 type securityVideoRepo struct {
-	domain.VideoRepository
+	videorepo.VideoRepository
 	author uint
 }
 
@@ -21,15 +25,21 @@ func (r securityVideoRepo) PublishedAuthorIDByVideoID(context.Context, uint) (ui
 	return r.author, nil
 }
 
-type securityLikes struct{ domain.LikeRepository }
+type securityLikes struct {
+	videorepo.LikeRepository
+}
 
-func (securityLikes) Create(context.Context, uint, uint) error { return domain.ErrDuplicateLike }
+func (securityLikes) Create(context.Context, uint, uint) error { return videoerrors.ErrDuplicateLike }
 
-type securityCoins struct{ domain.CoinRepository }
+type securityCoins struct {
+	videorepo.CoinRepository
+}
 
 func (securityCoins) LockByVideoAndUser(context.Context, uint, uint) error { return nil }
 
-type securityFolders struct{ domain.FolderRepository }
+type securityFolders struct {
+	videorepo.FolderRepository
+}
 
 func (securityFolders) UserFavorited(context.Context, uint, uint) (bool, error) { return false, nil }
 func (securityFolders) EnsureLink(context.Context, uint, uint) (bool, error)    { return true, nil }
@@ -72,16 +82,28 @@ func TestTripleFavoriteCyclesShareLifetimeRewardKeyAndExcludeAuthor(t *testing.T
 }
 
 type failedDeleteRepo struct {
-	domain.VideoRepository
+	videorepo.VideoRepository
 	db      *gorm.DB
 	failure error
+}
+
+func (r failedDeleteRepo) FindByIDsForUpdate(ctx context.Context, ids []uint) ([]*videoentity.Video, error) {
+	var rows []videoentity.Video
+	if err := gormx.DB(ctx, r.db).Table("videos").Select("id", "status").Where("id IN ?", ids).Order("id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]*videoentity.Video, 0, len(rows))
+	for i := range rows {
+		result = append(result, &rows[i])
+	}
+	return result, nil
 }
 
 func (r failedDeleteRepo) UpdateStatusBatch(ctx context.Context, _ []uint, status enum.VideoStatus) (int64, error) {
 	result := gormx.DB(ctx, r.db).Exec("UPDATE videos SET status=?", status)
 	return result.RowsAffected, result.Error
 }
-func (r failedDeleteRepo) HardDelete(ctx context.Context, _ []uint) (*domain.HardDeleteResult, []domain.StorageDeleteTarget, error) {
+func (r failedDeleteRepo) HardDelete(ctx context.Context, _ []uint) (*videorepo.HardDeleteResult, []videorepo.StorageDeleteTarget, error) {
 	if err := gormx.DB(ctx, r.db).Exec("DELETE FROM videos").Error; err != nil {
 		return nil, nil, err
 	}

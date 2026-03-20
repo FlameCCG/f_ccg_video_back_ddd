@@ -1,7 +1,7 @@
 package identity
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
@@ -29,7 +29,7 @@ func (h *AdminHandler) AdminBanView(c *gin.Context) {
 	// status 为 0（未传）时交给领域层按 days 推导目标状态。
 	operatorID, _ := middlewares.GetUID(c)
 
-	record, err := h.bans.Apply(c.Request.Context(), domain.BanAction{
+	record, err := h.bans.Apply(c.Request.Context(), identityentity.BanAction{
 		UserID:     req.UserID,
 		Status:     req.Status,
 		Days:       req.Days,

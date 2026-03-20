@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
-	domain "f_ccg_video_back_ddd/internal/domain/platform"
+	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -19,7 +19,7 @@ func TestDecayVideoHotScoreDecaysAndClears(t *testing.T) {
 
 	if err := redisClient.ZAdd(ctx, constants.VideoHotRankZSetKey,
 		redis.Z{Member: "1", Score: 100},
-		redis.Z{Member: "2", Score: domain.HotScoreClearThreshold / 2},
+		redis.Z{Member: "2", Score: platformservice.HotScoreClearThreshold / 2},
 		redis.Z{Member: "3", Score: 50},
 	).Err(); err != nil {
 		t.Fatalf("seed hot rank failed: %v", err)
@@ -38,8 +38,8 @@ func TestDecayVideoHotScoreDecaysAndClears(t *testing.T) {
 			t.Fatalf("load score of member %s failed: %v", member, err)
 		}
 
-		if score != before*domain.HotScoreDecayFactor {
-			t.Fatalf("member %s: expected %v, got %v", member, before*domain.HotScoreDecayFactor, score)
+		if score != before*platformservice.HotScoreDecayFactor {
+			t.Fatalf("member %s: expected %v, got %v", member, before*platformservice.HotScoreDecayFactor, score)
 		}
 	}
 }
@@ -50,8 +50,8 @@ func TestDecayVideoHotScoreTrimsOverflow(t *testing.T) {
 
 	const overflow = 5
 
-	members := make([]redis.Z, 0, domain.HotRankMaxSize+overflow)
-	for i := 1; i <= domain.HotRankMaxSize+overflow; i++ {
+	members := make([]redis.Z, 0, platformservice.HotRankMaxSize+overflow)
+	for i := 1; i <= platformservice.HotRankMaxSize+overflow; i++ {
 		members = append(members, redis.Z{Member: strconv.Itoa(i), Score: float64(i)})
 	}
 
@@ -66,8 +66,8 @@ func TestDecayVideoHotScoreTrimsOverflow(t *testing.T) {
 		t.Fatalf("load hot rank size failed: %v", err)
 	}
 
-	if total != domain.HotRankMaxSize {
-		t.Fatalf("expected rank trimmed to %d, got %d", domain.HotRankMaxSize, total)
+	if total != platformservice.HotRankMaxSize {
+		t.Fatalf("expected rank trimmed to %d, got %d", platformservice.HotRankMaxSize, total)
 	}
 
 	// 裁剪按分值从低到高，最低的 overflow 个成员应被移除。

@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/comment"
+	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
+	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
+	commentvo "f_ccg_video_back_ddd/internal/domain/comment/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
@@ -32,8 +35,8 @@ const (
 // Service 编排评论用例，仓储、缓存、视频协作与通知能力通过构造函数注入的本地端口访问。
 type Service struct {
 	txm       tx.Manager
-	comments  domain.Repository
-	likes     domain.LikeRepository
+	comments  commentrepo.Repository
+	likes     commentrepo.LikeRepository
 	query     Query
 	related   RelatedQuery
 	likeCache LikeCache
@@ -47,8 +50,8 @@ type Service struct {
 // NewService 构造评论用例服务。
 func NewService(
 	txm tx.Manager,
-	comments domain.Repository,
-	likes domain.LikeRepository,
+	comments commentrepo.Repository,
+	likes commentrepo.LikeRepository,
 	query Query,
 	related RelatedQuery,
 	likeCache LikeCache,
@@ -82,7 +85,7 @@ func NewService(
 // 回复时校验父评论并推导 rootID → 落库（回复与根评论回复数同事务）→
 // 同步更新视频评论数 → 异步热度打点与通知。
 func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, error) {
-	draft, commentType, err := domain.NormalizeDraft(domain.Draft{
+	draft, _, err := (commententity.Draft{
 		UserID:        cmd.UserID,
 		VideoID:       cmd.VideoID,
 		DynamicID:     cmd.DynamicID,
@@ -92,7 +95,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, 
 		Pictures:      cmd.Pictures,
 		CommenterIP:   cmd.IP,
 		CommenterAddr: cmd.Addr,
-	})
+	}).Normalize()
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +107,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, 
 		filteredAt []uint
 	)
 
-	candidates := domain.NormalizeAtUserIDs(draft.UserID, draft.AtUserIDs)
+	candidates := commentvo.NormalizeAtUserIDs(draft.UserID, draft.AtUserIDs)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
@@ -128,7 +131,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, 
 			}
 
 			if brief == nil {
-				return domain.ErrVideoNotPublished
+				return commenterrors.ErrVideoNotPublished
 			}
 
 			video = brief
@@ -143,7 +146,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, 
 			}
 
 			if brief == nil {
-				return domain.ErrDynamicNotFound
+				return commenterrors.ErrDynamicNotFound
 			}
 
 			dynamic = brief
@@ -172,24 +175,27 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, 
 		rootID  *uint
 	)
 
-	if domain.HasParent(draft.ParentID) {
+	if commententity.HasParent(draft.ParentID) {
 		parent, err := s.query.ParentBrief(ctx, *draft.ParentID, draft.VideoID, draft.DynamicID)
 		if err != nil {
 			return nil, err
 		}
 
 		if parent == nil {
-			return nil, domain.ErrParentNotFound
+			return nil, commenterrors.ErrParentNotFound
 		}
 
 		replyTo = &ReplyInfo{
 			UserID:   parent.UserID,
 			Username: parent.Username,
 		}
-		rootID = domain.ResolveRootID(*draft.ParentID, *parent)
+		rootID = parent.RootForReply(*draft.ParentID)
 	}
 
-	entity := domain.NewComment(draft, commentType, rootID)
+	entity, err := commententity.NewComment(draft, rootID)
+	if err != nil {
+		return nil, err
+	}
 
 	if rootID != nil && *rootID > 0 {
 		if err := s.txm.Do(ctx, func(txCtx context.Context) error {
@@ -286,7 +292,7 @@ func (s *Service) Delete(ctx context.Context, userID, commentID uint) error {
 	}
 
 	if target == nil {
-		return domain.ErrCommentNotFound
+		return commenterrors.ErrCommentNotFound
 	}
 
 	if err := s.authorizeDelete(ctx, target, userID); err != nil {
@@ -345,45 +351,45 @@ func (s *Service) Delete(ctx context.Context, userID, commentID uint) error {
 }
 
 // authorizeDelete 删除鉴权：评论作者直接放行，否则要求是作品作者。
-func (s *Service) authorizeDelete(ctx context.Context, target *domain.Comment, userID uint) error {
-	switch domain.DecideDelete(target, userID) {
-	case domain.DeleteAllowed:
+func (s *Service) authorizeDelete(ctx context.Context, target *commententity.Comment, userID uint) error {
+	switch target.DeletionDecision(userID) {
+	case commententity.DeleteAllowed:
 		return nil
-	case domain.DeleteNeedsVideoAuthorCheck:
+	case commententity.DeleteNeedsVideoAuthorCheck:
 		isAuthor, err := s.isVideoAuthor(ctx, userID, target.VideoID)
 		if err != nil {
 			return err
 		}
 
 		if !isAuthor {
-			return domain.ErrDeleteForbidden
+			return commenterrors.ErrDeleteForbidden
 		}
 
 		return nil
-	case domain.DeleteNeedsDynamicAuthorCheck:
+	case commententity.DeleteNeedsDynamicAuthorCheck:
 		isAuthor, err := s.isDynamicAuthor(ctx, userID, target.DynamicID)
 		if err != nil {
 			return err
 		}
 
 		if !isAuthor {
-			return domain.ErrDeleteForbidden
+			return commenterrors.ErrDeleteForbidden
 		}
 
 		return nil
 	default:
-		return domain.ErrDeleteForbidden
+		return commenterrors.ErrDeleteForbidden
 	}
 }
 
 // Pin 置顶/取消置顶评论（仅作品作者）。
 func (s *Service) Pin(ctx context.Context, userID, commentID uint, pinned bool) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return commenterrors.ErrUserNotLogin
 	}
 
 	if commentID == 0 {
-		return domain.ErrCommentIDRequired
+		return commenterrors.ErrCommentIDRequired
 	}
 
 	target, err := s.comments.FindPinTarget(ctx, commentID)
@@ -392,10 +398,10 @@ func (s *Service) Pin(ctx context.Context, userID, commentID uint, pinned bool) 
 	}
 
 	if target == nil {
-		return domain.ErrCommentNotFound
+		return commenterrors.ErrCommentNotFound
 	}
 
-	if err := domain.ValidatePinTarget(target); err != nil {
+	if err := target.EnsurePinnable(); err != nil {
 		return err
 	}
 
@@ -412,13 +418,15 @@ func (s *Service) Pin(ctx context.Context, userID, commentID uint, pinned bool) 
 	}
 
 	if !isAuthor {
-		return domain.ErrPinForbidden
+		return commenterrors.ErrPinForbidden
 	}
 
-	now := time.Now()
+	if err := target.SetPinned(pinned, time.Now()); err != nil {
+		return err
+	}
 
 	return s.txm.Do(ctx, func(txCtx context.Context) error {
-		if !pinned {
+		if !target.IsPinned {
 			return s.comments.SetPinned(txCtx, target.ID, false, nil)
 		}
 		// 同一作品下只保留一条置顶评论
@@ -430,17 +438,17 @@ func (s *Service) Pin(ctx context.Context, userID, commentID uint, pinned bool) 
 			return err
 		}
 
-		return s.comments.SetPinned(txCtx, target.ID, true, &now)
+		return s.comments.SetPinned(txCtx, target.ID, target.IsPinned, target.PinnedAt)
 	})
 }
 
 // List 获取作品的根评论列表（分页）。
 func (s *Service) List(ctx context.Context, params ListParams) ([]CommentItem, int64, error) {
-	if _, err := domain.ResolveTargetType(params.VideoID, params.DynamicID); err != nil {
+	if _, err := commentvo.ResolveTargetType(params.VideoID, params.DynamicID); err != nil {
 		return nil, 0, err
 	}
 
-	page, pageSize := domain.NormalizePaging(params.Page, params.PageSize)
+	page, pageSize := commentvo.NormalizePaging(params.Page, params.PageSize)
 
 	rows, total, err := s.query.ListRoots(ctx, RootListQuery{
 		VideoID:   params.VideoID,
@@ -458,7 +466,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]CommentItem, i
 
 // Replies 获取某条评论的回复列表（分页）。
 func (s *Service) Replies(ctx context.Context, params RepliesParams) ([]CommentItem, int64, error) {
-	page, pageSize := domain.NormalizePaging(params.Page, params.PageSize)
+	page, pageSize := commentvo.NormalizePaging(params.Page, params.PageSize)
 
 	rows, total, err := s.query.ListReplies(ctx, ReplyListQuery{
 		RootID:   params.RootID,
@@ -475,14 +483,14 @@ func (s *Service) Replies(ctx context.Context, params RepliesParams) ([]CommentI
 // ListByAuthor 创作中心查看本人视频的评论。
 func (s *Service) ListByAuthor(ctx context.Context, params CreatorListParams) ([]CommentItem, int64, error) {
 	if params.AuthorID == 0 {
-		return nil, 0, domain.ErrAuthorIDRequired
+		return nil, 0, commenterrors.ErrAuthorIDRequired
 	}
 
-	page, pageSize := domain.NormalizePaging(params.Page, params.PageSize)
+	page, pageSize := commentvo.NormalizePaging(params.Page, params.PageSize)
 
 	username := s.related.UsernameByID(ctx, params.AuthorID)
 	if username == "" {
-		return nil, 0, domain.ErrAuthorNotFound
+		return nil, 0, commenterrors.ErrAuthorNotFound
 	}
 
 	rows, total, err := s.query.ListByAuthor(ctx, CreatorListQuery{
@@ -510,7 +518,7 @@ func (s *Service) GetCount(ctx context.Context, videoID uint) (int64, error) {
 // 缓存不可用或失败时回退 DB 事务，保证成功路径的数据持久化。
 func (s *Service) ToggleLike(ctx context.Context, userID, commentID uint) (int64, bool, error) {
 	if userID == 0 {
-		return 0, false, domain.ErrUserNotLogin
+		return 0, false, commenterrors.ErrUserNotLogin
 	}
 
 	// 校验评论存在（并拦截无效 ID）
@@ -520,7 +528,7 @@ func (s *Service) ToggleLike(ctx context.Context, userID, commentID uint) (int64
 	}
 
 	if target == nil {
-		return 0, false, domain.ErrCommentNotFound
+		return 0, false, commenterrors.ErrCommentNotFound
 	}
 
 	if s.likeCache.Available() {
@@ -561,13 +569,13 @@ func (s *Service) toggleLikeWithDB(ctx context.Context, userID, commentID uint) 
 	var count int64
 	liked := false
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		err := s.likes.Create(txCtx, &domain.Like{CommentID: commentID, UserID: userID})
+		err := s.likes.Create(txCtx, &commententity.Like{CommentID: commentID, UserID: userID})
 		if err == nil {
 			liked = true
 			if err := s.comments.IncrLikeCount(txCtx, commentID); err != nil {
 				return err
 			}
-		} else if errors.Is(err, domain.ErrLikeDuplicated) {
+		} else if errors.Is(err, commenterrors.ErrLikeDuplicated) {
 			existing, err := s.likes.Find(txCtx, commentID, userID)
 			if err != nil {
 				return err
@@ -623,7 +631,7 @@ func (s *Service) ensureLikeCacheReady(ctx context.Context, commentID uint) erro
 // 读路径 / 异步重建使用：DB=0 时会写入 count=0，避免列表反复 miss。
 func (s *Service) rebuildLikeCache(ctx context.Context, commentID uint) error {
 	if !s.likeCache.Available() || commentID == 0 {
-		return domain.ErrLikeCacheUnavailable
+		return commenterrors.ErrLikeCacheUnavailable
 	}
 
 	cacheCtx, cancel := context.WithTimeout(ctx, likeCacheDBTimeout)
@@ -800,7 +808,7 @@ func (s *Service) isVideoAuthor(ctx context.Context, userID, videoID uint) (bool
 	}
 
 	if ref == nil {
-		return false, domain.ErrRecordNotFound
+		return false, commenterrors.ErrRecordNotFound
 	}
 
 	return ref.AuthorUserID == userID, nil
@@ -814,7 +822,7 @@ func (s *Service) isDynamicAuthor(ctx context.Context, userID, dynamicID uint) (
 	}
 
 	if brief == nil {
-		return false, domain.ErrRecordNotFound
+		return false, commenterrors.ErrRecordNotFound
 	}
 
 	return brief.UserID == userID, nil
@@ -832,7 +840,7 @@ func (s *Service) sendCommentCreateNotifications(
 	ctx context.Context,
 	actionUser *UserProfile,
 	video *VideoBrief,
-	c *domain.Comment,
+	c *commententity.Comment,
 	replyTo *ReplyInfo,
 ) {
 	if actionUser == nil || video == nil || c == nil {
@@ -882,7 +890,7 @@ func (s *Service) sendDynamicCommentCreateNotifications(
 	ctx context.Context,
 	actionUser *UserProfile,
 	dynamic *DynamicBrief,
-	c *domain.Comment,
+	c *commententity.Comment,
 	replyTo *ReplyInfo,
 ) {
 	if actionUser == nil || dynamic == nil || c == nil {

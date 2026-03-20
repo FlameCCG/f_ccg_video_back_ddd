@@ -3,9 +3,9 @@ package video
 import (
 	"context"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 
 	"go.uber.org/zap"
 )
@@ -13,7 +13,7 @@ import (
 // DeleteService 作者删稿用例服务。
 type DeleteService struct {
 	txm       tx.Manager
-	videos    domain.VideoRepository
+	videos    videorepo.VideoRepository
 	comments  CommentPurger
 	canceller TranscodeCanceller
 	schedule  ScheduleStore
@@ -24,7 +24,7 @@ type DeleteService struct {
 // NewDeleteService 构造作者删稿用例服务。
 func NewDeleteService(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos videorepo.VideoRepository,
 	comments CommentPurger,
 	canceller TranscodeCanceller,
 	schedule ScheduleStore,
@@ -45,39 +45,34 @@ func NewDeleteService(
 // DeleteVideo 将视频状态改为已删除（仅作者），并清理其评论与评论点赞。
 func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) error {
 	if videoID == 0 {
-		return domain.ErrVideoIDRequired
+		return videoerrors.ErrVideoIDRequired
 	}
 
 	if userID == 0 {
-		return domain.ErrNotLoggedIn
-	}
-
-	video, err := s.videos.FindByID(ctx, videoID)
-	if err != nil {
-		return err
-	}
-
-	if video == nil {
-		return domain.ErrRecordNotFound
-	}
-
-	// 校验作者
-	username, _ := s.videos.UsernameByUserID(ctx, userID)
-	if username == "" || !video.OwnedBy(username) {
-		return domain.ErrVideoDeleteForbidden
-	}
-
-	if video.IsDeleted() {
-		return nil
+		return videoerrors.ErrNotLoggedIn
 	}
 
 	var (
 		deletedComments     int64
 		deletedCommentLikes int64
+		changed             bool
 	)
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		if updateErr := s.videos.UpdateStatus(txCtx, videoID, enum.VideoStatusDeleted); updateErr != nil {
+		video, err := s.videos.FindByIDForUpdate(txCtx, videoID)
+		if err != nil {
+			return err
+		}
+		if video == nil {
+			return videoerrors.ErrRecordNotFound
+		}
+		username, _ := s.videos.UsernameByUserID(txCtx, userID)
+		changed, err = video.DeleteBy(username)
+		if err != nil || !changed {
+			return err
+		}
+
+		if updateErr := s.videos.UpdateStatus(txCtx, videoID, video.Status); updateErr != nil {
 			return updateErr
 		}
 
@@ -92,6 +87,10 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 		return s.schedule.Remove(txCtx, videoID)
 	}); err != nil {
 		return err
+	}
+
+	if !changed {
+		return nil
 	}
 
 	if err := s.canceller.NotifyVideoDeleted(ctx, []uint{videoID}); err != nil {

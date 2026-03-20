@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/encrypt"
@@ -183,19 +183,19 @@ func TestChangePasswordViewRequiresOldPasswordAfterOAuthUserSetsPassword(t *test
 
 // TestUserPasswordFlags 验证 domain.User.HasPassword 与 IsThirdParty 的账号属性判定。
 func TestUserPasswordFlags(t *testing.T) {
-	if (&domain.User{Password: ""}).HasPassword() {
+	if (&identityentity.User{Password: ""}).HasPassword() {
 		t.Fatal("empty password should be hasPassword=false")
 	}
 
-	if !(&domain.User{Password: "hash"}).HasPassword() {
+	if !(&identityentity.User{Password: "hash"}).HasPassword() {
 		t.Fatal("non-empty password should be hasPassword=true")
 	}
 
-	if (&domain.User{OpenID: ""}).IsThirdParty() {
+	if (&identityentity.User{OpenID: ""}).IsThirdParty() {
 		t.Fatal("empty open id should be isThirdParty=false")
 	}
 
-	if !(&domain.User{OpenID: "abc"}).IsThirdParty() {
+	if !(&identityentity.User{OpenID: "abc"}).IsThirdParty() {
 		t.Fatal("non-empty open id should be isThirdParty=true")
 	}
 }

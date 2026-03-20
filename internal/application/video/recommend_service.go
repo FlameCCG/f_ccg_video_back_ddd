@@ -3,7 +3,7 @@ package video
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
 )
 
 const (
@@ -25,7 +25,7 @@ func NewRecommendService(query RecommendQuery, stats *StatsService) *RecommendSe
 // RelatedVideos 依次按「共同标签 → 同分区热度 → 全局热度」补齐候选并返回列表。
 func (s *RecommendService) RelatedVideos(ctx context.Context, videoID uint, size int) ([]FeedItem, error) {
 	if videoID == 0 {
-		return nil, domain.ErrVideoIDRequired
+		return nil, videoerrors.ErrVideoIDRequired
 	}
 
 	if size <= 0 {

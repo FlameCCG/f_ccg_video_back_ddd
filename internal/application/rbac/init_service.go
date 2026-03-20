@@ -3,7 +3,9 @@ package rbac
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"go.uber.org/zap"
@@ -11,18 +13,18 @@ import (
 
 // InitService 默认 RBAC 初始化用例（供 CLI -rbac 使用）。
 type InitService struct {
-	roles     domain.RoleRepository
-	menus     domain.MenuRepository
-	roleMenus domain.RoleMenuRepository
+	roles     rbacrepo.RoleRepository
+	menus     rbacrepo.MenuRepository
+	roleMenus rbacrepo.RoleMenuRepository
 	enforcer  Enforcer
 	logger    *zap.Logger
 }
 
 // NewInitService 构造默认 RBAC 初始化用例。
 func NewInitService(
-	roles domain.RoleRepository,
-	menus domain.MenuRepository,
-	roleMenus domain.RoleMenuRepository,
+	roles rbacrepo.RoleRepository,
+	menus rbacrepo.MenuRepository,
+	roleMenus rbacrepo.RoleMenuRepository,
 	enforcer Enforcer,
 	logger *zap.Logger,
 ) *InitService {
@@ -34,14 +36,10 @@ func NewInitService(
 // Casbin 分组和通配策略逐条写入，忽略单条结果，最后统一 SavePolicy。
 func (s *InitService) InitDefaultRBAC(ctx context.Context) error {
 	if s.enforcer == nil {
-		return domain.ErrCasbinNotInitialized
+		return rbacerrors.ErrCasbinNotInitialized
 	}
 
-	seedRoles := []*domain.Role{
-		domain.NewRole(constants.AdminUserRole, "管理员，拥有所有权限"),
-		domain.NewRole(constants.VipUserRole, "VIP用户，拥有部分特殊权限"),
-		domain.NewRole(constants.CommonUserRole, "普通用户，拥有基本权限"),
-	}
+	seedRoles := []*rbacentity.Role{rbacentity.NewRole(constants.AdminUserRole, "管理员，拥有所有权限"), rbacentity.NewRole(constants.VipUserRole, "VIP用户，拥有部分特殊权限"), rbacentity.NewRole(constants.CommonUserRole, "普通用户，拥有基本权限")}
 
 	for _, role := range seedRoles {
 		// 重名预检忽略 Count 的错误。
@@ -61,7 +59,7 @@ func (s *InitService) InitDefaultRBAC(ctx context.Context) error {
 
 	if adminRole == nil || vipRole == nil || userRole == nil ||
 		adminRole.ID == 0 || vipRole.ID == 0 || userRole.ID == 0 {
-		return domain.ErrRoleInitFailed
+		return rbacerrors.ErrRoleInitFailed
 	}
 
 	if err := s.seedMenus(ctx, adminRole.ID, vipRole.ID, userRole.ID); err != nil {
@@ -107,7 +105,7 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 		}
 
 		if parent == nil {
-			return nil, domain.ErrParentMenuNotFound
+			return nil, rbacerrors.ErrParentMenuNotFound
 		}
 
 		menuIDByTitle[title] = parent.ID
@@ -133,7 +131,7 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 		}
 
 		if menuModel == nil {
-			menu := domain.NewMenu(
+			menu := rbacentity.NewMenu(
 				seed.Title, seed.TitleEn, seed.TitleJa, seed.Icon,
 				seed.Path, seed.Name, seed.Component, seed.KeepAlive, pid, seed.SortOrder,
 			)
@@ -184,8 +182,8 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 }
 
 // seedMenuUpdate 计算既有菜单相对种子定义需要补齐的字段（只补空、不覆盖已有值）。
-func seedMenuUpdate(seed menuSeed, current *domain.Menu, pid *uint) domain.MenuFieldUpdate {
-	var update domain.MenuFieldUpdate
+func seedMenuUpdate(seed menuSeed, current *rbacentity.Menu, pid *uint) rbacentity.MenuFieldUpdate {
+	var update rbacentity.MenuFieldUpdate
 
 	if seed.TitleEn != "" && current.TitleEn != seed.TitleEn {
 		titleEn := seed.TitleEn

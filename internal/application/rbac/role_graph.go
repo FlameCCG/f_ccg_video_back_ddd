@@ -3,7 +3,8 @@ package rbac
 import (
 	"strings"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacservice "f_ccg_video_back_ddd/internal/domain/rbac/service"
+	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
 )
 
 // RoleGraph 角色继承关系查询。
@@ -33,25 +34,25 @@ func (g *RoleGraph) ImplicitParents(roleName string) ([]string, error) {
 //   - owner 就是直接父：返回 owner + InheritKindDirect
 //   - owner 经由某直接父间接获得：返回该直接父 + InheritKindIndirect
 //   - owner 就是自己：InheritKindNone
-func (g *RoleGraph) FindTopParentForOwner(roleName, ownerName string) (string, domain.InheritKind, error) {
+func (g *RoleGraph) FindTopParentForOwner(roleName, ownerName string) (string, rbacservice.InheritKind, error) {
 	roleName = strings.TrimSpace(roleName)
 	ownerName = strings.TrimSpace(ownerName)
 
 	if roleName == "" || ownerName == "" {
-		return "", domain.InheritKindNone, nil
+		return "", rbacservice.InheritKindNone, nil
 	}
 
 	if ownerName == roleName {
-		return "", domain.InheritKindNone, nil
+		return "", rbacservice.InheritKindNone, nil
 	}
 
 	direct, err := g.DirectParents(roleName)
 	if err != nil {
-		return "", domain.InheritKindNone, err
+		return "", rbacservice.InheritKindNone, err
 	}
 
-	if domain.ContainsRoleName(direct, ownerName) {
-		return ownerName, domain.InheritKindDirect, nil
+	if rbacservice.ContainsRoleName(direct, ownerName) {
+		return ownerName, rbacservice.InheritKindDirect, nil
 	}
 
 	// 间接：哪个直接父的隐式角色链包含 owner
@@ -62,49 +63,49 @@ func (g *RoleGraph) FindTopParentForOwner(roleName, ownerName string) (string, d
 		}
 		// 直接父自身就是链路中的一环
 		if parent == ownerName {
-			return parent, domain.InheritKindDirect, nil
+			return parent, rbacservice.InheritKindDirect, nil
 		}
 
 		implicit, ierr := g.ImplicitParents(parent)
 		if ierr != nil {
-			return "", domain.InheritKindNone, ierr
+			return "", rbacservice.InheritKindNone, ierr
 		}
 
-		if domain.ContainsRoleName(implicit, ownerName) {
-			return parent, domain.InheritKindIndirect, nil
+		if rbacservice.ContainsRoleName(implicit, ownerName) {
+			return parent, rbacservice.InheritKindIndirect, nil
 		}
 	}
 
-	return "", domain.InheritKindNone, nil
+	return "", rbacservice.InheritKindNone, nil
 }
 
 // IsAlreadyInherited 当前角色是否已直接或间接继承 targetRole。
-func (g *RoleGraph) IsAlreadyInherited(roleName, targetRole string) (bool, domain.InheritKind, string, error) {
+func (g *RoleGraph) IsAlreadyInherited(roleName, targetRole string) (bool, rbacservice.InheritKind, string, error) {
 	direct, err := g.DirectParents(roleName)
 	if err != nil {
-		return false, domain.InheritKindNone, "", err
+		return false, rbacservice.InheritKindNone, "", err
 	}
 
-	if domain.ContainsRoleName(direct, targetRole) {
-		return true, domain.InheritKindDirect, targetRole, nil
+	if rbacservice.ContainsRoleName(direct, targetRole) {
+		return true, rbacservice.InheritKindDirect, targetRole, nil
 	}
 
 	implicit, err := g.ImplicitParents(roleName)
 	if err != nil {
-		return false, domain.InheritKindNone, "", err
+		return false, rbacservice.InheritKindNone, "", err
 	}
 
-	if !domain.ContainsRoleName(implicit, targetRole) {
-		return false, domain.InheritKindNone, "", nil
+	if !rbacservice.ContainsRoleName(implicit, targetRole) {
+		return false, rbacservice.InheritKindNone, "", nil
 	}
 
 	top, kind, err := g.FindTopParentForOwner(roleName, targetRole)
 	if err != nil {
-		return true, domain.InheritKindIndirect, "", err
+		return true, rbacservice.InheritKindIndirect, "", err
 	}
 
-	if kind == domain.InheritKindNone {
-		kind = domain.InheritKindIndirect
+	if kind == rbacservice.InheritKindNone {
+		kind = rbacservice.InheritKindIndirect
 	}
 
 	return true, kind, top, nil
@@ -123,21 +124,21 @@ func (g *RoleGraph) WouldCreateCycle(roleName, parentName string) (bool, error) 
 }
 
 // DirectPermissionItems 获取角色直接权限列表。
-func (g *RoleGraph) DirectPermissionItems(roleName string) ([]domain.PermissionItem, error) {
+func (g *RoleGraph) DirectPermissionItems(roleName string) ([]rbacvo.PermissionItem, error) {
 	rows, err := g.enforcer.GetPermissionsForUser(roleName)
 	if err != nil {
 		return nil, err
 	}
 
-	return domain.NormalizeCasbinPolicyRows(rows), nil
+	return rbacservice.NormalizeCasbinPolicyRows(rows), nil
 }
 
 // EffectivePermissionItems 获取角色有效权限列表（直接 + 继承）。
-func (g *RoleGraph) EffectivePermissionItems(roleName string) ([]domain.PermissionItem, error) {
+func (g *RoleGraph) EffectivePermissionItems(roleName string) ([]rbacvo.PermissionItem, error) {
 	rows, err := g.enforcer.GetImplicitPermissionsForUser(roleName)
 	if err != nil {
 		return nil, err
 	}
 
-	return domain.NormalizeCasbinPolicyRows(rows), nil
+	return rbacservice.NormalizeCasbinPolicyRows(rows), nil
 }

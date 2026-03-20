@@ -3,7 +3,10 @@ package identity
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/constants"
@@ -15,7 +18,7 @@ import (
 // RegistrationService 邮箱注册用例服务。
 type RegistrationService struct {
 	txm    tx.Manager
-	users  domain.UserAccountRepository
+	users  identityrepo.UserAccountRepository
 	roles  UserRoleQuery
 	binder UserRoleBinder
 	logger *zap.Logger
@@ -24,7 +27,7 @@ type RegistrationService struct {
 // NewRegistrationService 构造邮箱注册服务。
 func NewRegistrationService(
 	txm tx.Manager,
-	users domain.UserAccountRepository,
+	users identityrepo.UserAccountRepository,
 	roles UserRoleQuery,
 	binder UserRoleBinder,
 	logger *zap.Logger,
@@ -47,7 +50,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	}
 
 	if exists {
-		return domain.ErrUserOrEmailExists
+		return identityerrors.ErrUserOrEmailExists
 	}
 
 	// bcrypt 放在事务外，避免长时间占用连接。
@@ -55,16 +58,16 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	if err != nil {
 		s.logger.Error("密码加密失败", zap.Error(err))
 
-		return domain.ErrPasswordHashFailed
+		return identityerrors.ErrPasswordHashFailed
 	}
 
-	user := &domain.User{
+	user := &identityentity.User{
 		Username:       in.Username,
 		Password:       string(passwordHash),
 		Email:          in.Email,
 		RegisterIP:     in.RegisterIP,
 		RegisterAddr:   in.RegisterAddr,
-		RegisterSource: domain.RegisterSourceEmail,
+		RegisterSource: identityvo.RegisterSourceEmail,
 		Gender:         enum.GenderUnknown,
 	}
 

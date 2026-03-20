@@ -7,7 +7,7 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
@@ -83,8 +83,8 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 		t.Fatalf("reload user: %v", err)
 	}
 
-	if user.Exp != domain.DailyExpCap {
-		t.Fatalf("exp after like clamp = %d, want %d", user.Exp, domain.DailyExpCap)
+	if user.Exp != identityentity.DailyExpCap {
+		t.Fatalf("exp after like clamp = %d, want %d", user.Exp, identityentity.DailyExpCap)
 	}
 
 	// 已达上限：登录/观看/再点赞均不应再涨
@@ -108,8 +108,8 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 		t.Fatalf("reload user after cap: %v", err)
 	}
 
-	if user.Exp != domain.DailyExpCap {
-		t.Fatalf("exp after more ops = %d, want stay at %d", user.Exp, domain.DailyExpCap)
+	if user.Exp != identityentity.DailyExpCap {
+		t.Fatalf("exp after more ops = %d, want stay at %d", user.Exp, identityentity.DailyExpCap)
 	}
 
 	var gained int64
@@ -120,8 +120,8 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 		t.Fatalf("sum records: %v", err)
 	}
 
-	if gained != domain.DailyExpCap {
-		t.Fatalf("sum of positive records = %d, want %d", gained, domain.DailyExpCap)
+	if gained != identityentity.DailyExpCap {
+		t.Fatalf("sum of positive records = %d, want %d", gained, identityentity.DailyExpCap)
 	}
 }
 
@@ -141,8 +141,8 @@ func TestLikeExpDailyIdempotent(t *testing.T) {
 		t.Fatalf("reload user: %v", err)
 	}
 
-	if user.Exp != domain.ExpPerLike {
-		t.Fatalf("exp after loop = %d, want %d (daily idempotent)", user.Exp, domain.ExpPerLike)
+	if user.Exp != identityentity.ExpPerLike {
+		t.Fatalf("exp after loop = %d, want %d (daily idempotent)", user.Exp, identityentity.ExpPerLike)
 	}
 
 	var recCount int64
@@ -177,7 +177,7 @@ func TestCalcLevel(t *testing.T) {
 	}
 
 	for exp, want := range cases {
-		if got := domain.CalcLevel(exp); got != want {
+		if got := identityentity.CalcLevel(exp); got != want {
 			t.Fatalf("CalcLevel(%d) = %d, want %d", exp, got, want)
 		}
 	}
@@ -187,19 +187,19 @@ func TestCalcLevel(t *testing.T) {
 func TestClampDailyExpGain(t *testing.T) {
 	t.Parallel()
 
-	if applied, allowed := domain.ClampDailyExpGain(-5, 60); !allowed || applied != -5 {
+	if applied, allowed := identityentity.ClampDailyExpGain(-5, 60); !allowed || applied != -5 {
 		t.Fatalf("negative delta should pass through, got (%d, %v)", applied, allowed)
 	}
 
-	if applied, allowed := domain.ClampDailyExpGain(10, 55); !allowed || applied != 5 {
+	if applied, allowed := identityentity.ClampDailyExpGain(10, 55); !allowed || applied != 5 {
 		t.Fatalf("expected clamp to 5, got (%d, %v)", applied, allowed)
 	}
 
-	if _, allowed := domain.ClampDailyExpGain(10, domain.DailyExpCap); allowed {
+	if _, allowed := identityentity.ClampDailyExpGain(10, identityentity.DailyExpCap); allowed {
 		t.Fatal("expected not allowed when daily cap reached")
 	}
 
-	if applied, allowed := domain.ClampDailyExpGain(10, 0); !allowed || applied != 10 {
+	if applied, allowed := identityentity.ClampDailyExpGain(10, 0); !allowed || applied != 10 {
 		t.Fatalf("expected full delta, got (%d, %v)", applied, allowed)
 	}
 }

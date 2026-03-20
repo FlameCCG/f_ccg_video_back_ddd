@@ -5,13 +5,14 @@ import (
 	"errors"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 )
 
 // CreatorAnalyticsService 创作中心数据分析用例服务。
 type CreatorAnalyticsService struct {
 	metrics CreatorMetricStore
-	users   domain.UserRepository
+	users   identityrepo.UserRepository
 	videos  CreatorVideoStatsQuery
 	fans    FansCounter
 }
@@ -19,7 +20,7 @@ type CreatorAnalyticsService struct {
 // NewCreatorAnalyticsService 构造创作中心分析服务。
 func NewCreatorAnalyticsService(
 	metrics CreatorMetricStore,
-	users domain.UserRepository,
+	users identityrepo.UserRepository,
 	videos CreatorVideoStatsQuery,
 	fans FansCounter,
 ) *CreatorAnalyticsService {
@@ -77,7 +78,7 @@ func (s *CreatorAnalyticsService) Analytics(
 	}
 
 	if creatorID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, identityerrors.ErrUserNotLogin
 	}
 
 	if ctx == nil {
@@ -120,7 +121,7 @@ func (s *CreatorAnalyticsService) Analytics(
 // Overview 创作中心六项总览。
 func (s *CreatorAnalyticsService) Overview(ctx context.Context, creatorID uint) (*CreatorOverview, error) {
 	if creatorID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, identityerrors.ErrUserNotLogin
 	}
 
 	if ctx == nil {
@@ -133,7 +134,7 @@ func (s *CreatorAnalyticsService) Overview(ctx context.Context, creatorID uint) 
 	}
 
 	if username == "" {
-		return nil, domain.ErrUserNotFound
+		return nil, identityerrors.ErrUserNotFound
 	}
 
 	overview := &CreatorOverview{

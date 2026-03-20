@@ -7,18 +7,17 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 )
 
 // buildFilterComplex 构造多输出 filter_complex，并回填各目标的 map 标签。
 // KeepSource 目标走 null 滤镜（绝不上采样）；GPU + 硬件缩放时用 scale_cuda。
-func buildFilterComplex(targets []media.TranscodeTarget, useGPU, useHardwareScale bool) string {
+func buildFilterComplex(targets []mediavo.TranscodeTarget, useGPU, useHardwareScale bool) string {
 	if len(targets) == 0 {
 		return ""
 	}
@@ -58,14 +57,14 @@ func buildFilterComplex(targets []media.TranscodeTarget, useGPU, useHardwareScal
 // chunk 非 nil 时进入分段模式：-ss/-t 只编指定时间段、不 map 音频（共享音轨单独编）、
 // 不加 faststart（中间产物，终段拼装时统一重封装）、可选按秒强制关键帧（DASH 网格）。
 func buildFFmpegArgsForOutputs(
-	policy *media.TranscodePolicy,
+	policy *mediavo.TranscodePolicy,
 	srcPath, filter string,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 	outputs []string,
 	useGPU, useHardwareScale bool,
 	sourceBitrate int,
 	sourceCodec string,
-	chunk *media.FFmpegChunkSpan,
+	chunk *mediavo.FFmpegChunkSpan,
 ) []string {
 	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
 
@@ -183,9 +182,9 @@ func isNonSeekableOutput(output string) bool {
 // buildDASHFFmpegArgs 构造原生分片 DASH 参数：由 FFmpeg 直接生成准确的 SegmentTimeline，
 // 视频各 representation 复用 MP4 路径相同的质量/码率封顶策略，音频共享一条 AdaptationSet。
 func buildDASHFFmpegArgs(
-	policy *media.TranscodePolicy,
+	policy *mediavo.TranscodePolicy,
 	srcPath, filter string,
-	targets []media.TranscodeTarget,
+	targets []mediavo.TranscodeTarget,
 	mpdPath, fileHash string,
 	useGPU bool,
 	sourceBitrate int,
@@ -271,18 +270,6 @@ func buildDASHFFmpegArgs(
 	)
 
 	return args
-}
-
-// guessDashContentType 为 DASH 产物推断 Content-Type (供 MinIO 落对象元数据用)。
-func guessDashContentType(name string) string {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".mpd":
-		return "application/dash+xml"
-	case ".m4s":
-		return "video/iso.segment"
-	default:
-		return "video/mp4"
-	}
 }
 
 // buildAudioTrackEncodeArgs 将整条音轨编码为 AAC-LC 128k，两条管线共享此配置。

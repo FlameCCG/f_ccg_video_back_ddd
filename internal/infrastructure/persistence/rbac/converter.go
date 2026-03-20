@@ -8,19 +8,19 @@
 package rbac
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/datatypes"
 )
 
 // toDomainRole 把角色 PO 转为领域实体（含已预加载的菜单）。
-func toDomainRole(row *po.Role) *domain.Role {
+func toDomainRole(row *po.Role) *rbacentity.Role {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Role{
+	return &rbacentity.Role{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -31,8 +31,8 @@ func toDomainRole(row *po.Role) *domain.Role {
 }
 
 // toDomainRoles 批量转换角色 PO。
-func toDomainRoles(rows []po.Role) []*domain.Role {
-	roles := make([]*domain.Role, 0, len(rows))
+func toDomainRoles(rows []po.Role) []*rbacentity.Role {
+	roles := make([]*rbacentity.Role, 0, len(rows))
 	for i := range rows {
 		roles = append(roles, toDomainRole(&rows[i]))
 	}
@@ -44,12 +44,12 @@ func toDomainRoles(rows []po.Role) []*domain.Role {
 //
 // 入参为 nil 时返回 nil，保持与 GORM 预加载结果一致的「空/未加载」语义，
 // 避免把未加载的关联序列化成 []。
-func toDomainRolePtrs(rows []*po.Role) []*domain.Role {
+func toDomainRolePtrs(rows []*po.Role) []*rbacentity.Role {
 	if rows == nil {
 		return nil
 	}
 
-	roles := make([]*domain.Role, 0, len(rows))
+	roles := make([]*rbacentity.Role, 0, len(rows))
 
 	for _, row := range rows {
 		if row == nil {
@@ -63,7 +63,7 @@ func toDomainRolePtrs(rows []*po.Role) []*domain.Role {
 }
 
 // toPORole 把角色领域实体转为 PO（不含关联）。
-func toPORole(role *domain.Role) po.Role {
+func toPORole(role *rbacentity.Role) po.Role {
 	if role == nil {
 		return po.Role{}
 	}
@@ -82,12 +82,12 @@ func toPORole(role *domain.Role) po.Role {
 // toDomainMenu 把菜单 PO 转为领域实体。
 //
 // Children 不参与持久化（PO 上为 gorm:"-"），由领域层的 BuildMenuTree 组装。
-func toDomainMenu(row *po.Menu) *domain.Menu {
+func toDomainMenu(row *po.Menu) *rbacentity.Menu {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.Menu{
+	return &rbacentity.Menu{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -105,12 +105,12 @@ func toDomainMenu(row *po.Menu) *domain.Menu {
 }
 
 // toDomainMenus 批量转换菜单 PO 指针切片。
-func toDomainMenus(rows []*po.Menu) []*domain.Menu {
+func toDomainMenus(rows []*po.Menu) []*rbacentity.Menu {
 	if rows == nil {
 		return nil
 	}
 
-	menus := make([]*domain.Menu, 0, len(rows))
+	menus := make([]*rbacentity.Menu, 0, len(rows))
 
 	for _, row := range rows {
 		if row == nil {
@@ -124,8 +124,8 @@ func toDomainMenus(rows []*po.Menu) []*domain.Menu {
 }
 
 // toDomainMenuValues 批量转换菜单 PO 值切片。
-func toDomainMenuValues(rows []po.Menu) []*domain.Menu {
-	menus := make([]*domain.Menu, 0, len(rows))
+func toDomainMenuValues(rows []po.Menu) []*rbacentity.Menu {
+	menus := make([]*rbacentity.Menu, 0, len(rows))
 	for i := range rows {
 		menus = append(menus, toDomainMenu(&rows[i]))
 	}
@@ -134,7 +134,7 @@ func toDomainMenuValues(rows []po.Menu) []*domain.Menu {
 }
 
 // toPOMenu 把菜单领域实体转为 PO。
-func toPOMenu(menu *domain.Menu) po.Menu {
+func toPOMenu(menu *rbacentity.Menu) po.Menu {
 	if menu == nil {
 		return po.Menu{}
 	}
@@ -159,7 +159,7 @@ func toPOMenu(menu *domain.Menu) po.Menu {
 }
 
 // toPOMenus 批量转换菜单领域实体。
-func toPOMenus(menus []*domain.Menu) []po.Menu {
+func toPOMenus(menus []*rbacentity.Menu) []po.Menu {
 	rows := make([]po.Menu, 0, len(menus))
 
 	for _, menu := range menus {
@@ -174,7 +174,7 @@ func toPOMenus(menus []*domain.Menu) []po.Menu {
 }
 
 // toPORoleMenus 批量转换角色-菜单关联。
-func toPORoleMenus(items []domain.RoleMenu) []po.RoleMenu {
+func toPORoleMenus(items []rbacentity.RoleMenu) []po.RoleMenu {
 	rows := make([]po.RoleMenu, 0, len(items))
 	for _, item := range items {
 		rows = append(rows, po.RoleMenu{
@@ -188,12 +188,12 @@ func toPORoleMenus(items []domain.RoleMenu) []po.RoleMenu {
 }
 
 // toDomainApiResource 把接口资源 PO 转为领域实体。
-func toDomainApiResource(row *po.ApiResource) *domain.ApiResource {
+func toDomainApiResource(row *po.ApiResource) *rbacentity.ApiResource {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.ApiResource{
+	return &rbacentity.ApiResource{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -205,8 +205,8 @@ func toDomainApiResource(row *po.ApiResource) *domain.ApiResource {
 }
 
 // toDomainApiResources 批量转换接口资源 PO。
-func toDomainApiResources(rows []po.ApiResource) []*domain.ApiResource {
-	items := make([]*domain.ApiResource, 0, len(rows))
+func toDomainApiResources(rows []po.ApiResource) []*rbacentity.ApiResource {
+	items := make([]*rbacentity.ApiResource, 0, len(rows))
 	for i := range rows {
 		items = append(items, toDomainApiResource(&rows[i]))
 	}
@@ -215,7 +215,7 @@ func toDomainApiResources(rows []po.ApiResource) []*domain.ApiResource {
 }
 
 // toPOApiResource 把接口资源领域实体转为 PO。
-func toPOApiResource(item *domain.ApiResource) po.ApiResource {
+func toPOApiResource(item *rbacentity.ApiResource) po.ApiResource {
 	if item == nil {
 		return po.ApiResource{}
 	}

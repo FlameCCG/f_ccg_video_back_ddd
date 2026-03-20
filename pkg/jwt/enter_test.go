@@ -8,47 +8,44 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-func TestCreateJwtTokenRejectsEmptySecret(t *testing.T) {
+func TestTokenSigningRejectsEmptySecret(t *testing.T) {
 	t.Parallel()
 
-	_, err := CreateJwtToken("1", "alice", time.Hour, "", 2*time.Hour, strings.Repeat("r", 32))
+	_, err := CreateJwtTokenWithPassword("1", "alice", "", false, time.Hour, "", 2*time.Hour, strings.Repeat("r", 32))
 	if err == nil {
 		t.Fatal("expected error for empty access secret")
 	}
 
-	_, err = CreateJwtToken("1", "alice", time.Hour, strings.Repeat("a", 32), 2*time.Hour, "")
+	_, err = CreateJwtTokenWithPassword("1", "alice", "", false, time.Hour, strings.Repeat("a", 32), 2*time.Hour, "")
 	if err == nil {
 		t.Fatal("expected error for empty refresh secret")
 	}
 }
 
-func TestCreateJwtTokenRoundTrip(t *testing.T) {
+func TestTokenSigningAndAccessClaimsRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	accessSecret := strings.Repeat("a", 32)
 	refreshSecret := strings.Repeat("b", 32)
 
-	tok, err := CreateJwtToken("42", "bob", time.Hour, accessSecret, 24*time.Hour, refreshSecret)
+	tok, err := CreateJwtTokenWithPassword("42", "bob", "", false, time.Hour, accessSecret, 24*time.Hour, refreshSecret)
 	if err != nil {
-		t.Fatalf("CreateJwtToken: %v", err)
+		t.Fatalf("CreateJwtTokenWithPassword: %v", err)
 	}
 	if tok.AccessToken == "" || tok.RefreshToken == "" {
 		t.Fatal("expected non-empty tokens")
 	}
 
-	uid, username, err := ParseJwtToken(tok.AccessToken, accessSecret)
+	claims, err := ParseAccessToken(tok.AccessToken, accessSecret)
 	if err != nil {
-		t.Fatalf("ParseJwtToken: %v", err)
+		t.Fatalf("ParseAccessToken: %v", err)
 	}
-	if uid != "42" || username != "bob" {
-		t.Fatalf("got uid=%q username=%q", uid, username)
+	if claims.UID != "42" || claims.Username != "bob" {
+		t.Fatalf("got uid=%q username=%q", claims.UID, claims.Username)
 	}
 
-	// 空密钥不应解析出有效用户（启动期已拦截；此处防御运行时误用）
-	if _, _, err := ParseJwtToken(tok.AccessToken, ""); err == nil {
-		// HS256 空密钥在部分实现仍可“验签成功”，重点是业务侧禁止空密钥配置。
-		// 此处仅保证签发路径已拒绝空密钥。
-		_ = err
+	if _, err := ParseAccessToken(tok.AccessToken, ""); err == nil {
+		t.Fatal("access token accepted with an incorrect empty secret")
 	}
 }
 

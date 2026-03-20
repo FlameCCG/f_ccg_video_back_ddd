@@ -2,12 +2,10 @@ package search
 
 import (
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 
 	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
@@ -140,7 +138,7 @@ func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size i
 		seen[key] = struct{}{}
 		items = append(items, app.SuggestionItem{
 			Value:     value,
-			Highlight: domain.HighlightSuggestion(value, prefix),
+			Highlight: searchvo.HighlightSuggestion(value, prefix),
 			DocType:   docType,
 		})
 
@@ -158,12 +156,12 @@ func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size i
 		}
 
 		switch docType {
-		case domain.DocTypeUser:
+		case searchvo.DocTypeUser:
 			if appendValue(toString(data["username"])) {
 				return items
 			}
-		case domain.DocTypeTag:
-			for _, tag := range domain.SelectMatchingTags(toStringSlice(data["tags"]), prefix) {
+		case searchvo.DocTypeTag:
+			for _, tag := range searchvo.SelectMatchingTags(toStringSlice(data["tags"]), prefix) {
 				if appendValue(tag) {
 					return items
 				}
@@ -184,43 +182,9 @@ func parseMentionSearchHitUserID(hit *elastic.SearchHit) uint {
 		return 0
 	}
 
-	if id, ok := domain.ParseDocumentID(hit.Id); ok {
+	if id, ok := searchvo.ParseDocumentID(hit.Id); ok {
 		return id
 	}
 
 	return toUint(hit.Fields["id"])
-}
-
-// isPublishedVideoSuggestion 与 suggestionSourceStatus 为 completion 路径及相关测试提供状态判定。
-func isPublishedVideoSuggestion(source json.RawMessage) bool {
-	status, ok := suggestionSourceStatus(source)
-
-	return ok && status == int(enum.VideoStatusPublished)
-}
-
-func suggestionSourceStatus(source json.RawMessage) (int, bool) {
-	if len(source) == 0 {
-		return 0, false
-	}
-
-	var payload map[string]any
-	if err := json.Unmarshal(source, &payload); err != nil {
-		return 0, false
-	}
-
-	value, ok := payload["status"]
-	if !ok {
-		return 0, false
-	}
-
-	switch v := value.(type) {
-	case float64:
-		return int(v), true
-	case string:
-		status, err := strconv.Atoi(v)
-
-		return status, err == nil
-	default:
-		return 0, false
-	}
 }

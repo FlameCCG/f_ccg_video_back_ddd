@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/contentops"
+	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"github.com/alicebob/miniredis/v2"
@@ -44,7 +44,7 @@ func TestBannerCacheStoreLoadInvalidate(t *testing.T) {
 	cache := NewBannerCache(client, zap.NewNop())
 
 	homePartition := uint(0)
-	items := []domain.Banner{
+	items := []contentopsentity.Banner{
 		{ID: 2, Cover: "b", Show: true, Type: enum.BannerTypeHome},
 		{ID: 1, Cover: "a", Show: true, Type: enum.BannerTypeHome},
 	}

@@ -1,7 +1,7 @@
 package media
 
 import (
-	domain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
 
 	"github.com/google/wire"
 )
@@ -19,11 +19,11 @@ var ProviderSet = wire.NewSet(
 )
 
 // ProvideGPUCooldown 创建进程内唯一的 GPU 编码冷却窗口。
-func ProvideGPUCooldown() *domain.GPUCooldown {
-	return &domain.GPUCooldown{}
+func ProvideGPUCooldown() *mediaruntime.GPUCooldown {
+	return &mediaruntime.GPUCooldown{}
 }
 
 // ProvideTaskRegistry 创建进程内唯一的转码任务取消登记表。
-func ProvideTaskRegistry() *domain.TaskRegistry {
-	return domain.NewTaskRegistry()
+func ProvideTaskRegistry() *mediaruntime.TaskRegistry {
+	return mediaruntime.NewTaskRegistry()
 }

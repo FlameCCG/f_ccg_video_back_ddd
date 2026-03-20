@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -30,7 +30,7 @@ type VideoDetailCache struct {
 	logger *zap.Logger
 }
 
-var _ domain.VideoDetailCacheInvalidator = (*VideoDetailCache)(nil)
+var _ mediaport.VideoDetailCacheInvalidator = (*VideoDetailCache)(nil)
 
 // NewVideoDetailCache 构造视频详情缓存失效适配器。
 func NewVideoDetailCache(redisClient *redis.Client, logger *zap.Logger) *VideoDetailCache {

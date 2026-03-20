@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaservice "f_ccg_video_back_ddd/internal/domain/media/service"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 )
 
 const testDASHManifest = `<?xml version="1.0" encoding="utf-8"?>
@@ -34,7 +35,7 @@ func TestInspectDASHManifest(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeDASHFixtureFile(t, dir, media.DashManifestName, testDASHManifest)
+	writeDASHFixtureFile(t, dir, mediavo.DashManifestName, testDASHManifest)
 	writeDASHFixtureFile(t, dir, "stream0.mp4", "video")
 	writeDASHFixtureFile(t, dir, "stream1.mp4", "audio")
 
@@ -85,7 +86,7 @@ func TestInspectDASHManifestRejectsUnsafeOrMissingRepresentations(t *testing.T) 
 			t.Parallel()
 
 			dir := t.TempDir()
-			writeDASHFixtureFile(t, dir, media.DashManifestName, tt.manifest)
+			writeDASHFixtureFile(t, dir, mediavo.DashManifestName, tt.manifest)
 			if tt.createFile != "" {
 				writeDASHFixtureFile(t, dir, tt.createFile, "fixture")
 			}
@@ -102,7 +103,7 @@ func TestValidateDASHOutputProbesVideoRepresentation(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeDASHFixtureFile(t, dir, media.DashManifestName, testDASHManifest)
+	writeDASHFixtureFile(t, dir, mediavo.DashManifestName, testDASHManifest)
 	writeDASHFixtureFile(t, dir, "stream0.mp4", "video")
 	writeDASHFixtureFile(t, dir, "stream1.mp4", "audio")
 
@@ -112,10 +113,10 @@ func TestValidateDASHOutputProbesVideoRepresentation(t *testing.T) {
 		context.Background(),
 		dir,
 		4,
-		func(_ context.Context, path string) (media.VideoMeta, error) {
+		func(_ context.Context, path string) (mediavo.VideoMeta, error) {
 			probedPath = path
 
-			return media.VideoMeta{Duration: 4}, nil
+			return mediavo.VideoMeta{Duration: 4}, nil
 		},
 	)
 	if err != nil {
@@ -131,7 +132,7 @@ func TestValidateDASHOutputHonorsContext(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeDASHFixtureFile(t, dir, media.DashManifestName, testDASHManifest)
+	writeDASHFixtureFile(t, dir, mediavo.DashManifestName, testDASHManifest)
 	writeDASHFixtureFile(t, dir, "stream0.mp4", "video")
 	writeDASHFixtureFile(t, dir, "stream1.mp4", "audio")
 
@@ -142,10 +143,10 @@ func TestValidateDASHOutputHonorsContext(t *testing.T) {
 		ctx,
 		dir,
 		4,
-		func(ctx context.Context, _ string) (media.VideoMeta, error) {
+		func(ctx context.Context, _ string) (mediavo.VideoMeta, error) {
 			<-ctx.Done()
 
-			return media.VideoMeta{}, ctx.Err()
+			return mediavo.VideoMeta{}, ctx.Err()
 		},
 	)
 	if !errors.Is(err, context.DeadlineExceeded) {
@@ -156,7 +157,7 @@ func TestValidateDASHOutputHonorsContext(t *testing.T) {
 func TestBuildFilterComplexKeepsCinematic4KSourcePixels(t *testing.T) {
 	t.Parallel()
 
-	targets := media.BuildDashTargets([]uint16{2160}, 1632, 2160, false)
+	targets := mediaservice.BuildDashTargets([]uint16{2160}, 1632, 2160, false)
 	filter := buildFilterComplex(targets, false, false)
 	if strings.Contains(filter, "scale=") || !strings.Contains(filter, "null") {
 		t.Fatalf("cinematic 4K filter must not upscale source: %q", filter)

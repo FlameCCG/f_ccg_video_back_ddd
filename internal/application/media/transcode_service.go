@@ -6,9 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config"
-	domain "f_ccg_video_back_ddd/internal/domain/media"
+	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
+	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	mediarepo "f_ccg_video_back_ddd/internal/domain/media/repository"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -21,10 +26,10 @@ import (
 //   - 本服务负责编排：阶段推进、断点续传三层判定、GPU→CPU 回退、产物上传与落库、
 //     取消与失败清理、缓存刷新。
 type TranscodeService struct {
-	resources   domain.TranscodeResourceRepository
-	storage     domain.StorageResolver
-	progress    domain.ProgressStore
-	detailCache domain.VideoDetailCacheInvalidator
+	resources   mediarepo.TranscodeResourceRepository
+	storage     mediaport.StorageResolver
+	progress    mediaport.ProgressStore
+	detailCache mediaport.VideoDetailCacheInvalidator
 
 	prober      MediaProber
 	encoder     TranscodeEncoder
@@ -32,23 +37,23 @@ type TranscodeService struct {
 	stager      SourceStager
 	artifacts   ArtifactStateChecker
 
-	gpuCooldown *domain.GPUCooldown
+	gpuCooldown *mediaruntime.GPUCooldown
 	cfgProvider shared.ConfigReader
 	logger      *zap.Logger
 }
 
 // NewTranscodeService 构造转码编排服务。
 func NewTranscodeService(
-	resources domain.TranscodeResourceRepository,
-	storage domain.StorageResolver,
-	progress domain.ProgressStore,
-	detailCache domain.VideoDetailCacheInvalidator,
+	resources mediarepo.TranscodeResourceRepository,
+	storage mediaport.StorageResolver,
+	progress mediaport.ProgressStore,
+	detailCache mediaport.VideoDetailCacheInvalidator,
 	prober MediaProber,
 	encoder TranscodeEncoder,
 	checkpoints CheckpointManager,
 	stager SourceStager,
 	artifacts ArtifactStateChecker,
-	gpuCooldown *domain.GPUCooldown,
+	gpuCooldown *mediaruntime.GPUCooldown,
 	cfgProvider shared.ConfigReader,
 	logger *zap.Logger,
 ) *TranscodeService {
@@ -93,8 +98,8 @@ func (s *TranscodeService) ClearProgress(ctx context.Context, videoID, partID ui
 }
 
 // NewProgressTracker 为一次任务创建进度跟踪器（消费者在派发前调用）。
-func (s *TranscodeService) NewProgressTracker(videoID, partID uint) *domain.TranscodeProgressTracker {
-	return domain.NewTranscodeProgressTracker(videoID, partID, s.progress, func(snapshot domain.TranscodeProgress) {
+func (s *TranscodeService) NewProgressTracker(videoID, partID uint) *mediaruntime.TranscodeProgressTracker {
+	return mediaruntime.NewTranscodeProgressTracker(videoID, partID, s.progress, func(snapshot mediavo.TranscodeProgress) {
 		s.logger.Error("transcode progress marked failed",
 			zap.Uint("videoId", snapshot.VideoID),
 			zap.Uint("partId", snapshot.PartID),
@@ -121,7 +126,7 @@ func (s *TranscodeService) transcodeConf() *config.Transcode {
 }
 
 // policy 返回当前编码策略（配置缺失时为 nil，领域侧对 nil 安全）。
-func (s *TranscodeService) policy() *domain.TranscodePolicy {
+func (s *TranscodeService) policy() *mediavo.TranscodePolicy {
 	return PolicyFromConfig(s.transcodeConf())
 }
 
@@ -133,22 +138,22 @@ func (s *TranscodeService) policy() *domain.TranscodePolicy {
 // ctx 需已携带进度跟踪器与取消登记（由消费者组件准备）；
 // 返回的错误语义：*domain.PermanentMessageError 表示投 DLQ，
 // domain.ErrVideoDeleted 表示任务作废（可提交 offset），其余为可重试失败。
-func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.TranscodeTask) (err error) {
+func (s *TranscodeService) ProcessTask(ctx context.Context, task mediaentity.TranscodeTask) (err error) {
 	startTime := time.Now()
 
 	if validateErr := task.Validate(); validateErr != nil {
-		return domain.PermanentMessage(validateErr)
+		return mediaerrors.PermanentMessage(validateErr)
 	}
 
-	pt := domain.ProgressTrackerFromContext(ctx)
+	pt := mediaruntime.ProgressTrackerFromContext(ctx)
 	if pt == nil {
 		pt = s.NewProgressTracker(task.VideoID, task.VideoPartID)
-		ctx = domain.ContextWithProgressTracker(ctx, pt)
+		ctx = mediaruntime.ContextWithProgressTracker(ctx, pt)
 	}
 
 	defer func() {
-		if domain.TaskWasDeleted(ctx, err) {
-			err = domain.ErrVideoDeleted
+		if mediaruntime.TaskWasDeleted(ctx, err) {
+			err = mediaerrors.ErrVideoDeleted
 			s.ClearProgress(ctx, task.VideoID, task.VideoPartID)
 
 			return
@@ -159,7 +164,7 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 			s.logger.Warn("transcode task interrupted or failed before success",
 				zap.Uint("videoId", task.VideoID),
 				zap.Uint("partId", task.VideoPartID),
-				zap.String("reason", domain.ClassifyInterruptReason(ctx, err, false)),
+				zap.String("reason", mediaruntime.ClassifyInterruptReason(ctx, err, false)),
 				zap.String("stage", stage),
 				zap.String("status", status),
 				zap.Float64("percent", percent),
@@ -174,7 +179,7 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 
 	transcodeCfg := s.transcodeConf()
 	if transcodeCfg == nil {
-		return domain.PermanentMessage(errors.New("transcode config not configured"))
+		return mediaerrors.PermanentMessage(errors.New("transcode config not configured"))
 	}
 
 	policy := PolicyFromConfig(transcodeCfg)
@@ -188,8 +193,8 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 	defer func() {
 		// 成功 / 视频删除 / 永久失败：不会再有重试，断点整目录删除。
 		// 其余（可重试）失败保留断点，下一次尝试复用已编码产物。
-		var permanentErr *domain.PermanentMessageError
-		if err == nil || domain.TaskWasDeleted(ctx, err) || errors.As(err, &permanentErr) || !ckpt.Persistent() {
+		var permanentErr *mediaerrors.PermanentMessageError
+		if err == nil || mediaruntime.TaskWasDeleted(ctx, err) || errors.As(err, &permanentErr) || !ckpt.Persistent() {
 			ckpt.Remove()
 		}
 	}()
@@ -197,7 +202,7 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 	s.logger.Debug("transcode payload parsed",
 		zap.Uint("videoId", task.VideoID),
 		zap.String("sourcePath", task.SourcePath),
-		zap.Strings("resolutions", domain.StringifyResolutions(task.ResolutionList)),
+		zap.Strings("resolutions", mediaentity.StringifyResolutions(task.ResolutionList)),
 	)
 
 	if err := s.resources.EnsureTaskActive(ctx, task); err != nil {
@@ -221,7 +226,7 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 	stagingTask.SourcePath = srcPath
 
 	// 准备源（本地/HTTP）；远程源暂存到断点目录，重试时免重复下载
-	pt.EnterStage(ctx, domain.TranscodeStagePrepare, "准备源文件")
+	pt.EnterStage(ctx, mediavo.TranscodeStagePrepare, "准备源文件")
 
 	preparedSrcPath, cleanup, err := s.stager.PrepareSource(ctx, stagingTask, ckpt)
 	if err != nil {
@@ -229,10 +234,10 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 	}
 
 	defer cleanup()
-	pt.CompleteStage(ctx, domain.TranscodeStagePrepare)
+	pt.CompleteStage(ctx, mediavo.TranscodeStagePrepare)
 
 	// 探测元信息
-	pt.EnterStage(ctx, domain.TranscodeStageProbe, "探测视频元信息")
+	pt.EnterStage(ctx, mediavo.TranscodeStageProbe, "探测视频元信息")
 
 	meta, err := s.prober.ProbeVideo(ctx, preparedSrcPath)
 	if err != nil {
@@ -245,14 +250,14 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 		return fmt.Errorf("update video duration from probe: %w", err)
 	}
 
-	pt.CompleteStage(ctx, domain.TranscodeStageProbe)
+	pt.CompleteStage(ctx, mediavo.TranscodeStageProbe)
 
 	s.logProbedMeta(task, meta)
 
 	// 先落库「源视频」真实信息（>=1080P 且高码率会以 1080PHigh 或 2160P 标记）
 	isHB1080OrAbove := meta.IsHighBitrate(policy.HighBitrateThresholdOrDefault())
 
-	pt.EnterStage(ctx, domain.TranscodeStageSaveOriginal, "保存源视频资源")
+	pt.EnterStage(ctx, mediavo.TranscodeStageSaveOriginal, "保存源视频资源")
 
 	if err := s.resources.EnsureTaskActive(ctx, task); err != nil {
 		return err
@@ -266,9 +271,9 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 
 	// 优先刷新详情缓存，避免发布后缓存空资源占位过久
 	s.detailCache.InvalidateVideoDetailMeta(ctx, task.VideoID, task.VideoPartID)
-	pt.CompleteStage(ctx, domain.TranscodeStageSaveOriginal)
+	pt.CompleteStage(ctx, mediavo.TranscodeStageSaveOriginal)
 
-	pt.EnterStage(ctx, domain.TranscodeStageMultiRes, "执行并行转码 Pipeline")
+	pt.EnterStage(ctx, mediavo.TranscodeStageMultiRes, "执行并行转码 Pipeline")
 
 	if err := s.resources.EnsureTaskActive(ctx, task); err != nil {
 		return err
@@ -285,9 +290,9 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 		return err
 	}
 
-	pt.EnterStage(ctx, domain.TranscodeStageCleanup, "清理与刷新缓存")
+	pt.EnterStage(ctx, mediavo.TranscodeStageCleanup, "清理与刷新缓存")
 
-	if deleteOriginalAtEnd && domain.ShouldDeleteOriginalSource(task.SourcePath, currentSourceURL) {
+	if deleteOriginalAtEnd && mediavo.ShouldDeleteOriginalSource(task.SourcePath, currentSourceURL) {
 		if err := driver.DeleteStoredFile(ctx, task.SourcePath); err != nil {
 			s.logger.Warn("delete original source failed", zap.Error(err), zap.String("path", task.SourcePath))
 		}
@@ -310,7 +315,7 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 }
 
 // logProbedMeta 输出探测到的源片元信息。
-func (s *TranscodeService) logProbedMeta(task domain.TranscodeTask, meta domain.VideoMeta) {
+func (s *TranscodeService) logProbedMeta(task mediaentity.TranscodeTask, meta mediavo.VideoMeta) {
 	s.logger.Debug("video metadata probed",
 		zap.Uint("videoId", task.VideoID),
 		zap.Int("height", meta.Height),

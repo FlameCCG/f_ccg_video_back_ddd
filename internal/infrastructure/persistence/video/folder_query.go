@@ -6,7 +6,7 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 
 	"gorm.io/gorm"
@@ -83,9 +83,9 @@ func (q *FolderQuery) ListVideos(
 	orderExpr := "IFNULL(ffv.created_at, v.created_at) DESC, ffv.video_id DESC"
 
 	switch sort {
-	case domain.FolderVideoSortViews:
+	case videovo.FolderVideoSortViews:
 		orderExpr = "v.views DESC, IFNULL(ffv.created_at, v.created_at) DESC, ffv.video_id DESC"
-	case domain.FolderVideoSortLikes:
+	case videovo.FolderVideoSortLikes:
 		orderExpr = "v.likes DESC, IFNULL(ffv.created_at, v.created_at) DESC, ffv.video_id DESC"
 	}
 

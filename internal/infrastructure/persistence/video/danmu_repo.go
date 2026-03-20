@@ -5,7 +5,9 @@ import (
 	"errors"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -17,7 +19,7 @@ type DanmuRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.DanmuRepository = (*DanmuRepository)(nil)
+var _ videorepo.DanmuRepository = (*DanmuRepository)(nil)
 
 // NewDanmuRepository 构造弹幕仓储。
 func NewDanmuRepository(db *gorm.DB) *DanmuRepository {
@@ -25,9 +27,9 @@ func NewDanmuRepository(db *gorm.DB) *DanmuRepository {
 }
 
 // Create 写入弹幕并递增所属分P的弹幕数（单事务）。
-func (r *DanmuRepository) Create(ctx context.Context, record *domain.Danmu) error {
+func (r *DanmuRepository) Create(ctx context.Context, record *videoentity.Danmu) error {
 	if record == nil {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	row := toPODanmu(record)
@@ -58,13 +60,13 @@ func (r *DanmuRepository) Create(ctx context.Context, record *domain.Danmu) erro
 }
 
 // FindByID 读取弹幕（id/user_id/video_id/video_part_id）；不存在时返回 ErrDanmuNotFound。
-func (r *DanmuRepository) FindByID(ctx context.Context, danmuID uint) (*domain.Danmu, error) {
+func (r *DanmuRepository) FindByID(ctx context.Context, danmuID uint) (*videoentity.Danmu, error) {
 	var row po.Danmu
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "user_id", "video_id", "video_part_id").
 		Take(&row, "id = ?", danmuID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, domain.ErrDanmuNotFound
+			return nil, videoerrors.ErrDanmuNotFound
 		}
 
 		return nil, err
@@ -74,7 +76,7 @@ func (r *DanmuRepository) FindByID(ctx context.Context, danmuID uint) (*domain.D
 }
 
 // FindByIDs 批量读取弹幕（id/video_id/video_part_id）。
-func (r *DanmuRepository) FindByIDs(ctx context.Context, danmuIDs []uint) ([]domain.Danmu, error) {
+func (r *DanmuRepository) FindByIDs(ctx context.Context, danmuIDs []uint) ([]videoentity.Danmu, error) {
 	if len(danmuIDs) == 0 {
 		return nil, nil
 	}
@@ -120,7 +122,7 @@ func (r *DanmuRepository) DecrPartDanmuCount(ctx context.Context, partID uint, d
 func (r *DanmuRepository) PartAvailability(
 	ctx context.Context,
 	videoID, partID uint,
-) (domain.DanmuPartAvailability, error) {
+) (videoentity.DanmuPartAvailability, error) {
 	type availabilityRow struct {
 		VideoExists int8  `gorm:"column:video_exists"`
 		PartCount   int64 `gorm:"column:part_count"`
@@ -136,10 +138,10 @@ SELECT
   (SELECT id FROM video_parts WHERE video_id = ? ORDER BY sort_order ASC, id ASC LIMIT 1) AS only_part_id,
   EXISTS(SELECT 1 FROM video_parts WHERE id = ? AND video_id = ?) AS part_exists
 `, videoID, enum.VideoStatusPublished, videoID, videoID, partID, videoID).Scan(&row).Error; err != nil {
-		return domain.DanmuPartAvailability{}, err
+		return videoentity.DanmuPartAvailability{}, err
 	}
 
-	return domain.DanmuPartAvailability{
+	return videoentity.DanmuPartAvailability{
 		VideoExists: row.VideoExists > 0,
 		PartCount:   row.PartCount,
 		OnlyPartID:  row.OnlyPartID,

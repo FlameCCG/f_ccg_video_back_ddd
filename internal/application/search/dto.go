@@ -11,49 +11,17 @@ package search
 import (
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/search"
-)
-
-// 视频排序枚举（转发领域定义，供接口层构造入参时使用；值即对外契约）.
-const (
-	// VideoSortRelevance 0：按 ES _score 相关性排序.
-	VideoSortRelevance = domain.VideoSortRelevance
-	// VideoSortViews 1：按播放量排序.
-	VideoSortViews = domain.VideoSortViews
-	// VideoSortDanmu 2：按弹幕数排序.
-	VideoSortDanmu = domain.VideoSortDanmu
-	// VideoSortDuration 3：按时长排序.
-	VideoSortDuration = domain.VideoSortDuration
-)
-
-// 用户排序枚举（转发领域定义）.
-const (
-	// UserSortRelevance 0：按 ES _score 相关性排序.
-	UserSortRelevance = domain.UserSortRelevance
-	// UserSortFollowers 1：按粉丝数排序.
-	UserSortFollowers = domain.UserSortFollowers
-	// UserSortLevel 2：按等级排序.
-	UserSortLevel = domain.UserSortLevel
-	// UserSortCreatedAt 3：按注册时间排序.
-	UserSortCreatedAt = domain.UserSortCreatedAt
-)
-
-// 排序方向（转发领域定义）.
-const (
-	// SortOrderDesc 0：降序.
-	SortOrderDesc = domain.SortOrderDesc
-	// SortOrderAsc 1：升序.
-	SortOrderAsc = domain.SortOrderAsc
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 )
 
 // 联想候选项类型标签（转发领域定义，直接出现在响应 JSON 的 docType 字段）.
 const (
 	// DocTypeVideo 视频标题联想.
-	DocTypeVideo = domain.DocTypeVideo
+	DocTypeVideo = searchvo.DocTypeVideo
 	// DocTypeUser 用户名联想.
-	DocTypeUser = domain.DocTypeUser
+	DocTypeUser = searchvo.DocTypeUser
 	// DocTypeTag 标签联想.
-	DocTypeTag = domain.DocTypeTag
+	DocTypeTag = searchvo.DocTypeTag
 )
 
 // SearchOptions 搜索参数.

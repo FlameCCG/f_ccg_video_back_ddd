@@ -19,7 +19,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 
 	"go.uber.org/zap"
@@ -70,7 +70,7 @@ func (r *HTTPDASHVariantResolver) Variants(
 	ctx context.Context,
 	resourceID uint,
 	mpdURL string,
-) ([]domain.DASHVariant, error) {
+) ([]videovo.DASHVariant, error) {
 	variants, err := r.fetch(ctx, mpdURL)
 	if err != nil {
 		r.logger.Warn("parse DASH mpd variants failed",
@@ -85,7 +85,7 @@ func (r *HTTPDASHVariantResolver) Variants(
 	return variants, nil
 }
 
-func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]domain.DASHVariant, error) {
+func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]videovo.DASHVariant, error) {
 	mpdURL = strings.TrimSpace(mpdURL)
 	if mpdURL == "" {
 		return nil, errEmptyMPDURL
@@ -102,7 +102,7 @@ func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]d
 		if err != nil {
 			return nil, err
 		}
-		variants, err := domain.ParseMPDVariants(body)
+		variants, err := videovo.ParseMPDVariants(body)
 		if err != nil {
 			return nil, err
 		}
@@ -145,7 +145,7 @@ func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]d
 		return nil, errors.New("DASH manifest exceeds size limit")
 	}
 
-	variants, err := domain.ParseMPDVariants(body)
+	variants, err := videovo.ParseMPDVariants(body)
 	if err != nil {
 		return nil, err
 	}

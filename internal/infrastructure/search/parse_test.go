@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 
 	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
@@ -153,7 +153,7 @@ func TestParseSuggestHitsDeduplicatesCaseInsensitively(t *testing.T) {
 		},
 	}
 
-	items := parseSuggestHits(resp, domain.DocTypeVideo, "hell", 10)
+	items := parseSuggestHits(resp, searchvo.DocTypeVideo, "hell", 10)
 	if len(items) != 2 {
 		t.Fatalf("items = %+v, want 2 entries", items)
 	}
@@ -162,11 +162,11 @@ func TestParseSuggestHitsDeduplicatesCaseInsensitively(t *testing.T) {
 		t.Fatalf("first item = %+v", items[0])
 	}
 
-	if items[0].DocType != domain.DocTypeVideo {
+	if items[0].DocType != searchvo.DocTypeVideo {
 		t.Fatalf("docType = %q", items[0].DocType)
 	}
 
-	if got := parseSuggestHits(resp, domain.DocTypeVideo, "hell", 1); len(got) != 1 {
+	if got := parseSuggestHits(resp, searchvo.DocTypeVideo, "hell", 1); len(got) != 1 {
 		t.Fatalf("size clamp failed: %+v", got)
 	}
 }
@@ -183,7 +183,7 @@ func TestParseSuggestHitsForTagsPrefersLiteralMatches(t *testing.T) {
 		},
 	}
 
-	items := parseSuggestHits(resp, domain.DocTypeTag, "教程", 10)
+	items := parseSuggestHits(resp, searchvo.DocTypeTag, "教程", 10)
 	if len(items) != 2 || items[0].Value != "教程" || items[1].Value != "Go 教程" {
 		t.Fatalf("items = %+v", items)
 	}
@@ -198,8 +198,8 @@ func TestParseSuggestHitsForUsers(t *testing.T) {
 		},
 	}
 
-	items := parseSuggestHits(resp, domain.DocTypeUser, "ali", 10)
-	if len(items) != 1 || items[0].Value != "alice" || items[0].DocType != domain.DocTypeUser {
+	items := parseSuggestHits(resp, searchvo.DocTypeUser, "ali", 10)
+	if len(items) != 1 || items[0].Value != "alice" || items[0].DocType != searchvo.DocTypeUser {
 		t.Fatalf("items = %+v", items)
 	}
 }
@@ -213,7 +213,7 @@ func TestParseSuggestHitsReturnsEmptySliceForNoHits(t *testing.T) {
 		{},
 		{Hits: &elastic.SearchHits{}},
 	} {
-		items := parseSuggestHits(resp, domain.DocTypeVideo, "x", 10)
+		items := parseSuggestHits(resp, searchvo.DocTypeVideo, "x", 10)
 		if items == nil || len(items) != 0 {
 			t.Fatalf("items = %v, want empty slice", items)
 		}
@@ -239,33 +239,5 @@ func TestParseMentionSearchHitUserID(t *testing.T) {
 	hit := &elastic.SearchHit{Id: "users:abc", Fields: map[string]any{"id": float64(91)}}
 	if got := parseMentionSearchHitUserID(hit); got != 91 {
 		t.Fatalf("fields fallback = %d, want 91", got)
-	}
-}
-
-func TestIsPublishedVideoSuggestionRequiresPublishedStatus(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		raw  string
-		want bool
-	}{
-		{name: "published numeric status", raw: `{"status":1}`, want: true},
-		{name: "published string status", raw: `{"status":"1"}`, want: true},
-		{name: "private status", raw: `{"status":2}`, want: false},
-		{name: "review status", raw: `{"status":4}`, want: false},
-		{name: "missing status", raw: `{"title":"demo"}`, want: false},
-		{name: "empty source", raw: ``, want: false},
-		{name: "malformed json", raw: `{`, want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			if got := isPublishedVideoSuggestion(json.RawMessage(tt.raw)); got != tt.want {
-				t.Fatalf("expected %v, got %v", tt.want, got)
-			}
-		})
 	}
 }

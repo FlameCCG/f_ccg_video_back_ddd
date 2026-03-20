@@ -3,7 +3,9 @@ package video
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -15,7 +17,7 @@ type PartitionRepository struct {
 	db *gorm.DB
 }
 
-var _ domain.PartitionRepository = (*PartitionRepository)(nil)
+var _ videorepo.PartitionRepository = (*PartitionRepository)(nil)
 
 // NewPartitionRepository 构造分区仓储。
 func NewPartitionRepository(db *gorm.DB) *PartitionRepository {
@@ -23,9 +25,9 @@ func NewPartitionRepository(db *gorm.DB) *PartitionRepository {
 }
 
 // Create 创建分区并回填 ID。
-func (r *PartitionRepository) Create(ctx context.Context, p *domain.Partition) error {
+func (r *PartitionRepository) Create(ctx context.Context, p *videoentity.Partition) error {
 	if p == nil {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	row := toPOPartition(p)
@@ -41,9 +43,9 @@ func (r *PartitionRepository) Create(ctx context.Context, p *domain.Partition) e
 // Update 覆盖更新分区字段。
 //
 // 使用 Save 语义（Updates + 全字段），bool 字段的 false 也会写入。
-func (r *PartitionRepository) Update(ctx context.Context, p *domain.Partition) error {
+func (r *PartitionRepository) Update(ctx context.Context, p *videoentity.Partition) error {
 	if p == nil || p.ID == 0 {
-		return domain.ErrParamInvalid
+		return videoerrors.ErrParamInvalid
 	}
 
 	return gormx.DB(ctx, r.db).
@@ -66,7 +68,7 @@ func (r *PartitionRepository) Delete(ctx context.Context, id uint) (int64, error
 }
 
 // FindByID 读取分区；不存在时返回 ErrRecordNotFound。
-func (r *PartitionRepository) FindByID(ctx context.Context, id uint) (*domain.Partition, error) {
+func (r *PartitionRepository) FindByID(ctx context.Context, id uint) (*videoentity.Partition, error) {
 	var row po.VideoPartition
 	if err := gormx.DB(ctx, r.db).Take(&row, "id = ?", id).Error; err != nil {
 		return nil, mapNotFound(err)
@@ -76,7 +78,7 @@ func (r *PartitionRepository) FindByID(ctx context.Context, id uint) (*domain.Pa
 }
 
 // List 分页列出分区。
-func (r *PartitionRepository) List(ctx context.Context, page, pageSize int) ([]domain.Partition, int64, error) {
+func (r *PartitionRepository) List(ctx context.Context, page, pageSize int) ([]videoentity.Partition, int64, error) {
 	query := gormx.DB(ctx, r.db).Model(&po.VideoPartition{})
 
 	var total int64
@@ -85,7 +87,7 @@ func (r *PartitionRepository) List(ctx context.Context, page, pageSize int) ([]d
 	}
 
 	if total == 0 {
-		return []domain.Partition{}, 0, nil
+		return []videoentity.Partition{}, 0, nil
 	}
 
 	var rows []po.VideoPartition
@@ -101,7 +103,7 @@ func (r *PartitionRepository) List(ctx context.Context, page, pageSize int) ([]d
 }
 
 // ListSubmittable 列出启用且允许投稿的分区。
-func (r *PartitionRepository) ListSubmittable(ctx context.Context) ([]domain.Partition, error) {
+func (r *PartitionRepository) ListSubmittable(ctx context.Context) ([]videoentity.Partition, error) {
 	var rows []po.VideoPartition
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.VideoPartition{}).

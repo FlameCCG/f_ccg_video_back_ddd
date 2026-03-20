@@ -5,13 +5,17 @@ import (
 	"errors"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videoservice "f_ccg_video_back_ddd/internal/domain/video/service"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 )
 
 // FolderService 收藏夹用例服务。
 type FolderService struct {
 	txm      tx.Manager
-	folders  domain.FolderRepository
+	folders  videorepo.FolderRepository
 	query    FolderQuery
 	cache    FolderListCache
 	stats    *StatsService
@@ -22,7 +26,7 @@ type FolderService struct {
 // NewFolderService 构造收藏夹用例服务。
 func NewFolderService(
 	txm tx.Manager,
-	folders domain.FolderRepository,
+	folders videorepo.FolderRepository,
 	query FolderQuery,
 	cache FolderListCache,
 	stats *StatsService,
@@ -44,9 +48,9 @@ func NewFolderService(
 //
 // 该方法同时是 video 上下文对外暴露的能力（identity 登录成功后会调用，
 // 保证老用户也有默认收藏夹）。
-func (s *FolderService) EnsureDefaultFolder(ctx context.Context, userID uint) (*domain.FavoriteFolder, error) {
+func (s *FolderService) EnsureDefaultFolder(ctx context.Context, userID uint) (*videoentity.FavoriteFolder, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
 	folder, err := s.folders.FindDefault(ctx, userID)
@@ -58,9 +62,9 @@ func (s *FolderService) EnsureDefaultFolder(ctx context.Context, userID uint) (*
 		return folder, nil
 	}
 
-	created := &domain.FavoriteFolder{
+	created := &videoentity.FavoriteFolder{
 		UserID:    userID,
-		Name:      domain.DefaultFolderName,
+		Name:      videoentity.DefaultFolderName,
 		IsDefault: true,
 	}
 	if createErr := s.folders.Create(ctx, created); createErr != nil {
@@ -73,16 +77,16 @@ func (s *FolderService) EnsureDefaultFolder(ctx context.Context, userID uint) (*
 }
 
 // CreateFolder 创建收藏夹。
-func (s *FolderService) CreateFolder(ctx context.Context, userID uint, name string) (*domain.FavoriteFolder, error) {
+func (s *FolderService) CreateFolder(ctx context.Context, userID uint, name string) (*videoentity.FavoriteFolder, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
-	if err := domain.ValidateFolderName(name); err != nil {
+	if err := videoentity.ValidateFolderName(name); err != nil {
 		return nil, err
 	}
 
-	folder := &domain.FavoriteFolder{UserID: userID, Name: name}
+	folder := &videoentity.FavoriteFolder{UserID: userID, Name: name}
 	if err := s.folders.Create(ctx, folder); err != nil {
 		return nil, err
 	}
@@ -93,15 +97,15 @@ func (s *FolderService) CreateFolder(ctx context.Context, userID uint, name stri
 }
 
 // UpdateFolder 更新收藏夹信息（目前仅名称）。
-func (s *FolderService) UpdateFolder(ctx context.Context, userID, folderID uint, name string) (*domain.FavoriteFolder, error) {
+func (s *FolderService) UpdateFolder(ctx context.Context, userID, folderID uint, name string) (*videoentity.FavoriteFolder, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
 	folder, err := s.folders.FindByIDAndUser(ctx, userID, folderID)
 	if err != nil {
-		if errors.Is(err, domain.ErrRecordNotFound) {
-			return nil, domain.ErrFolderNotFoundOrForbidden
+		if errors.Is(err, videoerrors.ErrRecordNotFound) {
+			return nil, videoerrors.ErrFolderNotFoundOrForbidden
 		}
 
 		return nil, err
@@ -123,7 +127,7 @@ func (s *FolderService) UpdateFolder(ctx context.Context, userID, folderID uint,
 // DeleteFolder 删除收藏夹并同步收藏计数副作用。
 func (s *FolderService) DeleteFolder(ctx context.Context, userID, folderID uint) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return videoerrors.ErrUserNotLogin
 	}
 
 	folder, err := s.folders.FindByIDAndUser(ctx, userID, folderID)
@@ -157,9 +161,9 @@ func (s *FolderService) DeleteFolder(ctx context.Context, userID, folderID uint)
 }
 
 // GetFolder 读取用户名下的收藏夹。
-func (s *FolderService) GetFolder(ctx context.Context, userID, folderID uint) (*domain.FavoriteFolder, error) {
+func (s *FolderService) GetFolder(ctx context.Context, userID, folderID uint) (*videoentity.FavoriteFolder, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
 	return s.folders.FindByIDAndUser(ctx, userID, folderID)
@@ -168,7 +172,7 @@ func (s *FolderService) GetFolder(ctx context.Context, userID, folderID uint) (*
 // ListFolders 获取用户收藏夹列表及视频数量。
 func (s *FolderService) ListFolders(ctx context.Context, userID, videoID uint) ([]FolderWithCount, error) {
 	if userID == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, videoerrors.ErrUserNotLogin
 	}
 
 	if cached, ok := s.cache.Load(userID, videoID); ok {
@@ -192,7 +196,7 @@ func (s *FolderService) ListFolderVideos(
 	page, pageSize, sort int,
 ) ([]FolderVideoItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, domain.ErrUserNotLogin
+		return nil, 0, videoerrors.ErrUserNotLogin
 	}
 
 	if page <= 0 {
@@ -211,11 +215,11 @@ func (s *FolderService) ListFolderVideos(
 		return nil, 0, err
 	}
 
-	return s.query.ListVideos(ctx, folderID, page, pageSize, domain.NormalizeFolderVideoSort(sort))
+	return s.query.ListVideos(ctx, folderID, page, pageSize, videoentity.NormalizeFolderVideoSort(sort))
 }
 
 // resolveFolder 解析目标收藏夹：folderID 为 0 时用默认夹。
-func (s *FolderService) resolveFolder(ctx context.Context, userID, folderID uint) (*domain.FavoriteFolder, error) {
+func (s *FolderService) resolveFolder(ctx context.Context, userID, folderID uint) (*videoentity.FavoriteFolder, error) {
 	if folderID == 0 {
 		return s.EnsureDefaultFolder(ctx, userID)
 	}
@@ -228,7 +232,7 @@ func (s *FolderService) syncFavoriteSideEffectsAfterFolderDelete(ctx context.Con
 	s.refreshFavoriteStatsCache(ctx, videoIDs)
 
 	for _, videoID := range videoIDs {
-		s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreFavoriteWeight, -1)
+		s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreFavoriteWeight, -1)
 
 		if authorID, err := s.authors.AuthorID(ctx, videoID); err == nil {
 			_ = s.creators.IncrFavorites(ctx, authorID, -1)
@@ -246,7 +250,7 @@ func (s *FolderService) refreshFavoriteStatsCache(ctx context.Context, videoIDs 
 	ctx = orTODO(ctx)
 
 	for _, videoID := range videoIDs {
-		if _, err := s.stats.ApplyDeltaIfCached(ctx, videoID, domain.StatsDelta{FavoriteCount: -1}); err != nil {
+		if _, err := s.stats.ApplyDeltaIfCached(ctx, videoID, videovo.StatsDelta{FavoriteCount: -1}); err != nil {
 			// 失败不 wipe；日志可见即可
 			continue
 		}

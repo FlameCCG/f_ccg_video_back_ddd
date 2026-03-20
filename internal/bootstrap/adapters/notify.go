@@ -14,7 +14,7 @@ import (
 	dynamicapp "f_ccg_video_back_ddd/internal/application/dynamic"
 	notificationapp "f_ccg_video_back_ddd/internal/application/notification"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
-	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
+	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -59,9 +59,9 @@ func (a *Notifier) CreateNotices(ctx context.Context, notices []commentapp.Notic
 		return nil
 	}
 
-	rows := make([]notificationdomain.Notification, 0, len(notices))
+	rows := make([]notificationentity.Notification, 0, len(notices))
 	for _, n := range notices {
-		rows = append(rows, notificationdomain.Notification{
+		rows = append(rows, notificationentity.Notification{
 			Type:             n.Type,
 			ReceiverID:       n.ReceiverID,
 			ActionUserID:     n.ActionUserID,
@@ -92,7 +92,7 @@ func (a *Notifier) NotifyDynamicLike(
 	actionUserID uint,
 	actionUserName, actionUserAvatar, title, content string,
 ) error {
-	return a.notifications.Create(ctx, &notificationdomain.Notification{
+	return a.notifications.Create(ctx, &notificationentity.Notification{
 		Type:             enum.NotificationLikeDynamicType,
 		ReceiverID:       int(receiverID),
 		DynamicID:        dynamicID,
@@ -106,7 +106,7 @@ func (a *Notifier) NotifyDynamicLike(
 
 // NotifyVideoLike 实现 video.VideoNotifier：视频被点赞通知。
 func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.VideoNotice) {
-	_ = a.notifications.Create(ctx, &notificationdomain.Notification{
+	_ = a.notifications.Create(ctx, &notificationentity.Notification{
 		Type:             enum.NotificationVideoLikeType,
 		ReceiverID:       int(notice.ReceiverID),
 		ActionUserID:     notice.ActionUserID,
@@ -125,9 +125,9 @@ func (a *Notifier) NotifySystemBatch(ctx context.Context, notices []videoapp.Sys
 		return
 	}
 
-	rows := make([]notificationdomain.Notification, 0, len(notices))
+	rows := make([]notificationentity.Notification, 0, len(notices))
 	for _, n := range notices {
-		rows = append(rows, notificationdomain.Notification{
+		rows = append(rows, notificationentity.Notification{
 			Type:             enum.NotificationSystemType,
 			ReceiverID:       int(n.ReceiverID),
 			ActionUserID:     n.ActionUserID,

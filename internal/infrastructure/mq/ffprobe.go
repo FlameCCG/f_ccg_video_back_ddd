@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"go.uber.org/zap"
 )
@@ -43,13 +43,8 @@ type ffprobeResult struct {
 	} `json:"format"`
 }
 
-// ProbeVideoMeta 探测本地视频文件元数据。
-func ProbeVideoMeta(ctx context.Context, p string, logger *zap.Logger) (media.VideoMeta, error) {
-	return ProbeVideo(ctx, p, logger)
-}
-
 // ProbeVideo 调用 ffprobe 解析视频元数据（分辨率、码率、编码、容器 brand、时长等）。
-func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoMeta, error) {
+func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (mediavo.VideoMeta, error) {
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "error",
 		"-show_streams",
@@ -60,18 +55,18 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoM
 
 	out, err := cmd.Output()
 	if err != nil {
-		return media.VideoMeta{}, fmt.Errorf("ffprobe failed: %w", err)
+		return mediavo.VideoMeta{}, fmt.Errorf("ffprobe failed: %w", err)
 	}
 
 	var result ffprobeResult
 	if err := json.Unmarshal(out, &result); err != nil {
 		logger.Error("unmarshal ffprobe json failed", zap.String("json", string(out)))
 
-		return media.VideoMeta{}, err
+		return mediavo.VideoMeta{}, err
 	}
 
 	if len(result.Streams) == 0 {
-		return media.VideoMeta{}, errors.New("no video stream found")
+		return mediavo.VideoMeta{}, errors.New("no video stream found")
 	}
 
 	var videoStream, audioStream *ffprobeStream
@@ -90,7 +85,7 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoM
 	}
 
 	if videoStream == nil {
-		return media.VideoMeta{}, errors.New("no video stream found")
+		return mediavo.VideoMeta{}, errors.New("no video stream found")
 	}
 
 	format := result.Format
@@ -105,7 +100,7 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoM
 		}
 	}
 
-	meta := media.VideoMeta{
+	meta := mediavo.VideoMeta{
 		Height:           videoStream.Height,
 		Width:            videoStream.Width,
 		Format:           format.FormatName,

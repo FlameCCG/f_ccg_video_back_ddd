@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
+	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/olivere/elastic/v7"
@@ -46,7 +46,7 @@ func (i *UserIndexer) BulkIndexUsers(ctx context.Context, docs []app.UserSearchD
 
 		bulk = bulk.Add(
 			elastic.NewBulkIndexRequest().
-				Id(domain.UserDocumentID(doc.ID)).
+				Id(searchvo.UserDocumentID(doc.ID)).
 				Doc(buildUserSearchPayload(doc)),
 		)
 	}
@@ -97,7 +97,7 @@ func buildUserSearchPayload(doc app.UserSearchDocument) map[string]any {
 
 // buildCompletionPayload 生成 ES completion 字段的输入格式 {"input": [...]}；全空时返回 nil。
 func buildCompletionPayload(values []string) map[string]any {
-	inputs := domain.TrimNonEmpty(values)
+	inputs := searchvo.TrimNonEmpty(values)
 	if len(inputs) == 0 {
 		return nil
 	}

@@ -3,26 +3,27 @@ package identity
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/coinutil"
 )
 
 // CoinRecordService 硬币流水用例服务。
 type CoinRecordService struct {
-	records domain.CoinRecordRepository
+	records identityrepo.CoinRecordRepository
 	query   CoinRecordQuery
 }
 
 // NewCoinRecordService 构造硬币流水服务。
-func NewCoinRecordService(records domain.CoinRecordRepository, query CoinRecordQuery) *CoinRecordService {
+func NewCoinRecordService(records identityrepo.CoinRecordRepository, query CoinRecordQuery) *CoinRecordService {
 	return &CoinRecordService{records: records, query: query}
 }
 
 // Record 写入一条硬币流水（不改余额，仅记录）。
 func (s *CoinRecordService) Record(ctx context.Context, userID uint, delta float64, reason string) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return identityerrors.ErrUserNotLogin
 	}
 
 	delta = coinutil.Round(delta)
@@ -44,7 +45,7 @@ func (s *CoinRecordService) Record(ctx context.Context, userID uint, delta float
 // List 近 7 天硬币流水分页列表。
 func (s *CoinRecordService) List(ctx context.Context, userID uint, page, pageSize int) ([]CoinRecordItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, domain.ErrUserNotLogin
+		return nil, 0, identityerrors.ErrUserNotLogin
 	}
 
 	if ctx == nil {
@@ -67,7 +68,7 @@ func NewExpRecordService(query ExpRecordQuery) *ExpRecordService {
 // List 近 7 天经验流水分页列表。
 func (s *ExpRecordService) List(ctx context.Context, userID uint, page, pageSize int) ([]ExpRecordItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, domain.ErrUserNotLogin
+		return nil, 0, identityerrors.ErrUserNotLogin
 	}
 
 	if ctx == nil {
@@ -80,16 +81,16 @@ func (s *ExpRecordService) List(ctx context.Context, userID uint, page, pageSize
 // LoginRecordService 登录记录用例服务。
 type LoginRecordService struct {
 	txm     tx.Manager
-	users   domain.UserRepository
-	records domain.LoginRecordRepository
+	users   identityrepo.UserRepository
+	records identityrepo.LoginRecordRepository
 	query   LoginRecordQuery
 }
 
 // NewLoginRecordService 构造登录记录服务。
 func NewLoginRecordService(
 	txm tx.Manager,
-	users domain.UserRepository,
-	records domain.LoginRecordRepository,
+	users identityrepo.UserRepository,
+	records identityrepo.LoginRecordRepository,
 	query LoginRecordQuery,
 ) *LoginRecordService {
 	return &LoginRecordService{txm: txm, users: users, records: records, query: query}
@@ -98,11 +99,11 @@ func NewLoginRecordService(
 // Record 更新用户最后登录信息并写入登录记录（同一事务）。
 func (s *LoginRecordService) Record(ctx context.Context, userID uint, ip, addr, userAgent, loginType string) error {
 	if userID == 0 {
-		return domain.ErrUserNotLogin
+		return identityerrors.ErrUserNotLogin
 	}
 
 	if ip == "" {
-		return domain.ErrIPRequired
+		return identityerrors.ErrIPRequired
 	}
 
 	if ctx == nil {
@@ -121,7 +122,7 @@ func (s *LoginRecordService) Record(ctx context.Context, userID uint, ip, addr, 
 // List 近 7 天登录记录分页列表。
 func (s *LoginRecordService) List(ctx context.Context, userID uint, page, pageSize int) ([]LoginRecordItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, domain.ErrUserNotLogin
+		return nil, 0, identityerrors.ErrUserNotLogin
 	}
 
 	if ctx == nil {

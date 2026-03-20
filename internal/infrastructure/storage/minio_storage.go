@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/config/site"
-	media "f_ccg_video_back_ddd/internal/domain/media"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/uploadscope"
+
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
-
 	"go.uber.org/zap"
 )
 
@@ -39,7 +39,7 @@ type MinIOStorage struct {
 }
 
 // 编译期断言：满足领域侧存储驱动端口。
-var _ media.StorageDriver = (*MinIOStorage)(nil)
+var _ mediaport.StorageDriver = (*MinIOStorage)(nil)
 
 // NewMinIOStorage 根据配置创建 MinIOStorage 实例。
 //
@@ -91,7 +91,7 @@ func (m *MinIOStorage) SaveChunk(
 	ctx context.Context,
 	fileHash, index string,
 	size int64,
-	reader media.ChunkReader,
+	reader mediaport.ChunkReader,
 ) error {
 	fileHash = uploadscope.ChunkNamespace(ctx, fileHash)
 	if err := ValidateUploadID(fileHash); err != nil {

@@ -3,7 +3,7 @@ package platform
 import (
 	"context"
 
-	domain "f_ccg_video_back_ddd/internal/domain/platform"
+	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
 
 	"go.uber.org/zap"
 )
@@ -11,13 +11,13 @@ import (
 // HotRankDecayService 热门榜时间衰减用例。
 type HotRankDecayService struct {
 	store  HotRankStore
-	policy domain.HotRankDecayPolicy
+	policy platformservice.HotRankDecayPolicy
 	logger *zap.Logger
 }
 
 // NewHotRankDecayService 构造热门榜衰减用例服务。
 func NewHotRankDecayService(store HotRankStore, logger *zap.Logger) *HotRankDecayService {
-	return &HotRankDecayService{store: store, policy: domain.NewHotRankDecayPolicy(), logger: logger}
+	return &HotRankDecayService{store: store, policy: platformservice.NewHotRankDecayPolicy(), logger: logger}
 }
 
 // Run 对热门榜单做一轮时间衰减，避免老视频长期占榜。

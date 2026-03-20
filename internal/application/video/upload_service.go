@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
+	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/uploadscope"
 
@@ -289,7 +289,7 @@ func (s *UploadService) CompleteUpload(
 		return "", err
 	}
 
-	if err := domain.ValidateCompleteUpload(fileName, totalChunks); err != nil {
+	if err := videovo.ValidateCompleteUpload(fileName, totalChunks); err != nil {
 		return "", err
 	}
 
@@ -479,7 +479,7 @@ func (s *UploadService) ensureChunkIntegrity(
 		return err
 	}
 
-	return domain.ValidateChunkSet(chunks, totalChunks, s.storage.ValidateChunkIndex)
+	return videovo.ValidateChunkSet(chunks, totalChunks, s.storage.ValidateChunkIndex)
 }
 
 // ---------------------------------------------------------------------------

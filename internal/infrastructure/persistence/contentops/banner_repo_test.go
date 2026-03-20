@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/contentops"
+	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -62,7 +62,7 @@ func TestBannerRepositoryCreateAndRead(t *testing.T) {
 	repo, _, _ := newBannerFixture(t)
 	ctx := context.Background()
 
-	banner := &domain.Banner{
+	banner := &contentopsentity.Banner{
 		Cover:       "https://example.com/a.png",
 		Href:        "https://example.com",
 		Show:        true,
@@ -162,7 +162,7 @@ func TestBannerRepositoryListAdminPaging(t *testing.T) {
 		seedBanner(t, db, &row, true)
 	}
 
-	query := domain.BannerAdminQuery{Page: 1, PageSize: 2, Type: enum.BannerTypeHome}
+	query := contentopsentity.BannerAdminQuery{Page: 1, PageSize: 2, Type: enum.BannerTypeHome}
 	query.Normalize()
 
 	list, total, err := repo.ListAdmin(ctx, query)
@@ -179,7 +179,7 @@ func TestBannerRepositoryListAdminPaging(t *testing.T) {
 	}
 
 	partitionID := uint(1)
-	filtered := domain.BannerAdminQuery{PartitionID: &partitionID}
+	filtered := contentopsentity.BannerAdminQuery{PartitionID: &partitionID}
 	filtered.Normalize()
 
 	list, total, err = repo.ListAdmin(ctx, filtered)
@@ -192,7 +192,7 @@ func TestBannerRepositoryListAdminPaging(t *testing.T) {
 	}
 
 	missingPartition := uint(99)
-	none := domain.BannerAdminQuery{PartitionID: &missingPartition}
+	none := contentopsentity.BannerAdminQuery{PartitionID: &missingPartition}
 	none.Normalize()
 
 	list, total, err = repo.ListAdmin(ctx, none)
@@ -247,7 +247,7 @@ func TestBannerRepositoryUpdateAndDelete(t *testing.T) {
 	repo, _, _ := newBannerFixture(t)
 	ctx := context.Background()
 
-	banner := &domain.Banner{Cover: "old", Show: true, Type: enum.BannerTypeHome}
+	banner := &contentopsentity.Banner{Cover: "old", Show: true, Type: enum.BannerTypeHome}
 	if err := repo.Create(ctx, banner); err != nil {
 		t.Fatalf("create banner failed: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestBannerRepositoryUpdateAndDelete(t *testing.T) {
 	bannerType := enum.BannerTypeTop
 	partitionID := uint(0)
 
-	if err := repo.Update(ctx, banner.ID, domain.BannerChanges{
+	if err := repo.Update(ctx, banner.ID, contentopsentity.BannerChanges{
 		Cover:       &cover,
 		Show:        &show,
 		Type:        &bannerType,
@@ -285,7 +285,7 @@ func TestBannerRepositoryUpdateAndDelete(t *testing.T) {
 		t.Fatalf("hidden banner should not be visible, got %+v", visible)
 	}
 
-	if err := repo.Update(ctx, banner.ID, domain.BannerChanges{}); err == nil {
+	if err := repo.Update(ctx, banner.ID, contentopsentity.BannerChanges{}); err == nil {
 		t.Fatal("empty changes should be rejected")
 	}
 

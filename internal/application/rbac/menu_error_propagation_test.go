@@ -5,7 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
 
 	"go.uber.org/zap"
 )
@@ -32,21 +34,21 @@ func TestMenuMutationsPreserveUnknownTransactionErrorForHTTPBoundary(t *testing.
 	}{
 		{
 			name:     "create",
-			fallback: domain.ErrCreateFailed,
+			fallback: rbacerrors.ErrCreateFailed,
 			call: func() error {
 				return service.Create(context.Background(), CreateMenuParams{Title: "created"})
 			},
 		},
 		{
 			name:     "update",
-			fallback: domain.ErrUpdateFailed,
+			fallback: rbacerrors.ErrUpdateFailed,
 			call: func() error {
 				return service.Update(context.Background(), UpdateMenuParams{ID: 1, Title: &title})
 			},
 		},
 		{
 			name:     "move",
-			fallback: domain.ErrSortFailed,
+			fallback: rbacerrors.ErrSortFailed,
 			call: func() error {
 				return service.Move(context.Background(), 1, 2, MenuMoveBefore)
 			},
@@ -86,8 +88,8 @@ func TestMenuGenerationPreservesInfrastructureCauseAndPublicFallback(t *testing.
 	if !errors.Is(err, cause) {
 		t.Fatalf("error = %v, want underlying cause %v", err, cause)
 	}
-	if !errors.Is(err, domain.ErrReadMenuDataFailed) {
-		t.Fatalf("error = %v, want public fallback %v", err, domain.ErrReadMenuDataFailed)
+	if !errors.Is(err, rbacerrors.ErrReadMenuDataFailed) {
+		t.Fatalf("error = %v, want public fallback %v", err, rbacerrors.ErrReadMenuDataFailed)
 	}
 }
 
@@ -100,10 +102,10 @@ func (m *failingMenuTxManager) Do(context.Context, func(context.Context) error) 
 }
 
 type failingGenerationMenuRepository struct {
-	domain.MenuRepository
+	rbacrepo.MenuRepository
 	listErr error
 }
 
-func (r *failingGenerationMenuRepository) ListForGeneration(context.Context) ([]*domain.Menu, error) {
+func (r *failingGenerationMenuRepository) ListForGeneration(context.Context) ([]*rbacentity.Menu, error) {
 	return nil, r.listErr
 }

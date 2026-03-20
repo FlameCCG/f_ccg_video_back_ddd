@@ -14,7 +14,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	domain "f_ccg_video_back_ddd/internal/domain/contentops"
+	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -56,7 +56,7 @@ func visibleBannerCacheKey(bannerType enum.BannerType, partitionID *uint) string
 }
 
 // LoadVisible 读取可见轮播图缓存；未命中、Redis 未初始化或反序列化失败返回 (nil, false)。
-func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint) ([]domain.Banner, bool) {
+func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint) ([]contentopsentity.Banner, bool) {
 	if c.redis == nil {
 		return nil, false
 	}
@@ -75,7 +75,7 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 		return nil, false
 	}
 
-	var items []domain.Banner
+	var items []contentopsentity.Banner
 	if err := json.Unmarshal(raw, &items); err != nil {
 		c.logger.Warn("unmarshal visible banner cache failed", zap.String("key", key), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
@@ -84,14 +84,14 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 	}
 
 	// 返回副本，避免调用方修改影响后续逻辑
-	copied := make([]domain.Banner, len(items))
+	copied := make([]contentopsentity.Banner, len(items))
 	copy(copied, items)
 
 	return copied, true
 }
 
 // StoreVisible 回填可见轮播图缓存（失败仅告警）。
-func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint, items []domain.Banner) {
+func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint, items []contentopsentity.Banner) {
 	if c.redis == nil {
 		return
 	}

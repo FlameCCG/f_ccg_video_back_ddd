@@ -2,12 +2,13 @@ package identity
 
 import (
 	"context"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"strconv"
 	"time"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config"
+	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 )
 
@@ -54,7 +55,7 @@ func (s *TokenService) jwtConf() *config.Jwt {
 
 // IssueForUser persists the refresh digest; a subsequent login replaces the prior
 // refresh session while existing access tokens remain bounded by credential state.
-func (s *TokenService) IssueForUser(ctx context.Context, user *domain.User, users domain.UserAccountRepository) (*jwts.JwtToken, error) {
+func (s *TokenService) IssueForUser(ctx context.Context, user *identityentity.User, users identityrepo.UserAccountRepository) (*jwts.JwtToken, error) {
 	pair, err := s.issueCredentialPair(user)
 	if err != nil {
 		return nil, err
@@ -68,14 +69,14 @@ func (s *TokenService) IssueForUser(ctx context.Context, user *domain.User, user
 	}
 	return pair, nil
 }
-func (s *TokenService) issueCredentialPair(user *domain.User) (*jwts.JwtToken, error) {
+func (s *TokenService) issueCredentialPair(user *identityentity.User) (*jwts.JwtToken, error) {
 	conf := s.jwtConf()
 	if conf == nil {
 		return nil, ErrRefreshTokenInvalid
 	}
 	return jwts.CreateJwtTokenWithPassword(strconv.FormatUint(uint64(user.ID), 10), user.Username, user.Password, user.MustChangePassword, conf.AccessExp*24*time.Hour, conf.AccessSecret, conf.RefreshExp*24*time.Hour, conf.RefreshSecret)
 }
-func (s *TokenService) Rotate(ctx context.Context, user *domain.User, oldToken string, users domain.UserAccountRepository) (*jwts.JwtToken, error) {
+func (s *TokenService) Rotate(ctx context.Context, user *identityentity.User, oldToken string, users identityrepo.UserAccountRepository) (*jwts.JwtToken, error) {
 	conf := s.jwtConf()
 	if conf == nil {
 		return nil, ErrRefreshTokenInvalid

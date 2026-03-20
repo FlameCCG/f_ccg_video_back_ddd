@@ -7,7 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	domain "f_ccg_video_back_ddd/internal/domain/notification"
+	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
+	notificationrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -23,7 +24,7 @@ const (
 
 // Service 编排通知用例，请求合并由服务实例内的 singleflight.Group 协调，计数缓存通过显式端口失效。
 type Service struct {
-	repo     domain.Repository
+	repo     notificationrepo.Repository
 	cache    CountCache
 	chat     ChatUnreadCounter
 	actors   ActorProfileProvider
@@ -44,7 +45,7 @@ var (
 
 // NewService 构造通知用例服务。
 func NewService(
-	repo domain.Repository,
+	repo notificationrepo.Repository,
 	cache CountCache,
 	chat ChatUnreadCounter,
 	actors ActorProfileProvider,
@@ -55,7 +56,7 @@ func NewService(
 }
 
 // Create 写入通知并失效角标缓存。
-func (s *Service) Create(ctx context.Context, notice *domain.Notification) error {
+func (s *Service) Create(ctx context.Context, notice *notificationentity.Notification) error {
 	if err := s.repo.Create(ctx, notice); err != nil {
 		return err
 	}
@@ -74,7 +75,7 @@ func (s *Service) NotifyBanStatus(
 	actionUserID uint,
 	actionUserName, actionUserAvatar, title, content string,
 ) {
-	notice := &domain.Notification{
+	notice := &notificationentity.Notification{
 		Type:             enum.NotificationSystemType,
 		ReceiverID:       int(receiverID),
 		ActionUserID:     actionUserID,
@@ -90,7 +91,7 @@ func (s *Service) NotifyBanStatus(
 }
 
 // CreateBatch 批量写入通知，并逐个失效对应接收者的角标缓存。
-func (s *Service) CreateBatch(ctx context.Context, notices []domain.Notification) error {
+func (s *Service) CreateBatch(ctx context.Context, notices []notificationentity.Notification) error {
 	if len(notices) == 0 {
 		return nil
 	}
@@ -117,7 +118,7 @@ func (s *Service) List(
 ) ([]NotificationItem, int64, error) {
 	page, pageSize = normalizePaging(page, pageSize)
 
-	types := domain.TypesByCategory(category)
+	types := notificationentity.TypesByCategory(category)
 
 	list, total, err := s.repo.ListForReceiver(ctx, receiverID, types, page, pageSize)
 	if err != nil {
@@ -191,7 +192,7 @@ func (s *Service) Delete(ctx context.Context, receiverID int, ids []uint) error 
 	}
 
 	if blocked > 0 {
-		return domain.ErrSystemNotificationNotDeletable
+		return notificationentity.ErrSystemNotificationNotDeletable
 	}
 
 	deletableIDs, err := s.repo.DeletableIDs(ctx, receiverID, ids)
@@ -233,19 +234,19 @@ func (s *Service) AdminDelete(ctx context.Context, ids []uint) error {
 }
 
 // AdminList 管理员查看系统通知。
-func (s *Service) AdminList(ctx context.Context, page, pageSize int) ([]domain.Notification, int64, error) {
+func (s *Service) AdminList(ctx context.Context, page, pageSize int) ([]notificationentity.Notification, int64, error) {
 	page, pageSize = normalizePaging(page, pageSize)
 
 	return s.repo.ListSystem(ctx, page, pageSize)
 }
 
 // GetAdmin 按 ID 读取通知；不存在时返回 (nil, nil)。
-func (s *Service) GetAdmin(ctx context.Context, id uint) (*domain.Notification, error) {
+func (s *Service) GetAdmin(ctx context.Context, id uint) (*notificationentity.Notification, error) {
 	return s.repo.FindByID(ctx, id)
 }
 
 // AdminUpdate 管理员更新系统通知。
-func (s *Service) AdminUpdate(ctx context.Context, notice *domain.Notification) error {
+func (s *Service) AdminUpdate(ctx context.Context, notice *notificationentity.Notification) error {
 	previousReceiverID, err := s.repo.UpdateSystemContent(ctx, notice)
 	if err != nil {
 		return err
@@ -287,14 +288,14 @@ func (s *Service) invalidateCount(receiverID int) {
 	}
 
 	if !s.cache.Available() {
-		if receiverID != domain.BroadcastReceiverID {
+		if receiverID != notificationentity.BroadcastReceiverID {
 			s.countSFG.Forget(countSFKey(receiverID))
 		}
 
 		return
 	}
 
-	if receiverID == domain.BroadcastReceiverID {
+	if receiverID == notificationentity.BroadcastReceiverID {
 		s.cache.InvalidateAll()
 
 		return
@@ -412,7 +413,7 @@ func countSFKey(receiverID int) string {
 	return strconv.Itoa(receiverID)
 }
 
-func notificationIDs(list []domain.Notification) []uint {
+func notificationIDs(list []notificationentity.Notification) []uint {
 	ids := make([]uint, 0, len(list))
 
 	for _, n := range list {
@@ -445,7 +446,7 @@ func (s *Service) CreateSystemNotice(ctx context.Context, cmd CreateSystemNotice
 		actionName, actionAvatar = s.actors.Profile(ctx, cmd.ActorID)
 	}
 
-	notice := &domain.Notification{
+	notice := &notificationentity.Notification{
 		// 管理员发布的系统消息固定为系统类型
 		Type:             enum.NotificationSystemType,
 		ReceiverID:       cmd.ReceiverID,
@@ -475,14 +476,10 @@ func (s *Service) UpdateSystemNotice(ctx context.Context, cmd UpdateSystemNotice
 		return ErrNoticeNotFound
 	}
 
-	old.Title = cmd.Title
-	old.Content = cmd.Content
-	old.ReceiverID = cmd.ReceiverID
-	old.VideoID = cmd.VideoID
-	old.VideoTitle = cmd.VideoTitle
-	old.Link = cmd.Link
-	// 强制为系统通知
-	old.Type = enum.NotificationSystemType
+	old.ReviseAsSystem(notificationentity.SystemContent{
+		Title: cmd.Title, Content: cmd.Content, ReceiverID: cmd.ReceiverID,
+		VideoID: cmd.VideoID, VideoTitle: cmd.VideoTitle, Link: cmd.Link,
+	})
 
 	if err := s.AdminUpdate(ctx, old); err != nil {
 		return fmt.Errorf("%w: %w", ErrNoticeUpdateFailed, err)

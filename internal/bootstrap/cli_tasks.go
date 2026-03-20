@@ -3,8 +3,8 @@ package bootstrap
 import (
 	provisioningapp "f_ccg_video_back_ddd/internal/application/provisioning"
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
-	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
+	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
 	aihandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/ai"
@@ -26,14 +26,14 @@ import (
 
 // BannerStorageResolverAdapter 把 media 的完整存储解析端口窄化为 Banner CLI 所需的 SaveFile 端口。
 type BannerStorageResolverAdapter struct {
-	resolver mediadomain.StorageResolver
+	resolver mediaport.StorageResolver
 }
 
 var _ cli.BannerStorageResolver = (*BannerStorageResolverAdapter)(nil)
 
 // NewBannerStorageResolverAdapter 构造 Banner 存储解析适配器。
 func NewBannerStorageResolverAdapter(
-	resolver mediadomain.StorageResolver,
+	resolver mediaport.StorageResolver,
 ) *BannerStorageResolverAdapter {
 	return &BannerStorageResolverAdapter{resolver: resolver}
 }
@@ -92,12 +92,12 @@ func NewRouterRouteLister(httpRouter *router.Router) *RouterRouteLister {
 }
 
 // Routes 构建与服务启动相同的 Router，并把 Gin 路由转换为领域值。
-func (l *RouterRouteLister) Routes() []rbacdomain.RouteInfo {
+func (l *RouterRouteLister) Routes() []rbacentity.RouteInfo {
 	registered := l.router.BuildEngine().Routes()
-	routes := make([]rbacdomain.RouteInfo, 0, len(registered))
+	routes := make([]rbacentity.RouteInfo, 0, len(registered))
 
 	for _, route := range registered {
-		routes = append(routes, rbacdomain.RouteInfo{
+		routes = append(routes, rbacentity.RouteInfo{
 			Method: route.Method,
 			Path:   route.Path,
 		})
