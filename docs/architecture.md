@@ -211,7 +211,7 @@ go run ./cmd/server -all myadmin mypassword
 
 ### 6.2 配置快照与热更新
 
-`internal/config` 定义配置树，`internal/infrastructure/config.Provider` 使用 Viper 读取 YAML/环境变量、监听文件并以 `atomic.Pointer` 发布当前快照。配置加载分为面向长期服务的 `Load`（开启文件监听与完整必填校验）、面向 CLI 运维任务的 `LoadOnce`（加载静态快照、不启 fsnotify 监听、仅校验维护用基础项）以及面向转码节点的 `LoadTranscodeWorker`（松绑 Web 端 JWT 密钥要求）。加载或解析失败向上层返回 `error`，由入口决定退出策略，不再直接 panic。应用层通过 `shared.ConfigReader/ConfigStore` 端口访问；一次用例操作先 `Get()` 一份快照再读字段，避免同次操作跨版本读取。热更新读取或校验失败保留上一份有效配置。管理端写配置则**先发布内存快照、再写文件**；写文件失败时内存可能已变，这一步没有事务回滚语义。见[Provider](../internal/infrastructure/config/provider.go)、[管理端配置用例](../internal/application/contentops/site_config_service.go)及[配置示例](../config.example.yaml)。
+`internal/config` 定义配置树，`internal/infrastructure/config.Provider` 使用 Viper 读取 YAML/环境变量、fsnotify 监听配置所在目录，并以 `atomic.Pointer` 发布当前快照。配置加载分为面向长期服务的 `Load`（开启文件监听与完整必填校验）、面向 CLI 运维任务的 `LoadOnce`（加载静态快照、不启 fsnotify 监听、仅校验维护用基础项）以及面向转码节点的 `LoadTranscodeWorker`（松绑 Web 端 JWT 密钥要求）。加载或解析失败向上层返回 `error`，由入口决定退出策略，不再直接 panic。应用层通过 `shared.ConfigReader/ConfigStore` 端口访问；一次用例操作先 `Get()` 一份快照再读字段，避免同次操作跨版本读取。热更新合并短时间内的文件事件，配置文件被原子替换或删除后重建时继续监听；读取或校验失败保留上一份有效配置。管理端和默认横幅配置更新与热更新共用 Provider 锁：基于最新快照修改、校验 JWT 等配置、原子替换文件，成功后发布内存快照；写文件失败时保留旧快照和旧文件。见[Provider](../internal/infrastructure/config/provider.go)、[管理端配置用例](../internal/application/contentops/site_config_service.go)及[配置示例](../config.example.yaml)。
 
 ### 6.3 独立转码入口与节点角色
 
