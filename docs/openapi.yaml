@@ -4733,14 +4733,8 @@ paths:
       tags:
         - 站点管理
       summary: 获取GitHub登录URL
-      description: 获取GitHub OAuth登录跳转URL；前端需传入 state，后端会记录该 state 并在登录回调时校验；支持可选 PKCE codeChallenge
+      description: 获取GitHub OAuth登录跳转URL；服务端自动生成防 CSRF state 并存入 Redis，在授权URL中携带并在登录回调时校验；支持可选 PKCE codeChallenge
       parameters:
-        - name: state
-          in: query
-          required: true
-          description: CSRF 防护状态值；后端会记录并在登录回调时校验
-          schema:
-            type: string
         - name: codeChallenge
           in: query
           required: false
@@ -4773,14 +4767,7 @@ paths:
       tags:
         - 站点管理
       summary: 获取LinuxDo登录URL
-      description: 获取 LinuxDo OAuth 登录跳转URL；前端需传入 state，后端会记录该 state 并在登录回调时校验
-      parameters:
-        - name: state
-          in: query
-          required: true
-          description: CSRF 防护状态值；后端会记录并在登录回调时校验
-          schema:
-            type: string
+      description: 获取 LinuxDo OAuth 登录跳转URL；服务端自动生成防 CSRF state 并存入 Redis，在授权URL中携带并在登录回调时校验
       responses:
         "200":
           description: 获取成功
@@ -4799,14 +4786,8 @@ paths:
       tags:
         - 站点管理
       summary: 获取X登录URL
-      description: 获取X OAuth登录跳转URL；前端需传入 state 与 PKCE codeChallenge，后端会记录 state 并在登录回调时校验
+      description: 获取X OAuth登录跳转URL；服务端自动生成防 CSRF state 并存入 Redis，并在登录回调时校验；前端需传入 PKCE codeChallenge
       parameters:
-        - name: state
-          in: query
-          required: true
-          description: CSRF 防护状态值；后端会记录并在登录回调时校验
-          schema:
-            type: string
         - name: codeChallenge
           in: query
           required: true
