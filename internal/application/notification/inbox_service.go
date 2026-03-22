@@ -4,6 +4,7 @@ import (
 	"context"
 
 	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // List 用户通知分页列表；isRead 由 notification_user_reads 推导（有行 = 已读）。
@@ -83,32 +84,37 @@ func (s *InboxService) Delete(ctx context.Context, receiverID int, ids []uint) e
 		return nil
 	}
 
-	notices, err := s.repo.FindByIDs(ctx, ids)
-	if err != nil {
-		return err
-	}
-
-	deletableIDs := make([]uint, 0, len(notices))
-	for i := range notices {
-		if err := notices[i].EnsureDeletable(); err != nil {
+	var deleted bool
+	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		notices, err := s.repo.FindByIDsForUpdate(txCtx, ids)
+		if err != nil {
 			return err
 		}
 
-		if notices[i].DeletableBy(receiverID) {
-			deletableIDs = append(deletableIDs, notices[i].ID())
+		deletableIDs := make([]uint, 0, len(notices))
+		for i := range notices {
+			if err := notices[i].EnsureDeletable(); err != nil {
+				return err
+			}
+			if notices[i].DeletableBy(receiverID) {
+				deletableIDs = append(deletableIDs, notices[i].ID())
+			}
 		}
-	}
-
-	if len(deletableIDs) == 0 {
+		if len(deletableIDs) == 0 {
+			return nil
+		}
+		if err := s.repo.DeleteForReceiver(txCtx, receiverID, deletableIDs); err != nil {
+			return err
+		}
+		deleted = true
 		return nil
-	}
-
-	if err := s.repo.DeleteForReceiver(ctx, receiverID, deletableIDs); err != nil {
+	}); err != nil {
 		return err
 	}
 
-	s.counts.InvalidateCount(receiverID)
-
+	if deleted {
+		s.counts.InvalidateCount(receiverID)
+	}
 	return nil
 }
 
@@ -126,11 +132,12 @@ func (s *InboxService) notificationIDs(list []notificationdomain.Notification) [
 
 // InboxService 负责接收者收件箱与已读状态。
 type InboxService struct {
+	txm    tx.Manager
 	repo   notificationdomain.Repository
 	counts *CountService
 	types  notificationdomain.TypePolicy
 }
 
-func NewInboxService(repo notificationdomain.Repository, counts *CountService) *InboxService {
-	return &InboxService{repo: repo, counts: counts, types: notificationdomain.TypePolicy{}}
+func NewInboxService(txm tx.Manager, repo notificationdomain.Repository, counts *CountService) *InboxService {
+	return &InboxService{txm: txm, repo: repo, counts: counts, types: notificationdomain.TypePolicy{}}
 }

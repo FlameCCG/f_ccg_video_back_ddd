@@ -7,6 +7,7 @@ import (
 
 	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // 管理端更新系统通知的失败分类，对应不同响应文案。
@@ -25,12 +26,17 @@ func (s *AdminService) AdminDelete(ctx context.Context, ids []uint) error {
 		return nil
 	}
 
-	receivers, err := s.repo.DistinctReceivers(ctx, ids)
-	if err != nil {
-		return err
-	}
-
-	if err := s.repo.DeleteByIDs(ctx, ids); err != nil {
+	var receivers []int
+	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		notices, err := s.repo.FindByIDsForUpdate(txCtx, ids)
+		if err != nil {
+			return err
+		}
+		for _, notice := range notices {
+			receivers = append(receivers, notice.ReceiverID())
+		}
+		return s.repo.DeleteByIDs(txCtx, ids)
+	}); err != nil {
 		return err
 	}
 
@@ -79,23 +85,6 @@ func (s *AdminService) adminNotifications(list []notificationdomain.Notification
 	return out
 }
 
-// GetAdmin 按 ID 读取通知；不存在时返回 (nil, nil)。
-func (s *AdminService) GetAdmin(ctx context.Context, id uint) (*notificationdomain.Notification, error) {
-	return s.repo.FindByID(ctx, id)
-}
-
-// AdminUpdate 管理员更新系统通知。
-func (s *AdminService) AdminUpdate(ctx context.Context, notice *notificationdomain.Notification) error {
-	previousReceiverID, err := s.repo.UpdateSystemContent(ctx, notice)
-	if err != nil {
-		return err
-	}
-
-	s.counts.invalidateCountForReceivers([]int{previousReceiverID, notice.ReceiverID()})
-
-	return nil
-}
-
 // CreateSystemNotice 管理端发布系统通知。
 //
 // 操作者的用户名/头像取自读侧投影；类型固定为系统通知。
@@ -129,36 +118,52 @@ func (s *AdminService) CreateSystemNotice(ctx context.Context, cmd CreateSystemN
 
 // UpdateSystemNotice 管理端更新系统通知。
 //
-// 先读原记录，覆盖可编辑字段后强制置为系统通知类型。通知不存在时返回 ErrNoticeNotFound。
+// 在同一事务内锁定最新记录并修改，提交后失效新旧接收者的角标缓存。
+// 通知不存在时返回 ErrNoticeNotFound，保留原读取与写入错误分类。
 func (s *AdminService) UpdateSystemNotice(ctx context.Context, cmd UpdateSystemNoticeCommand) error {
-	old, err := s.GetAdmin(ctx, cmd.ID)
-	if err != nil {
-		return fmt.Errorf("%w: %w", ErrNoticeQueryFailed, err)
-	}
-
-	if old == nil {
-		return ErrNoticeNotFound
-	}
-
-	old.ReviseAsSystem(notificationdomain.SystemContent{
-		Title: cmd.Title, Content: cmd.Content, ReceiverID: cmd.ReceiverID,
-		VideoID: cmd.VideoID, VideoTitle: cmd.VideoTitle, Link: cmd.Link,
+	var previousReceiverID int
+	started := false
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		started = true
+		notices, err := s.repo.FindByIDsForUpdate(txCtx, []uint{cmd.ID})
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrNoticeQueryFailed, err)
+		}
+		if len(notices) == 0 {
+			return ErrNoticeNotFound
+		}
+		notice := &notices[0]
+		notice.ReviseAsSystem(notificationdomain.SystemContent{
+			Title: cmd.Title, Content: cmd.Content, ReceiverID: cmd.ReceiverID,
+			VideoID: cmd.VideoID, VideoTitle: cmd.VideoTitle, Link: cmd.Link,
+		})
+		previousReceiverID, err = s.repo.UpdateSystemContent(txCtx, notice)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrNoticeUpdateFailed, err)
+		}
+		return nil
 	})
-
-	if err := s.AdminUpdate(ctx, old); err != nil {
+	if err != nil {
+		if !started {
+			return fmt.Errorf("%w: %w", ErrNoticeQueryFailed, err)
+		}
+		if errors.Is(err, ErrNoticeQueryFailed) || errors.Is(err, ErrNoticeNotFound) || errors.Is(err, ErrNoticeUpdateFailed) {
+			return err
+		}
 		return fmt.Errorf("%w: %w", ErrNoticeUpdateFailed, err)
 	}
-
+	s.counts.invalidateCountForReceivers([]int{previousReceiverID, cmd.ReceiverID})
 	return nil
 }
 
 // AdminService 负责系统通知管理。
 type AdminService struct {
+	txm    tx.Manager
 	repo   notificationdomain.Repository
 	actors ActorProfileProvider
 	counts *CountService
 }
 
-func NewAdminService(repo notificationdomain.Repository, actors ActorProfileProvider, counts *CountService) *AdminService {
-	return &AdminService{repo: repo, actors: actors, counts: counts}
+func NewAdminService(txm tx.Manager, repo notificationdomain.Repository, actors ActorProfileProvider, counts *CountService) *AdminService {
+	return &AdminService{txm: txm, repo: repo, actors: actors, counts: counts}
 }

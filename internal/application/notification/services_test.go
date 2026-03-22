@@ -12,6 +12,7 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/notification"
 	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/notification"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
@@ -188,8 +189,8 @@ func TestInboxReceiverIsolationAndAdminReceiverChanges(t *testing.T) {
 	cache := &countCache{available: true}
 	counts := app.NewCountService(repo, cache, unreadChat{}, nil, zap.NewNop())
 	delivery := app.NewDeliveryService(repo, counts)
-	inbox := app.NewInboxService(repo, counts)
-	admin := app.NewAdminService(repo, nil, counts)
+	inbox := app.NewInboxService(gormx.NewTxManager(db), repo, counts)
+	admin := app.NewAdminService(gormx.NewTxManager(db), repo, nil, counts)
 	rows := []notificationdomain.Notification{
 		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 1, Type: enum.NotificationApplyType}),
 		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 2, Type: enum.NotificationApplyType}),

@@ -162,17 +162,17 @@ func (r *Repository) ListForReceiver(
 	return r.toDomainList(list), total, nil
 }
 
-// FindByIDs 按主键批量读取；缺失的 ID 忽略。
-func (r *Repository) FindByIDs(ctx context.Context, ids []uint) ([]notificationdomain.Notification, error) {
+// FindByIDsForUpdate 在调用方事务内锁定最新状态，避免删除资格与实际删除之间被管理端改写。
+func (r *Repository) FindByIDsForUpdate(ctx context.Context, ids []uint) ([]notificationdomain.Notification, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 
 	var rows []po.UserGlobalNotification
-	if err := gormx.DB(ctx, r.db).Where("id IN ?", ids).Find(&rows).Error; err != nil {
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).Order("id ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-
 	return r.toDomainList(rows), nil
 }
 
@@ -212,7 +212,8 @@ func (r *Repository) VisibleIDs(ctx context.Context, receiverID int, ids []uint)
 
 // DeleteForReceiver 删除接收者的通知及其已读记录（同一事务）。
 func (r *Repository) DeleteForReceiver(ctx context.Context, receiverID int, ids []uint) error {
-	return gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+	return gormx.NewTxManager(r.db).Do(ctx, func(txCtx context.Context) error {
+		tx := gormx.DB(txCtx, r.db)
 		if err := tx.Where("id IN ? AND receiver_id = ?", ids, receiverID).
 			Delete(&po.UserGlobalNotification{}).Error; err != nil {
 			return err
@@ -225,7 +226,8 @@ func (r *Repository) DeleteForReceiver(ctx context.Context, receiverID int, ids 
 
 // DeleteByIDs 按 ID 删除通知及其已读记录（管理端，同一事务）。
 func (r *Repository) DeleteByIDs(ctx context.Context, ids []uint) error {
-	return gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+	return gormx.NewTxManager(r.db).Do(ctx, func(txCtx context.Context) error {
+		tx := gormx.DB(txCtx, r.db)
 		if err := tx.Where("id IN ?", ids).
 			Delete(&po.UserGlobalNotification{}).Error; err != nil {
 			return err
@@ -236,20 +238,6 @@ func (r *Repository) DeleteByIDs(ctx context.Context, ids []uint) error {
 	})
 }
 
-// DistinctReceivers 读取给定通知 ID 涉及的接收者集合。
-func (r *Repository) DistinctReceivers(ctx context.Context, ids []uint) ([]int, error) {
-	var receivers []int
-	if err := gormx.DB(ctx, r.db).
-		Model(&po.UserGlobalNotification{}).
-		Where("id IN ?", ids).
-		Distinct("receiver_id").
-		Pluck("receiver_id", &receivers).Error; err != nil {
-		return nil, err
-	}
-
-	return receivers, nil
-}
-
 // UpdateSystemContent 管理端更新系统通知内容，返回更新前的接收者。
 func (r *Repository) UpdateSystemContent(ctx context.Context, notice *notificationdomain.Notification) (int, error) {
 	if notice == nil || notice.ID() == 0 {
@@ -257,17 +245,16 @@ func (r *Repository) UpdateSystemContent(ctx context.Context, notice *notificati
 	}
 
 	snap := notice.Snapshot()
-	db := gormx.DB(ctx, r.db)
-
-	var old po.UserGlobalNotification
-	if err := db.Select("id", "receiver_id").First(&old, snap.ID).Error; err != nil {
-		return 0, err
-	}
-
-	if err := db.
-		Model(&po.UserGlobalNotification{}).
-		Where("id = ?", snap.ID).
-		Updates(map[string]any{
+	var previousReceiverID int
+	err := gormx.NewTxManager(r.db).Do(ctx, func(txCtx context.Context) error {
+		db := gormx.DB(txCtx, r.db)
+		var old po.UserGlobalNotification
+		// 即使调用方之前建立过一致性读快照，也必须以当前锁定读取得接收者。
+		if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "receiver_id").First(&old, snap.ID).Error; err != nil {
+			return err
+		}
+		previousReceiverID = old.ReceiverID
+		return db.Model(&po.UserGlobalNotification{}).Where("id = ?", snap.ID).Updates(map[string]any{
 			"title":       snap.Title,
 			"content":     snap.Content,
 			"link":        snap.Link,
@@ -275,11 +262,9 @@ func (r *Repository) UpdateSystemContent(ctx context.Context, notice *notificati
 			"video_id":    snap.VideoID,
 			"video_title": snap.VideoTitle,
 			"type":        enum.NotificationSystemType,
-		}).Error; err != nil {
-		return 0, err
-	}
-
-	return old.ReceiverID, nil
+		}).Error
+	})
+	return previousReceiverID, err
 }
 
 // MarkRead 为接收者插入已读记录（冲突忽略）。

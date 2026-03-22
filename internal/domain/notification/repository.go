@@ -14,8 +14,8 @@ type Repository interface {
 	CreateBatch(ctx context.Context, notices []Notification) ([]Notification, error)
 	// FindByID 按主键读取通知；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, id uint) (*Notification, error)
-	// FindByIDs 按主键批量读取；缺失的 ID 忽略。
-	FindByIDs(ctx context.Context, ids []uint) ([]Notification, error)
+	// FindByIDsForUpdate 在调用方事务内按 ID 升序锁定最新通知；缺失的 ID 忽略。
+	FindByIDsForUpdate(ctx context.Context, ids []uint) ([]Notification, error)
 	// ListForReceiver 按接收者与类型集合分页查询（含全员广播）。
 	ListForReceiver(
 		ctx context.Context,
@@ -27,13 +27,11 @@ type Repository interface {
 	ListSystem(ctx context.Context, page, pageSize int) ([]Notification, int64, error)
 	// VisibleIDs 过滤出对该接收者可见（个人或全员）的通知 ID。
 	VisibleIDs(ctx context.Context, receiverID int, ids []uint) ([]uint, error)
-	// DeleteForReceiver 删除接收者的通知及其已读记录（同一事务）。
+	// DeleteForReceiver 删除已在调用方事务内锁定并经领域资格检查的个人通知及其已读记录。
 	DeleteForReceiver(ctx context.Context, receiverID int, ids []uint) error
 	// DeleteByIDs 按 ID 删除通知及其已读记录（管理端，同一事务）。
 	DeleteByIDs(ctx context.Context, ids []uint) error
-	// DistinctReceivers 读取给定通知 ID 涉及的接收者集合。
-	DistinctReceivers(ctx context.Context, ids []uint) ([]int, error)
-	// UpdateSystemContent 管理端更新系统通知内容，返回更新前的接收者。
+	// UpdateSystemContent 在当前事务锁定最新记录并按字段保存，返回更新前的接收者。
 	UpdateSystemContent(ctx context.Context, notice *Notification) (previousReceiverID int, err error)
 	// MarkRead 为接收者插入已读记录（冲突忽略）。
 	MarkRead(ctx context.Context, receiverID int, ids []uint) error
