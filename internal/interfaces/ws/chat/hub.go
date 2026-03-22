@@ -90,16 +90,18 @@ type Hub struct {
 
 // NewHub 构造私信 WebSocket 房间中心。
 func NewHub(service *chatapp.Service, bus EventBus, origin *wsorigin.Checker, logger *zap.Logger) *Hub {
-	return &Hub{
+	h := &Hub{
 		rooms:    make(map[uint]*room),
 		serverID: uuid.NewString(),
 		service:  service,
 		bus:      bus,
-		logger:   loggerOrNop(logger),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return origin.Check(r) },
 		},
 	}
+	h.logger = h.normalizeLogger(logger)
+
+	return h
 }
 
 // Stop 停止订阅并断开全部 WebSocket 连接，供 App.Stop 显式释放 Redis 订阅与长连接资源。
@@ -156,10 +158,10 @@ func (h *Hub) log() *zap.Logger {
 		return zap.NewNop()
 	}
 
-	return loggerOrNop(h.logger)
+	return h.normalizeLogger(h.logger)
 }
 
-func loggerOrNop(logger *zap.Logger) *zap.Logger {
+func (*Hub) normalizeLogger(logger *zap.Logger) *zap.Logger {
 	if logger == nil {
 		return zap.NewNop()
 	}

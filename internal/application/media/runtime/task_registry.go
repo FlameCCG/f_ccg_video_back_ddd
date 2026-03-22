@@ -5,8 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 // TaskRegistry 持有进程内所有转码运行的取消函数，同一 key 可对应多次运行，避免重复投递覆盖较早的取消函数。
@@ -15,19 +14,19 @@ import (
 type TaskRegistry struct {
 	mu      sync.Mutex
 	nextID  uint64
-	running map[mediavo.TaskKey]map[uint64]context.CancelCauseFunc
+	running map[mediadomain.TaskKey]map[uint64]context.CancelCauseFunc
 }
 
 // NewTaskRegistry 创建空的任务登记表。
 func NewTaskRegistry() *TaskRegistry {
-	return &TaskRegistry{running: make(map[mediavo.TaskKey]map[uint64]context.CancelCauseFunc)}
+	return &TaskRegistry{running: make(map[mediadomain.TaskKey]map[uint64]context.CancelCauseFunc)}
 }
 
 // Register 派生可取消的任务上下文，并返回幂等的注销函数。
 //
 // 每次运行获得独立 runID，因此重复投递的同一个视频/分P不会相互覆盖取消函数。
 // 注销只移除本次运行；物理删除则取消该视频下的全部本地运行，跨实例取消另经 Redis 广播。
-func (r *TaskRegistry) Register(parent context.Context, key mediavo.TaskKey) (context.Context, func()) {
+func (r *TaskRegistry) Register(parent context.Context, key mediadomain.TaskKey) (context.Context, func()) {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -106,7 +105,7 @@ func (r *TaskRegistry) CancelVideos(videoIDs []uint) int {
 	r.mu.Unlock()
 
 	for _, cancel := range cancels {
-		cancel(mediaerrors.ErrVideoDeleted)
+		cancel(mediadomain.ErrVideoDeleted)
 	}
 
 	return len(cancels)

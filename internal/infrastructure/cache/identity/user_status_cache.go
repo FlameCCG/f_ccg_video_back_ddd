@@ -9,10 +9,10 @@ package identity
 import (
 	"context"
 	"errors"
+	identityapplication "f_ccg_video_back_ddd/internal/application/identity"
 	"strconv"
 	"time"
 
-	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -58,7 +58,7 @@ type UserStatusCache struct {
 	logger *zap.Logger
 }
 
-var _ identityport.UserStatusCache = (*UserStatusCache)(nil)
+var _ identityapplication.UserStatusCache = (*UserStatusCache)(nil)
 
 // NewUserStatusCache 构造用户状态缓存适配器。
 func NewUserStatusCache(redisClient *redis.Client, logger *zap.Logger) *UserStatusCache {
@@ -167,7 +167,7 @@ func (c *UserStatusCache) StoreIfGenerationMatch(
 	}
 }
 
-// Write 权威写穿：直接 SET 最新状态并 bump generation。
+// Write 原子地写穿状态并 bump generation，避免回源观察到一半更新的缓存。
 func (c *UserStatusCache) Write(userID uint, status enum.UserStatus) {
 	if c.redis == nil || userID == 0 {
 		return
@@ -179,7 +179,7 @@ func (c *UserStatusCache) Write(userID uint, status enum.UserStatus) {
 	statusKey := userStatusRedisKey(userID)
 	genKey := userStatusGenRedisKey(userID)
 
-	pipe := c.redis.Pipeline()
+	pipe := c.redis.TxPipeline()
 	pipe.Incr(cacheCtx, genKey)
 	pipe.Expire(cacheCtx, genKey, userStatusGenTTL)
 	pipe.Set(cacheCtx, statusKey, strconv.Itoa(int(status)), userStatusCacheTTL)
@@ -189,7 +189,7 @@ func (c *UserStatusCache) Write(userID uint, status enum.UserStatus) {
 	}
 }
 
-// Invalidate 删除 Redis 中的状态缓存并 bump generation。
+// Invalidate 原子地删除状态缓存并 bump generation，旧回源不能在两步之间写回。
 func (c *UserStatusCache) Invalidate(userID uint) {
 	if c.redis == nil || userID == 0 {
 		return
@@ -201,7 +201,7 @@ func (c *UserStatusCache) Invalidate(userID uint) {
 	statusKey := userStatusRedisKey(userID)
 	genKey := userStatusGenRedisKey(userID)
 
-	pipe := c.redis.Pipeline()
+	pipe := c.redis.TxPipeline()
 	pipe.Del(cacheCtx, statusKey)
 	pipe.Incr(cacheCtx, genKey)
 	pipe.Expire(cacheCtx, genKey, userStatusGenTTL)

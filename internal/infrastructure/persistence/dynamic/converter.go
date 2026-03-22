@@ -7,17 +7,17 @@
 package dynamic
 
 import (
-	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainDynamic 把动态 PO 转为领域实体。
-func toDomainDynamic(row *po.Dynamic) *dynamicentity.Dynamic {
+func toDomainDynamic(row *po.Dynamic) *dynamicdomain.Dynamic {
 	if row == nil {
 		return nil
 	}
 
-	return &dynamicentity.Dynamic{
+	return dynamicdomain.RestoreDynamic(dynamicdomain.DynamicSnapshot{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -27,60 +27,60 @@ func toDomainDynamic(row *po.Dynamic) *dynamicentity.Dynamic {
 		LikeCount: row.LikeCount,
 		IsPinned:  row.IsPinned,
 		PinnedAt:  row.PinnedAt,
-	}
+	})
 }
 
 // toPODynamic 把动态领域实体转为 PO。
-func toPODynamic(d *dynamicentity.Dynamic) *po.Dynamic {
+func toPODynamic(d *dynamicdomain.Dynamic) *po.Dynamic {
 	if d == nil {
 		return nil
 	}
 
 	return &po.Dynamic{
 		Model: po.Model{
-			ID:        d.ID,
-			CreatedAt: d.CreatedAt,
-			UpdatedAt: d.UpdatedAt,
+			ID:        d.ID(),
+			CreatedAt: d.CreatedAt(),
+			UpdatedAt: d.UpdatedAt(),
 		},
-		UserID:    d.UserID,
-		Content:   d.Content,
-		ImageURL:  d.ImageURL,
-		LikeCount: d.LikeCount,
-		IsPinned:  d.IsPinned,
-		PinnedAt:  d.PinnedAt,
+		UserID:    d.UserID(),
+		Content:   d.Content(),
+		ImageURL:  d.ImageURL(),
+		LikeCount: d.LikeCount(),
+		IsPinned:  d.IsPinned(),
+		PinnedAt:  d.PinnedAt(),
 	}
 }
 
 // toDomainReadRecord 把已读位点 PO 转为领域实体。
-func toDomainReadRecord(row *po.DynamicRead) *dynamicentity.ReadRecord {
+func toDomainReadRecord(row *po.DynamicRead) *dynamicdomain.ReadRecord {
 	if row == nil {
 		return nil
 	}
 
-	return &dynamicentity.ReadRecord{
+	return dynamicdomain.RestoreReadRecord(dynamicdomain.ReadRecordSnapshot{
 		ID:               row.ID,
 		UserID:           row.UserID,
 		AuthorID:         row.AuthorID,
 		LastReadWorkType: row.LastReadWorkType,
 		LastReadWorkID:   row.LastReadWorkID,
 		LastReadWorkAt:   row.LastReadWorkAt,
-	}
+	})
 }
 
 // toPOReadRecord 把已读位点领域实体转为 PO。
-func toPOReadRecord(record *dynamicentity.ReadRecord) *po.DynamicRead {
+func toPOReadRecord(record *dynamicdomain.ReadRecord) *po.DynamicRead {
 	if record == nil {
 		return nil
 	}
 
 	return &po.DynamicRead{
 		Model: po.Model{
-			ID: record.ID,
+			ID: record.ID(),
 		},
-		UserID:           record.UserID,
-		AuthorID:         record.AuthorID,
-		LastReadWorkType: record.LastReadWorkType,
-		LastReadWorkID:   record.LastReadWorkID,
-		LastReadWorkAt:   record.LastReadWorkAt,
+		UserID:           record.UserID(),
+		AuthorID:         record.AuthorID(),
+		LastReadWorkType: record.LastReadWorkType(),
+		LastReadWorkID:   record.LastReadWorkID(),
+		LastReadWorkAt:   record.LastReadWorkAt(),
 	}
 }

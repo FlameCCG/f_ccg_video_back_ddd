@@ -3,23 +3,12 @@ package identity
 import (
 	"context"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 )
 
 const (
 	// recentActionLimit 最近点赞/投币固定返回条数。
 	recentActionLimit = 10
-
-	// userSearchDefaultPageSize 用户搜索默认每页条数。
-	userSearchDefaultPageSize = 20
-	// userSearchMaxPageSize 用户搜索每页条数上限。
-	userSearchMaxPageSize = 100
-	// mentionDefaultPageSize @ 联想默认每页条数。
-	mentionDefaultPageSize = 20
-	// mentionMaxPageSize @ 联想每页条数上限。
-	mentionMaxPageSize = 50
-	// userVideoDefaultPageSize 用户主页视频默认每页条数。
-	userVideoDefaultPageSize = 20
 )
 
 // UserActivityService 挂在用户路由下、但由其它上下文提供数据的用例服务。
@@ -59,14 +48,7 @@ func (s *UserActivityService) ListUserVideos(
 	userID, viewerID uint,
 	page, pageSize, sort, auditStatus int,
 ) (any, int64, error) {
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = userVideoDefaultPageSize
-	}
-
+	page, pageSize = (identitydomain.ActivityListingPolicy{}).UserVideoPage(page, pageSize)
 	return s.videos.ListUserVideos(ctx, userID, viewerID, page, pageSize, sort, auditStatus)
 }
 
@@ -75,7 +57,6 @@ func (s *UserActivityService) RecentLiked(ctx context.Context, targetID, viewerI
 	if err := s.ensureActionVisible(ctx, targetID, viewerID, VideoActionLike); err != nil {
 		return nil, 0, err
 	}
-
 	return s.recentActions(ctx, targetID, VideoActionLike)
 }
 
@@ -99,27 +80,16 @@ func (s *UserActivityService) recentActions(ctx context.Context, targetID uint, 
 
 // ensureActionVisible 校验访问者是否有权查看目标用户的最近动作列表。
 func (s *UserActivityService) ensureActionVisible(ctx context.Context, targetID, viewerID uint, action string) error {
-	if viewerID == targetID {
+	if (identitydomain.ActionVisibility{}).IsOwner(targetID, viewerID) {
 		return nil
 	}
 
 	privacy, err := s.relations.ActionPrivacy(ctx, targetID)
-	if err != nil || !privacy.Exists {
-		return identityerrors.ErrUserNotFound
+	if err != nil {
+		return identitydomain.ErrUserNotFound
 	}
 
-	switch action {
-	case VideoActionLike:
-		if !privacy.OpenLikeVideo {
-			return identityerrors.ErrRecentLikedNotPublic
-		}
-	case VideoActionCoin:
-		if !privacy.OpenCoinVideo {
-			return identityerrors.ErrRecentCoinedNotPublic
-		}
-	}
-
-	return nil
+	return (identitydomain.ActionVisibility{Exists: privacy.Exists, OpenLikeVideo: privacy.OpenLikeVideo, OpenCoinVideo: privacy.OpenCoinVideo}).EnsureVisible(targetID, viewerID, action)
 }
 
 // DeleteVideo 用户删除自己的视频（逻辑删除）。
@@ -134,20 +104,9 @@ func (s *UserActivityService) CreateTag(ctx context.Context, name string) (any, 
 
 // SearchUsers 用户搜索（分页与排序参数在此归一化）。
 func (s *UserActivityService) SearchUsers(ctx context.Context, params UserSearchParams) (any, error) {
-	if params.Page <= 0 {
-		params.Page = 1
-	}
-
-	if params.PageSize <= 0 {
-		params.PageSize = userSearchDefaultPageSize
-	}
-
-	if params.PageSize > userSearchMaxPageSize {
-		params.PageSize = userSearchMaxPageSize
-	}
-
-	params.UserSort = NormalizeUserSort(params.UserSort)
-	params.UserOrder = NormalizeSortOrder(params.UserOrder)
+	params.Page, params.PageSize = (identitydomain.ActivityListingPolicy{}).SearchPage(params.Page, params.PageSize)
+	params.UserSort = (identitydomain.ActivityListingPolicy{}).UserSort(params.UserSort)
+	params.UserOrder = (identitydomain.ActivityListingPolicy{}).SortOrder(params.UserOrder)
 
 	return s.search.SearchUsers(ctx, params)
 }
@@ -159,37 +118,7 @@ func (s *UserActivityService) SuggestMentions(
 	keyword string,
 	page, pageSize int,
 ) (any, int64, error) {
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = mentionDefaultPageSize
-	}
-
-	if pageSize > mentionMaxPageSize {
-		pageSize = mentionMaxPageSize
-	}
+	page, pageSize = (identitydomain.ActivityListingPolicy{}).MentionPage(page, pageSize)
 
 	return s.mentions.SuggestFollowUsers(ctx, userID, keyword, page, pageSize)
-}
-
-// NormalizeUserSort 归一化用户搜索排序字段；未传或非法值默认按粉丝数排序。
-func NormalizeUserSort(sort int) int {
-	switch sort {
-	case UserSortRelevance, UserSortFollowers, UserSortLevel, UserSortCreatedAt:
-		return sort
-	default:
-		// 用户搜索未传或传非法值时，默认按粉丝数降序。
-		return UserSortFollowers
-	}
-}
-
-// NormalizeSortOrder 归一化排序方向；仅显式传 1 时升序，其余按降序处理。
-func NormalizeSortOrder(order int) int {
-	if order == SortOrderAsc {
-		return SortOrderAsc
-	}
-
-	return SortOrderDesc
 }

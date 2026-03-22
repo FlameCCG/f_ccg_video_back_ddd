@@ -99,6 +99,7 @@ func TestDomainDoesNotImportConfigOrInfrastructure(t *testing.T) {
 
 	reportViolations(t, "domain", collectImports(t, "../../domain", infraImportPrefix, neutralConfigImport,
 		modulePath+"/internal/application", modulePath+"/internal/interfaces", modulePath+"/internal/bootstrap", modulePath+"/conf",
+		"encoding/json", "net/url",
 		"github.com/gin-gonic/gin", "gorm.io", "github.com/redis/go-redis",
 		"github.com/IBM/sarama", "github.com/minio/minio-go", "github.com/spf13/viper",
 		"github.com/casbin", "go.uber.org/zap"))

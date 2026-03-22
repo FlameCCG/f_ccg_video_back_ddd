@@ -6,10 +6,7 @@ import (
 	"fmt"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
-	videoservice "f_ccg_video_back_ddd/internal/domain/video/service"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/coinutil"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -22,9 +19,9 @@ import (
 type InteractionService struct {
 	txm      tx.Manager
 	videos   VideoFactsQuery
-	likes    videorepo.LikeRepository
-	coins    videorepo.CoinRepository
-	folders  videorepo.FolderRepository
+	likes    videodomain.LikeRepository
+	coins    videodomain.CoinRepository
+	folders  videodomain.FolderRepository
 	stats    *StatsService
 	authors  *AuthorService
 	folder   *FolderService
@@ -42,9 +39,9 @@ type InteractionService struct {
 func NewInteractionService(
 	txm tx.Manager,
 	videos VideoFactsQuery,
-	likes videorepo.LikeRepository,
-	coins videorepo.CoinRepository,
-	folders videorepo.FolderRepository,
+	likes videodomain.LikeRepository,
+	coins videodomain.CoinRepository,
+	folders videodomain.FolderRepository,
 	stats *StatsService,
 	authors *AuthorService,
 	folder *FolderService,
@@ -83,12 +80,12 @@ func (s *InteractionService) View(ctx context.Context, videoID, userID uint) (*V
 		return nil, err
 	}
 
-	stats, err := s.stats.ApplyDelta(ctx, videoID, videovo.StatsDelta{Views: 1})
+	stats, err := s.stats.ApplyDelta(ctx, videoID, videodomain.StatsDelta{Views: 1})
 	if err != nil {
 		return nil, err
 	}
 
-	s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreViewWeight, 1)
+	s.stats.RecordHotScoreDelta(ctx, videoID, videodomain.HotScoreViewWeight, 1)
 
 	if authorID, authorErr := s.authors.AuthorID(ctx, videoID); authorErr == nil {
 		_ = s.creators.IncrViews(ctx, authorID, 1)
@@ -104,11 +101,11 @@ func (s *InteractionService) View(ctx context.Context, videoID, userID uint) (*V
 // Coin 投币（每人每视频最多 2 个，无法撤销；已投视为幂等上限错误）。
 func (s *InteractionService) Coin(ctx context.Context, videoID, userID uint, coins int64) (*CoinResult, error) {
 	if userID == 0 {
-		return nil, videoerrors.ErrUserNotLogin
+		return nil, videodomain.ErrUserNotLogin
 	}
 
-	if coins <= 0 {
-		return nil, videoerrors.ErrCoinCountInvalid
+	if _, err := (videodomain.CoinPolicy{}).Clamp(coins); err != nil {
+		return nil, err
 	}
 
 	if err := s.videos.EnsurePublished(ctx, videoID); err != nil {
@@ -138,7 +135,7 @@ func (s *InteractionService) Coin(ctx context.Context, videoID, userID uint, coi
 	}
 
 	if delta > 0 {
-		stats, statsErr := s.stats.ApplyCommittedDelta(ctx, videoID, videovo.StatsDelta{CoinCount: delta})
+		stats, statsErr := s.stats.ApplyCommittedDelta(ctx, videoID, videodomain.StatsDelta{CoinCount: delta})
 		if statsErr != nil {
 			// 账本已提交：不回滚硬币；尽量返回当前可读计数。
 			s.logger.Error("coin committed but stats update failed",
@@ -158,7 +155,7 @@ func (s *InteractionService) Coin(ctx context.Context, videoID, userID uint, coi
 			}
 		}
 
-		s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreCoinWeight, delta)
+		s.stats.RecordHotScoreDelta(ctx, videoID, videodomain.HotScoreCoinWeight, delta)
 
 		if authorID > 0 {
 			_ = s.creators.IncrCoins(ctx, authorID, delta)
@@ -183,7 +180,7 @@ func (s *InteractionService) applyCoin(
 	videoID, userID uint,
 	coins int64,
 ) (delta int64, authorID uint, err error) {
-	add, err := videovo.ClampCoins(coins)
+	add, err := (videodomain.CoinPolicy{}).Clamp(coins)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -200,7 +197,7 @@ func (s *InteractionService) applyCoin(
 
 	lockErr := s.coins.LockByVideoAndUser(ctx, videoID, userID)
 	if lockErr == nil {
-		return 0, ownerID, videoerrors.ErrCoinLimit
+		return 0, ownerID, videodomain.ErrCoinLimit
 	}
 
 	if !isRecordNotFound(lockErr) {
@@ -208,8 +205,8 @@ func (s *InteractionService) applyCoin(
 	}
 
 	if createErr := s.coins.Create(ctx, videoID, userID, add); createErr != nil {
-		if errors.Is(createErr, videoerrors.ErrDuplicateCoin) {
-			return 0, ownerID, videoerrors.ErrCoinLimit
+		if errors.Is(createErr, videodomain.ErrDuplicateCoin) {
+			return 0, ownerID, videodomain.ErrCoinLimit
 		}
 
 		return 0, 0, createErr
@@ -238,7 +235,7 @@ func (s *InteractionService) chargeCoins(ctx context.Context, videoID, userID, o
 	}
 
 	if ownerID > 0 {
-		reward := coinutil.Round(videovo.CoinAuthorReward(add))
+		reward := (videodomain.CoinPolicy{}).AuthorReward(add)
 		if err := s.ledger.ApplyChange(
 			ctx,
 			ownerID,
@@ -259,7 +256,7 @@ func (s *InteractionService) ToggleFavorite(
 	videoID, userID, folderID uint,
 ) (*FavoriteResult, error) {
 	if userID == 0 {
-		return nil, videoerrors.ErrUserNotLogin
+		return nil, videodomain.ErrUserNotLogin
 	}
 
 	if err := s.videos.EnsurePublished(ctx, videoID); err != nil {
@@ -271,16 +268,16 @@ func (s *InteractionService) ToggleFavorite(
 		return nil, err
 	}
 
-	existsTarget, err := s.folders.LinkExists(ctx, folder.ID, videoID)
+	existsTarget, err := s.folders.LinkExists(ctx, folder.ID(), videoID)
 	if err != nil {
 		return nil, err
 	}
 
 	if existsTarget {
-		return s.removeFavorite(ctx, videoID, userID, folder.ID)
+		return s.removeFavorite(ctx, videoID, userID, folder.ID())
 	}
 
-	return s.addFavorite(ctx, videoID, userID, folder.ID)
+	return s.addFavorite(ctx, videoID, userID, folder.ID())
 }
 
 func (s *InteractionService) removeFavorite(
@@ -317,12 +314,12 @@ func (s *InteractionService) removeFavorite(
 		return nil, err
 	}
 
-	s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreFavoriteWeight, deltaFavorite)
+	s.stats.RecordHotScoreDelta(ctx, videoID, videodomain.HotScoreFavoriteWeight, deltaFavorite)
 
-	var stats *videovo.Stats
+	var stats *videodomain.Stats
 
 	if deltaFavorite != 0 {
-		stats, err = s.stats.ApplyDelta(ctx, videoID, videovo.StatsDelta{FavoriteCount: deltaFavorite})
+		stats, err = s.stats.ApplyDelta(ctx, videoID, videodomain.StatsDelta{FavoriteCount: deltaFavorite})
 		if err != nil {
 			return nil, err
 		}
@@ -371,7 +368,7 @@ func (s *InteractionService) addFavorite(
 			return err
 		}
 
-		if !created || existsAny {
+		if !(videodomain.FavoritePolicy{}).FirstAddition(created, existsAny) {
 			return nil
 		}
 
@@ -382,14 +379,15 @@ func (s *InteractionService) addFavorite(
 			return err
 		}
 
-		if authorID == 0 || authorID == userID {
+		reward := (videodomain.FavoritePolicy{}).AuthorReward(authorID, userID)
+		if reward == 0 {
 			return nil
 		}
 
 		key := favoriteRewardKey(userID, videoID)
 		return s.ledger.ApplyChange(
 			txCtx,
-			authorID, videovo.FavoriteAuthorReward, "作品被收藏 +"+coinutil.Format(videovo.FavoriteAuthorReward),
+			authorID, reward, "作品被收藏 +"+coinutil.Format(reward),
 			&key,
 		)
 	}); err != nil {
@@ -397,12 +395,12 @@ func (s *InteractionService) addFavorite(
 	}
 
 	if firstFavorite {
-		stats, err := s.stats.ApplyDelta(ctx, videoID, videovo.StatsDelta{FavoriteCount: 1})
+		stats, err := s.stats.ApplyDelta(ctx, videoID, videodomain.StatsDelta{FavoriteCount: 1})
 		if err != nil {
 			return nil, err
 		}
 
-		s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreFavoriteWeight, 1)
+		s.stats.RecordHotScoreDelta(ctx, videoID, videodomain.HotScoreFavoriteWeight, 1)
 
 		if authorID > 0 {
 			_ = s.creators.IncrFavorites(ctx, authorID, 1)

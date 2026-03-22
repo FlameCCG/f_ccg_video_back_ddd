@@ -3,7 +3,7 @@ package video
 import (
 	"context"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -35,7 +35,7 @@ func NewAuthorService(
 // 查找顺序作者 ID 缓存 → 详情 meta 缓存 → DB。
 func (s *AuthorService) AuthorID(ctx context.Context, videoID uint) (uint, error) {
 	if videoID == 0 {
-		return 0, videoerrors.ErrVideoIDRequired
+		return 0, videodomain.ErrVideoIDRequired
 	}
 
 	if ctx == nil {
@@ -61,7 +61,7 @@ func (s *AuthorService) AuthorID(ctx context.Context, videoID uint) (uint, error
 	}
 
 	if authorID == 0 {
-		return 0, videoerrors.ErrVideoAuthorNotFound
+		return 0, videodomain.ErrVideoAuthorNotFound
 	}
 
 	s.authorIDs.Store(ctx, videoID, authorID)

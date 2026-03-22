@@ -115,7 +115,7 @@ func NewVideoPartitionsExecutor(seeder VideoPartitionSeeder, logger *zap.Logger)
 // NewBannerExecutor 构造 -br 执行器。
 func NewBannerExecutor(
 	resolver BannerStorageResolver,
-	repo provisioningapp.BannerRepository,
+	repo provisioningapp.DefaultBanners,
 	logger *zap.Logger,
 ) *Executor {
 	logger = loggerOrNop(logger)

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/ai"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -48,7 +48,7 @@ func (q *PromptVideoQuery) KeywordSearchIDs(ctx context.Context, keywords []stri
 		return nil, nil
 	}
 
-	limit = aivo.EnsurePositiveLimit(limit)
+	limit = (aidomain.PromptVideoCandidateSet{}).EnsurePositiveLimit(limit)
 
 	query := gormx.DB(ctx, q.db).
 		Table("videos").
@@ -122,7 +122,7 @@ func (q *PromptVideoQuery) LatestPublishedIDs(ctx context.Context, limit int) ([
 		return nil, nil
 	}
 
-	limit = aivo.EnsurePositiveLimit(limit)
+	limit = (aidomain.PromptVideoCandidateSet{}).EnsurePositiveLimit(limit)
 
 	var ids []uint
 
@@ -138,7 +138,7 @@ func (q *PromptVideoQuery) LatestPublishedIDs(ctx context.Context, limit int) ([
 }
 
 // Load 按给定 ID 顺序加载候选作品原始数据（缺失的 ID 直接跳过）。
-func (q *PromptVideoQuery) Load(ctx context.Context, ids []uint) ([]aivo.VideoCandidateInput, error) {
+func (q *PromptVideoQuery) Load(ctx context.Context, ids []uint) ([]aidomain.VideoCandidateInput, error) {
 	if !q.Available() || len(ids) == 0 {
 		return nil, nil
 	}
@@ -166,7 +166,7 @@ func (q *PromptVideoQuery) Load(ctx context.Context, ids []uint) ([]aivo.VideoCa
 		byID[video.ID] = video
 	}
 
-	out := make([]aivo.VideoCandidateInput, 0, len(ids))
+	out := make([]aidomain.VideoCandidateInput, 0, len(ids))
 
 	for _, id := range ids {
 		video, ok := byID[id]
@@ -181,15 +181,15 @@ func (q *PromptVideoQuery) Load(ctx context.Context, ids []uint) ([]aivo.VideoCa
 }
 
 // toCandidateInput 作品 PO → 领域候选构造入参。
-func toCandidateInput(video po.Video) aivo.VideoCandidateInput {
-	input := aivo.VideoCandidateInput{
+func toCandidateInput(video po.Video) aidomain.VideoCandidateInput {
+	input := aidomain.VideoCandidateInput{
 		VideoID:     video.ID,
 		Title:       video.Title,
 		Description: video.Description,
 		Partition:   video.VideoPartition.Name,
 		Cover:       video.Cover,
 		Tags:        make([]string, 0, len(video.Tags)),
-		Parts:       make([]aivo.VideoPartInput, 0, len(video.VideoParts)),
+		Parts:       make([]aidomain.VideoPartInput, 0, len(video.VideoParts)),
 	}
 
 	for _, tag := range video.Tags {
@@ -197,7 +197,7 @@ func toCandidateInput(video po.Video) aivo.VideoCandidateInput {
 	}
 
 	for _, part := range video.VideoParts {
-		input.Parts = append(input.Parts, aivo.VideoPartInput{Title: part.Title})
+		input.Parts = append(input.Parts, aidomain.VideoPartInput{Title: part.Title})
 	}
 
 	return input

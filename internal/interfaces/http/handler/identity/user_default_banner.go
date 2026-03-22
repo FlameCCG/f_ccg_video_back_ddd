@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -59,7 +59,7 @@ func (h *AdminHandler) AdminUpdateUserBannerListView(c *gin.Context) {
 	result, err := h.banners.AdminUpdateDefaults(c.Request.Context(), req.BannerIDs, req.Action)
 	if err != nil {
 		// 接口将领域错误「默认注册横幅不允许操作」映射为场景对应的响应文案。
-		if errors.Is(err, identityerrors.ErrRegisterDefaultBannerLocked) {
+		if errors.Is(err, identitydomain.ErrRegisterDefaultBannerLocked) {
 			res.FailWithMsg("默认注册横幅不允许在默认列表中操作", c)
 
 			return

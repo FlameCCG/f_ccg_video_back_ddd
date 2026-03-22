@@ -4,8 +4,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -32,8 +31,8 @@ type TranscodeTaskInput struct {
 }
 
 // task 把入参转成领域任务实体。
-func (in TranscodeTaskInput) task() mediaentity.TranscodeTask {
-	return mediaentity.TranscodeTask{
+func (in TranscodeTaskInput) task() mediadomain.TranscodeTask {
+	return mediadomain.TranscodeTask{
 		ResolutionList: in.ResolutionList,
 		StorageType:    in.StorageType,
 		SourcePath:     in.SourcePath,
@@ -76,7 +75,7 @@ type TranscodePipelineProgress struct {
 }
 
 // progressItemFrom 把领域进度快照转成读模型。
-func progressItemFrom(p mediavo.TranscodeProgress) TranscodeProgressItem {
+func progressItemFrom(p mediadomain.TranscodeProgress) TranscodeProgressItem {
 	item := TranscodeProgressItem{
 		VideoID:      p.VideoID,
 		PartID:       p.PartID,
@@ -115,12 +114,12 @@ func progressItemFrom(p mediavo.TranscodeProgress) TranscodeProgressItem {
 // PolicyFromConfig 将转码配置转换为领域策略。
 //
 // cfg 为 nil 时返回 nil；TranscodePolicy 的所有方法均对 nil 接收者安全，使用规定的配置缺失回落值。
-func PolicyFromConfig(cfg *config.Transcode) *mediavo.TranscodePolicy {
+func PolicyFromConfig(cfg *config.Transcode) *mediadomain.TranscodePolicy {
 	if cfg == nil {
 		return nil
 	}
 
-	return &mediavo.TranscodePolicy{
+	return &mediadomain.TranscodePolicy{
 		MaxWorkers:           cfg.MaxWorkers,
 		TranscodeResolutions: append([]uint16(nil), cfg.TranscodeResolutions...),
 		HighBitrateThreshold: cfg.HighBitrateThreshold,

@@ -2,8 +2,8 @@ package scheduler
 
 import (
 	"context"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -16,7 +16,7 @@ type VideoStatsProjection struct {
 	db *gorm.DB
 }
 
-var _ app.VideoStatsProjection = (*VideoStatsProjection)(nil)
+var _ videodomain.VideoStatsProjection = (*VideoStatsProjection)(nil)
 
 // NewVideoStatsProjection 构造视频统计投影仓储。
 func NewVideoStatsProjection(db *gorm.DB) *VideoStatsProjection {
@@ -24,7 +24,7 @@ func NewVideoStatsProjection(db *gorm.DB) *VideoStatsProjection {
 }
 
 // PersistStats 仅将统计快照回写到已发布的视频行。
-func (p *VideoStatsProjection) PersistStats(ctx context.Context, videoID uint, stats app.VideoStats) error {
+func (p *VideoStatsProjection) PersistStats(ctx context.Context, videoID uint, stats videodomain.Stats) error {
 	return gormx.DB(ctx, p.db).
 		Model(&po.Video{}).
 		Where("id = ? AND status = ?", videoID, enum.VideoStatusPublished).

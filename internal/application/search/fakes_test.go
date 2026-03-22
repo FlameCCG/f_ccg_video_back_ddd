@@ -1,6 +1,10 @@
 package search
 
-import "context"
+import (
+	"context"
+	"strconv"
+	"strings"
+)
 
 // 本文件是搜索应用层单测用的手写 stub：不走 wire、不依赖真实 ES/Redis/MySQL。
 
@@ -131,15 +135,19 @@ func newFakeSuggestionCache() *fakeSuggestionCache {
 	return &fakeSuggestionCache{entries: make(map[string][]SuggestionItem)}
 }
 
-func (f *fakeSuggestionCache) Load(key string) ([]SuggestionItem, bool) {
-	items, ok := f.entries[key]
+func (f *fakeSuggestionCache) Load(prefix string, size int) ([]SuggestionItem, bool) {
+	items, ok := f.entries[f.key(prefix, size)]
 
 	return items, ok
 }
 
-func (f *fakeSuggestionCache) Store(key string, items []SuggestionItem) {
+func (f *fakeSuggestionCache) Store(prefix string, size int, items []SuggestionItem) {
 	f.stores++
-	f.entries[key] = items
+	f.entries[f.key(prefix, size)] = items
+}
+
+func (f *fakeSuggestionCache) key(prefix string, size int) string {
+	return strings.ToLower(strings.TrimSpace(prefix)) + "|" + strconv.Itoa(size)
 }
 
 type fakeHotKeywordStore struct {

@@ -98,29 +98,6 @@ func defaultMenuSeeds() []menuSeed {
 	}
 }
 
-// commonRoleMenuTitle 报告普通用户是否默认可见该菜单。
-func commonRoleMenuTitle(title string) bool {
-	switch title {
-	case "运营总览", "数据看板":
-		return true
-	default:
-		return false
-	}
-}
-
-// vipRoleMenuTitle 报告大会员是否默认可见该菜单。
-func vipRoleMenuTitle(title string) bool {
-	switch title {
-	case "运营总览", menuTitleContent, menuTitleCommunity, menuTitleMarketing,
-		menuTitleUsers, menuTitleSystem, "数据看板", "稿件审核", "视频列表",
-		"视频回收站", "分区配置", "举报处理", "评论管控", "弹幕管控", "动态管理",
-		"轮播图管理", "全站通知", "封禁管理", "封禁记录", "角色管理", "菜单权限", "接口资源":
-		return true
-	default:
-		return false
-	}
-}
-
 // buildMenuSeeds 复制一份种子表并回填图标，图标缺失时回落到默认图标。
 func buildMenuSeeds() []menuSeed {
 	seeds := defaultMenuSeeds()

@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
 )
 
 // parseVideoHits 解析视频索引的一页响应；分片级错误只告警并返回零值。
-func parseVideoHits(res *elastic.SearchResult, logger *zap.Logger) app.VideoHits {
+func (a Adapter) parseVideoHits(res *elastic.SearchResult, logger *zap.Logger) app.VideoHits {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -25,11 +25,11 @@ func parseVideoHits(res *elastic.SearchResult, logger *zap.Logger) app.VideoHits
 		return app.VideoHits{}
 	}
 
-	return app.VideoHits{Total: res.TotalHits(), Items: parseVideoList(res)}
+	return app.VideoHits{Total: res.TotalHits(), Items: a.parseVideoList(res)}
 }
 
 // parseUserHits 解析用户索引的一页响应；分片级错误只告警并返回零值。
-func parseUserHits(res *elastic.SearchResult, logger *zap.Logger) app.UserHits {
+func (a Adapter) parseUserHits(res *elastic.SearchResult, logger *zap.Logger) app.UserHits {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -42,11 +42,11 @@ func parseUserHits(res *elastic.SearchResult, logger *zap.Logger) app.UserHits {
 		return app.UserHits{}
 	}
 
-	return app.UserHits{Total: res.TotalHits(), Items: parseUserList(res)}
+	return app.UserHits{Total: res.TotalHits(), Items: a.parseUserList(res)}
 }
 
 // parseVideoList 把 ES 命中解码为视频结果项，兼容 snake_case 与 camelCase 字段名。
-func parseVideoList(res *elastic.SearchResult) []app.SearchVideoHit {
+func (a Adapter) parseVideoList(res *elastic.SearchResult) []app.SearchVideoHit {
 	if res == nil || res.Error != nil || res.Hits == nil {
 		return nil
 	}
@@ -59,27 +59,27 @@ func parseVideoList(res *elastic.SearchResult) []app.SearchVideoHit {
 			continue
 		}
 
-		authorUsername := toString(data["author_username"])
+		authorUsername := a.toString(data["author_username"])
 		if authorUsername == "" {
-			authorUsername = toString(data["authorUsername"])
+			authorUsername = a.toString(data["authorUsername"])
 		}
 
-		createdAt := toTime(data["created_at"])
+		createdAt := a.toTime(data["created_at"])
 		if createdAt.IsZero() {
-			createdAt = toTime(data["createdAt"])
+			createdAt = a.toTime(data["createdAt"])
 		}
 
 		list = append(list, app.SearchVideoHit{
-			ID:             toUint(data["id"]),
-			Title:          toString(data["title"]),
-			Cover:          toString(data["cover"]),
+			ID:             a.toUint(data["id"]),
+			Title:          a.toString(data["title"]),
+			Cover:          a.toString(data["cover"]),
 			AuthorUsername: authorUsername,
 			CreatedAt:      createdAt,
-			Highlight:      toHighlightMap(hit.Highlight),
-			Views:          toInt64(data["views"]),
-			DanmuCount:     toInt64(data["danmu_count"]),
-			Duration:       toInt(data["duration"]),
-			Tags:           toStringSlice(data["tags"]),
+			Highlight:      a.toHighlightMap(hit.Highlight),
+			Views:          a.toInt64(data["views"]),
+			DanmuCount:     a.toInt64(data["danmu_count"]),
+			Duration:       a.toInt(data["duration"]),
+			Tags:           a.toStringSlice(data["tags"]),
 		})
 	}
 
@@ -87,7 +87,7 @@ func parseVideoList(res *elastic.SearchResult) []app.SearchVideoHit {
 }
 
 // parseUserList 把 ES 命中解码为用户结果项。
-func parseUserList(res *elastic.SearchResult) []app.SearchUserHit {
+func (a Adapter) parseUserList(res *elastic.SearchResult) []app.SearchUserHit {
 	if res == nil || res.Error != nil || res.Hits == nil {
 		return nil
 	}
@@ -101,12 +101,12 @@ func parseUserList(res *elastic.SearchResult) []app.SearchUserHit {
 		}
 
 		list = append(list, app.SearchUserHit{
-			ID:            toUint(data["id"]),
-			Username:      toString(data["username"]),
-			Avatar:        toString(data["avatar"]),
-			Highlight:     toHighlightMap(hit.Highlight),
-			Level:         toInt(data["level"]),
-			FollowerCount: toInt64(data["follower_count"]),
+			ID:            a.toUint(data["id"]),
+			Username:      a.toString(data["username"]),
+			Avatar:        a.toString(data["avatar"]),
+			Highlight:     a.toHighlightMap(hit.Highlight),
+			Level:         a.toInt(data["level"]),
+			FollowerCount: a.toInt64(data["follower_count"]),
 		})
 	}
 
@@ -116,13 +116,14 @@ func parseUserList(res *elastic.SearchResult) []app.SearchUserHit {
 // parseSuggestHits 从命中文档里抽取联想候选值并去重（大小写不敏感）。
 //
 // ES 拼音命中时原文可能不含查询词，此处仍然保留，由 _score 保证相关性。
-func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size int) []app.SuggestionItem {
+func (a Adapter) parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size int) []app.SuggestionItem {
 	if resp == nil || resp.Hits == nil || len(resp.Hits.Hits) == 0 {
 		return []app.SuggestionItem{}
 	}
 
 	items := make([]app.SuggestionItem, 0, size)
 	seen := make(map[string]struct{}, size)
+	keywords := searchdomain.KeywordPolicy{}
 
 	appendValue := func(value string) bool {
 		value = strings.TrimSpace(value)
@@ -138,7 +139,7 @@ func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size i
 		seen[key] = struct{}{}
 		items = append(items, app.SuggestionItem{
 			Value:     value,
-			Highlight: searchvo.HighlightSuggestion(value, prefix),
+			Highlight: (app.SuggestionHighlighter{}).HighlightSuggestion(value, prefix),
 			DocType:   docType,
 		})
 
@@ -156,18 +157,18 @@ func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size i
 		}
 
 		switch docType {
-		case searchvo.DocTypeUser:
-			if appendValue(toString(data["username"])) {
+		case searchdomain.DocTypeUser:
+			if appendValue(a.toString(data["username"])) {
 				return items
 			}
-		case searchvo.DocTypeTag:
-			for _, tag := range searchvo.SelectMatchingTags(toStringSlice(data["tags"]), prefix) {
+		case searchdomain.DocTypeTag:
+			for _, tag := range keywords.SelectMatchingTags(a.toStringSlice(data["tags"]), prefix) {
 				if appendValue(tag) {
 					return items
 				}
 			}
 		default:
-			if appendValue(toString(data["title"])) {
+			if appendValue(a.toString(data["title"])) {
 				return items
 			}
 		}
@@ -177,14 +178,14 @@ func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size i
 }
 
 // parseMentionSearchHitUserID 从命中项取用户 ID：优先解析 _id（users:12），其次取 fields.id。
-func parseMentionSearchHitUserID(hit *elastic.SearchHit) uint {
+func (a Adapter) parseMentionSearchHitUserID(hit *elastic.SearchHit) uint {
 	if hit == nil {
 		return 0
 	}
 
-	if id, ok := searchvo.ParseDocumentID(hit.Id); ok {
+	if id, ok := (esContract{}).ParseDocumentID(hit.Id); ok {
 		return id
 	}
 
-	return toUint(hit.Fields["id"])
+	return a.toUint(hit.Fields["id"])
 }

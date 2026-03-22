@@ -7,20 +7,17 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
 // UpdateService 改稿用例服务。
 type UpdateService struct {
 	txm         tx.Manager
-	videos      videorepo.VideoRepository
-	tags        videorepo.TagRepository
-	partitions  videorepo.PartitionRepository
-	schedule    ScheduleStore
+	videos      videodomain.VideoRepository
+	tags        videodomain.TagRepository
+	partitions  videodomain.PartitionRepository
+	schedule    videodomain.ScheduleRepository
 	authors     *AuthorService
 	vectors     *VectorSyncService
 	cfgProvider shared.ConfigReader
@@ -29,10 +26,10 @@ type UpdateService struct {
 // NewUpdateService 构造改稿用例服务。
 func NewUpdateService(
 	txm tx.Manager,
-	videos videorepo.VideoRepository,
-	tags videorepo.TagRepository,
-	partitions videorepo.PartitionRepository,
-	schedule ScheduleStore,
+	videos videodomain.VideoRepository,
+	tags videodomain.TagRepository,
+	partitions videodomain.PartitionRepository,
+	schedule videodomain.ScheduleRepository,
 	authors *AuthorService,
 	vectors *VectorSyncService,
 	cfgProvider shared.ConfigReader,
@@ -60,17 +57,17 @@ func (s *UpdateService) UpdateVideo(
 	opts UpdateVideoOpts,
 ) (*UpdatedVideo, error) {
 	if opts.VideoID == 0 {
-		return nil, videoerrors.ErrVideoIDRequired
+		return nil, videodomain.ErrVideoIDRequired
 	}
 
 	var (
-		video     *videoentity.Video
-		tags      []videoentity.Tag
-		partition *videoentity.Partition
+		video     *videodomain.Video
+		tags      []videodomain.Tag
+		partition *videodomain.Partition
 	)
 	now := time.Now()
 	reviewEnabled := contentReviewEnabled(s.cfgProvider.Get())
-	change := videoentity.Revision{
+	change := videodomain.Revision{
 		Title: opts.Title, Description: opts.Description, Cover: opts.CoverURL,
 		PartitionID: opts.PartitionID, IsOriginal: opts.IsOriginal,
 		IsPrivate: opts.IsPrivate, PublishTime: opts.PublishTime,
@@ -95,9 +92,9 @@ func (s *UpdateService) UpdateVideo(
 			}
 			if err := partition.EnsureSubmittable(); err != nil {
 				switch {
-				case errors.Is(err, videoerrors.ErrPartitionNotFound):
+				case errors.Is(err, videodomain.ErrPartitionNotFound):
 					return errPartitionMissing
-				case errors.Is(err, videoerrors.ErrPartitionInactive):
+				case errors.Is(err, videodomain.ErrPartitionInactive):
 					return errPartitionDisabled
 				default:
 					return err
@@ -111,7 +108,7 @@ func (s *UpdateService) UpdateVideo(
 				return errQueryTagsFailed
 			}
 		} else {
-			tags, err = s.tags.TagsByVideoID(txCtx, video.ID)
+			tags, err = s.tags.TagsByVideoID(txCtx, video.ID())
 			if err != nil {
 				return err
 			}
@@ -121,52 +118,53 @@ func (s *UpdateService) UpdateVideo(
 			return err
 		}
 		// 计划与状态同库提交；失败会一起回滚，不留下无发布任务的 Scheduled 视频。
+		// Revise 已把「未来公开」记入 IsScheduled，这里只按该结论写入或清除计划。
 		if opts.IsPrivate != nil || opts.PublishTime != nil {
-			if opts.PublishTime != nil && videoentity.ShouldScheduleVideoPublish(now, *opts.PublishTime, video.Status == enum.VideoStatusPrivate) {
-				if err := s.schedule.Add(txCtx, video.ID, *opts.PublishTime); err != nil {
+			if video.IsScheduled() {
+				if err := s.schedule.Add(txCtx, video.ID(), *opts.PublishTime); err != nil {
 					return err
 				}
-			} else if err := s.schedule.Remove(txCtx, video.ID); err != nil {
+			} else if err := s.schedule.Remove(txCtx, video.ID()); err != nil {
 				return err
 			}
 		}
 		if opts.TagIDs != nil {
-			return s.tags.ReplaceTags(txCtx, video.ID, tags)
+			return s.tags.ReplaceTags(txCtx, video.ID(), tags)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
-	s.authors.InvalidateVideoAuthorCache(ctx, video.ID)
-	s.vectors.SyncAsync(ctx, video.ID, video.Status)
+	s.authors.InvalidateVideoAuthorCache(ctx, video.ID())
+	s.vectors.SyncAsync(ctx, video.ID(), video.Status())
 
 	return buildUpdatedVideo(video, tags, partition), nil
 }
 
 // buildUpdatedVideo 组装改稿响应体。
 func buildUpdatedVideo(
-	video *videoentity.Video,
-	tags []videoentity.Tag,
-	partition *videoentity.Partition,
+	video *videodomain.Video,
+	tags []videodomain.Tag,
+	partition *videodomain.Partition,
 ) *UpdatedVideo {
 	out := &UpdatedVideo{
-		ID:             video.ID,
-		Title:          video.Title,
-		Description:    video.Description,
-		Cover:          video.Cover,
-		Duration:       video.Duration,
-		AuthorUsername: video.AuthorUsername,
-		PartitionID:    video.PartitionID,
-		Views:          video.Views,
-		Likes:          video.Likes,
-		CommentCount:   video.CommentCount,
-		CoinCount:      video.CoinCount,
-		FavoriteCount:  video.FavoriteCount,
-		DanmuCount:     video.DanmuCount,
-		IsOriginal:     video.IsOriginal,
-		StorageType:    video.StorageType,
-		Status:         video.Status,
+		ID:             video.ID(),
+		Title:          video.Title(),
+		Description:    video.Description(),
+		Cover:          video.Cover(),
+		Duration:       video.Duration(),
+		AuthorUsername: video.AuthorUsername(),
+		PartitionID:    video.PartitionID(),
+		Views:          video.Views(),
+		Likes:          video.Likes(),
+		CommentCount:   video.CommentCount(),
+		CoinCount:      video.CoinCount(),
+		FavoriteCount:  video.FavoriteCount(),
+		DanmuCount:     video.DanmuCount(),
+		IsOriginal:     video.IsOriginal(),
+		StorageType:    video.StorageType(),
+		Status:         video.Status(),
 	}
 
 	if tags != nil {

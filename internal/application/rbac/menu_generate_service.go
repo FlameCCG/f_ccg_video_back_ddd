@@ -7,9 +7,7 @@ import (
 	"strings"
 	"time"
 
-	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 )
 
 // Generate 根据中文标题、父菜单和完整 menus 数据生成其余可编辑字段。
@@ -17,35 +15,35 @@ func (s *MenuService) Generate(
 	ctx context.Context,
 	title string,
 	parentID *uint,
-) (*rbacvo.MenuSuggestion, error) {
+) (*rbacdomain.MenuSuggestion, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
-		return nil, rbacerrors.ErrMenuGenerationTitleEmpty
+		return nil, rbacdomain.ErrMenuGenerationTitleEmpty
 	}
 
-	parentID = normalizedParentID(parentID)
+	parentID = s.order.NormalizeParent(parentID)
 	if parentID != nil {
 		parent, err := s.menus.FindByID(ctx, *parentID)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", rbacerrors.ErrReadParentMenuFailed, err)
+			return nil, fmt.Errorf("%w: %w", rbacdomain.ErrReadParentMenuFailed, err)
 		}
 		if parent == nil {
-			return nil, rbacerrors.ErrParentMenuNotFound
+			return nil, rbacdomain.ErrParentMenuNotFound
 		}
 	}
 
 	menus, err := s.menus.ListForGeneration(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", rbacerrors.ErrReadMenuDataFailed, err)
+		return nil, fmt.Errorf("%w: %w", rbacdomain.ErrReadMenuDataFailed, err)
 	}
 
 	menuTableJSON, err := json.Marshal(toMenuPromptRows(menus))
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", rbacerrors.ErrPrepareMenuDataFailed, err)
+		return nil, fmt.Errorf("%w: %w", rbacdomain.ErrPrepareMenuDataFailed, err)
 	}
 
 	if s.generator == nil {
-		return nil, rbacerrors.ErrMenuGeneratorUnavailable
+		return nil, rbacdomain.ErrMenuGeneratorUnavailable
 	}
 
 	text, err := s.generator.GenerateMenuSuggestion(ctx, title, parentID, menuTableJSON)
@@ -71,7 +69,7 @@ type menuPromptRow struct {
 	SortOrder uint      `json:"sortOrder"`
 }
 
-func toMenuPromptRows(menus []*rbacentity.Menu) []menuPromptRow {
+func toMenuPromptRows(menus []*rbacdomain.Menu) []menuPromptRow {
 	rows := make([]menuPromptRow, 0, len(menus))
 	for _, menu := range menus {
 		if menu == nil {
@@ -79,19 +77,19 @@ func toMenuPromptRows(menus []*rbacentity.Menu) []menuPromptRow {
 		}
 
 		rows = append(rows, menuPromptRow{
-			ID:        menu.ID,
-			CreatedAt: menu.CreatedAt,
-			UpdatedAt: menu.UpdatedAt,
-			Title:     menu.Title,
-			TitleEn:   menu.TitleEn,
-			TitleJa:   menu.TitleJa,
-			Icon:      menu.Icon,
-			Path:      menu.Path,
-			Name:      menu.Name,
-			Component: menu.Component,
-			KeepAlive: menu.KeepAlive,
-			ParentID:  menu.ParentID,
-			SortOrder: menu.SortOrder,
+			ID:        menu.ID(),
+			CreatedAt: menu.CreatedAt(),
+			UpdatedAt: menu.UpdatedAt(),
+			Title:     menu.Title(),
+			TitleEn:   menu.TitleEn(),
+			TitleJa:   menu.TitleJa(),
+			Icon:      menu.Icon(),
+			Path:      menu.Path(),
+			Name:      menu.Name(),
+			Component: menu.Component(),
+			KeepAlive: menu.KeepAlive(),
+			ParentID:  menu.ParentID(),
+			SortOrder: menu.SortOrder(),
 		})
 	}
 

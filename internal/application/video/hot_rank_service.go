@@ -2,14 +2,7 @@ package video
 
 import (
 	"context"
-)
-
-const (
-	defaultHotPageSize  = 20
-	maxHotPageSize      = 50
-	defaultRankPageSize = 20
-	maxRankPageSize     = 50
-	rankTopLimit        = 100
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
 // HotFeed 综合热门视频列表（ZSET 热度，配合定时衰减）。
@@ -18,17 +11,7 @@ func (s *FeedService) HotFeed(ctx context.Context, page, pageSize int) ([]FeedIt
 		return s.hotFeedFromDB(ctx, page, pageSize)
 	}
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = defaultHotPageSize
-	}
-
-	if pageSize > maxHotPageSize {
-		pageSize = maxHotPageSize
-	}
+	page, pageSize = (videodomain.ListingPolicy{}).HotPage(page, pageSize)
 
 	total, err := s.hotRank.Card(ctx)
 	if err != nil {
@@ -69,17 +52,7 @@ func (s *FeedService) HotFeed(ctx context.Context, page, pageSize int) ([]FeedIt
 
 // RankTop 查询综合排行榜视频（Top100），优先通过 Redis 热度 ZSET 分页，缺失时由数据库查询 TopN。
 func (s *FeedService) RankTop(ctx context.Context, page, pageSize int) ([]FeedItem, int64, error) {
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = defaultRankPageSize
-	}
-
-	if pageSize > maxRankPageSize {
-		pageSize = maxRankPageSize
-	}
+	page, pageSize = (videodomain.ListingPolicy{}).RankPage(page, pageSize)
 
 	if s.hotRank.Available() {
 		if items, total, ok := s.rankTopFromZSet(ctx, page, pageSize); ok {
@@ -101,20 +74,12 @@ func (s *FeedService) rankTopFromZSet(ctx context.Context, page, pageSize int) (
 		return nil, 0, false
 	}
 
-	total := card
-	if total > int64(rankTopLimit) {
-		total = int64(rankTopLimit)
-	}
-
-	start := int64((page - 1) * pageSize)
-	if start >= total {
+	window := (videodomain.ListingPolicy{}).RankWindow(card, page, pageSize)
+	total := window.Total
+	if window.Limit == 0 {
 		return []FeedItem{}, total, true
 	}
-
-	end := start + int64(pageSize) - 1
-	if end >= total {
-		end = total - 1
-	}
+	start, end := window.Offset, window.Offset+int64(window.Limit)-1
 
 	ids, err := s.hotRank.RevRange(ctx, start, end)
 	if err != nil {
@@ -140,25 +105,12 @@ func (s *FeedService) rankTopFromDB(ctx context.Context, page, pageSize int) ([]
 		return nil, 0, err
 	}
 
-	if total > rankTopLimit {
-		total = rankTopLimit
-	}
-
-	if total == 0 {
-		return []FeedItem{}, 0, nil
-	}
-
-	offset := max((page-1)*pageSize, 0)
-	if offset >= int(total) {
+	window := (videodomain.ListingPolicy{}).RankWindow(total, page, pageSize)
+	total = window.Total
+	if window.Limit == 0 {
 		return []FeedItem{}, total, nil
 	}
-
-	limit := pageSize
-	if offset+limit > int(total) {
-		limit = int(total) - offset
-	}
-
-	items, err := s.query.FetchRankFromDB(ctx, offset, limit)
+	items, err := s.query.FetchRankFromDB(ctx, int(window.Offset), window.Limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -171,17 +123,7 @@ func (s *FeedService) rankTopFromDB(ctx context.Context, page, pageSize int) ([]
 }
 
 func (s *FeedService) hotFeedFromDB(ctx context.Context, page, pageSize int) ([]FeedItem, int64, error) {
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = defaultHotPageSize
-	}
-
-	if pageSize > maxHotPageSize {
-		pageSize = maxHotPageSize
-	}
+	page, pageSize = (videodomain.ListingPolicy{}).HotPage(page, pageSize)
 
 	items, total, err := s.query.FetchHotFromDB(ctx, page, pageSize)
 	if err != nil {

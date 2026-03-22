@@ -3,20 +3,20 @@ package notification
 import (
 	"context"
 
-	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
-	notificationrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // Create 写入通知并失效角标缓存。
-func (s *DeliveryService) Create(ctx context.Context, notice *notificationentity.Notification) error {
-	if err := s.repo.Create(ctx, notice); err != nil {
-		return err
+func (s *DeliveryService) Create(ctx context.Context, notice *notificationdomain.Notification) (*notificationdomain.Notification, error) {
+	saved, err := s.repo.Create(ctx, notice)
+	if err != nil {
+		return nil, err
 	}
 
-	s.counts.InvalidateCount(notice.ReceiverID)
+	s.counts.InvalidateCount(saved.ReceiverID())
 
-	return nil
+	return saved, nil
 }
 
 // NotifyBanStatus 发送账号状态变更系统通知，实现 identity 声明的 BanNotifier 端口。
@@ -28,7 +28,7 @@ func (s *DeliveryService) NotifyBanStatus(
 	actionUserID uint,
 	actionUserName, actionUserAvatar, title, content string,
 ) {
-	notice := &notificationentity.Notification{
+	notice := notificationdomain.NewNotification(notificationdomain.Draft{
 		Type:             enum.NotificationSystemType,
 		ReceiverID:       int(receiverID),
 		ActionUserID:     actionUserID,
@@ -36,39 +36,41 @@ func (s *DeliveryService) NotifyBanStatus(
 		ActionUserAvatar: actionUserAvatar,
 		Title:            title,
 		Content:          content,
-	}
+	})
 
-	if err := s.repo.Create(ctx, notice); err == nil {
-		s.counts.InvalidateCount(notice.ReceiverID)
+	saved, err := s.repo.Create(ctx, notice)
+	if err == nil {
+		s.counts.InvalidateCount(saved.ReceiverID())
 	}
 }
 
 // CreateBatch 批量写入通知，并逐个失效对应接收者的角标缓存。
-func (s *DeliveryService) CreateBatch(ctx context.Context, notices []notificationentity.Notification) error {
+func (s *DeliveryService) CreateBatch(ctx context.Context, notices []notificationdomain.Notification) ([]notificationdomain.Notification, error) {
 	if len(notices) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	if err := s.repo.CreateBatch(ctx, notices); err != nil {
-		return err
+	saved, err := s.repo.CreateBatch(ctx, notices)
+	if err != nil {
+		return nil, err
 	}
 
-	receivers := make([]int, 0, len(notices))
-	for i := range notices {
-		receivers = append(receivers, notices[i].ReceiverID)
+	receivers := make([]int, 0, len(saved))
+	for i := range saved {
+		receivers = append(receivers, saved[i].ReceiverID())
 	}
 
 	s.counts.invalidateCountForReceivers(receivers)
 
-	return nil
+	return saved, nil
 }
 
 // DeliveryService 负责通知写入与投递。
 type DeliveryService struct {
-	repo   notificationrepo.Repository
+	repo   notificationdomain.Repository
 	counts *CountService
 }
 
-func NewDeliveryService(repo notificationrepo.Repository, counts *CountService) *DeliveryService {
+func NewDeliveryService(repo notificationdomain.Repository, counts *CountService) *DeliveryService {
 	return &DeliveryService{repo: repo, counts: counts}
 }

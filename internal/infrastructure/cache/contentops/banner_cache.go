@@ -14,7 +14,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -56,7 +56,7 @@ func visibleBannerCacheKey(bannerType enum.BannerType, partitionID *uint) string
 }
 
 // LoadVisible 读取可见轮播图缓存；未命中、Redis 未初始化或反序列化失败返回 (nil, false)。
-func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint) ([]contentopsentity.Banner, bool) {
+func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint) ([]contentopsdomain.Banner, bool) {
 	if c.redis == nil {
 		return nil, false
 	}
@@ -75,7 +75,7 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 		return nil, false
 	}
 
-	var items []contentopsentity.Banner
+	var items []app.BannerDTO
 	if err := json.Unmarshal(raw, &items); err != nil {
 		c.logger.Warn("unmarshal visible banner cache failed", zap.String("key", key), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
@@ -83,22 +83,18 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 		return nil, false
 	}
 
-	// 返回副本，避免调用方修改影响后续逻辑
-	copied := make([]contentopsentity.Banner, len(items))
-	copy(copied, items)
-
-	return copied, true
+	return c.bannersFromDTO(items), true
 }
 
 // StoreVisible 回填可见轮播图缓存（失败仅告警）。
-func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint, items []contentopsentity.Banner) {
+func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint, items []contentopsdomain.Banner) {
 	if c.redis == nil {
 		return
 	}
 
 	key := visibleBannerCacheKey(bannerType, partitionID)
 
-	raw, err := json.Marshal(items)
+	raw, err := json.Marshal(c.dtosFromBanners(items))
 	if err != nil {
 		c.logger.Warn("marshal visible banner cache failed", zap.String("key", key), zap.Error(err))
 
@@ -125,6 +121,29 @@ func (c *BannerCache) InvalidateVisible() {
 	if err := c.deleteKeysByPrefix(cacheCtx, constants.BannerVisibleCacheKeyPrefix); err != nil {
 		c.logger.Warn("invalidate visible banner cache failed", zap.Error(err))
 	}
+}
+
+// dtosFromBanners 按缓存 JSON 结构编码，nil 与空切片分别保持。
+func (*BannerCache) dtosFromBanners(items []contentopsdomain.Banner) []app.BannerDTO {
+	return (app.BannerDTO{}).FromBanners(items)
+}
+
+// bannersFromDTO 把已有缓存解码为领域实体。不重新执行创建校验。
+func (*BannerCache) bannersFromDTO(items []app.BannerDTO) []contentopsdomain.Banner {
+	// 缓存允许写入 null，但读取时分配空切片，因此 HTTP 输出 []。
+	out := make([]contentopsdomain.Banner, len(items))
+	for i := range items {
+		out[i] = *contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{
+			ID:          items[i].ID,
+			Cover:       items[i].Cover,
+			Href:        items[i].Href,
+			Show:        items[i].Show,
+			Type:        items[i].Type,
+			PartitionID: items[i].PartitionID,
+		})
+	}
+
+	return out
 }
 
 // deleteKeysByPrefix 用 SCAN 游标分批删除指定前缀的 key。

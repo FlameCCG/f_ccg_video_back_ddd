@@ -11,6 +11,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // AdminDynamicQuery 管理端动态列表查询的 GORM 实现。
@@ -205,20 +206,22 @@ func NewVideoOwnershipQuery(db *gorm.DB) *VideoOwnershipQuery {
 	return &VideoOwnershipQuery{db: db}
 }
 
-// ExistsPublishedByAuthor 判定视频是否存在、已发布且属于指定作者。
-func (q *VideoOwnershipQuery) ExistsPublishedByAuthor(
+// ExistsPublishedByAuthorForUpdate 以锁定读取得最新发布状态和归属，复用置顶事务。
+func (q *VideoOwnershipQuery) ExistsPublishedByAuthorForUpdate(
 	ctx context.Context,
 	videoID uint,
 	authorUsername string,
 ) (bool, error) {
-	var exists int64
-	if err := gormx.DB(ctx, q.db).
-		Model(&po.Video{}).
+	var row po.Video
+	if err := gormx.DB(ctx, q.db).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").
 		Where("id = ? AND author_username = ? AND status = ?", videoID, authorUsername, enum.VideoStatusPublished).
-		Limit(1).
-		Count(&exists).Error; err != nil {
+		Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
 		return false, err
 	}
 
-	return exists > 0, nil
+	return true, nil
 }

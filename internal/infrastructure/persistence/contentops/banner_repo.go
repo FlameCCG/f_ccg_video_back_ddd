@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 
-	contentopserrors "f_ccg_video_back_ddd/internal/domain/contentops/domainerr"
-	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
-	contentopsrepo "f_ccg_video_back_ddd/internal/domain/contentops/repository"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // BannerRepository 是轮播图仓储的 GORM 实现。
@@ -22,11 +21,23 @@ type BannerRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ contentopsrepo.BannerRepository = (*BannerRepository)(nil)
+var _ contentopsdomain.BannerRepository = (*BannerRepository)(nil)
 
 // NewBannerRepository 构造轮播图仓储。
 func NewBannerRepository(db *gorm.DB) *BannerRepository {
 	return &BannerRepository{db: db}
+}
+
+// FindByCoverForUpdate 使用初始化任务的封面身份锁定最新横幅。
+func (r *BannerRepository) FindByCoverForUpdate(ctx context.Context, cover string) (*contentopsdomain.Banner, error) {
+	var row po.Banner
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).Where("cover = ?", cover).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toDomainBanner(&row), nil
 }
 
 // ListVisible 按类型与分区读取可展示的轮播图，id 倒序。
@@ -34,7 +45,7 @@ func (r *BannerRepository) ListVisible(
 	ctx context.Context,
 	bannerType enum.BannerType,
 	partitionID *uint,
-) ([]contentopsentity.Banner, error) {
+) ([]contentopsdomain.Banner, error) {
 	query := gormx.DB(ctx, r.db).Model(&po.Banner{}).
 		Where("`show` = ?", true)
 	if bannerType > 0 {
@@ -56,8 +67,8 @@ func (r *BannerRepository) ListVisible(
 // ListAdmin 后台分页列表：先取总数，总数为 0 时直接返回空列表。
 func (r *BannerRepository) ListAdmin(
 	ctx context.Context,
-	q contentopsentity.BannerAdminQuery,
-) ([]contentopsentity.Banner, int64, error) {
+	q contentopsdomain.BannerAdminQuery,
+) ([]contentopsdomain.Banner, int64, error) {
 	query := gormx.DB(ctx, r.db).Model(&po.Banner{})
 	if q.Type > 0 {
 		query = query.Where("type = ?", q.Type)
@@ -77,7 +88,7 @@ func (r *BannerRepository) ListAdmin(
 	}
 
 	if total == 0 {
-		return []contentopsentity.Banner{}, 0, nil
+		return []contentopsdomain.Banner{}, 0, nil
 	}
 
 	var list []po.Banner
@@ -96,9 +107,9 @@ func (r *BannerRepository) ListVisibleByIDs(
 	ctx context.Context,
 	bannerType enum.BannerType,
 	ids []uint,
-) ([]contentopsentity.Banner, error) {
+) ([]contentopsdomain.Banner, error) {
 	if len(ids) == 0 {
-		return []contentopsentity.Banner{}, nil
+		return []contentopsdomain.Banner{}, nil
 	}
 
 	query := gormx.DB(ctx, r.db).
@@ -114,12 +125,12 @@ func (r *BannerRepository) ListVisibleByIDs(
 		return nil, err
 	}
 
-	bannerMap := make(map[uint]contentopsentity.Banner, len(list))
+	bannerMap := make(map[uint]contentopsdomain.Banner, len(list))
 	for i := range list {
 		bannerMap[list[i].ID] = *toDomainBanner(&list[i])
 	}
 
-	ordered := make([]contentopsentity.Banner, 0, len(list))
+	ordered := make([]contentopsdomain.Banner, 0, len(list))
 
 	for _, id := range ids {
 		banner, ok := bannerMap[id]
@@ -134,7 +145,7 @@ func (r *BannerRepository) ListVisibleByIDs(
 }
 
 // FindByID 按主键读取轮播图；不存在时返回 (nil, nil)。
-func (r *BannerRepository) FindByID(ctx context.Context, bannerID uint) (*contentopsentity.Banner, error) {
+func (r *BannerRepository) FindByID(ctx context.Context, bannerID uint) (*contentopsdomain.Banner, error) {
 	var row po.Banner
 	if err := gormx.DB(ctx, r.db).First(&row, bannerID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -147,33 +158,46 @@ func (r *BannerRepository) FindByID(ctx context.Context, bannerID uint) (*conten
 	return toDomainBanner(&row), nil
 }
 
-// Create 新增轮播图，并把自增主键与时间戳回填到入参实体。
-func (r *BannerRepository) Create(ctx context.Context, banner *contentopsentity.Banner) error {
+// FindByIDForUpdate 复用事务 context，以当前读取得并锁定轮播图。
+func (r *BannerRepository) FindByIDForUpdate(ctx context.Context, bannerID uint) (*contentopsdomain.Banner, error) {
+	var row po.Banner
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).First(&row, bannerID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toDomainBanner(&row), nil
+}
+
+// Create 新增轮播图，返回带自增主键与时间戳的恢复实体。不改写入参。
+func (r *BannerRepository) Create(ctx context.Context, banner *contentopsdomain.Banner) (*contentopsdomain.Banner, error) {
 	if banner == nil {
-		return contentopserrors.ErrBannerInvalidParam
+		return nil, contentopsdomain.ErrBannerInvalidParam
 	}
 
 	row := toPOBanner(banner)
 	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	banner.ID = row.ID
-	banner.CreatedAt = row.CreatedAt
-	banner.UpdatedAt = row.UpdatedAt
+	snapshot := banner.Snapshot()
+	snapshot.ID = row.ID
+	snapshot.CreatedAt = row.CreatedAt
+	snapshot.UpdatedAt = row.UpdatedAt
 
-	return nil
+	return contentopsdomain.RestoreBanner(snapshot), nil
 }
 
 // Update 按主键部分更新轮播图字段。
-func (r *BannerRepository) Update(ctx context.Context, bannerID uint, changes contentopsentity.BannerChanges) error {
+func (r *BannerRepository) Update(ctx context.Context, bannerID uint, changes contentopsdomain.BannerChanges) error {
 	if bannerID == 0 {
-		return contentopserrors.ErrBannerInvalidParam
+		return contentopsdomain.ErrBannerInvalidParam
 	}
 
 	updates := toPOBannerChanges(changes)
 	if len(updates) == 0 {
-		return contentopserrors.ErrBannerNoUpdatableField
+		return contentopsdomain.ErrBannerNoUpdatableField
 	}
 
 	return gormx.DB(ctx, r.db).

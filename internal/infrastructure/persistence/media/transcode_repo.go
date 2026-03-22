@@ -10,13 +10,11 @@ package media
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/media/artifactpath"
 	"fmt"
 	"strings"
 
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediarepo "f_ccg_video_back_ddd/internal/domain/media/repository"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
@@ -33,7 +31,7 @@ type TranscodeResourceRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储端口。
-var _ mediarepo.TranscodeResourceRepository = (*TranscodeResourceRepository)(nil)
+var _ mediadomain.TranscodeResourceRepository = (*TranscodeResourceRepository)(nil)
 
 // NewTranscodeResourceRepository 构造转码资源仓储。
 func NewTranscodeResourceRepository(db *gorm.DB, txm tx.Manager) *TranscodeResourceRepository {
@@ -41,9 +39,9 @@ func NewTranscodeResourceRepository(db *gorm.DB, txm tx.Manager) *TranscodeResou
 }
 
 // EnsureTaskActive 校验视频（及分P）仍存在且未被删除；已删除或不存在时返回 ErrVideoDeleted。
-func (r *TranscodeResourceRepository) EnsureTaskActive(ctx context.Context, task mediaentity.TranscodeTask) error {
-	if errors.Is(context.Cause(ctx), mediaerrors.ErrVideoDeleted) {
-		return mediaerrors.ErrVideoDeleted
+func (r *TranscodeResourceRepository) EnsureTaskActive(ctx context.Context, task mediadomain.TranscodeTask) error {
+	if errors.Is(context.Cause(ctx), mediadomain.ErrVideoDeleted) {
+		return mediadomain.ErrVideoDeleted
 	}
 
 	if r == nil || r.db == nil {
@@ -61,7 +59,7 @@ func (r *TranscodeResourceRepository) EnsureTaskActive(ctx context.Context, task
 	}
 
 	if video.Status == enum.VideoStatusDeleted {
-		return mediaerrors.ErrVideoDeleted
+		return mediadomain.ErrVideoDeleted
 	}
 
 	if task.VideoPartID == 0 {
@@ -87,7 +85,7 @@ func (r *TranscodeResourceRepository) EnsureTaskActive(ctx context.Context, task
 // 单P 视频只在 duration 仍为 0 时回填。
 func (r *TranscodeResourceRepository) UpdateDurationFromProbe(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
+	task mediadomain.TranscodeTask,
 	duration int,
 ) error {
 	if duration <= 0 || task.VideoID == 0 {
@@ -123,8 +121,8 @@ func (r *TranscodeResourceRepository) UpdateDurationFromProbe(
 // 命中多行时保留 file_size 最大者并删除其余，避免历史重复行堆积。
 func (r *TranscodeResourceRepository) SaveOriginalResource(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
-	meta mediavo.VideoMeta,
+	task mediadomain.TranscodeTask,
+	meta mediadomain.VideoMeta,
 	sourceURL string,
 	size int64,
 	highBitrate bool,
@@ -286,7 +284,7 @@ func originalResourceUpdateMap(
 	}
 
 	// 断点续传：源行已指向本任务的规范化产物时不回退到原始源。
-	if mediavo.StoredPathMatchesRelative(keepURL, normalizedRelative) {
+	if (artifactpath.Policy{}).StoredPathMatchesRelative(keepURL, normalizedRelative) {
 		fileURL = keepURL
 		fileSize = keepSize
 		bitrate = keepBitrate
@@ -310,7 +308,7 @@ func originalResourceUpdateMap(
 // UpdateOriginalResourceFile 把源资源行指向规范化后的产物。
 func (r *TranscodeResourceRepository) UpdateOriginalResourceFile(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
+	task mediadomain.TranscodeTask,
 	res enum.VideoResolution,
 	newFileName, url string,
 	size int64,
@@ -378,13 +376,13 @@ func (r *TranscodeResourceRepository) UpdateOriginalResourceFile(
 // SaveVideoResource 按输出高度 upsert 一条派生资源行（4K 标记为 VIP）。
 func (r *TranscodeResourceRepository) SaveVideoResource(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
+	task mediadomain.TranscodeTask,
 	res uint16,
 	sourceName, url string,
 	size int64,
 	bitrate int,
 ) error {
-	resolution := mediavo.MapResolutionEnumByHeight(int(res))
+	resolution := (mediadomain.OutputPlanner{}).MapResolutionEnumByHeight(int(res))
 
 	return r.SaveSpecificVideoResource(
 		ctx,
@@ -402,7 +400,7 @@ func (r *TranscodeResourceRepository) SaveVideoResource(
 // SaveSpecificVideoResource 按显式分辨率枚举 upsert 一条资源行。
 func (r *TranscodeResourceRepository) SaveSpecificVideoResource(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
+	task mediadomain.TranscodeTask,
 	res enum.VideoResolution,
 	sourceName, url string,
 	size int64,
@@ -515,7 +513,7 @@ func (r *TranscodeResourceRepository) SaveSpecificVideoResource(
 // 重试时按 (video[_part]_id, resolution=自适应, is_souce_video=false) 去重并原地更新。
 func (r *TranscodeResourceRepository) SaveDASHResource(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
+	task mediadomain.TranscodeTask,
 	sourceName, mpdURL string,
 	totalSize int64,
 ) error {
@@ -600,7 +598,7 @@ func (r *TranscodeResourceRepository) SaveDASHResource(
 // resolution 为空字符串时不按分辨率过滤（供源行查询使用）。
 func (r *TranscodeResourceRepository) PersistedResourceURLs(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
+	task mediadomain.TranscodeTask,
 	resolution enum.VideoResolution,
 	isSource bool,
 ) ([]string, error) {
@@ -638,7 +636,7 @@ func (r *TranscodeResourceRepository) PersistedResourceURLs(
 // lockActiveVideo 以行锁读取未删除的视频，与硬删除状态切换串行化。
 func lockActiveVideo(ctx context.Context, db *gorm.DB, videoID uint) error {
 	if db == nil || videoID == 0 {
-		return mediaerrors.ErrVideoDeleted
+		return mediadomain.ErrVideoDeleted
 	}
 
 	var video po.Video
@@ -668,8 +666,8 @@ func lockVideoPart(ctx context.Context, db *gorm.DB, videoID, partID uint) error
 
 // classifyTranscodeStateError 把「记录不存在」与「取消原因为视频删除」统一归为 ErrVideoDeleted。
 func classifyTranscodeStateError(ctx context.Context, err error) error {
-	if errors.Is(context.Cause(ctx), mediaerrors.ErrVideoDeleted) || errors.Is(err, gorm.ErrRecordNotFound) {
-		return mediaerrors.ErrVideoDeleted
+	if errors.Is(context.Cause(ctx), mediadomain.ErrVideoDeleted) || errors.Is(err, gorm.ErrRecordNotFound) {
+		return mediadomain.ErrVideoDeleted
 	}
 
 	return err

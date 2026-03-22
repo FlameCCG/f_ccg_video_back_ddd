@@ -3,12 +3,8 @@ package video
 import (
 	"context"
 	"encoding/json"
-	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -21,7 +17,7 @@ type ReportRepository struct {
 	db *gorm.DB
 }
 
-var _ videorepo.ReportRepository = (*ReportRepository)(nil)
+var _ videodomain.ReportRepository = (*ReportRepository)(nil)
 
 // NewReportRepository 构造举报仓储。
 func NewReportRepository(db *gorm.DB) *ReportRepository {
@@ -29,76 +25,78 @@ func NewReportRepository(db *gorm.DB) *ReportRepository {
 }
 
 // CreateVideoReport 写入视频举报并回填 ID/时间。
-func (r *ReportRepository) CreateVideoReport(ctx context.Context, report *videoentity.VideoReport) error {
+func (r *ReportRepository) CreateVideoReport(ctx context.Context, report *videodomain.VideoReport) (*videodomain.VideoReport, error) {
 	if report == nil {
-		return videoerrors.ErrParamInvalid
+		return nil, videodomain.ErrParamInvalid
 	}
 
 	row := po.VideoReport{
-		ReporterUsername: report.ReporterUsername,
-		VideoID:          report.VideoID,
-		Reason:           report.Reason,
-		Detail:           report.Detail,
-		ImageUrls:        marshalImageJSON(report.ImageURLs),
-		Status:           report.Status,
-		HandleNote:       report.HandleNote,
-		HandledBy:        report.HandledBy,
-		HandledAt:        report.HandledAt,
+		ReporterUsername: report.ReporterUsername(),
+		VideoID:          report.VideoID(),
+		Reason:           report.Reason(),
+		Detail:           report.Detail(),
+		ImageUrls:        marshalImageJSON(report.ImageURLs()),
+		Status:           report.Status(),
+		HandleNote:       report.HandleNote(),
+		HandledBy:        report.HandledBy(),
+		HandledAt:        report.HandledAt(),
 	}
 
 	if err := gormx.DB(ctx, r.db).Create(&row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	report.ID = row.ID
-	report.CreatedAt = row.CreatedAt
-	report.UpdatedAt = row.UpdatedAt
+	snap := report.Snapshot()
+	snap.ID = row.ID
+	snap.CreatedAt = row.CreatedAt
+	snap.UpdatedAt = row.UpdatedAt
 
-	return nil
+	return videodomain.RestoreVideoReport(snap), nil
 }
 
 // CreateDanmuReport 写入弹幕举报并回填 ID/时间。
-func (r *ReportRepository) CreateDanmuReport(ctx context.Context, report *videoentity.DanmuReport) error {
+func (r *ReportRepository) CreateDanmuReport(ctx context.Context, report *videodomain.DanmuReport) (*videodomain.DanmuReport, error) {
 	if report == nil {
-		return videoerrors.ErrParamInvalid
+		return nil, videodomain.ErrParamInvalid
 	}
 
 	row := po.DanmuReport{
-		ReporterUsername: report.ReporterUsername,
-		VideoID:          report.VideoID,
-		DanmuID:          report.DanmuID,
-		Reason:           report.Reason,
-		Detail:           report.Detail,
-		Status:           report.Status,
-		HandleNote:       report.HandleNote,
-		HandledBy:        report.HandledBy,
-		HandledAt:        report.HandledAt,
+		ReporterUsername: report.ReporterUsername(),
+		VideoID:          report.VideoID(),
+		DanmuID:          report.DanmuID(),
+		Reason:           report.Reason(),
+		Detail:           report.Detail(),
+		Status:           report.Status(),
+		HandleNote:       report.HandleNote(),
+		HandledBy:        report.HandledBy(),
+		HandledAt:        report.HandledAt(),
 	}
 
 	if err := gormx.DB(ctx, r.db).Create(&row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	report.ID = row.ID
-	report.CreatedAt = row.CreatedAt
-	report.UpdatedAt = row.UpdatedAt
+	snap := report.Snapshot()
+	snap.ID = row.ID
+	snap.CreatedAt = row.CreatedAt
+	snap.UpdatedAt = row.UpdatedAt
 
-	return nil
+	return videodomain.RestoreDanmuReport(snap), nil
 }
 
 // HandleVideoReports 批量处理待处理的视频举报，返回影响行数。
 func (r *ReportRepository) HandleVideoReports(
 	ctx context.Context,
 	reportIDs []uint,
-	status enum.ReportStatus,
-	note string,
-	handlerID uint,
-	handledAt time.Time,
+	handling videodomain.ReportHandling,
 ) (int64, error) {
+	if err := handling.Validate(); err != nil {
+		return 0, err
+	}
 	result := gormx.DB(ctx, r.db).
 		Model(&po.VideoReport{}).
-		Where("id IN ? AND status = ?", reportIDs, enum.ReportStatusPending).
-		Updates(reportHandleUpdates(status, note, handlerID, handledAt))
+		Where("id IN ? AND status = ?", reportIDs, handling.FromStatus()).
+		Updates(reportHandleUpdates(handling))
 
 	return result.RowsAffected, result.Error
 }
@@ -107,15 +105,15 @@ func (r *ReportRepository) HandleVideoReports(
 func (r *ReportRepository) HandleDanmuReports(
 	ctx context.Context,
 	reportIDs []uint,
-	status enum.ReportStatus,
-	note string,
-	handlerID uint,
-	handledAt time.Time,
+	handling videodomain.ReportHandling,
 ) (int64, error) {
+	if err := handling.Validate(); err != nil {
+		return 0, err
+	}
 	result := gormx.DB(ctx, r.db).
 		Model(&po.DanmuReport{}).
-		Where("id IN ? AND status = ?", reportIDs, enum.ReportStatusPending).
-		Updates(reportHandleUpdates(status, note, handlerID, handledAt))
+		Where("id IN ? AND status = ?", reportIDs, handling.FromStatus()).
+		Updates(reportHandleUpdates(handling))
 
 	return result.RowsAffected, result.Error
 }
@@ -123,7 +121,7 @@ func (r *ReportRepository) HandleDanmuReports(
 // ReporterUsernames 读取给定举报记录的举报人用户名列表。
 func (r *ReportRepository) ReporterUsernames(
 	ctx context.Context,
-	handleType videoentity.ReportHandleType,
+	handleType videodomain.ReportHandleType,
 	reportIDs []uint,
 ) ([]string, error) {
 	if len(reportIDs) == 0 {
@@ -133,12 +131,12 @@ func (r *ReportRepository) ReporterUsernames(
 	var table string
 
 	switch handleType {
-	case videoentity.ReportHandleTypeVideo:
+	case videodomain.ReportHandleTypeVideo:
 		table = "video_reports"
-	case videoentity.ReportHandleTypeDanmu:
+	case videodomain.ReportHandleTypeDanmu:
 		table = "danmu_reports"
 	default:
-		return nil, videoerrors.ErrReportTypeInvalid
+		return nil, videodomain.ErrReportTypeInvalid
 	}
 
 	type row struct {
@@ -163,20 +161,9 @@ func (r *ReportRepository) ReporterUsernames(
 }
 
 // reportHandleUpdates 组装举报处理的列更新。
-func reportHandleUpdates(
-	status enum.ReportStatus,
-	note string,
-	handlerID uint,
-	handledAt time.Time,
-) map[string]any {
-	at := handledAt
-
-	return map[string]any{
-		"status":      status,
-		"handle_note": note,
-		"handled_by":  handlerID,
-		"handled_at":  &at,
-	}
+func reportHandleUpdates(handling videodomain.ReportHandling) map[string]any {
+	at := handling.HandledAt()
+	return map[string]any{"status": handling.Status(), "handle_note": handling.Note(), "handled_by": handling.HandlerID(), "handled_at": &at}
 }
 
 // marshalImageJSON 把图片 URL 列表序列化为 JSON 列值；空列表时返回零值（NULL）。

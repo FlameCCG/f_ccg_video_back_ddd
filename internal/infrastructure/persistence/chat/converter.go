@@ -2,12 +2,12 @@ package chat
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/chat"
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 )
 
 // toPOMedia 领域媒体信息 → Mongo 文档结构。
-func toPOMedia(media *chatentity.Media) *mongopo.ChatMessageMedia {
+func (*Store) toPOMedia(media *chatdomain.Media) *mongopo.ChatMessageMedia {
 	if media == nil {
 		return nil
 	}
@@ -22,7 +22,7 @@ func toPOMedia(media *chatentity.Media) *mongopo.ChatMessageMedia {
 }
 
 // toMediaItem Mongo 文档结构 → 读模型媒体信息。
-func toMediaItem(media *mongopo.ChatMessageMedia) *app.MediaItem {
+func (*Store) toMediaItem(media *mongopo.ChatMessageMedia) *app.MediaItem {
 	if media == nil {
 		return nil
 	}
@@ -37,7 +37,7 @@ func toMediaItem(media *mongopo.ChatMessageMedia) *app.MediaItem {
 }
 
 // toMessageItem Mongo 消息文档 → 读模型（ObjectID 以十六进制字符串承载）。
-func toMessageItem(row *mongopo.ChatMessage) app.MessageItem {
+func (s *Store) toMessageItem(row *mongopo.ChatMessage) app.MessageItem {
 	if row == nil {
 		return app.MessageItem{}
 	}
@@ -50,13 +50,13 @@ func toMessageItem(row *mongopo.ChatMessage) app.MessageItem {
 		Type:           row.Type,
 		Text:           row.Text,
 		Emoji:          row.Emoji,
-		Media:          toMediaItem(row.Media),
+		Media:          s.toMediaItem(row.Media),
 		CreatedAt:      row.CreatedAt,
 	}
 }
 
 // toLastMessageItem Mongo 会话摘要 → 读模型。
-func toLastMessageItem(last *mongopo.ChatConversationLastMessage) *app.LastMessageItem {
+func (*Store) toLastMessageItem(last *mongopo.ChatConversationLastMessage) *app.LastMessageItem {
 	if last == nil {
 		return nil
 	}
@@ -71,12 +71,12 @@ func toLastMessageItem(last *mongopo.ChatConversationLastMessage) *app.LastMessa
 }
 
 // toDomainLastMessage Mongo 会话摘要 → 领域摘要。
-func toDomainLastMessage(last *mongopo.ChatConversationLastMessage) *chatentity.LastMessage {
+func (*Store) toDomainLastMessage(last *mongopo.ChatConversationLastMessage) *chatdomain.LastMessage {
 	if last == nil {
 		return nil
 	}
 
-	return &chatentity.LastMessage{
+	return &chatdomain.LastMessage{
 		MsgID:     last.MsgID.Hex(),
 		Type:      last.Type,
 		Preview:   last.Preview,
@@ -86,23 +86,23 @@ func toDomainLastMessage(last *mongopo.ChatConversationLastMessage) *chatentity.
 }
 
 // toDomainConversation Mongo 会话文档 → 领域聚合。
-func toDomainConversation(row *mongopo.ChatConversation) *chatentity.Conversation {
+func (s *Store) toDomainConversation(row *mongopo.ChatConversation) *chatdomain.Conversation {
 	if row == nil {
 		return nil
 	}
 
-	return &chatentity.Conversation{
+	return chatdomain.RestoreConversation(chatdomain.ConversationSnapshot{
 		ID:          row.ID,
-		MemberA:     toDomainMember(row.MemberA),
-		MemberB:     toDomainMember(row.MemberB),
-		LastMessage: toDomainLastMessage(row.LastMessage),
+		MemberA:     s.toDomainMember(row.MemberA),
+		MemberB:     s.toDomainMember(row.MemberB),
+		LastMessage: s.toDomainLastMessage(row.LastMessage),
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
-	}
+	})
 }
 
-func toDomainMember(member mongopo.ChatConversationMember) chatentity.Member {
-	return chatentity.Member{
+func (*Store) toDomainMember(member mongopo.ChatConversationMember) chatdomain.Member {
+	return chatdomain.Member{
 		UserID:  member.UserID,
 		Unread:  member.Unread,
 		Visible: member.Visible,

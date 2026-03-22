@@ -26,7 +26,6 @@ func (h *AdminHandler) AdminUserListView(c *gin.Context) {
 	if !ensureUserStatusValid(c, req.Status) {
 		return
 	}
-
 	list, total, err := h.users.List(c.Request.Context(), app.AdminUserListParams{
 		Keyword:  req.Keyword,
 		Status:   req.Status,
@@ -36,10 +35,8 @@ func (h *AdminHandler) AdminUserListView(c *gin.Context) {
 	})
 	if err != nil {
 		res.FailWithMsg(clienterror.Message(err), c)
-
 		return
 	}
-
 	res.OkWithList(list, total, c)
 }
 

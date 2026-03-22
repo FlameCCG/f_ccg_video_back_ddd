@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
@@ -42,8 +41,6 @@ const (
 	esMappingType          = "type"
 	esMappingText          = "text"
 	esMappingKeyword       = "keyword"
-	embeddingImageModeOn   = "on"
-	embeddingImageModeOff  = "off"
 )
 
 type vectorHit struct {
@@ -115,7 +112,7 @@ func (v *VideoVectorIndex) SearchIDs(
 	}
 
 	if input.Text == "" {
-		return topVectorHitIDs(knnHits, limit), nil
+		return v.topVectorHitIDs(knnHits, limit), nil
 	}
 
 	keywordHits, err := v.runKeywordSearch(ctx, cfg, input.Text, limit*keywordRecallFactor)
@@ -126,10 +123,10 @@ func (v *VideoVectorIndex) SearchIDs(
 			zap.Error(err),
 		)
 
-		return topVectorHitIDs(knnHits, limit), nil
+		return v.topVectorHitIDs(knnHits, limit), nil
 	}
 
-	return fuseByRRF(cfg.RRFRankConstant, limit, knnHits, keywordHits), nil
+	return v.fuseByRRF(cfg.RRFRankConstant, limit, knnHits, keywordHits), nil
 }
 
 func (v *VideoVectorIndex) runKnnSearch(
@@ -143,7 +140,7 @@ func (v *VideoVectorIndex) runKnnSearch(
 		"query_vector":   vector,
 		"k":              limit,
 		"num_candidates": max(limit*knnCandidateFactor, knnMinCandidates),
-		"filter":         []any{publishedStatusFilter()},
+		"filter":         []any{v.publishedStatusFilter()},
 	}
 	if cfg.MinSimilarity > 0 {
 		// Elasticsearch 的 cosine _score 为 (1 + cosine) / 2。
@@ -168,7 +165,7 @@ func (v *VideoVectorIndex) runKeywordSearch(
 		"_source": []string{vectorFieldVideoID},
 		"query": map[string]any{
 			"bool": map[string]any{
-				"filter": []any{publishedStatusFilter()},
+				"filter": []any{v.publishedStatusFilter()},
 				"must": []any{map[string]any{
 					"multi_match": map[string]any{
 						"query": query,
@@ -186,7 +183,7 @@ func (v *VideoVectorIndex) runKeywordSearch(
 	})
 }
 
-func publishedStatusFilter() map[string]any {
+func (*VideoVectorIndex) publishedStatusFilter() map[string]any {
 	return map[string]any{
 		"term": map[string]any{
 			vectorFieldStatus: map[string]any{"value": int(enum.VideoStatusPublished)},
@@ -214,7 +211,7 @@ func (v *VideoVectorIndex) runIndexSearch(
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.IsError() {
-		return nil, fmt.Errorf("vector search failed: %s %s", resp.Status(), readErrorBody(resp.Body))
+		return nil, fmt.Errorf("vector search failed: %s %s", resp.Status(), v.readErrorBody(resp.Body))
 	}
 
 	var parsed struct {
@@ -256,10 +253,10 @@ func (v *VideoVectorIndex) Store(
 		return err
 	}
 
-	document, content := buildVideoVectorDocument(source)
+	document, content := v.buildVideoVectorDocument(source)
 	imageSource, imageErr := v.resolveVideoCover(cfg, source.Cover)
 	if imageErr != nil {
-		if cfg.ImageMode == embeddingImageModeOn {
+		if cfg.ImageMode == searchdomain.EmbeddingImageModeOn {
 			return fmt.Errorf(
 				"video %d cover embedding is required but unavailable: %w",
 				source.ID,
@@ -283,7 +280,7 @@ func (v *VideoVectorIndex) Store(
 
 	resp, err := (esapi.IndexRequest{
 		Index:      cfg.Index,
-		DocumentID: searchvo.VideoDocumentID(source.ID),
+		DocumentID: (esContract{}).VideoDocumentID(source.ID),
 		Body:       bytes.NewReader(payload),
 	}).Do(ctx, v.client)
 	if err != nil {
@@ -295,7 +292,7 @@ func (v *VideoVectorIndex) Store(
 		return fmt.Errorf(
 			"index video vector document failed: %s %s",
 			resp.Status(),
-			readErrorBody(resp.Body),
+			v.readErrorBody(resp.Body),
 		)
 	}
 
@@ -306,11 +303,11 @@ func (v *VideoVectorIndex) resolveVideoCover(
 	cfg app.VectorConfig,
 	cover string,
 ) (string, error) {
-	if cfg.ImageMode == embeddingImageModeOff {
+	if cfg.ImageMode == searchdomain.EmbeddingImageModeOff {
 		return "", nil
 	}
 
-	return resolveCoverEmbedSource(cover, cfg.AssetBaseURL, cfg.LocalStorageRoot)
+	return v.resolveCoverEmbedSource(cover, cfg.AssetBaseURL, cfg.LocalStorageRoot)
 }
 
 // Delete 删除一个视频向量文档；索引或文档不存在均视为成功。
@@ -321,7 +318,7 @@ func (v *VideoVectorIndex) Delete(ctx context.Context, cfg app.VectorConfig, vid
 
 	resp, err := (esapi.DeleteRequest{
 		Index:      cfg.Index,
-		DocumentID: searchvo.VideoDocumentID(videoID),
+		DocumentID: (esContract{}).VideoDocumentID(videoID),
 		Refresh:    "true",
 	}).Do(ctx, v.client)
 	if err != nil {
@@ -336,7 +333,7 @@ func (v *VideoVectorIndex) Delete(ctx context.Context, cfg app.VectorConfig, vid
 		return fmt.Errorf(
 			"delete video vector document failed: %s %s",
 			resp.Status(),
-			readErrorBody(resp.Body),
+			v.readErrorBody(resp.Body),
 		)
 	}
 
@@ -358,7 +355,7 @@ func (v *VideoVectorIndex) Prepare(ctx context.Context, cfg app.VectorConfig, re
 		if err != nil {
 			return fmt.Errorf("删除向量索引失败: %w", err)
 		}
-		if err = closeVectorResponse(resp, "删除向量索引失败"); err != nil {
+		if err = v.closeVectorResponse(resp, "删除向量索引失败"); err != nil {
 			return err
 		}
 		v.resetIndexChecks()
@@ -409,7 +406,7 @@ func (v *VideoVectorIndex) indexExists(ctx context.Context, index string) (bool,
 }
 
 func (v *VideoVectorIndex) createIndex(ctx context.Context, cfg app.VectorConfig) error {
-	payload, err := json.Marshal(buildVideoVectorIndexSpec(cfg.EmbeddingDimensions))
+	payload, err := json.Marshal(v.buildVideoVectorIndexSpec(cfg.EmbeddingDimensions))
 	if err != nil {
 		return fmt.Errorf("marshal vector index spec failed: %w", err)
 	}
@@ -424,7 +421,7 @@ func (v *VideoVectorIndex) createIndex(ctx context.Context, cfg app.VectorConfig
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.IsError() {
-		body := readErrorBody(resp.Body)
+		body := v.readErrorBody(resp.Body)
 		if strings.Contains(body, "resource_already_exists_exception") {
 			return nil
 		}
@@ -449,7 +446,7 @@ func (v *VideoVectorIndex) verifyIndexDimensions(ctx context.Context, cfg app.Ve
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.IsError() {
-		return fmt.Errorf("read vector index mapping failed: %s %s", resp.Status(), readErrorBody(resp.Body))
+		return fmt.Errorf("read vector index mapping failed: %s %s", resp.Status(), v.readErrorBody(resp.Body))
 	}
 
 	var parsed map[string]struct {
@@ -498,10 +495,10 @@ func (v *VideoVectorIndex) Refresh(ctx context.Context, cfg app.VectorConfig) er
 		return fmt.Errorf("刷新向量索引失败: %w", err)
 	}
 
-	return closeVectorResponse(resp, "刷新向量索引失败")
+	return v.closeVectorResponse(resp, "刷新向量索引失败")
 }
 
-func closeVectorResponse(response *esapi.Response, operation string) error {
+func (v *VideoVectorIndex) closeVectorResponse(response *esapi.Response, operation string) error {
 	if response == nil {
 		return fmt.Errorf("%s: empty response", operation)
 	}
@@ -511,10 +508,10 @@ func closeVectorResponse(response *esapi.Response, operation string) error {
 		return nil
 	}
 
-	return fmt.Errorf("%s: %s %s", operation, response.Status(), readErrorBody(response.Body))
+	return fmt.Errorf("%s: %s %s", operation, response.Status(), v.readErrorBody(response.Body))
 }
 
-func buildVideoVectorIndexSpec(dimensions int) map[string]any {
+func (*VideoVectorIndex) buildVideoVectorIndexSpec(dimensions int) map[string]any {
 	if dimensions <= 0 {
 		dimensions = defaultEmbeddingDims
 	}
@@ -562,9 +559,9 @@ func buildVideoVectorIndexSpec(dimensions int) map[string]any {
 	}
 }
 
-func buildVideoVectorDocument(source app.VideoVectorSource) (map[string]any, string) {
-	tagNames := searchvo.TrimNonEmpty(source.Tags)
-	content := (searchvo.VideoVectorInput{
+func (*VideoVectorIndex) buildVideoVectorDocument(source app.VideoVectorSource) (map[string]any, string) {
+	tagNames := (searchdomain.VectorPolicy{}).TrimNonEmpty(source.Tags)
+	content := (searchdomain.VideoVectorInput{
 		Title:       source.Title,
 		Description: source.Description,
 		Partition:   source.Partition,
@@ -585,60 +582,27 @@ func buildVideoVectorDocument(source app.VideoVectorSource) (map[string]any, str
 	}, content
 }
 
-func fuseByRRF(rankConstant, limit int, rankings ...[]vectorHit) []uint {
-	if rankConstant <= 0 {
-		rankConstant = defaultRRFRankConstant
+func (v *VideoVectorIndex) fuseByRRF(rankConstant, limit int, rankings ...[]vectorHit) []uint {
+	ids := make([][]uint, len(rankings))
+	for i, ranking := range rankings {
+		ids[i] = v.rankedIDs(ranking)
 	}
-
-	scores := make(map[uint]float64)
-	order := make([]uint, 0, limit*len(rankings))
-	for _, ranking := range rankings {
-		for rank, hit := range ranking {
-			if _, seen := scores[hit.VideoID]; !seen {
-				order = append(order, hit.VideoID)
-			}
-			scores[hit.VideoID] += 1 / float64(rankConstant+rank+1)
-		}
-	}
-
-	position := make(map[uint]int, len(order))
-	for index, id := range order {
-		position[id] = index
-	}
-	sort.SliceStable(order, func(left, right int) bool {
-		leftID, rightID := order[left], order[right]
-		if scores[leftID] != scores[rightID] {
-			return scores[leftID] > scores[rightID]
-		}
-
-		return position[leftID] < position[rightID]
-	})
-
-	if limit > 0 && len(order) > limit {
-		order = order[:limit]
-	}
-
-	return order
+	return (searchdomain.RankFusion{}).FuseRRF(rankConstant, limit, ids...)
 }
 
-func topVectorHitIDs(hits []vectorHit, limit int) []uint {
-	ids := make([]uint, 0, len(hits))
-	seen := make(map[uint]struct{}, len(hits))
-	for _, hit := range hits {
-		if _, ok := seen[hit.VideoID]; ok {
-			continue
-		}
-		seen[hit.VideoID] = struct{}{}
-		ids = append(ids, hit.VideoID)
-		if limit > 0 && len(ids) >= limit {
-			break
-		}
-	}
+func (v *VideoVectorIndex) topVectorHitIDs(hits []vectorHit, limit int) []uint {
+	return (searchdomain.RankFusion{}).TopIDs(v.rankedIDs(hits), limit)
+}
 
+func (*VideoVectorIndex) rankedIDs(hits []vectorHit) []uint {
+	ids := make([]uint, len(hits))
+	for i, hit := range hits {
+		ids[i] = hit.VideoID
+	}
 	return ids
 }
 
-func readErrorBody(body io.Reader) string {
+func (*VideoVectorIndex) readErrorBody(body io.Reader) string {
 	raw, err := io.ReadAll(io.LimitReader(body, vectorErrorBodyLimit))
 	if err != nil {
 		return ""

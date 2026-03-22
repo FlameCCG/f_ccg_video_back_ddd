@@ -3,7 +3,7 @@ package notification
 import (
 	"errors"
 
-	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -28,7 +28,7 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	if err := h.inbox.Delete(c.Request.Context(), int(uid), req.IDs); err != nil {
-		if errors.Is(err, notificationentity.ErrSystemNotificationNotDeletable) {
+		if errors.Is(err, notificationdomain.ErrSystemNotificationNotDeletable) {
 			res.FailWithMsg(clienterror.Message(err), c)
 
 			return

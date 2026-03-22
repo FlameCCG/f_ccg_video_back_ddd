@@ -3,7 +3,7 @@ package video
 import (
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -74,13 +74,13 @@ func (h *AdminHandler) AdminReportHandleView(c *gin.Context) {
 
 	handlerID, _ := middlewares.GetUID(c)
 
-	var handleType videoentity.ReportHandleType
+	var handleType videodomain.ReportHandleType
 
 	switch req.Type {
 	case "video":
-		handleType = videoentity.ReportHandleTypeVideo
+		handleType = videodomain.ReportHandleTypeVideo
 	case "danmu":
-		handleType = videoentity.ReportHandleTypeDanmu
+		handleType = videodomain.ReportHandleTypeDanmu
 	default:
 		res.FailWithMsg("type 非法", c)
 

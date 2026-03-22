@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -61,16 +61,16 @@ func (s *authorStatsCacheStub) Store(_ string, stats UserVideoStats) {
 }
 
 type statsCacheStub struct {
-	values map[uint]*videovo.Stats
+	values map[uint]*videodomain.Stats
 }
 
 func (s *statsCacheStub) Available() bool { return true }
 
-func (s *statsCacheStub) Load(context.Context, uint) (*videovo.Stats, bool) {
+func (s *statsCacheStub) Load(context.Context, uint) (*videodomain.Stats, bool) {
 	return nil, false
 }
 
-func (s *statsCacheStub) LoadBatch(context.Context, []uint) map[uint]*videovo.Stats {
+func (s *statsCacheStub) LoadBatch(context.Context, []uint) map[uint]*videodomain.Stats {
 	return s.values
 }
 
@@ -78,20 +78,20 @@ func (s *statsCacheStub) RawPayload(context.Context, uint) (string, bool, error)
 	return "", false, nil
 }
 
-func (s *statsCacheStub) Seed(context.Context, uint, *videovo.Stats) {}
+func (s *statsCacheStub) Seed(context.Context, uint, *videodomain.Stats) {}
 
 func (s *statsCacheStub) ApplyDelta(
 	context.Context,
-	uint, videovo.StatsDelta,
+	uint, videodomain.StatsDelta,
 	string,
-) (*videovo.Stats, error) {
+) (*videodomain.Stats, error) {
 	return nil, nil
 }
 
 func (s *statsCacheStub) ApplyDeltaIfExists(
 	context.Context,
-	uint, videovo.StatsDelta,
-) (*videovo.Stats, bool, error) {
+	uint, videodomain.StatsDelta,
+) (*videodomain.Stats, bool, error) {
 	return nil, false, nil
 }
 
@@ -108,7 +108,7 @@ func TestAuthorStatsServiceUsesRedisValuesAndDatabaseFallback(t *testing.T) {
 	}}
 	cache := &authorStatsCacheStub{}
 	stats := &StatsService{cache: &statsCacheStub{
-		values: map[uint]*videovo.Stats{
+		values: map[uint]*videodomain.Stats{
 			1: {Views: 100, Likes: 20},
 		},
 	}, logger: zap.NewNop()}

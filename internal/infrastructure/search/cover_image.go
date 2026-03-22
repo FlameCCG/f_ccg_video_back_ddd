@@ -16,7 +16,7 @@ const maxCoverImageBytes = 8 << 20
 
 var errCoverUnavailable = errors.New("cover image unavailable for embedding")
 
-func resolveCoverEmbedSource(
+func (v *VideoVectorIndex) resolveCoverEmbedSource(
 	cover string,
 	assetBaseURL string,
 	localStorageRoot string,
@@ -32,25 +32,25 @@ func resolveCoverEmbedSource(
 
 	if parsed, err := url.Parse(cover); err == nil &&
 		(parsed.Scheme == "http" || parsed.Scheme == "https") {
-		if isPubliclyReachableHost(parsed.Hostname()) {
+		if v.isPubliclyReachableHost(parsed.Hostname()) {
 			return cover, nil
 		}
 
 		return "", errCoverUnavailable
 	}
 
-	if absolute := joinAssetBaseURL(assetBaseURL, cover); absolute != "" {
-		if parsed, err := url.Parse(absolute); err == nil && isPubliclyReachableHost(parsed.Hostname()) {
+	if absolute := v.joinAssetBaseURL(assetBaseURL, cover); absolute != "" {
+		if parsed, err := url.Parse(absolute); err == nil && v.isPubliclyReachableHost(parsed.Hostname()) {
 			return absolute, nil
 		}
 
-		return readLocalImageAsDataURI(localStorageRoot, cover)
+		return v.readLocalImageAsDataURI(localStorageRoot, cover)
 	}
 
-	return readLocalImageAsDataURI(localStorageRoot, cover)
+	return v.readLocalImageAsDataURI(localStorageRoot, cover)
 }
 
-func joinAssetBaseURL(baseURL, relative string) string {
+func (*VideoVectorIndex) joinAssetBaseURL(baseURL, relative string) string {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		return ""
@@ -62,7 +62,7 @@ func joinAssetBaseURL(baseURL, relative string) string {
 	)
 }
 
-func isPubliclyReachableHost(host string) bool {
+func (*VideoVectorIndex) isPubliclyReachableHost(host string) bool {
 	host = strings.ToLower(strings.TrimSpace(host))
 	if host == "" {
 		return false
@@ -79,7 +79,7 @@ func isPubliclyReachableHost(host string) bool {
 	return true
 }
 
-func readLocalImageAsDataURI(root, cover string) (string, error) {
+func (v *VideoVectorIndex) readLocalImageAsDataURI(root, cover string) (string, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return "", fmt.Errorf(
@@ -88,7 +88,7 @@ func readLocalImageAsDataURI(root, cover string) (string, error) {
 		)
 	}
 
-	path, err := safeJoinUnderRoot(root, cover)
+	path, err := v.safeJoinUnderRoot(root, cover)
 	if err != nil {
 		return "", err
 	}
@@ -110,10 +110,10 @@ func readLocalImageAsDataURI(root, cover string) (string, error) {
 		return "", fmt.Errorf("%w: read cover failed: %w", errCoverUnavailable, err)
 	}
 
-	return buildImageDataURI(data, "")
+	return v.buildImageDataURI(data, "")
 }
 
-func safeJoinUnderRoot(root, relative string) (string, error) {
+func (*VideoVectorIndex) safeJoinUnderRoot(root, relative string) (string, error) {
 	cleanedRoot, err := filepath.Abs(filepath.Clean(root))
 	if err != nil {
 		return "", fmt.Errorf("%w: resolve storage root failed: %w", errCoverUnavailable, err)
@@ -145,7 +145,7 @@ func safeJoinUnderRoot(root, relative string) (string, error) {
 	return absolute, nil
 }
 
-func buildImageDataURI(data []byte, declaredContentType string) (string, error) {
+func (*VideoVectorIndex) buildImageDataURI(data []byte, declaredContentType string) (string, error) {
 	if len(data) == 0 {
 		return "", fmt.Errorf("%w: cover is empty", errCoverUnavailable)
 	}

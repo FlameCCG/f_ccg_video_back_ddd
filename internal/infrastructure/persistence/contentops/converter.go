@@ -7,17 +7,17 @@
 package contentops
 
 import (
-	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainBanner 把轮播图 PO 转为领域实体（字段逐一显式映射）。
-func toDomainBanner(row *po.Banner) *contentopsentity.Banner {
+func toDomainBanner(row *po.Banner) *contentopsdomain.Banner {
 	if row == nil {
 		return nil
 	}
 
-	return &contentopsentity.Banner{
+	return contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{
 		ID:          row.ID,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
@@ -26,19 +26,19 @@ func toDomainBanner(row *po.Banner) *contentopsentity.Banner {
 		Show:        row.Show,
 		Type:        row.Type,
 		PartitionID: row.PartitionID,
-	}
+	})
 }
 
 // toDomainBanners 批量转换轮播图。
 //
 // GORM Find 的空结果是非 nil 空切片，响应体序列化为 data:[]。
 // 未经 Find 的 nil 入参仍返回 nil，保留空值与空集合的区别。
-func toDomainBanners(rows []po.Banner) []contentopsentity.Banner {
+func toDomainBanners(rows []po.Banner) []contentopsdomain.Banner {
 	if rows == nil {
 		return nil
 	}
 
-	out := make([]contentopsentity.Banner, 0, len(rows))
+	out := make([]contentopsdomain.Banner, 0, len(rows))
 	for i := range rows {
 		out = append(out, *toDomainBanner(&rows[i]))
 	}
@@ -47,27 +47,27 @@ func toDomainBanners(rows []po.Banner) []contentopsentity.Banner {
 }
 
 // toPOBanner 把轮播图领域实体转为 PO。
-func toPOBanner(banner *contentopsentity.Banner) *po.Banner {
+func toPOBanner(banner *contentopsdomain.Banner) *po.Banner {
 	if banner == nil {
 		return nil
 	}
 
 	return &po.Banner{
 		Model: po.Model{
-			ID:        banner.ID,
-			CreatedAt: banner.CreatedAt,
-			UpdatedAt: banner.UpdatedAt,
+			ID:        banner.ID(),
+			CreatedAt: banner.CreatedAt(),
+			UpdatedAt: banner.UpdatedAt(),
 		},
-		Cover:       banner.Cover,
-		Href:        banner.Href,
-		Show:        banner.Show,
-		Type:        banner.Type,
-		PartitionID: banner.PartitionID,
+		Cover:       banner.Cover(),
+		Href:        banner.Href(),
+		Show:        banner.Show(),
+		Type:        banner.Type(),
+		PartitionID: banner.PartitionID(),
 	}
 }
 
 // toPOBannerChanges 将部分更新集合转换为轮播图的 GORM 更新列。
-func toPOBannerChanges(changes contentopsentity.BannerChanges) map[string]any {
+func toPOBannerChanges(changes contentopsdomain.BannerChanges) map[string]any {
 	updates := map[string]any{}
 	if changes.Cover != nil {
 		updates["cover"] = *changes.Cover

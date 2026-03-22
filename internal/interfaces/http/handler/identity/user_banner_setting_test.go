@@ -12,8 +12,7 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	contentopspersistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/contentops"
@@ -68,20 +67,22 @@ func newBannerFixture(t *testing.T, cfg *config.Config, configPath string) *bann
 func (f *bannerFixture) createUser(t *testing.T, userID uint, username, email string) {
 	t.Helper()
 
-	user := &identityentity.User{
+	user := identitydomain.RestoreUser(identitydomain.UserSnapshot{
 		ID:       userID,
 		Username: username,
 		Email:    email,
-	}
+	})
 
 	// 与生产路径一致，在同一事务内创建用户及默认配置。
 	ctx := context.Background()
 	if err := f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txCtx := gormx.WithTx(ctx, tx)
-		if err := f.users.Create(txCtx, user, 0); err != nil {
+		created, err := f.users.Create(txCtx, user, 0)
+		if err != nil {
 			return err
 		}
-		return f.users.InitializeDefaults(txCtx, user.ID)
+		*user = *created
+		return f.users.InitializeDefaults(txCtx, user.ID())
 	}); err != nil {
 		t.Fatalf("create user %d failed: %v", userID, err)
 	}
@@ -256,7 +257,7 @@ func TestAdminSetUserBannerView(t *testing.T) {
 	})
 
 	t.Run("reject setting already default banner", func(t *testing.T) {
-		currentDefault := identityvo.ResolveDefaultUserBannerID(fixture.provider.Get().Site.DefaultUserBannerID)
+		currentDefault := (identitydomain.BannerPolicy{}).ResolveDefaultID(fixture.provider.Get().Site.DefaultUserBannerID)
 
 		// 保证该 ID 存在且是可选的用户横幅，从而只剩「已是注册默认横幅」这一失败原因。
 		if err := fixture.db.Save(&po.Banner{
@@ -431,7 +432,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{secondBannerID, thirdBannerID},
-			Action:    identityvo.UserBannerActionAdd,
+			Action:    identitydomain.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -472,7 +473,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{secondBannerID},
-			Action:    identityvo.UserBannerActionAdd,
+			Action:    identitydomain.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -491,7 +492,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{thirdBannerID},
-			Action:    identityvo.UserBannerActionDelete,
+			Action:    identitydomain.UserBannerActionDelete,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -515,7 +516,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{firstBannerID},
-			Action:    identityvo.UserBannerActionAdd,
+			Action:    identitydomain.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)
@@ -534,7 +535,7 @@ func TestAdminUpdateUserBannerListView(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/admin/user/banner/defaults")
 		ctx.Set("request", AdminUpdateUserBannerListReq{
 			BannerIDs: []uint{homeBannerID},
-			Action:    identityvo.UserBannerActionAdd,
+			Action:    identitydomain.UserBannerActionAdd,
 		})
 
 		fixture.adminHandler.AdminUpdateUserBannerListView(ctx)

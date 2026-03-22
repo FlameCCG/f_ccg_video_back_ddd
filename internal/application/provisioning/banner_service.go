@@ -33,12 +33,12 @@ var ErrBannerImagesDirUnreadable = errors.New("读取横幅图片目录失败")
 // BannerService Banner 初始化用例。
 type BannerService struct {
 	storage StorageDriver
-	repo    BannerRepository
+	repo    DefaultBanners
 	logger  *zap.Logger
 }
 
 // NewBannerService 构造 Banner 初始化用例。
-func NewBannerService(storage StorageDriver, repo BannerRepository, logger *zap.Logger) *BannerService {
+func NewBannerService(storage StorageDriver, repo DefaultBanners, logger *zap.Logger) *BannerService {
 	return &BannerService{storage: storage, repo: repo, logger: logger}
 }
 

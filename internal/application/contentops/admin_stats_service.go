@@ -3,8 +3,6 @@ package contentops
 import (
 	"context"
 	"time"
-
-	contentopsservice "f_ccg_video_back_ddd/internal/domain/contentops/service"
 )
 
 // 管理端统计窗口。
@@ -110,29 +108,29 @@ func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 			VisitUsers: TrendSeries{
 				X:      dailyLabels,
 				Values: visitValues,
-				Rates:  contentopsservice.CalcRates(visitValues),
+				Rates:  s.rates.CalcRates(visitValues),
 			},
 			LoginUsers: TrendSeries{
 				X:      dailyLabels,
 				Values: loginValues,
-				Rates:  contentopsservice.CalcRates(loginValues),
+				Rates:  s.rates.CalcRates(loginValues),
 			},
 			PublishVideos: TrendSeries{
 				X:      dailyLabels,
 				Values: videoValues,
-				Rates:  contentopsservice.CalcRates(videoValues),
+				Rates:  s.rates.CalcRates(videoValues),
 			},
 			NewUsers: TrendSeries{
 				X:      dailyLabels,
 				Values: userValues,
-				Rates:  contentopsservice.CalcRates(userValues),
+				Rates:  s.rates.CalcRates(userValues),
 			},
 		},
 		Monthly: AdminMonthlyStats{
 			NewVideos: TrendSeries{
 				X:      monthlyLabels,
 				Values: monthlyVideoValues,
-				Rates:  contentopsservice.CalcRates(monthlyVideoValues),
+				Rates:  s.rates.CalcRates(monthlyVideoValues),
 			},
 		},
 	}

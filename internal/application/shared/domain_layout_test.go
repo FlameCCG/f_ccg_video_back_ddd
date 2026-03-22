@@ -10,51 +10,60 @@ import (
 	"testing"
 )
 
-var domainRoleDependencies = map[string]map[string]bool{
-	"domainerr":   {},
-	"valueobject": {"domainerr": true},
-	"event":       {"domainerr": true, "valueobject": true},
-	"entity":      {"domainerr": true, "valueobject": true, "event": true},
-	"repository":  {"domainerr": true, "valueobject": true, "event": true, "entity": true},
-	"port":        {"domainerr": true, "valueobject": true, "event": true, "entity": true},
-	"service":     {"domainerr": true, "valueobject": true, "event": true, "entity": true, "repository": true, "port": true},
-}
-
-// TestDomainLayoutAndRoleDependencies 保护统一的目录职责及单向依赖。
-// 模块只建立实际需要的角色包；shared 是显式共享内核，不套用业务模块布局。
+// TestDomainLayoutAndRoleDependencies 要求每个业务上下文只有一个领域包。
+// 包内按业务能力分文件。shared 只保留既有枚举和事务契约，不扩大共享内核。
 func TestDomainLayoutAndRoleDependencies(t *testing.T) {
 	root := filepath.Join("..", "..", "domain")
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() || !strings.HasSuffix(path, ".go") {
-			return nil
-		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
-		parts := strings.Split(filepath.ToSlash(rel), "/")
+		rel = filepath.ToSlash(rel)
+		if rel == "." {
+			return nil
+		}
+		parts := strings.Split(rel, "/")
 		if parts[0] == "shared" {
+			if entry.IsDir() {
+				if len(parts) == 1 {
+					return nil
+				}
+				if len(parts) == 2 && (parts[1] == "enum" || parts[1] == "tx") {
+					return nil
+				}
+				t.Errorf("%s: shared kernel only keeps enum and tx", rel)
+				return fs.SkipDir
+			}
+			if len(parts) != 3 || (parts[1] != "enum" && parts[1] != "tx") || !strings.HasSuffix(parts[2], ".go") {
+				t.Errorf("%s: shared kernel only keeps enum and tx", rel)
+			}
 			return nil
 		}
-		if len(parts) < 3 {
-			t.Errorf("%s: put domain code in its responsibility package", rel)
+		if entry.IsDir() {
+			if len(parts) == 1 {
+				return nil
+			}
+			t.Errorf("%s: keep a business context in one package", rel)
+			return fs.SkipDir
+		}
+		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
-		owner, role := parts[0], parts[1]
-		allowed, known := domainRoleDependencies[role]
-		if !known {
-			t.Errorf("%s: unknown domain role %q", rel, role)
+		if len(parts) != 2 {
+			t.Errorf("%s: keep a business context in one package", rel)
 			return nil
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
 		if err != nil {
 			return err
 		}
-		if file.Name.Name != role && file.Name.Name != role+"_test" {
-			t.Errorf("%s: package %q must match responsibility %q", rel, file.Name.Name, role)
+		owner := parts[0]
+		if file.Name.Name != owner && file.Name.Name != owner+"_test" {
+			t.Errorf("%s: package %q must match context %q", rel, file.Name.Name, owner)
 		}
 		if strings.HasSuffix(path, "_test.go") {
 			return nil
@@ -64,13 +73,8 @@ func TestDomainLayoutAndRoleDependencies(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			prefix := modulePath + "/internal/domain/" + owner + "/"
-			if !strings.HasPrefix(value, prefix) {
-				continue
-			}
-			dependency := strings.Split(strings.TrimPrefix(value, prefix), "/")[0]
-			if dependency != role && !allowed[dependency] {
-				t.Errorf("%s: %s cannot depend on %s; keep model behavior independent of orchestration and storage", rel, role, dependency)
+			if strings.Contains(value, "/internal/domain/"+owner+"/") {
+				t.Errorf("%s: context package must not import a nested role package", rel)
 			}
 		}
 		return nil

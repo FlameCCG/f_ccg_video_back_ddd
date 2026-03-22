@@ -2,11 +2,11 @@ package scheduler
 
 import (
 	"context"
+	videoapplication "f_ccg_video_back_ddd/internal/application/video"
 	"strconv"
 	"testing"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
-	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -19,13 +19,13 @@ func TestDecayVideoHotScoreDecaysAndClears(t *testing.T) {
 
 	if err := redisClient.ZAdd(ctx, constants.VideoHotRankZSetKey,
 		redis.Z{Member: "1", Score: 100},
-		redis.Z{Member: "2", Score: platformservice.HotScoreClearThreshold / 2},
+		redis.Z{Member: "2", Score: videodomain.HotScoreClearThreshold / 2},
 		redis.Z{Member: "3", Score: 50},
 	).Err(); err != nil {
 		t.Fatalf("seed hot rank failed: %v", err)
 	}
 
-	app.NewHotRankDecayService(NewHotRankStore(redisClient), zap.NewNop()).Run(ctx)
+	videoapplication.NewHotRankDecayService(NewHotRankStore(redisClient), zap.NewNop()).Run(ctx)
 
 	// 低于清理阈值的成员被移出榜单。
 	if score, err := redisClient.ZScore(ctx, constants.VideoHotRankZSetKey, "2").Result(); err == nil {
@@ -38,8 +38,8 @@ func TestDecayVideoHotScoreDecaysAndClears(t *testing.T) {
 			t.Fatalf("load score of member %s failed: %v", member, err)
 		}
 
-		if score != before*platformservice.HotScoreDecayFactor {
-			t.Fatalf("member %s: expected %v, got %v", member, before*platformservice.HotScoreDecayFactor, score)
+		if score != before*videodomain.HotScoreDecayFactor {
+			t.Fatalf("member %s: expected %v, got %v", member, before*videodomain.HotScoreDecayFactor, score)
 		}
 	}
 }
@@ -50,8 +50,8 @@ func TestDecayVideoHotScoreTrimsOverflow(t *testing.T) {
 
 	const overflow = 5
 
-	members := make([]redis.Z, 0, platformservice.HotRankMaxSize+overflow)
-	for i := 1; i <= platformservice.HotRankMaxSize+overflow; i++ {
+	members := make([]redis.Z, 0, videodomain.HotRankMaxSize+overflow)
+	for i := 1; i <= videodomain.HotRankMaxSize+overflow; i++ {
 		members = append(members, redis.Z{Member: strconv.Itoa(i), Score: float64(i)})
 	}
 
@@ -59,15 +59,15 @@ func TestDecayVideoHotScoreTrimsOverflow(t *testing.T) {
 		t.Fatalf("seed hot rank failed: %v", err)
 	}
 
-	app.NewHotRankDecayService(NewHotRankStore(redisClient), zap.NewNop()).Run(ctx)
+	videoapplication.NewHotRankDecayService(NewHotRankStore(redisClient), zap.NewNop()).Run(ctx)
 
 	total, err := redisClient.ZCard(ctx, constants.VideoHotRankZSetKey).Result()
 	if err != nil {
 		t.Fatalf("load hot rank size failed: %v", err)
 	}
 
-	if total != platformservice.HotRankMaxSize {
-		t.Fatalf("expected rank trimmed to %d, got %d", platformservice.HotRankMaxSize, total)
+	if total != videodomain.HotRankMaxSize {
+		t.Fatalf("expected rank trimmed to %d, got %d", videodomain.HotRankMaxSize, total)
 	}
 
 	// 裁剪按分值从低到高，最低的 overflow 个成员应被移除。
@@ -80,5 +80,5 @@ func TestDecayVideoHotScoreTrimsOverflow(t *testing.T) {
 
 func TestDecayVideoHotScoreSkipsWhenRedisMissing(t *testing.T) {
 	// Redis 未配置时只告警跳过，不 panic。
-	app.NewHotRankDecayService(NewHotRankStore(nil), zap.NewNop()).Run(context.Background())
+	videoapplication.NewHotRankDecayService(NewHotRankStore(nil), zap.NewNop()).Run(context.Background())
 }

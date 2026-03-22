@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
-	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -34,49 +33,49 @@ func (s *NotificationDispatcher) sendCommentCreateNotifications(
 	ctx context.Context,
 	actionUser *UserProfile,
 	video *VideoBrief,
-	c *commententity.Comment,
+	c *commentdomain.Comment,
 	replyTo *ReplyInfo,
 ) {
 	if actionUser == nil || video == nil || c == nil {
 		return
 	}
 
-	receivers := newNoticeSet()
+	notices := make([]Notice, 0, 2)
 	// 视频作者
 	if video.AuthorUsername != "" {
 		author, err := s.related.UserProfileByUsername(ctx, video.AuthorUsername)
-		if err == nil && author != nil && author.ID != actionUser.ID {
-			receivers.put(author.ID, Notice{
+		if err == nil && author != nil && (commentdomain.NoticePolicy{}).VideoAuthor(actionUser.ID, author.ID) {
+			notices = append(notices, Notice{
 				Type:             enum.NotificationApplyType,
 				ReceiverID:       int(author.ID),
 				ActionUserID:     actionUser.ID,
 				ActionUserAvatar: actionUser.Avatar,
 				ActionUserName:   actionUser.Username,
 				Title:            noticeTitleVideoComment,
-				Content:          c.Content,
+				Content:          c.Content(),
 				VideoID:          video.ID,
 				VideoTitle:       video.Title,
-				CommentID:        c.ID,
+				CommentID:        c.ID(),
 			})
 		}
 	}
 	// 被回复者
-	if replyTo != nil && replyTo.UserID > 0 && replyTo.UserID != actionUser.ID {
-		receivers.put(replyTo.UserID, Notice{
+	if replyTo != nil && (commentdomain.NoticePolicy{}).Reply(actionUser.ID, replyTo.UserID) {
+		notices = append(notices, Notice{
 			Type:             enum.NotificationApplyType,
 			ReceiverID:       int(replyTo.UserID),
 			ActionUserID:     actionUser.ID,
 			ActionUserAvatar: actionUser.Avatar,
 			ActionUserName:   actionUser.Username,
 			Title:            noticeTitleReply,
-			Content:          c.Content,
+			Content:          c.Content(),
 			VideoID:          video.ID,
 			VideoTitle:       video.Title,
-			CommentID:        c.ID,
+			CommentID:        c.ID(),
 		})
 	}
 
-	s.dispatchNotices(ctx, receivers.list(), "create comment notifications failed")
+	s.dispatchNotices(ctx, s.selectNotices(notices), "create comment notifications failed")
 }
 
 // sendDynamicCommentCreateNotifications 通知动态作者/被回复者。
@@ -84,46 +83,46 @@ func (s *NotificationDispatcher) sendDynamicCommentCreateNotifications(
 	ctx context.Context,
 	actionUser *UserProfile,
 	dynamic *DynamicBrief,
-	c *commententity.Comment,
+	c *commentdomain.Comment,
 	replyTo *ReplyInfo,
 ) {
 	if actionUser == nil || dynamic == nil || c == nil {
 		return
 	}
 
-	link := dynamicLink(dynamic.ID)
+	link := s.dynamicLink(dynamic.ID)
 
-	receivers := newNoticeSet()
+	notices := make([]Notice, 0, 2)
 	// 动态作者
-	if dynamic.UserID > 0 && dynamic.UserID != actionUser.ID {
-		receivers.put(dynamic.UserID, Notice{
+	if (commentdomain.NoticePolicy{}).DynamicAuthor(actionUser.ID, dynamic.UserID) {
+		notices = append(notices, Notice{
 			Type:             enum.NotificationApplyType,
 			ReceiverID:       int(dynamic.UserID),
 			ActionUserID:     actionUser.ID,
 			ActionUserAvatar: actionUser.Avatar,
 			ActionUserName:   actionUser.Username,
 			Title:            noticeTitleDynamicComment,
-			Content:          c.Content,
+			Content:          c.Content(),
 			Link:             link,
-			CommentID:        c.ID,
+			CommentID:        c.ID(),
 		})
 	}
 	// 被回复者
-	if replyTo != nil && replyTo.UserID > 0 && replyTo.UserID != actionUser.ID {
-		receivers.put(replyTo.UserID, Notice{
+	if replyTo != nil && (commentdomain.NoticePolicy{}).Reply(actionUser.ID, replyTo.UserID) {
+		notices = append(notices, Notice{
 			Type:             enum.NotificationApplyType,
 			ReceiverID:       int(replyTo.UserID),
 			ActionUserID:     actionUser.ID,
 			ActionUserAvatar: actionUser.Avatar,
 			ActionUserName:   actionUser.Username,
 			Title:            noticeTitleReply,
-			Content:          c.Content,
+			Content:          c.Content(),
 			Link:             link,
-			CommentID:        c.ID,
+			CommentID:        c.ID(),
 		})
 	}
 
-	s.dispatchNotices(ctx, receivers.list(), "create comment notifications failed")
+	s.dispatchNotices(ctx, s.selectNotices(notices), "create comment notifications failed")
 }
 
 // sendAtNotifications 视频评论中的 @ 通知。
@@ -138,21 +137,10 @@ func (s *NotificationDispatcher) sendAtNotifications(
 	if len(atUserIDs) == 0 || actionUser == nil || video == nil {
 		return
 	}
-	// 去重
-	seen := make(map[uint]struct{})
 
 	notifications := make([]Notice, 0, len(atUserIDs))
 
-	for _, uid := range atUserIDs {
-		if uid == 0 {
-			continue
-		}
-
-		if _, ok := seen[uid]; ok {
-			continue
-		}
-
-		seen[uid] = struct{}{}
+	for _, uid := range (commentdomain.NoticePolicy{}).AtRecipients(atUserIDs) {
 		notifications = append(notifications, Notice{
 			Type:             enum.NotificationAtType,
 			ReceiverID:       int(uid),
@@ -182,20 +170,9 @@ func (s *NotificationDispatcher) sendAtNotificationsForDynamic(
 		return
 	}
 
-	seen := make(map[uint]struct{})
-
 	notifications := make([]Notice, 0, len(atUserIDs))
 
-	for _, uid := range atUserIDs {
-		if uid == 0 {
-			continue
-		}
-
-		if _, ok := seen[uid]; ok {
-			continue
-		}
-
-		seen[uid] = struct{}{}
+	for _, uid := range (commentdomain.NoticePolicy{}).AtRecipients(atUserIDs) {
 		notifications = append(notifications, Notice{
 			Type:             enum.NotificationAtType,
 			ReceiverID:       int(uid),
@@ -204,7 +181,7 @@ func (s *NotificationDispatcher) sendAtNotificationsForDynamic(
 			ActionUserName:   actionUser.Username,
 			Title:            noticeTitleAtInDynamic,
 			Content:          content,
-			Link:             dynamicLink(dynamicID),
+			Link:             s.dynamicLink(dynamicID),
 			CommentID:        commentID,
 		})
 	}
@@ -228,7 +205,7 @@ func (s *NotificationDispatcher) sendCommentLikeNotification(ctx context.Context
 		return
 	}
 
-	if source.UserID == actionUserID {
+	if !source.ShouldNotifyLike(actionUserID) {
 		return
 	}
 
@@ -237,31 +214,31 @@ func (s *NotificationDispatcher) sendCommentLikeNotification(ctx context.Context
 		videoTitle string
 	)
 
-	if source.VideoID > 0 {
+	if source.VideoID() > 0 {
 		// 视频信息读取失败时留空，不阻断通知。
-		if video, videoErr := s.related.VideoBrief(ctx, source.VideoID); videoErr == nil && video != nil {
+		if video, videoErr := s.related.VideoBrief(ctx, source.VideoID()); videoErr == nil && video != nil {
 			videoID = video.ID
 			videoTitle = video.Title
 		}
 	}
 
 	link := ""
-	if source.DynamicID > 0 {
-		link = dynamicLink(source.DynamicID)
+	if source.DynamicID() > 0 {
+		link = s.dynamicLink(source.DynamicID())
 	}
 
 	notice := Notice{
 		Type:             enum.NotificationLikeCommentType,
-		ReceiverID:       int(source.UserID),
+		ReceiverID:       int(source.UserID()),
 		ActionUserID:     actionUser.ID,
 		ActionUserAvatar: actionUser.Avatar,
 		ActionUserName:   actionUser.Username,
 		Title:            noticeTitleLikeComment,
-		Content:          source.Content,
+		Content:          source.Content(),
 		Link:             link,
 		VideoID:          videoID,
 		VideoTitle:       videoTitle,
-		CommentID:        source.ID,
+		CommentID:        source.ID(),
 	}
 
 	if err := s.notifier.CreateNotices(ctx, []Notice{notice}); err != nil {
@@ -298,55 +275,39 @@ func (s *NotificationDispatcher) dispatchNotices(ctx context.Context, notices []
 }
 
 // dynamicLink 动态详情跳转链接。
-func dynamicLink(dynamicID uint) string {
+func (*NotificationDispatcher) dynamicLink(dynamicID uint) string {
 	return fmt.Sprintf("/dynamic?dynamicId=%d", dynamicID)
 }
 
-// noticeSet 按接收者去重的通知集合，保持插入顺序、后写覆盖先写。
-//
-// 语义等于 map[uint]UserGlobalNotification（同一接收者只发一条，
-// 「有人回复了你」覆盖「有人评论了你的视频/动态」），但落库顺序确定。
-type noticeSet struct {
-	order   []uint
-	notices map[uint]Notice
-}
-
-func newNoticeSet() *noticeSet {
-	return &noticeSet{notices: make(map[uint]Notice, 2)}
-}
-
-func (s *noticeSet) put(receiverID uint, notice Notice) {
-	if _, ok := s.notices[receiverID]; !ok {
-		s.order = append(s.order, receiverID)
+// selectNotices 只把通知响应与领域选择的位置对应起来。
+func (*NotificationDispatcher) selectNotices(notices []Notice) []Notice {
+	ids := make([]uint, len(notices))
+	for i, notice := range notices {
+		ids[i] = uint(notice.ReceiverID)
 	}
-
-	s.notices[receiverID] = notice
-}
-
-func (s *noticeSet) list() []Notice {
-	list := make([]Notice, 0, len(s.order))
-	for _, id := range s.order {
-		list = append(list, s.notices[id])
+	positions := (commentdomain.NoticePolicy{}).LastByReceiver(ids)
+	selected := make([]Notice, 0, len(positions))
+	for _, index := range positions {
+		selected = append(selected, notices[index])
 	}
-
-	return list
+	return selected
 }
 
 // NotificationDispatcher 负责通知组装、去重与派发。
 type NotificationDispatcher struct {
-	comments commentrepo.Repository
+	comments commentdomain.Repository
 	related  RelatedQuery
 	notifier Notifier
 	tasks    *ctxutil.DetachedTaskGroup
 	logger   *zap.Logger
 }
 
-func NewNotificationDispatcher(comments commentrepo.Repository, related RelatedQuery, notifier Notifier, tasks *ctxutil.DetachedTaskGroup, logger *zap.Logger) *NotificationDispatcher {
+func NewNotificationDispatcher(comments commentdomain.Repository, related RelatedQuery, notifier Notifier, tasks *ctxutil.DetachedTaskGroup, logger *zap.Logger) *NotificationDispatcher {
 	return &NotificationDispatcher{comments: comments, related: related, notifier: notifier, tasks: tasks, logger: logger}
 }
 
 // scheduleCreateNotifications 捕获通知快照，并由托管任务组派发评论、回复与 @ 通知。
-func (s *NotificationDispatcher) scheduleCreateNotifications(ctx context.Context, actor UserProfile, video *VideoBrief, dynamic *DynamicBrief, c *commententity.Comment, replyTo *ReplyInfo) {
+func (s *NotificationDispatcher) scheduleCreateNotifications(ctx context.Context, actor UserProfile, video *VideoBrief, dynamic *DynamicBrief, c *commentdomain.Comment, replyTo *ReplyInfo) {
 	userSnapshot := actor
 	commentSnapshot := *c
 
@@ -366,22 +327,23 @@ func (s *NotificationDispatcher) scheduleCreateNotifications(ctx context.Context
 	}
 
 	// 发送 @ 通知
-	if len(c.AtUserIDs) > 0 {
-		atUserIDs := c.AtUserIDs
-		content := c.Content
+	atUserIDs := c.AtUserIDs()
+	if len(atUserIDs) > 0 {
+		content := c.Content()
+		commentID := c.ID()
 
 		switch {
 		case video != nil:
 			videoSnapshot := *video
 
 			s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
-				s.sendAtNotifications(asyncCtx, &userSnapshot, &videoSnapshot, commentSnapshot.ID, content, atUserIDs)
+				s.sendAtNotifications(asyncCtx, &userSnapshot, &videoSnapshot, commentID, content, atUserIDs)
 			})
 		case dynamic != nil:
 			dynamicIDSnapshot := dynamic.ID
 
 			s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
-				s.sendAtNotificationsForDynamic(asyncCtx, &userSnapshot, dynamicIDSnapshot, commentSnapshot.ID, content, atUserIDs)
+				s.sendAtNotificationsForDynamic(asyncCtx, &userSnapshot, dynamicIDSnapshot, commentID, content, atUserIDs)
 			})
 		}
 	}

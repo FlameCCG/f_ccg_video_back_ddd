@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"go.uber.org/zap"
@@ -16,16 +17,10 @@ import (
 const (
 	// defaultVideoVectorIndex 未配置 vectorIndex 时使用的向量索引名.
 	defaultVideoVectorIndex = "search_videos_vector"
-	// defaultVideoVectorTopK 未配置 vectorTopK 时的召回上限.
-	defaultVideoVectorTopK = 8
 	// defaultVideoEmbeddingDims 未配置 embeddingDimensions 时的向量维度.
 	defaultVideoEmbeddingDims = 2048
 	// defaultVectorRRFRankConstant 是混合召回的默认 RRF 排名常数。
 	defaultVectorRRFRankConstant = 60
-
-	embeddingImageModeAuto = "auto"
-	embeddingImageModeOn   = "on"
-	embeddingImageModeOff  = "off"
 
 	// vectorSearchTimeout 向量检索超时.
 	vectorSearchTimeout = 20 * time.Second
@@ -51,10 +46,11 @@ var (
 //
 // 写侧由 video 上下文在发布/下架时触发；读侧供 AI「找视频」做语义召回。
 type VideoVectorService struct {
-	cfg    shared.ConfigReader
-	index  VideoVectorIndex
-	source VideoVectorSourceQuery
-	logger *zap.Logger
+	cfg     shared.ConfigReader
+	index   VideoVectorIndex
+	source  VideoVectorSourceQuery
+	logger  *zap.Logger
+	vectors searchdomain.VectorPolicy
 }
 
 // NewVideoVectorService 构造视频向量索引服务。
@@ -64,7 +60,13 @@ func NewVideoVectorService(
 	source VideoVectorSourceQuery,
 	logger *zap.Logger,
 ) *VideoVectorService {
-	return &VideoVectorService{cfg: cfgProvider, index: index, source: source, logger: logger}
+	return &VideoVectorService{
+		cfg:     cfgProvider,
+		index:   index,
+		source:  source,
+		logger:  logger,
+		vectors: searchdomain.VectorPolicy{},
+	}
 }
 
 // SearchVideoVectorIDs 以文本 query 做向量召回，返回去重后的已发布视频 ID。
@@ -92,15 +94,9 @@ func (s *VideoVectorService) SearchVideoVectorIDsMultiModal(
 	if err != nil {
 		return nil, err
 	}
-	if limit <= 0 {
-		limit = cfg.TopK
-	}
+	limit = s.vectors.RecallLimit(limit, cfg.TopK)
 
-	if cfg.TopK > 0 && limit > cfg.TopK {
-		limit = cfg.TopK
-	}
-
-	searchCtx, cancel := context.WithTimeout(ensureContext(ctx), vectorSearchTimeout)
+	searchCtx, cancel := context.WithTimeout((callContext{}).ensure(ctx), vectorSearchTimeout)
 	defer cancel()
 
 	return s.index.SearchIDs(searchCtx, cfg, input, limit)
@@ -117,7 +113,7 @@ func (s *VideoVectorService) IndexVideoVector(ctx context.Context, videoID uint)
 		return err
 	}
 
-	indexCtx, cancel := context.WithTimeout(ensureContext(ctx), vectorIndexTimeout)
+	indexCtx, cancel := context.WithTimeout((callContext{}).ensure(ctx), vectorIndexTimeout)
 	defer cancel()
 
 	return s.indexVideoVectorWithConfig(indexCtx, cfg, videoID)
@@ -170,7 +166,7 @@ func (s *VideoVectorService) DeleteVideoVector(ctx context.Context, videoID uint
 		return err
 	}
 
-	deleteCtx, cancel := context.WithTimeout(ensureContext(ctx), vectorDeleteTimeout)
+	deleteCtx, cancel := context.WithTimeout((callContext{}).ensure(ctx), vectorDeleteTimeout)
 	defer cancel()
 
 	return s.index.Delete(deleteCtx, cfg, videoID)
@@ -204,10 +200,7 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 		index = defaultVideoVectorIndex
 	}
 
-	topK := source.VectorTopK
-	if topK <= 0 {
-		topK = defaultVideoVectorTopK
-	}
+	topK := s.vectors.RecallCap(source.VectorTopK)
 
 	dimensions := source.EmbeddingDimensions
 	if dimensions <= 0 {
@@ -247,21 +240,10 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 		EmbeddingAPIKey:     apiKey,
 		EmbeddingDimensions: dimensions,
 		TimeoutSec:          source.TimeoutSec,
-		ImageMode:           normalizeEmbeddingImageMode(source.EmbeddingImageMode),
+		ImageMode:           s.vectors.NormalizeImageMode(source.EmbeddingImageMode),
 		AssetBaseURL:        strings.TrimSpace(source.AssetBaseURL),
 		LocalStorageRoot:    localStorageRoot,
 		RRFRankConstant:     rankConstant,
 		MinSimilarity:       source.VectorMinSimilarity,
 	}, nil
-}
-
-func normalizeEmbeddingImageMode(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case embeddingImageModeOn:
-		return embeddingImageModeOn
-	case embeddingImageModeOff:
-		return embeddingImageModeOff
-	default:
-		return embeddingImageModeAuto
-	}
 }

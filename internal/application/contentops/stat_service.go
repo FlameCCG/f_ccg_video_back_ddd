@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -19,6 +20,7 @@ type StatService struct {
 	exp      LoginExpGranter
 	coin     LoginCoinGranter
 	logger   *zap.Logger
+	rates    contentopsdomain.StatsPolicy
 }
 
 // NewStatService 构造站点统计用例服务。
@@ -37,6 +39,7 @@ func NewStatService(
 		exp:      exp,
 		coin:     coin,
 		logger:   logger,
+		rates:    contentopsdomain.StatsPolicy{},
 	}
 }
 

@@ -12,8 +12,8 @@ import (
 type VideoPinWriter interface {
 	// ClearPinnedByAuthor 取消该作者当前已置顶的全部视频。
 	ClearPinnedByAuthor(ctx context.Context, authorUsername string) error
-	// SetPinned 把作者名下指定视频标记为置顶，并写入置顶时间。
-	SetPinned(ctx context.Context, videoID uint, authorUsername string, pinnedAt *time.Time) error
-	// ClearPinned 取消作者名下指定视频的置顶状态。
-	ClearPinned(ctx context.Context, videoID uint, authorUsername string) error
+	// SetPinned 把作者名下已发布的视频置顶，并写入时间。目标不再符合条件时返回 false。
+	SetPinned(ctx context.Context, videoID uint, authorUsername string, pinnedAt *time.Time) (bool, error)
+	// ClearPinned 取消作者名下已发布的视频置顶。重复取消返回 true，目标失效返回 false。
+	ClearPinned(ctx context.Context, videoID uint, authorUsername string) (bool, error)
 }

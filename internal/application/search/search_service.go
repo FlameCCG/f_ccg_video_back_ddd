@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -21,7 +21,7 @@ const (
 	// userSearchPrimaryTimeout 用户主查询超时.
 	userSearchPrimaryTimeout = 1200 * time.Millisecond
 	// relatedTagLimit 综合搜索派生标签数量上限.
-	relatedTagLimit = 10
+	relatedTagLimit = searchdomain.RelatedTagLimit
 )
 
 // SearchService 站内搜索用例服务。
@@ -31,11 +31,19 @@ type SearchService struct {
 	index    KeywordSearch
 	fallback SearchFallbackQuery
 	logger   *zap.Logger
+	keywords searchdomain.KeywordPolicy
+	pages    searchdomain.PaginationPolicy
 }
 
 // NewSearchService 构造站内搜索服务。
 func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery, logger *zap.Logger) *SearchService {
-	return &SearchService{index: index, fallback: fallback, logger: logger}
+	return &SearchService{
+		index:    index,
+		fallback: fallback,
+		logger:   logger,
+		keywords: searchdomain.KeywordPolicy{},
+		pages:    searchdomain.PaginationPolicy{},
+	}
 }
 
 // Search 同时查询视频/用户/标签三个维度（标签由视频命中派生）。
@@ -43,16 +51,16 @@ func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery, logger 
 // 标签总量是本次视频命中派生的标签数，不是独立搜索整个标签表的总数。
 // ES 超时后的 SQL 回退使用父 context，既避免复用已过期的子预算，也仍受请求总取消约束。
 func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
-	page := searchvo.NormalizePagination(opts.Page, opts.PageSize)
-	videoSort := searchvo.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
-	userSort := searchvo.NormalizeUserSort(opts.UserSort, opts.UserOrder)
-	opts = applyNormalized(opts, page, videoSort, userSort)
+	page := s.pages.NormalizePagination(opts.Page, opts.PageSize)
+	videoSort := s.pages.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
+	userSort := s.pages.NormalizeUserSort(opts.UserSort, opts.UserOrder)
+	opts = s.applyNormalized(opts, page, videoSort, userSort)
 
 	if !s.index.Available() {
 		return s.fallbackSearch(ctx, opts)
 	}
 
-	parent := ensureContext(ctx)
+	parent := (callContext{}).ensure(ctx)
 
 	esCtx, cancel := context.WithTimeout(parent, searchTimeout)
 	defer cancel()
@@ -79,7 +87,7 @@ func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*Search
 
 	s.hydrateVideoList(esCtx, result.Videos)
 
-	result.Tags = buildRelatedTags(result.Videos)
+	result.Tags = s.buildRelatedTags(result.Videos)
 	result.TagTotal = int64(len(result.Tags))
 	result.Total = result.VideoTotal + result.UserTotal + result.TagTotal
 
@@ -88,8 +96,8 @@ func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*Search
 
 // SearchVideos 仅返回视频结果，同时返回用户总量（用于前端展示）。
 func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*VideoSearchResult, error) {
-	page := searchvo.NormalizePagination(opts.Page, opts.PageSize)
-	videoSort := searchvo.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
+	page := s.pages.NormalizePagination(opts.Page, opts.PageSize)
+	videoSort := s.pages.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
 	opts.Page, opts.PageSize = page.Page, page.PageSize
 	opts.VideoSort, opts.VideoOrder = videoSort.Field, videoSort.Order
 
@@ -97,7 +105,7 @@ func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*
 		return s.fallbackSearchVideos(ctx, opts)
 	}
 
-	parent := ensureContext(ctx)
+	parent := (callContext{}).ensure(ctx)
 
 	esCtx, cancel := context.WithTimeout(parent, searchTimeout)
 	defer cancel()
@@ -143,12 +151,12 @@ func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*
 
 // SearchUsers 仅返回用户结果。
 func (s *SearchService) SearchUsers(ctx context.Context, opts SearchOptions) (*UserSearchResult, error) {
-	page := searchvo.NormalizePagination(opts.Page, opts.PageSize)
-	userSort := searchvo.NormalizeUserSort(opts.UserSort, opts.UserOrder)
+	page := s.pages.NormalizePagination(opts.Page, opts.PageSize)
+	userSort := s.pages.NormalizeUserSort(opts.UserSort, opts.UserOrder)
 	opts.Page, opts.PageSize = page.Page, page.PageSize
 	opts.UserSort, opts.UserOrder = userSort.Field, userSort.Order
 
-	parent := ensureContext(ctx)
+	parent := (callContext{}).ensure(ctx)
 
 	if !s.index.Available() {
 		return s.fallbackSearchUsers(parent, opts)

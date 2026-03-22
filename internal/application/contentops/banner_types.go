@@ -1,6 +1,7 @@
 package contentops
 
 import (
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -56,11 +57,40 @@ type UpdateBannerParams struct {
 	PartitionID *uint
 }
 
-// bannerTypeOrZero 把请求中的类型原始值转为枚举；非正值表示未指定。
-func bannerTypeOrZero(raw int) enum.BannerType {
-	if raw > 0 {
-		return enum.BannerType(raw)
+// BannerDTO 是轮播图的 HTTP 响应和可见缓存 JSON 形状。
+//
+// 字段不使用 omitempty，零值也会输出；CreatedAt / UpdatedAt 不出现在 JSON 中。缓存按此结构解码。
+type BannerDTO struct {
+	ID          uint            `json:"id"`
+	Cover       string          `json:"cover"`
+	Href        string          `json:"href"`
+	Show        bool            `json:"show"`
+	Type        enum.BannerType `json:"type"`
+	PartitionID uint            `json:"partitionId"`
+}
+
+// FromBanner 按 JSON 字段从实体组装响应或缓存 DTO。
+func (BannerDTO) FromBanner(banner contentopsdomain.Banner) BannerDTO {
+	return BannerDTO{
+		ID:          banner.ID(),
+		Cover:       banner.Cover(),
+		Href:        banner.Href(),
+		Show:        banner.Show(),
+		Type:        banner.Type(),
+		PartitionID: banner.PartitionID(),
+	}
+}
+
+// FromBanners 批量组装 DTO。nil 保持 nil，空切片保持非 nil 空切片。
+func (d BannerDTO) FromBanners(items []contentopsdomain.Banner) []BannerDTO {
+	if items == nil {
+		return nil
 	}
 
-	return 0
+	out := make([]BannerDTO, len(items))
+	for i := range items {
+		out[i] = d.FromBanner(items[i])
+	}
+
+	return out
 }

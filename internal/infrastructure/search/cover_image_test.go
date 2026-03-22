@@ -35,8 +35,8 @@ func TestIsPubliclyReachableHost(t *testing.T) {
 	}
 
 	for host, want := range tests {
-		if got := isPubliclyReachableHost(host); got != want {
-			t.Fatalf("isPubliclyReachableHost(%q) = %v, want %v", host, got, want)
+		if got := (&VideoVectorIndex{}).isPubliclyReachableHost(host); got != want {
+			t.Fatalf("(&VideoVectorIndex{}).isPubliclyReachableHost(%q) = %v, want %v", host, got, want)
 		}
 	}
 }
@@ -45,12 +45,12 @@ func TestResolveCoverEmbedSourcePassesThroughDataURI(t *testing.T) {
 	t.Parallel()
 
 	const uri = "data:image/png;base64,AAAA"
-	got, err := resolveCoverEmbedSource(uri, "", "")
+	got, err := (&VideoVectorIndex{}).resolveCoverEmbedSource(uri, "", "")
 	if err != nil {
-		t.Fatalf("resolveCoverEmbedSource() error = %v", err)
+		t.Fatalf("(&VideoVectorIndex{}).resolveCoverEmbedSource() error = %v", err)
 	}
 	if got != uri {
-		t.Fatalf("resolveCoverEmbedSource() = %q, want %q", got, uri)
+		t.Fatalf("(&VideoVectorIndex{}).resolveCoverEmbedSource() = %q, want %q", got, uri)
 	}
 }
 
@@ -58,9 +58,9 @@ func TestResolveCoverEmbedSourceKeepsPublicURL(t *testing.T) {
 	t.Parallel()
 
 	const cover = "https://cdn.example.com/covers/1.jpg"
-	got, err := resolveCoverEmbedSource(cover, "", "")
+	got, err := (&VideoVectorIndex{}).resolveCoverEmbedSource(cover, "", "")
 	if err != nil {
-		t.Fatalf("resolveCoverEmbedSource() error = %v", err)
+		t.Fatalf("(&VideoVectorIndex{}).resolveCoverEmbedSource() error = %v", err)
 	}
 	if got != cover {
 		t.Fatalf("public URL changed: got %q", got)
@@ -74,7 +74,7 @@ func TestResolveCoverEmbedSourceRejectsPrivateHostWithoutFetching(t *testing.T) 
 		http.Redirect(w, r, "http://127.0.0.1/private", http.StatusFound)
 	}))
 	defer server.Close()
-	_, err := resolveCoverEmbedSource(server.URL+"/cover.png", "", "")
+	_, err := (&VideoVectorIndex{}).resolveCoverEmbedSource(server.URL+"/cover.png", "", "")
 	if !errors.Is(err, errCoverUnavailable) || calls != 0 {
 		t.Fatalf("private fetch: calls=%d err=%v", calls, err)
 	}
@@ -86,7 +86,7 @@ func TestResolveCoverEmbedSourceRejectsNonImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := resolveCoverEmbedSource("cover.html", "", root)
+	_, err := (&VideoVectorIndex{}).resolveCoverEmbedSource("cover.html", "", root)
 	if !errors.Is(err, errCoverUnavailable) {
 		t.Fatalf("error = %v, want errCoverUnavailable", err)
 	}
@@ -95,7 +95,7 @@ func TestResolveCoverEmbedSourceRejectsNonImage(t *testing.T) {
 func TestResolveCoverEmbedSourceRejectsEmptyCover(t *testing.T) {
 	t.Parallel()
 
-	if _, err := resolveCoverEmbedSource(
+	if _, err := (&VideoVectorIndex{}).resolveCoverEmbedSource(
 		"   ", "", "",
 	); !errors.Is(err, errCoverUnavailable) {
 		t.Fatalf("error = %v, want errCoverUnavailable", err)
@@ -115,8 +115,8 @@ func TestJoinAssetBaseURL(t *testing.T) {
 		{base: "", relative: "uploads/a.jpg", want: ""},
 	}
 	for _, test := range tests {
-		if got := joinAssetBaseURL(test.base, test.relative); got != test.want {
-			t.Fatalf("joinAssetBaseURL(%q, %q) = %q, want %q", test.base, test.relative, got, test.want)
+		if got := (&VideoVectorIndex{}).joinAssetBaseURL(test.base, test.relative); got != test.want {
+			t.Fatalf("(&VideoVectorIndex{}).joinAssetBaseURL(%q, %q) = %q, want %q", test.base, test.relative, got, test.want)
 		}
 	}
 }
@@ -124,7 +124,7 @@ func TestJoinAssetBaseURL(t *testing.T) {
 func TestSafeJoinUnderRootBlocksTraversal(t *testing.T) {
 	t.Parallel()
 
-	if _, err := safeJoinUnderRoot(t.TempDir(), "../../etc/passwd"); !errors.Is(err, errCoverUnavailable) {
+	if _, err := (&VideoVectorIndex{}).safeJoinUnderRoot(t.TempDir(), "../../etc/passwd"); !errors.Is(err, errCoverUnavailable) {
 		t.Fatalf("error = %v, want errCoverUnavailable", err)
 	}
 }
@@ -137,32 +137,32 @@ func TestSafeJoinUnderRootDeduplicatesRootPrefix(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	got, err := safeJoinUnderRoot(root, "uploads/cover/x.jpg")
+	got, err := (&VideoVectorIndex{}).safeJoinUnderRoot(root, "uploads/cover/x.jpg")
 	if err != nil {
-		t.Fatalf("safeJoinUnderRoot() error = %v", err)
+		t.Fatalf("(&VideoVectorIndex{}).safeJoinUnderRoot() error = %v", err)
 	}
 	want := filepath.Join(root, "cover", "x.jpg")
 	if got != want {
-		t.Fatalf("safeJoinUnderRoot() = %q, want %q", got, want)
+		t.Fatalf("(&VideoVectorIndex{}).safeJoinUnderRoot() = %q, want %q", got, want)
 	}
 }
 
 func TestBuildImageDataURISniffsContentType(t *testing.T) {
 	t.Parallel()
 
-	got, err := buildImageDataURI(pngPixel, "application/octet-stream")
+	got, err := (&VideoVectorIndex{}).buildImageDataURI(pngPixel, "application/octet-stream")
 	if err != nil {
-		t.Fatalf("buildImageDataURI() error = %v", err)
+		t.Fatalf("(&VideoVectorIndex{}).buildImageDataURI() error = %v", err)
 	}
 	if !strings.HasPrefix(got, "data:image/png;base64,") {
-		t.Fatalf("buildImageDataURI() = %q, want png data URI", got)
+		t.Fatalf("(&VideoVectorIndex{}).buildImageDataURI() = %q, want png data URI", got)
 	}
 }
 
 func TestBuildImageDataURIRejectsOversize(t *testing.T) {
 	t.Parallel()
 
-	_, err := buildImageDataURI(make([]byte, maxCoverImageBytes+1), "image/png")
+	_, err := (&VideoVectorIndex{}).buildImageDataURI(make([]byte, maxCoverImageBytes+1), "image/png")
 	if !errors.Is(err, errCoverUnavailable) {
 		t.Fatalf("error = %v, want errCoverUnavailable", err)
 	}

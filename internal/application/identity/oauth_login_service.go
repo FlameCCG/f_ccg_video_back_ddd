@@ -3,14 +3,12 @@ package identity
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	identityservice "f_ccg_video_back_ddd/internal/domain/identity/service"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
@@ -37,7 +35,7 @@ const (
 type OAuthLoginService struct {
 	cfgProvider  shared.ConfigReader
 	txm          tx.Manager
-	users        identityrepo.UserAccountRepository
+	users        identitydomain.UserAccountRepository
 	roles        UserRoleQuery
 	binder       UserRoleBinder
 	states       OAuthStateStore
@@ -50,13 +48,15 @@ type OAuthLoginService struct {
 	linuxdo      LinuxDoOAuthClient
 	x            XOAuthClient
 	logger       *zap.Logger
+	usernames    identitydomain.UsernamePolicy
+	folders      DefaultFolderInitializer
 }
 
 // NewOAuthLoginService 构造第三方登录服务。
 func NewOAuthLoginService(
 	cfgProvider shared.ConfigReader,
 	txm tx.Manager,
-	users identityrepo.UserAccountRepository,
+	users identitydomain.UserAccountRepository,
 	roles UserRoleQuery,
 	binder UserRoleBinder,
 	states OAuthStateStore,
@@ -68,6 +68,7 @@ func NewOAuthLoginService(
 	github GitHubOAuthClient,
 	linuxdo LinuxDoOAuthClient,
 	x XOAuthClient,
+	folders DefaultFolderInitializer,
 	logger *zap.Logger,
 ) *OAuthLoginService {
 	return &OAuthLoginService{
@@ -86,6 +87,8 @@ func NewOAuthLoginService(
 		linuxdo:      linuxdo,
 		x:            x,
 		logger:       logger,
+		usernames:    identitydomain.UsernamePolicy{},
+		folders:      folders,
 	}
 }
 
@@ -129,16 +132,16 @@ func (s *OAuthLoginService) ProviderEnabled(provider string) bool {
 //
 // 用户信息获取与账号查找/创建失败返回 ErrOAuthProviderFailed，由接口层转换为登录失败文案；封禁与签发错误直接返回对应文案。
 func (s *OAuthLoginService) Login(ctx context.Context, in OAuthLoginInput) (*jwts.JwtToken, error) {
-	label := oauthLogLabel(in.Provider)
+	label := s.logLabel(in.Provider)
 
 	info, err := s.fetchUser(ctx, in)
 	if err != nil {
-		s.logger.Error(label+" Login Error", zap.Error(err))
+		s.logger.Error(s.logLabel(in.Provider)+" Login Error", zap.Error(err))
 
 		return nil, ErrOAuthProviderFailed
 	}
 
-	user, err := s.findOrCreateUser(ctx, identityvo.OAuthProfile{
+	user, err := s.findOrCreateUser(ctx, identitydomain.OAuthProfile{
 		RegisterSource: in.Provider,
 		OpenID:         info.OpenID,
 		Email:          info.Email,
@@ -177,7 +180,7 @@ func (s *OAuthLoginService) fetchUser(ctx context.Context, in OAuthLoginInput) (
 // findOrCreateUser 按 openID+来源、再按邮箱查找账号；均不存在时创建新账号。
 //
 // 负责 OAuth 用户查找、创建、事务写入与 Casbin 权限补偿。
-func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile identityvo.OAuthProfile) (*identityentity.User, error) {
+func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile identitydomain.OAuthProfile) (*identitydomain.User, error) {
 	profile, err := profile.Normalize()
 	if err != nil {
 		return nil, err
@@ -202,22 +205,14 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile identi
 	if user != nil {
 		// Only an explicit provider assertion can associate a pre-existing email.
 		// Synthetic fallback addresses and unverified claims never grant access.
-		if !profile.EmailVerified || profile.Email == "" {
+		if !profile.CanClaimExistingEmail() {
 			return nil, ErrOAuthAccountBindingRequired
 		}
 		return user, nil
 	}
 
-	created := &identityentity.User{
-		Username:       identityservice.GenerateUsername(),
-		Email:          email,
-		Avatar:         profile.Avatar,
-		OpenID:         profile.OpenID,
-		RegisterIP:     profile.RegisterIP,
-		RegisterAddr:   profile.RegisterAddr,
-		RegisterSource: profile.RegisterSource,
-		Gender:         enum.GenderUnknown,
-	}
+	username := s.usernames.Generate(uuid.New().String(), time.Now())
+	var created *identitydomain.User
 
 	if err = s.txm.Do(ctx, func(txCtx context.Context) error {
 		roleID, roleErr := s.roles.RoleIDByName(txCtx, constants.CommonUserRole)
@@ -225,24 +220,30 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile identi
 			return fmt.Errorf("find default role failed: %w", roleErr)
 		}
 
-		created.CurrentRoleID = roleID
+		created = identitydomain.NewOAuthUser(username, email, profile.Avatar, profile.OpenID, profile.RegisterIP, profile.RegisterAddr, profile.RegisterSource, roleID)
 
-		if createErr := s.users.Create(txCtx, created, roleID); createErr != nil {
+		saved, createErr := s.users.Create(txCtx, created, roleID)
+		if createErr != nil {
 			return fmt.Errorf("create oauth user failed: %w", createErr)
 		}
 
-		return s.users.InitializeDefaults(txCtx, created.ID)
+		created = saved
+
+		if err := s.users.InitializeDefaults(txCtx, created.ID()); err != nil {
+			return err
+		}
+		return s.folders.InitializeDefaultFolder(txCtx, created.ID())
 	}); err != nil {
 		return nil, err
 	}
 
 	// Casbin 在 Commit 之后写入，避免 Commit 失败留下幽灵权限。
-	if err = s.binder.AddRoleForUser(created.ID, constants.CommonUserRole); err != nil {
+	if err = s.binder.AddRoleForUser(created.ID(), constants.CommonUserRole); err != nil {
 		// 补偿删除已提交用户，避免无 Casbin 角色的半成品账号。
-		if delErr := s.users.DeleteByID(ctx, created.ID); delErr != nil {
+		if delErr := s.users.DeleteByID(ctx, created.ID()); delErr != nil {
 			s.logger.Error("compensate delete oauth user failed",
 				zap.Error(delErr),
-				zap.Uint("userId", created.ID),
+				zap.Uint("userId", created.ID()),
 				zap.NamedError("casbinErr", err),
 			)
 		}
@@ -256,30 +257,27 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile identi
 // completeLogin 校验封禁状态、异步记录登录并签发令牌。
 func (s *OAuthLoginService) completeLogin(
 	ctx context.Context,
-	user *identityentity.User,
+	user *identitydomain.User,
 	in OAuthLoginInput,
 ) (*jwts.JwtToken, error) {
-	if user.IsBanned() {
-		return nil, identityerrors.ErrAccountBanned
+	if err := user.EnsureCanLogin(); err != nil {
+		return nil, err
 	}
 
 	// 角色关联不可读时拒绝登录。
-	if _, err := s.roles.LoadRoles(ctx, user.ID); err != nil {
+	if _, err := s.roles.LoadRoles(ctx, user.ID()); err != nil {
 		s.logger.Error("获取用户角色失败", zap.Error(err))
 
 		return nil, ErrLoginFailed
 	}
 
-	recordLoginAsync(
+	(asyncLoginLog{tasks: s.tasks, records: s.loginRecords, logger: s.logger}).write(
 		ctx,
-		s.tasks,
-		s.loginRecords,
-		user.ID,
+		user.ID(),
 		in.IP,
 		in.Addr,
 		in.UserAgent,
 		in.Provider,
-		s.logger,
 	)
 
 	token, err := s.tokens.IssueForUser(ctx, user, s.users)
@@ -292,8 +290,8 @@ func (s *OAuthLoginService) completeLogin(
 	return token, nil
 }
 
-// oauthLogLabel 返回日志中使用的提供商显示名。
-func oauthLogLabel(provider string) string {
+// logLabel 返回日志中使用的提供商显示名。
+func (s *OAuthLoginService) logLabel(provider string) string {
 	switch provider {
 	case OAuthProviderQQ:
 		return "QQ"

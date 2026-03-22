@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -39,8 +39,8 @@ func TestSendMessageRealMongoTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewStore(db)
-	msg := &chatentity.Message{ID: primitive.NewObjectID().Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "transaction", CreatedAt: time.Now().Truncate(time.Millisecond)}
-	if err := store.SendMessage(ctx, msg, "transaction"); err == nil {
+	msg := chatdomain.RestoreMessage(chatdomain.MessageSnapshot{ID: primitive.NewObjectID().Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatdomain.MessageTypeText, Text: "transaction", CreatedAt: time.Now().Truncate(time.Millisecond)})
+	if _, err := store.SendMessage(ctx, msg, "transaction"); err == nil {
 		t.Fatal("summary validation must fail")
 	}
 	if count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{}); err != nil || count != 0 {
@@ -49,10 +49,10 @@ func TestSendMessageRealMongoTransaction(t *testing.T) {
 	if err := db.RunCommand(ctx, bson.D{{Key: "collMod", Value: chatConversationsCol}, {Key: "validator", Value: bson.M{}}}).Err(); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SendMessage(ctx, msg, "transaction"); err != nil {
+	if _, err := store.SendMessage(ctx, msg, "transaction"); err != nil {
 		t.Fatalf("retry after aborted insert: %v", err)
 	}
-	if err := store.SendMessage(ctx, msg, "transaction"); err != nil {
+	if _, err := store.SendMessage(ctx, msg, "transaction"); err != nil {
 		t.Fatalf("duplicate message: %v", err)
 	}
 	if count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{}); err != nil || count != 1 {
@@ -65,11 +65,15 @@ func TestSendMessageRealMongoTransaction(t *testing.T) {
 	if unread := conv.MemberB.Unread; unread != 1 {
 		t.Fatalf("duplicate send incremented unread: %v", conv)
 	}
-	concurrent := *msg
-	concurrent.ID = primitive.NewObjectID().Hex()
+	snap := msg.Snapshot()
+	snap.ID = primitive.NewObjectID().Hex()
+	concurrent := chatdomain.RestoreMessage(snap)
 	var group errgroup.Group
 	for range 6 {
-		group.Go(func() error { copy := concurrent; return store.SendMessage(ctx, &copy, "transaction") })
+		group.Go(func() error {
+			_, err := store.SendMessage(ctx, chatdomain.RestoreMessage(concurrent.Snapshot()), "transaction")
+			return err
+		})
 	}
 	if err := group.Wait(); err != nil {
 		t.Fatalf("concurrent duplicate: %v", err)

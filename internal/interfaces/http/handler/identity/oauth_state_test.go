@@ -25,7 +25,7 @@ func newOAuthLoginHandler(t *testing.T, login *site.Login) *Handler {
 	states := oauth.NewStateStore(nil)
 
 	oauthLogins := app.NewOAuthLoginService(
-		provider, nil, nil, nil, nil, states, nil, nil, nil, nil, nil, nil, nil, nil, zap.NewNop(),
+		provider, nil, nil, nil, nil, states, nil, nil, nil, nil, nil, nil, nil, nil, nil, zap.NewNop(),
 	)
 
 	return NewHandler(nil, nil, nil, nil, nil, nil, nil, oauthLogins, nil, nil, nil, nil, nil, zap.NewNop())

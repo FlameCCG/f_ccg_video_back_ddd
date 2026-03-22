@@ -96,14 +96,14 @@ func TestUserRepository_FindWithConfByIDUsesSingleQuery(t *testing.T) {
 	if conf == nil {
 		t.Fatal("conf = nil, want joined config")
 	}
-	if user.Username != "joined-user" || user.OpenID != "openid" {
+	if user.Username() != "joined-user" || user.OpenID() != "openid" {
 		t.Fatalf("user = %+v, want joined-user with openid", user)
 	}
-	if conf.BannerID != 3 || conf.BannerURL != "banner.png" {
+	if conf.BannerID() != 3 || conf.BannerURL() != "banner.png" {
 		t.Fatalf("conf = %+v, want banner ID 3 and URL banner.png", conf)
 	}
-	if len(conf.LikeTags) != 2 || conf.LikeTags[0] != "Go" || conf.LikeTags[1] != "DDD" {
-		t.Fatalf("like tags = %v, want [Go DDD]", conf.LikeTags)
+	if len(conf.LikeTags()) != 2 || conf.LikeTags()[0] != "Go" || conf.LikeTags()[1] != "DDD" {
+		t.Fatalf("like tags = %v, want [Go DDD]", conf.LikeTags())
 	}
 	if got := queryCount.Load(); got != 1 {
 		t.Fatalf("query count = %d, want 1", got)
@@ -118,7 +118,7 @@ func TestUserRepository_FindWithConfByIDAllowsMissingConf(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find user without conf: %v", err)
 	}
-	if user == nil || user.ID != 2 {
+	if user == nil || user.ID() != 2 {
 		t.Fatalf("user = %+v, want user 2", user)
 	}
 	if conf != nil {

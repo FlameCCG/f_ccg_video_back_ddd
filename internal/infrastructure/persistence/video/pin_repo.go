@@ -2,12 +2,15 @@ package video
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PinRepository 视频置顶写侧仓储。
@@ -32,23 +35,40 @@ func (r *PinRepository) ClearPinnedByAuthor(ctx context.Context, authorUsername 
 		Updates(map[string]any{"is_pinned": false, "pinned_at": nil}).Error
 }
 
-// SetPinned 把作者名下指定视频标记为置顶，并写入置顶时间。
+// SetPinned 仅更新作者名下仍已发布的目标，返回目标是否仍符合条件。
 func (r *PinRepository) SetPinned(
 	ctx context.Context,
 	videoID uint,
 	authorUsername string,
 	pinnedAt *time.Time,
-) error {
-	return gormx.DB(ctx, r.db).
-		Model(&po.Video{}).
-		Where("id = ? AND author_username = ?", videoID, authorUsername).
-		Updates(map[string]any{"is_pinned": true, "pinned_at": pinnedAt}).Error
+) (bool, error) {
+	return r.updatePin(ctx, videoID, authorUsername, map[string]any{"is_pinned": true, "pinned_at": pinnedAt})
 }
 
-// ClearPinned 取消作者名下指定视频的置顶状态。
-func (r *PinRepository) ClearPinned(ctx context.Context, videoID uint, authorUsername string) error {
-	return gormx.DB(ctx, r.db).
+// ClearPinned 重复取消仍返回 true；目标缺失、归属或发布状态变化时返回 false。
+func (r *PinRepository) ClearPinned(ctx context.Context, videoID uint, authorUsername string) (bool, error) {
+	return r.updatePin(ctx, videoID, authorUsername, map[string]any{"is_pinned": false, "pinned_at": nil})
+}
+
+func (r *PinRepository) updatePin(ctx context.Context, videoID uint, authorUsername string, changes map[string]any) (bool, error) {
+	db := gormx.DB(ctx, r.db)
+	result := db.
 		Model(&po.Video{}).
-		Where("id = ? AND author_username = ?", videoID, authorUsername).
-		Updates(map[string]any{"is_pinned": false, "pinned_at": nil}).Error
+		Where("id = ? AND author_username = ? AND status = ?", videoID, authorUsername, enum.VideoStatusPublished).
+		Updates(changes)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected > 0 {
+		return true, nil
+	}
+	// MySQL 的零行结果也可能是幂等取消，需要用锁定读区分失效目标。
+	var row po.Video
+	err := db.Select("id").Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND author_username = ? AND status = ?", videoID, authorUsername, enum.VideoStatusPublished).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }

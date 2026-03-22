@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -19,7 +18,7 @@ type MenuRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ rbacrepo.MenuRepository = (*MenuRepository)(nil)
+var _ rbacdomain.MenuRepository = (*MenuRepository)(nil)
 
 // NewMenuRepository 构造菜单仓储。
 func NewMenuRepository(db *gorm.DB) *MenuRepository {
@@ -27,7 +26,7 @@ func NewMenuRepository(db *gorm.DB) *MenuRepository {
 }
 
 // FindByID 按主键读取菜单；不存在时返回 (nil, nil)。
-func (r *MenuRepository) FindByID(ctx context.Context, menuID uint) (*rbacentity.Menu, error) {
+func (r *MenuRepository) FindByID(ctx context.Context, menuID uint) (*rbacdomain.Menu, error) {
 	var row po.Menu
 	if err := gormx.DB(ctx, r.db).First(&row, menuID).Error; err != nil {
 		return nil, ignoreNotFound(err)
@@ -37,7 +36,7 @@ func (r *MenuRepository) FindByID(ctx context.Context, menuID uint) (*rbacentity
 }
 
 // FindByIDForUpdate 按主键读取并锁定菜单；不存在时返回 (nil, nil)。
-func (r *MenuRepository) FindByIDForUpdate(ctx context.Context, menuID uint) (*rbacentity.Menu, error) {
+func (r *MenuRepository) FindByIDForUpdate(ctx context.Context, menuID uint) (*rbacdomain.Menu, error) {
 	var row po.Menu
 	if err := gormx.DB(ctx, r.db).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -49,7 +48,7 @@ func (r *MenuRepository) FindByIDForUpdate(ctx context.Context, menuID uint) (*r
 }
 
 // FindByIDsForUpdate 批量读取并锁定菜单。
-func (r *MenuRepository) FindByIDsForUpdate(ctx context.Context, menuIDs []uint) ([]*rbacentity.Menu, error) {
+func (r *MenuRepository) FindByIDsForUpdate(ctx context.Context, menuIDs []uint) ([]*rbacdomain.Menu, error) {
 	var rows []po.Menu
 	if err := gormx.DB(ctx, r.db).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -62,7 +61,7 @@ func (r *MenuRepository) FindByIDsForUpdate(ctx context.Context, menuIDs []uint)
 }
 
 // FindByTitle 按标题读取菜单；不存在时返回 (nil, nil)。
-func (r *MenuRepository) FindByTitle(ctx context.Context, title string) (*rbacentity.Menu, error) {
+func (r *MenuRepository) FindByTitle(ctx context.Context, title string) (*rbacdomain.Menu, error) {
 	var row po.Menu
 	if err := gormx.DB(ctx, r.db).Take(&row, "title = ?", title).Error; err != nil {
 		return nil, ignoreNotFound(err)
@@ -86,7 +85,7 @@ func (r *MenuRepository) ExistsByID(ctx context.Context, menuID uint) (bool, err
 }
 
 // FindByIDs 批量读取菜单。
-func (r *MenuRepository) FindByIDs(ctx context.Context, menuIDs []uint) ([]*rbacentity.Menu, error) {
+func (r *MenuRepository) FindByIDs(ctx context.Context, menuIDs []uint) ([]*rbacdomain.Menu, error) {
 	var rows []po.Menu
 	if err := gormx.DB(ctx, r.db).Where("id IN ?", menuIDs).Find(&rows).Error; err != nil {
 		return nil, err
@@ -96,7 +95,7 @@ func (r *MenuRepository) FindByIDs(ctx context.Context, menuIDs []uint) ([]*rbac
 }
 
 // ListOrdered 按 sort_order 升序读取全部菜单。
-func (r *MenuRepository) ListOrdered(ctx context.Context) ([]*rbacentity.Menu, error) {
+func (r *MenuRepository) ListOrdered(ctx context.Context) ([]*rbacdomain.Menu, error) {
 	var rows []*po.Menu
 	if err := gormx.DB(ctx, r.db).Order("sort_order ASC").Find(&rows).Error; err != nil {
 		return nil, err
@@ -106,7 +105,7 @@ func (r *MenuRepository) ListOrdered(ctx context.Context) ([]*rbacentity.Menu, e
 }
 
 // ListForGeneration 按 parent_id、sort_order、id 读取完整菜单提示词数据。
-func (r *MenuRepository) ListForGeneration(ctx context.Context) ([]*rbacentity.Menu, error) {
+func (r *MenuRepository) ListForGeneration(ctx context.Context) ([]*rbacdomain.Menu, error) {
 	var rows []*po.Menu
 	if err := gormx.DB(ctx, r.db).
 		Order("parent_id ASC, sort_order ASC, id ASC").
@@ -139,7 +138,7 @@ func (r *MenuRepository) ListSiblingIDsForUpdate(ctx context.Context, parentID *
 }
 
 // ListByRole 读取角色的全部菜单（不区分是否继承），按 sort_order 升序去重。
-func (r *MenuRepository) ListByRole(ctx context.Context, roleID uint) ([]*rbacentity.Menu, error) {
+func (r *MenuRepository) ListByRole(ctx context.Context, roleID uint) ([]*rbacdomain.Menu, error) {
 	var rows []*po.Menu
 
 	err := gormx.DB(ctx, r.db).Table("menus").
@@ -156,7 +155,7 @@ func (r *MenuRepository) ListByRole(ctx context.Context, roleID uint) ([]*rbacen
 }
 
 // ListByRoleInherited 读取角色的直连或继承菜单，按 sort_order 升序去重。
-func (r *MenuRepository) ListByRoleInherited(ctx context.Context, roleID uint, inherited bool) ([]*rbacentity.Menu, error) {
+func (r *MenuRepository) ListByRoleInherited(ctx context.Context, roleID uint, inherited bool) ([]*rbacdomain.Menu, error) {
 	var rows []*po.Menu
 
 	err := gormx.DB(ctx, r.db).Table("menus").
@@ -199,22 +198,23 @@ func (r *MenuRepository) CountByTitleExcluding(ctx context.Context, title string
 	return count, nil
 }
 
-// Create 创建菜单并回填自增 ID 与时间戳。
-func (r *MenuRepository) Create(ctx context.Context, menu *rbacentity.Menu) error {
+// Create 创建菜单并返回带自增 ID 与时间戳的菜单。排序仍由字段级更新维护。
+func (r *MenuRepository) Create(ctx context.Context, menu *rbacdomain.Menu) (*rbacdomain.Menu, error) {
 	row := toPOMenu(menu)
 	if err := gormx.DB(ctx, r.db).Create(&row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	menu.ID = row.ID
-	menu.CreatedAt = row.CreatedAt
-	menu.UpdatedAt = row.UpdatedAt
+	snapshot := menu.Snapshot()
+	snapshot.ID = row.ID
+	snapshot.CreatedAt = row.CreatedAt
+	snapshot.UpdatedAt = row.UpdatedAt
 
-	return nil
+	return rbacdomain.RestoreMenu(snapshot), nil
 }
 
 // UpdateFields 按需更新菜单字段；update 为空时不产生 UPDATE。
-func (r *MenuRepository) UpdateFields(ctx context.Context, menuID uint, update rbacentity.MenuFieldUpdate) error {
+func (r *MenuRepository) UpdateFields(ctx context.Context, menuID uint, update rbacdomain.MenuFieldUpdate) error {
 	if update.IsEmpty() {
 		return nil
 	}

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"f_ccg_video_back_ddd/internal/config"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -20,6 +20,25 @@ type promptTextFake struct {
 	err   error
 	last  TextInvocation
 	calls int
+}
+
+func TestAnalyzeVideoQueryPreservesResponseTypeErrorText(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ response, want string }{
+		{`{"intent":1}`, "解析视频查询分析结果失败: json: cannot unmarshal number into Go struct field VideoQueryAnalysis.intent of type string"},
+		{`{"keywords":1}`, "解析视频查询分析结果失败: json: cannot unmarshal number into Go struct field VideoQueryAnalysis.keywords of type []string"},
+	} {
+		t.Run(tc.response, func(t *testing.T) {
+			t.Parallel()
+			service := &Service{text: &promptTextFake{text: tc.response}, logger: zap.NewNop()}
+			_, err := service.analyzeVideoQuery(t.Context(), &config.AI{}, RuntimeConfig{}, "model", conversation{
+				Messages: []*schema.Message{schema.UserMessage("找视频")},
+			})
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("error=%v, want %q", err, tc.want)
+			}
+		})
+	}
 }
 
 func (f *promptTextFake) InvokeText(_ context.Context, invocation TextInvocation) (string, error) {
@@ -81,7 +100,7 @@ type promptQueryFake struct {
 	available  bool
 	keyword    []uint
 	latest     []uint
-	inputs     []aivo.VideoCandidateInput
+	inputs     []aidomain.VideoCandidateInput
 	keywordErr error
 	latestErr  error
 	loadErr    error
@@ -105,7 +124,7 @@ func (f *promptQueryFake) LatestPublishedIDs(context.Context, int) ([]uint, erro
 func (f *promptQueryFake) Load(
 	_ context.Context,
 	ids []uint,
-) ([]aivo.VideoCandidateInput, error) {
+) ([]aidomain.VideoCandidateInput, error) {
 	f.loadedIDs = append([]uint(nil), ids...)
 
 	return f.inputs, f.loadErr
@@ -161,7 +180,7 @@ func TestAnalyzeVideoQueryUsesBoundedTranscriptWithoutBase64(t *testing.T) {
 	if analysis.Intent != "find_video" || !reflect.DeepEqual(analysis.Keywords, []string{"Go"}) {
 		t.Fatalf("analysis = %+v", analysis)
 	}
-	if text.last.MaxTokens != aivo.AnalysisMaxOutputTokens || len(text.last.Messages) != 2 {
+	if text.last.MaxTokens != aidomain.AnalysisMaxOutputTokens || len(text.last.Messages) != 2 {
 		t.Fatalf("invocation = %+v", text.last)
 	}
 	if text.last.Runtime != runtime {
@@ -188,7 +207,7 @@ func TestSearchPromptVideoIDsUsesOriginalTextAndFirstImage(t *testing.T) {
 	}
 
 	ids, mode := service.searchPromptVideoIDs(context.Background(), conv, []string{"跑车"}, 4)
-	if !reflect.DeepEqual(ids, []uint{9}) || mode != aivo.RetrievalModeImageVector {
+	if !reflect.DeepEqual(ids, []uint{9}) || mode != aidomain.RetrievalModeImageVector {
 		t.Fatalf("ids=%v mode=%q", ids, mode)
 	}
 	want := VideoVectorQuery{
@@ -207,7 +226,7 @@ func TestLoadPromptVideoCandidatesFallsBackToLatestAfterRecallErrors(t *testing.
 		available:  true,
 		keywordErr: errors.New("mysql recall failed"),
 		latest:     []uint{7},
-		inputs: []aivo.VideoCandidateInput{{
+		inputs: []aidomain.VideoCandidateInput{{
 			VideoID: 7,
 			Title:   "最新作品",
 		}},
@@ -223,7 +242,7 @@ func TestLoadPromptVideoCandidatesFallsBackToLatestAfterRecallErrors(t *testing.
 	if err != nil {
 		t.Fatalf("loadPromptVideoCandidates: %v", err)
 	}
-	if set.RetrievalMode != aivo.RetrievalModeLatest || len(set.Candidates) != 1 {
+	if set.RetrievalMode != aidomain.RetrievalModeLatest || len(set.Candidates) != 1 {
 		t.Fatalf("candidate set = %+v", set)
 	}
 	if !reflect.DeepEqual(prompts.loadedIDs, []uint{7}) {

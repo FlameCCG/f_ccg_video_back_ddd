@@ -1,12 +1,13 @@
 package middlewares
 
 import (
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestAIBudgetsUserIPAndDailyQuota(t *testing.T) {

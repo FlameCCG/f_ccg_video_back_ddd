@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/olivere/elastic/v7"
@@ -34,7 +34,7 @@ func marshalSource(t *testing.T, src *elastic.SearchSource) string {
 func TestBuildVideoSearchSourceFiltersPublished(t *testing.T) {
 	t.Parallel()
 
-	payload := marshalSource(t, buildVideoSearchSource(app.SearchOptions{
+	payload := marshalSource(t, (Adapter{}).buildVideoSearchSource(app.SearchOptions{
 		Keyword:  "教程",
 		Page:     1,
 		PageSize: 20,
@@ -49,7 +49,7 @@ func TestBuildVideoSearchSourceFiltersPublished(t *testing.T) {
 func TestBuildVideoSearchSourceIncludesContractFields(t *testing.T) {
 	t.Parallel()
 
-	payload := marshalSource(t, buildVideoSearchSource(app.SearchOptions{
+	payload := marshalSource(t, (Adapter{}).buildVideoSearchSource(app.SearchOptions{
 		Keyword:  "教程",
 		Page:     3,
 		PageSize: 15,
@@ -96,7 +96,7 @@ func TestBuildVideoSearchSourceIncludesContractFields(t *testing.T) {
 func TestBuildUserSearchSourceIncludesContractFields(t *testing.T) {
 	t.Parallel()
 
-	payload := marshalSource(t, buildUserSearchSource(app.SearchOptions{
+	payload := marshalSource(t, (Adapter{}).buildUserSearchSource(app.SearchOptions{
 		Keyword:  "alice",
 		Page:     1,
 		PageSize: 20,
@@ -117,7 +117,7 @@ func TestBuildUserSearchSourceIncludesContractFields(t *testing.T) {
 func TestBuildVideoQueryMatchesAllForEmptyKeyword(t *testing.T) {
 	t.Parallel()
 
-	for _, build := range []func(string) elastic.Query{buildVideoQuery, buildUserQuery} {
+	for _, build := range []func(string) elastic.Query{(Adapter{}).buildVideoQuery, (Adapter{}).buildUserQuery} {
 		src, err := build("").Source()
 		if err != nil {
 			t.Fatalf("query source: %v", err)
@@ -139,7 +139,7 @@ func TestBuildVideoQueryMatchesAllForEmptyKeyword(t *testing.T) {
 func TestBuildVideoQueryEscapesWildcards(t *testing.T) {
 	t.Parallel()
 
-	src, err := buildVideoQuery("ce6*").Source()
+	src, err := (Adapter{}).buildVideoQuery("ce6*").Source()
 	if err != nil {
 		t.Fatalf("query source: %v", err)
 	}
@@ -165,9 +165,9 @@ func TestApplyVideoSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 		order int
 		want  string
 	}{
-		{name: "views desc", field: searchvo.VideoSortViews, order: searchvo.SortOrderDesc, want: `"views"`},
-		{name: "danmu asc", field: searchvo.VideoSortDanmu, order: searchvo.SortOrderAsc, want: `"danmu_count"`},
-		{name: "duration desc", field: searchvo.VideoSortDuration, order: searchvo.SortOrderDesc, want: `"duration"`},
+		{name: "views desc", field: searchdomain.VideoSortViews, order: searchdomain.SortOrderDesc, want: `"views"`},
+		{name: "danmu asc", field: searchdomain.VideoSortDanmu, order: searchdomain.SortOrderAsc, want: `"danmu_count"`},
+		{name: "duration desc", field: searchdomain.VideoSortDuration, order: searchdomain.SortOrderDesc, want: `"duration"`},
 	}
 
 	for _, tt := range tests {
@@ -175,7 +175,7 @@ func TestApplyVideoSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 			t.Parallel()
 
 			source := elastic.NewSearchSource().Query(elastic.NewMatchAllQuery())
-			applyVideoSortToSource(source, tt.field, tt.order)
+			(Adapter{}).applyVideoSortToSource(source, tt.field, tt.order)
 
 			payload := marshalSource(t, source)
 			if !strings.Contains(payload, tt.want) {
@@ -189,7 +189,7 @@ func TestApplyVideoSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 	}
 
 	relevance := elastic.NewSearchSource().Query(elastic.NewMatchAllQuery())
-	applyVideoSortToSource(relevance, searchvo.VideoSortRelevance, searchvo.SortOrderDesc)
+	(Adapter{}).applyVideoSortToSource(relevance, searchdomain.VideoSortRelevance, searchdomain.SortOrderDesc)
 
 	payload := marshalSource(t, relevance)
 	if strings.Contains(payload, `"views"`) {
@@ -205,9 +205,9 @@ func TestApplyUserSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 		field int
 		want  string
 	}{
-		{name: "followers", field: searchvo.UserSortFollowers, want: `"follower_count"`},
-		{name: "level", field: searchvo.UserSortLevel, want: `"level"`},
-		{name: "created at", field: searchvo.UserSortCreatedAt, want: `"created_at"`},
+		{name: "followers", field: searchdomain.UserSortFollowers, want: `"follower_count"`},
+		{name: "level", field: searchdomain.UserSortLevel, want: `"level"`},
+		{name: "created at", field: searchdomain.UserSortCreatedAt, want: `"created_at"`},
 	}
 
 	for _, tt := range tests {
@@ -215,7 +215,7 @@ func TestApplyUserSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 			t.Parallel()
 
 			source := elastic.NewSearchSource().Query(elastic.NewMatchAllQuery())
-			applyUserSortToSource(source, tt.field, searchvo.SortOrderDesc)
+			(Adapter{}).applyUserSortToSource(source, tt.field, searchdomain.SortOrderDesc)
 
 			payload := marshalSource(t, source)
 			if !strings.Contains(payload, tt.want) || !strings.Contains(payload, `"_score"`) {
@@ -236,19 +236,19 @@ func TestSuggestIndexAndFilterRouting(t *testing.T) {
 		wantField     string
 	}{
 		{
-			docType:       searchvo.DocTypeVideo,
+			docType:       searchdomain.DocTypeVideo,
 			wantIndex:     constants.VideoSearchIndex,
 			publishedOnly: true,
 			wantField:     "title",
 		},
 		{
-			docType:       searchvo.DocTypeTag,
+			docType:       searchdomain.DocTypeTag,
 			wantIndex:     constants.VideoSearchIndex,
 			publishedOnly: true,
 			wantField:     "tags",
 		},
 		{
-			docType:       searchvo.DocTypeUser,
+			docType:       searchdomain.DocTypeUser,
 			wantIndex:     constants.UserSearchIndex,
 			publishedOnly: false,
 			wantField:     "username",
@@ -259,20 +259,20 @@ func TestSuggestIndexAndFilterRouting(t *testing.T) {
 		t.Run(tt.docType, func(t *testing.T) {
 			t.Parallel()
 
-			if got := suggestIndexFor(tt.docType); got != tt.wantIndex {
+			if got := (esContract{}).SuggestIndex(tt.docType); got != tt.wantIndex {
 				t.Fatalf("index = %q, want %q", got, tt.wantIndex)
 			}
 
-			if got := suggestPublishedOnly(tt.docType); got != tt.publishedOnly {
+			if got := (Adapter{}).suggestPublishedOnly(tt.docType); got != tt.publishedOnly {
 				t.Fatalf("publishedOnly = %v, want %v", got, tt.publishedOnly)
 			}
 
-			fields := suggestSourceFields(tt.docType)
+			fields := (Adapter{}).suggestSourceFields(tt.docType)
 			if len(fields) != 1 || fields[0] != tt.wantField {
 				t.Fatalf("_source fields = %v, want [%s]", fields, tt.wantField)
 			}
 
-			src, err := buildSuggestQuery(tt.docType, "ce6").Source()
+			src, err := (Adapter{}).buildSuggestQuery(tt.docType, "ce6").Source()
 			if err != nil {
 				t.Fatalf("suggest query source: %v", err)
 			}
@@ -294,7 +294,7 @@ func TestSuggestIndexAndFilterRouting(t *testing.T) {
 func TestBuildSuggestFieldQueryRejectsBlankKeyword(t *testing.T) {
 	t.Parallel()
 
-	src, err := buildSuggestFieldQuery("   ", "title", "title.keyword", "title.pinyin").Source()
+	src, err := (Adapter{}).buildSuggestFieldQuery("   ", "title", "title.keyword", "title.pinyin").Source()
 	if err != nil {
 		t.Fatalf("query source: %v", err)
 	}
@@ -321,11 +321,11 @@ func TestBuildSearchRequestsCarryIndexAndSort(t *testing.T) {
 		Keyword:   "教程",
 		Page:      1,
 		PageSize:  20,
-		VideoSort: searchvo.VideoSortViews,
-		UserSort:  searchvo.UserSortFollowers,
+		VideoSort: searchdomain.VideoSortViews,
+		UserSort:  searchdomain.UserSortFollowers,
 	}
 
-	videoReq := buildVideoSearchRequest(opts, 0)
+	videoReq := (Adapter{}).buildVideoSearchRequest(opts, 0)
 	if !videoReq.HasIndices() {
 		t.Fatal("video request must target an index")
 	}
@@ -339,7 +339,7 @@ func TestBuildSearchRequestsCarryIndexAndSort(t *testing.T) {
 		t.Fatalf("video request body = %s", videoBody)
 	}
 
-	userReq := buildUserSearchRequest(opts, 0)
+	userReq := (Adapter{}).buildUserSearchRequest(opts, 0)
 	if !userReq.HasIndices() {
 		t.Fatal("user request must target an index")
 	}

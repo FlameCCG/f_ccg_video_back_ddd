@@ -4,19 +4,18 @@ import (
 	"context"
 	"sync"
 
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 // ProgressQueryService 提供转码进度查询与订阅。
 //
 // 管理端接口与 SSE 通过此服务读取 Redis 快照，key 与 TTL 由 cache/media 适配器定义。
 type ProgressQueryService struct {
-	reader mediaport.ProgressReader
+	reader ProgressReader
 }
 
 // NewProgressQueryService 构造进度查询服务。
-func NewProgressQueryService(reader mediaport.ProgressReader) *ProgressQueryService {
+func NewProgressQueryService(reader ProgressReader) *ProgressQueryService {
 	return &ProgressQueryService{reader: reader}
 }
 
@@ -44,7 +43,7 @@ func (s *ProgressQueryService) MGetByVideoIDs(ctx context.Context, videoIDs []ui
 
 // IsTerminalStatus 判断进度状态是否为终态（succeeded / failed）。
 func (s *ProgressQueryService) IsTerminalStatus(status string) bool {
-	return status == mediavo.TranscodeStatusSucceeded || status == mediavo.TranscodeStatusFailed
+	return status == mediadomain.TranscodeStatusSucceeded || status == mediadomain.TranscodeStatusFailed
 }
 
 // Subscribe 订阅进度变更事件；返回的订阅需由调用方 Close。
@@ -63,12 +62,12 @@ type ProgressSubscription struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	closeErr  error
-	inner     mediaport.ProgressSubscription
+	inner     ProgressSubscriptionPort
 	events    chan TranscodeProgressItem
 }
 
 // newProgressSubscription 启动映射 goroutine 并返回订阅句柄。
-func newProgressSubscription(ctx context.Context, inner mediaport.ProgressSubscription) *ProgressSubscription {
+func newProgressSubscription(ctx context.Context, inner ProgressSubscriptionPort) *ProgressSubscription {
 	s := &ProgressSubscription{
 		ctx:    ctx,
 		done:   make(chan struct{}),
@@ -120,7 +119,7 @@ func (s *ProgressSubscription) Close() error {
 }
 
 // progressItemsFrom 批量转换进度快照。
-func progressItemsFrom(snapshots []mediavo.TranscodeProgress) []TranscodeProgressItem {
+func progressItemsFrom(snapshots []mediadomain.TranscodeProgress) []TranscodeProgressItem {
 	out := make([]TranscodeProgressItem, 0, len(snapshots))
 	for _, snapshot := range snapshots {
 		out = append(out, progressItemFrom(snapshot))

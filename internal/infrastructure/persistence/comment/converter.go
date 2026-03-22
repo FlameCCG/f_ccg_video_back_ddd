@@ -8,17 +8,17 @@ package comment
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/comment"
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainComment 把评论 PO 转为领域实体（逐字段显式映射，不含关联对象）。
-func toDomainComment(row *po.Comment) *commententity.Comment {
+func toDomainComment(row *po.Comment) *commentdomain.Comment {
 	if row == nil {
 		return nil
 	}
 
-	return &commententity.Comment{
+	return commentdomain.RestoreComment(commentdomain.Snapshot{
 		ID:            row.ID,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
@@ -37,12 +37,12 @@ func toDomainComment(row *po.Comment) *commententity.Comment {
 		PinnedAt:      row.PinnedAt,
 		CommenterIP:   row.CommenterIP,
 		CommenterAddr: row.CommenterAddr,
-	}
+	})
 }
 
 // toDomainComments 批量转换评论 PO（用于只读投影列表）。
-func toDomainComments(rows []po.Comment) []commententity.Comment {
-	list := make([]commententity.Comment, 0, len(rows))
+func toDomainComments(rows []po.Comment) []commentdomain.Comment {
+	list := make([]commentdomain.Comment, 0, len(rows))
 
 	for i := range rows {
 		if c := toDomainComment(&rows[i]); c != nil {
@@ -54,42 +54,42 @@ func toDomainComments(rows []po.Comment) []commententity.Comment {
 }
 
 // toPOComment 把评论领域实体转为 PO（仅标量字段，关联对象由 GORM 自行处理）。
-func toPOComment(c *commententity.Comment) *po.Comment {
+func toPOComment(c *commentdomain.Comment) *po.Comment {
 	if c == nil {
 		return nil
 	}
 
 	return &po.Comment{
 		Model: po.Model{
-			ID:        c.ID,
-			CreatedAt: c.CreatedAt,
-			UpdatedAt: c.UpdatedAt,
+			ID:        c.ID(),
+			CreatedAt: c.CreatedAt(),
+			UpdatedAt: c.UpdatedAt(),
 		},
-		Content:       c.Content,
-		UserID:        c.UserID,
-		VideoID:       c.VideoID,
-		DynamicID:     c.DynamicID,
-		CommentType:   c.CommentType,
-		ParentID:      c.ParentID,
-		RootID:        c.RootID,
-		AtUserIDs:     c.AtUserIDs,
-		Pictures:      c.Pictures,
-		LikeCount:     c.LikeCount,
-		ReplyCount:    c.ReplyCount,
-		IsPinned:      c.IsPinned,
-		PinnedAt:      c.PinnedAt,
-		CommenterIP:   c.CommenterIP,
-		CommenterAddr: c.CommenterAddr,
+		Content:       c.Content(),
+		UserID:        c.UserID(),
+		VideoID:       c.VideoID(),
+		DynamicID:     c.DynamicID(),
+		CommentType:   c.CommentType(),
+		ParentID:      c.ParentID(),
+		RootID:        c.RootID(),
+		AtUserIDs:     c.AtUserIDs(),
+		Pictures:      c.Pictures(),
+		LikeCount:     c.LikeCount(),
+		ReplyCount:    c.ReplyCount(),
+		IsPinned:      c.IsPinned(),
+		PinnedAt:      c.PinnedAt(),
+		CommenterIP:   c.CommenterIP(),
+		CommenterAddr: c.CommenterAddr(),
 	}
 }
 
 // toDomainLike 把评论点赞 PO 转为领域实体。
-func toDomainLike(row *po.CommentLike) *commententity.Like {
+func toDomainLike(row *po.CommentLike) *commentdomain.Like {
 	if row == nil {
 		return nil
 	}
 
-	return &commententity.Like{
+	return &commentdomain.Like{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -99,7 +99,7 @@ func toDomainLike(row *po.CommentLike) *commententity.Like {
 }
 
 // toPOLike 把评论点赞领域实体转为 PO。
-func toPOLike(like *commententity.Like) *po.CommentLike {
+func toPOLike(like *commentdomain.Like) *po.CommentLike {
 	if like == nil {
 		return nil
 	}

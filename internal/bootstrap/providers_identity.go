@@ -3,9 +3,8 @@ package bootstrap
 import (
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
 	notificationapp "f_ccg_video_back_ddd/internal/application/notification"
-	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
-	identitydomainrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	notificationdomainrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	identitycache "f_ccg_video_back_ddd/internal/infrastructure/cache/identity"
 	notificationcache "f_ccg_video_back_ddd/internal/infrastructure/cache/notification"
@@ -36,17 +35,17 @@ var IdentityProviderSet = wire.NewSet(
 	// 持久化实现
 	identityrepo.NewUserRepository,
 	identityrepo.NewCoinAccountRepository,
-	wire.Bind(new(identitydomainrepo.CoinAccountRepository), new(*identityrepo.CoinAccountRepository)),
-	wire.Bind(new(identitydomainrepo.UserRepository), new(*identityrepo.UserRepository)),
-	wire.Bind(new(identitydomainrepo.UserAccountRepository), new(*identityrepo.UserRepository)),
+	wire.Bind(new(identitydomain.CoinAccountRepository), new(*identityrepo.CoinAccountRepository)),
+	wire.Bind(new(identitydomain.UserRepository), new(*identityrepo.UserRepository)),
+	wire.Bind(new(identitydomain.UserAccountRepository), new(*identityrepo.UserRepository)),
 	identityrepo.NewExpRecordRepository,
-	wire.Bind(new(identitydomainrepo.ExpRecordRepository), new(*identityrepo.ExpRecordRepository)),
+	wire.Bind(new(identitydomain.ExpRecordRepository), new(*identityrepo.ExpRecordRepository)),
 	identityrepo.NewCoinRecordRepository,
-	wire.Bind(new(identitydomainrepo.CoinRecordRepository), new(*identityrepo.CoinRecordRepository)),
+	wire.Bind(new(identitydomain.CoinRecordRepository), new(*identityrepo.CoinRecordRepository)),
 	identityrepo.NewBanRecordRepository,
-	wire.Bind(new(identitydomainrepo.BanRecordRepository), new(*identityrepo.BanRecordRepository)),
+	wire.Bind(new(identitydomain.BanRecordRepository), new(*identityrepo.BanRecordRepository)),
 	identityrepo.NewLoginRecordRepository,
-	wire.Bind(new(identitydomainrepo.LoginRecordRepository), new(*identityrepo.LoginRecordRepository)),
+	wire.Bind(new(identitydomain.LoginRecordRepository), new(*identityrepo.LoginRecordRepository)),
 
 	// 读侧查询实现
 	identityrepo.NewAdminUserQuery,
@@ -66,7 +65,7 @@ var IdentityProviderSet = wire.NewSet(
 	identityrepo.NewUserBannerQuery,
 	wire.Bind(new(identityapp.UserBannerCatalog), new(*identityrepo.UserBannerQuery)),
 	identityrepo.NewUserConfRepository,
-	wire.Bind(new(identitydomainrepo.UserConfRepository), new(*identityrepo.UserConfRepository)),
+	wire.Bind(new(identitydomain.UserConfRepository), new(*identityrepo.UserConfRepository)),
 	wire.Bind(new(identityapp.UserConfQuery), new(*identityrepo.UserConfRepository)),
 	identityrepo.NewUserRelationQuery,
 	wire.Bind(new(identityapp.UserRelationQuery), new(*identityrepo.UserRelationQuery)),
@@ -74,8 +73,10 @@ var IdentityProviderSet = wire.NewSet(
 	wire.Bind(new(identityapp.UserRoleQuery), new(*identityrepo.UserRoleQuery)),
 
 	// 缓存实现
+	identitycache.NewEmailSendLimiter,
+	wire.Bind(new(identityapp.RateLimiter), new(*identitycache.EmailSendLimiter)),
 	identitycache.NewUserStatusCache,
-	wire.Bind(new(identityport.UserStatusCache), new(*identitycache.UserStatusCache)),
+	wire.Bind(new(identityapp.UserStatusCache), new(*identitycache.UserStatusCache)),
 	identitycache.NewCreatorMetricStore,
 	wire.Bind(new(identityapp.CreatorMetricStore), new(*identitycache.CreatorMetricStore)),
 
@@ -98,7 +99,7 @@ var IdentityProviderSet = wire.NewSet(
 // NotificationProviderSet 通知上下文：仓储与角标缓存 + 应用服务 + 跨上下文端口绑定。
 var NotificationProviderSet = wire.NewSet(
 	notificationrepo.NewRepository,
-	wire.Bind(new(notificationdomainrepo.Repository), new(*notificationrepo.Repository)),
+	wire.Bind(new(notificationdomain.Repository), new(*notificationrepo.Repository)),
 	notificationcache.NewCountCache,
 	wire.Bind(new(notificationapp.CountCache), new(*notificationcache.CountCache)),
 	notificationrepo.NewActorQuery,

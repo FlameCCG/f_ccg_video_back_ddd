@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 )
 
 // 本文件是私信应用层单测用的手写 stub：不走 wire、不依赖真实 Mongo/MySQL/Redis。
@@ -21,7 +21,7 @@ type fakeRepository struct {
 
 	insertErr error
 	applyErr  error
-	upsert    *chatentity.Conversation
+	upsert    *chatdomain.Conversation
 	upsertErr error
 	hideErr   error
 	matched   bool
@@ -32,8 +32,8 @@ type fakeRepository struct {
 	existsErr error
 
 	insertedID string
-	inserted   []chatentity.Message
-	applied    []chatentity.Message
+	inserted   []chatdomain.Message
+	applied    []chatdomain.Message
 	previews   []string
 	hidden     []messageWindow
 	markedRead []messageWindow
@@ -44,22 +44,28 @@ func (f *fakeRepository) Available() bool { return f.available }
 
 func (f *fakeRepository) EnsureIndexes(context.Context) error { return nil }
 
-func (f *fakeRepository) InsertMessage(_ context.Context, msg *chatentity.Message) error {
+func (f *fakeRepository) InsertMessage(_ context.Context, msg *chatdomain.Message) (*chatdomain.Message, error) {
 	if f.insertErr != nil {
-		return f.insertErr
+		return nil, f.insertErr
+	}
+
+	if msg == nil {
+		return nil, nil
 	}
 
 	if f.insertedID == "" {
 		f.insertedID = "652f1a2b3c4d5e6f70819200"
 	}
 
-	msg.ID = f.insertedID
-	f.inserted = append(f.inserted, *msg)
+	snap := msg.Snapshot()
+	snap.ID = f.insertedID
+	stored := chatdomain.RestoreMessage(snap)
+	f.inserted = append(f.inserted, *stored)
 
-	return nil
+	return stored, nil
 }
 
-func (f *fakeRepository) ApplySend(_ context.Context, msg *chatentity.Message, preview string) error {
+func (f *fakeRepository) ApplySend(_ context.Context, msg *chatdomain.Message, preview string) error {
 	if f.applyErr != nil {
 		return f.applyErr
 	}
@@ -74,7 +80,7 @@ func (f *fakeRepository) UpsertConversation(
 	_ context.Context,
 	_, _ uint,
 	_ time.Time,
-) (*chatentity.Conversation, error) {
+) (*chatdomain.Conversation, error) {
 	return f.upsert, f.upsertErr
 }
 
@@ -168,14 +174,15 @@ func (f *fakeBadgeInvalidator) InvalidateCount(receiverID int) {
 	f.invalidated = append(f.invalidated, receiverID)
 }
 
-func (f *fakeRepository) SendMessage(ctx context.Context, msg *chatentity.Message, preview string) error {
+func (f *fakeRepository) SendMessage(ctx context.Context, msg *chatdomain.Message, preview string) (*chatdomain.Message, error) {
 	before := len(f.inserted)
-	if err := f.InsertMessage(ctx, msg); err != nil {
-		return err
+	stored, err := f.InsertMessage(ctx, msg)
+	if err != nil {
+		return nil, err
 	}
-	if err := f.ApplySend(ctx, msg, preview); err != nil {
+	if err := f.ApplySend(ctx, stored, preview); err != nil {
 		f.inserted = f.inserted[:before]
-		return err
+		return nil, err
 	}
-	return nil
+	return stored, nil
 }

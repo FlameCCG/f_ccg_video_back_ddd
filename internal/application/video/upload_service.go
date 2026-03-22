@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"f_ccg_video_back_ddd/internal/config"
-	"fmt"
 	"io"
 	"net"
 	"sort"
@@ -13,7 +12,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/uploadscope"
 
@@ -305,7 +304,7 @@ func (s *UploadService) completeUpload(ctx context.Context, fileHash, fileName s
 		return "", err
 	}
 
-	if err := videovo.ValidateCompleteUpload(fileName, totalChunks); err != nil {
+	if err := (videodomain.UploadPolicy{}).Complete(fileName, totalChunks); err != nil {
 		return "", err
 	}
 
@@ -426,62 +425,27 @@ func (s *UploadService) validateFileHash(fileHash string) error {
 	return s.storage.ValidateUploadID(trimSpace(fileHash))
 }
 
-const mebibyte int64 = 1024 * 1024
-
-// uploadSizeLimits 读取单分片和整文件上限，单位 MB。
-// maxChunkSize 优先；没配时用 chunkSize 卡住单分片。两者都没配则不限制单分片。
-func uploadSizeLimits(cfg *config.Config) (chunkMB, fileMB int64) {
+// uploadSizePolicy only maps the current configuration into domain facts.
+func uploadSizePolicy(cfg *config.Config) videodomain.UploadSizePolicy {
 	if cfg == nil || cfg.Site == nil || cfg.Site.Storage == nil {
-		return 0, 0
+		return videodomain.UploadSizePolicy{}
 	}
-
 	storage := cfg.Site.Storage
-	chunkMB = storage.MaxChunkSize
-	if chunkMB <= 0 {
-		chunkMB = storage.ChunkSize
-	}
-
-	return chunkMB, storage.MaxFileSize
+	return videodomain.UploadSizePolicy{MaxChunkMB: storage.MaxChunkSize, ChunkMB: storage.ChunkSize, FileMB: storage.MaxFileSize}
 }
-
-func (s *UploadService) validateIncomingChunkSize(
-	ctx context.Context,
-	driver StorageDriver,
-	fileHash, index string,
-	size int64,
-	cfg *config.Config,
-) error {
-	if size < 0 {
-		return errors.New("分块大小无效")
+func (s *UploadService) validateIncomingChunkSize(ctx context.Context, driver StorageDriver, fileHash, index string, size int64, cfg *config.Config) error {
+	policy := uploadSizePolicy(cfg)
+	if err := policy.IncomingChunk(size); err != nil {
+		return err
 	}
-
-	chunkMB, fileMB := uploadSizeLimits(cfg)
-	if chunkMB > 0 && size > chunkMB*mebibyte {
-		return fmt.Errorf("分块大小超过限制（最大 %dMB)", chunkMB)
-	}
-
-	if fileMB <= 0 {
+	if !policy.NeedsAggregate() {
 		return nil
 	}
-
-	if size > fileMB*mebibyte {
-		return fmt.Errorf("文件大小超过限制（最大 %dMB)", fileMB)
-	}
-
 	total, current, err := driver.ChunkUploadBytes(ctx, fileHash, index)
 	if err != nil {
 		return err
 	}
-
-	if current > total {
-		current = total
-	}
-
-	if total-current+size > fileMB*mebibyte {
-		return fmt.Errorf("文件大小超过限制（最大 %dMB)", fileMB)
-	}
-
-	return nil
+	return policy.ReplacingChunk(total, current, size)
 }
 
 func (s *UploadService) ensureChunkIntegrity(
@@ -495,7 +459,7 @@ func (s *UploadService) ensureChunkIntegrity(
 		return err
 	}
 
-	return videovo.ValidateChunkSet(chunks, totalChunks, s.storage.ValidateChunkIndex)
+	return (videodomain.UploadPolicy{}).ChunkSet(chunks, totalChunks, s.storage.ValidateChunkIndex)
 }
 
 // ---------------------------------------------------------------------------

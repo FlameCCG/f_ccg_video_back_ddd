@@ -7,8 +7,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -41,7 +40,7 @@ func NewStateStore(redisClient *redis.Client) *StateStore {
 
 // Store 保存一次性 OAuth state，TTL 为 domain.OAuthStateTTL。
 func (s *StateStore) Store(ctx context.Context, provider, state string) error {
-	provider, state, err := identityvo.NormalizeOAuthState(provider, state)
+	provider, state, err := (identitydomain.OAuthStatePolicy{}).Normalize(provider, state)
 	if err != nil {
 		return err
 	}
@@ -50,15 +49,15 @@ func (s *StateStore) Store(ctx context.Context, provider, state string) error {
 		ctx = context.TODO()
 	}
 
-	key := identityvo.OAuthStateKey(provider, state)
+	key := s.stateKey(provider, state)
 	if s.redis != nil {
-		return s.redis.Set(ctx, key, "1", identityvo.OAuthStateTTL).Err()
+		return s.redis.Set(ctx, key, "1", identitydomain.OAuthStateTTL).Err()
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.items[key] = stateEntry{expiresAt: time.Now().Add(identityvo.OAuthStateTTL)}
+	s.items[key] = stateEntry{expiresAt: time.Now().Add(identitydomain.OAuthStateTTL)}
 
 	return nil
 }
@@ -68,7 +67,7 @@ func (s *StateStore) Store(ctx context.Context, provider, state string) error {
 // Redis GetDel 在同一原子操作中读取并删除，不能替换为分开的 GET/DEL，否则并发回调可能重复通过。
 // 内存分支在互斥锁内查询并删除；即使发现已过期，也不恢复该条目。
 func (s *StateStore) Consume(ctx context.Context, provider, state string) error {
-	provider, state, err := identityvo.NormalizeOAuthState(provider, state)
+	provider, state, err := (identitydomain.OAuthStatePolicy{}).Normalize(provider, state)
 	if err != nil {
 		return err
 	}
@@ -77,7 +76,7 @@ func (s *StateStore) Consume(ctx context.Context, provider, state string) error 
 		ctx = context.TODO()
 	}
 
-	key := identityvo.OAuthStateKey(provider, state)
+	key := s.stateKey(provider, state)
 	if s.redis != nil {
 		value, err := s.redis.GetDel(ctx, key).Result()
 		if err != nil {
@@ -85,7 +84,7 @@ func (s *StateStore) Consume(ctx context.Context, provider, state string) error 
 		}
 
 		if strings.TrimSpace(value) == "" {
-			return identityerrors.ErrOAuthStateInvalid
+			return identitydomain.ErrOAuthStateInvalid
 		}
 
 		return nil
@@ -96,14 +95,18 @@ func (s *StateStore) Consume(ctx context.Context, provider, state string) error 
 
 	entry, ok := s.items[key]
 	if !ok {
-		return identityerrors.ErrOAuthStateInvalid
+		return identitydomain.ErrOAuthStateInvalid
 	}
 
 	delete(s.items, key)
 
 	if time.Now().After(entry.expiresAt) {
-		return identityerrors.ErrOAuthStateInvalid
+		return identitydomain.ErrOAuthStateInvalid
 	}
 
 	return nil
+}
+
+func (*StateStore) stateKey(provider, state string) string {
+	return "oauth:state:" + provider + ":" + state
 }

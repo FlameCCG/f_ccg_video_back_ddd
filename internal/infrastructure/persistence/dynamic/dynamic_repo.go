@@ -5,15 +5,14 @@ import (
 	"errors"
 	"time"
 
-	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
-	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
-	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // mysqlDuplicateEntryErrNo MySQL 唯一键冲突错误码。
@@ -24,7 +23,7 @@ type DynamicRepository struct {
 	db *gorm.DB
 }
 
-var _ dynamicrepo.DynamicRepository = (*DynamicRepository)(nil)
+var _ dynamicdomain.DynamicRepository = (*DynamicRepository)(nil)
 
 // NewDynamicRepository 构造动态仓储。
 func NewDynamicRepository(db *gorm.DB) *DynamicRepository {
@@ -32,7 +31,7 @@ func NewDynamicRepository(db *gorm.DB) *DynamicRepository {
 }
 
 // FindByID 按主键读取动态；不存在时返回 (nil, nil)。
-func (r *DynamicRepository) FindByID(ctx context.Context, dynamicID uint) (*dynamicentity.Dynamic, error) {
+func (r *DynamicRepository) FindByID(ctx context.Context, dynamicID uint) (*dynamicdomain.Dynamic, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, r.db).Where("id = ?", dynamicID).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -42,6 +41,18 @@ func (r *DynamicRepository) FindByID(ctx context.Context, dynamicID uint) (*dyna
 		return nil, err
 	}
 
+	return toDomainDynamic(&row), nil
+}
+
+// FindByIDForUpdate 置顶资格和替换操作共用事务，防止目标删除后清除原置顶。
+func (r *DynamicRepository) FindByIDForUpdate(ctx context.Context, dynamicID uint) (*dynamicdomain.Dynamic, error) {
+	var row po.Dynamic
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).Take(&row, "id = ?", dynamicID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
 	return toDomainDynamic(&row), nil
 }
 
@@ -62,7 +73,7 @@ func (r *DynamicRepository) ExistsByID(ctx context.Context, dynamicID uint) (boo
 }
 
 // FindNoticeTargetByID 只读 id/user_id/content，供点赞通知渲染；不存在时返回 (nil, nil)。
-func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID uint) (*dynamicentity.Dynamic, error) {
+func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID uint) (*dynamicdomain.Dynamic, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "user_id", "content").
@@ -78,25 +89,18 @@ func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID 
 	return toDomainDynamic(&row), nil
 }
 
-// Create 写入动态，并把自增 ID 与时间戳回填到领域实体。
-func (r *DynamicRepository) Create(ctx context.Context, d *dynamicentity.Dynamic) error {
+// Create 写入动态，并返回带自增 ID 与时间戳的实体。
+func (r *DynamicRepository) Create(ctx context.Context, d *dynamicdomain.Dynamic) (*dynamicdomain.Dynamic, error) {
 	if d == nil {
-		return nil
+		return nil, nil
 	}
 
 	row := toPODynamic(d)
 	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	d.ID = row.ID
-	d.CreatedAt = row.CreatedAt
-	d.UpdatedAt = row.UpdatedAt
-	d.LikeCount = row.LikeCount
-	d.IsPinned = row.IsPinned
-	d.PinnedAt = row.PinnedAt
-
-	return nil
+	return toDomainDynamic(row), nil
 }
 
 // DeleteByID 删除单条动态。
@@ -125,16 +129,32 @@ func (r *DynamicRepository) ClearPinnedByUser(ctx context.Context, userID uint) 
 
 // SetPinned 把指定动态标记为置顶，并写入置顶时间。
 func (r *DynamicRepository) SetPinned(ctx context.Context, dynamicID uint, pinnedAt *time.Time) error {
-	return gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
-		Where("id = ?", dynamicID).
-		Updates(map[string]any{"is_pinned": true, "pinned_at": pinnedAt}).Error
+	return r.updatePin(ctx, dynamicID, map[string]any{"is_pinned": true, "pinned_at": pinnedAt})
 }
 
 // ClearPinned 取消指定动态的置顶状态。
 func (r *DynamicRepository) ClearPinned(ctx context.Context, dynamicID uint) error {
-	return gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
+	return r.updatePin(ctx, dynamicID, map[string]any{"is_pinned": false, "pinned_at": nil})
+}
+
+func (r *DynamicRepository) updatePin(ctx context.Context, dynamicID uint, changes map[string]any) error {
+	result := gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
 		Where("id = ?", dynamicID).
-		Updates(map[string]any{"is_pinned": false, "pinned_at": nil}).Error
+		Updates(changes)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		// MySQL 对幂等取消也可能返回零行，只拒绝确实缺失的目标。
+		target, err := r.FindByIDForUpdate(ctx, dynamicID)
+		if err != nil {
+			return err
+		}
+		if target == nil {
+			return dynamicdomain.ErrDynamicNotFound
+		}
+	}
+	return nil
 }
 
 // IncrLikeCount 动态点赞数 +1。
@@ -170,7 +190,7 @@ type LikeRepository struct {
 	db *gorm.DB
 }
 
-var _ dynamicrepo.LikeRepository = (*LikeRepository)(nil)
+var _ dynamicdomain.LikeRepository = (*LikeRepository)(nil)
 
 // NewLikeRepository 构造动态点赞仓储。
 func NewLikeRepository(db *gorm.DB) *LikeRepository {
@@ -182,7 +202,7 @@ func (r *LikeRepository) Create(ctx context.Context, dynamicID, userID uint) err
 	like := po.DynamicLike{DynamicID: dynamicID, UserID: userID}
 	if err := gormx.DB(ctx, r.db).Create(&like).Error; err != nil {
 		if isDynamicLikeDuplicateKey(err) {
-			return dynamicerrors.ErrLikeDuplicated
+			return dynamicdomain.ErrLikeDuplicated
 		}
 
 		return err
@@ -220,7 +240,7 @@ type ReadRepository struct {
 	db *gorm.DB
 }
 
-var _ dynamicrepo.ReadRepository = (*ReadRepository)(nil)
+var _ dynamicdomain.ReadRepository = (*ReadRepository)(nil)
 
 // NewReadRepository 构造已读位点仓储。
 func NewReadRepository(db *gorm.DB) *ReadRepository {
@@ -228,7 +248,7 @@ func NewReadRepository(db *gorm.DB) *ReadRepository {
 }
 
 // FindByUserAndAuthor 读取用户对某作者的已读位点；不存在时返回 (nil, nil)。
-func (r *ReadRepository) FindByUserAndAuthor(ctx context.Context, userID, authorID uint) (*dynamicentity.ReadRecord, error) {
+func (r *ReadRepository) FindByUserAndAuthor(ctx context.Context, userID, authorID uint) (*dynamicdomain.ReadRecord, error) {
 	var row po.DynamicRead
 	if err := gormx.DB(ctx, r.db).
 		Where("user_id = ? AND author_id = ?", userID, authorID).
@@ -243,35 +263,34 @@ func (r *ReadRepository) FindByUserAndAuthor(ctx context.Context, userID, author
 	return toDomainReadRecord(&row), nil
 }
 
-// Create 写入一条新的已读位点，并回填自增 ID。
-func (r *ReadRepository) Create(ctx context.Context, record *dynamicentity.ReadRecord) error {
+// Create 写入一条新的已读位点，并返回带自增 ID 的实体。
+func (r *ReadRepository) Create(ctx context.Context, record *dynamicdomain.ReadRecord) (*dynamicdomain.ReadRecord, error) {
 	if record == nil {
-		return nil
+		return nil, nil
 	}
 
 	row := toPOReadRecord(record)
 	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	record.ID = row.ID
-
-	return nil
+	return toDomainReadRecord(row), nil
 }
 
-// Advance 把已存在的已读位点推进到指定作品。
+// Advance 用条件更新保护数据库中的当前位点，旧快照不能回退时间或覆盖关联作品。
 func (r *ReadRepository) Advance(
 	ctx context.Context,
 	id uint,
 	workType enum.WorkType,
 	workID uint,
 	workAt time.Time,
-) error {
-	return gormx.DB(ctx, r.db).Model(&po.DynamicRead{}).
-		Where("id = ?", id).
+) (bool, error) {
+	result := gormx.DB(ctx, r.db).Model(&po.DynamicRead{}).
+		Where("id = ? AND last_read_work_at < ?", id, workAt).
 		Updates(map[string]any{
 			"last_read_work_type": workType,
 			"last_read_work_id":   workID,
 			"last_read_work_at":   workAt,
-		}).Error
+		})
+	return result.RowsAffected > 0, result.Error
 }

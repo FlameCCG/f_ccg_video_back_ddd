@@ -4,52 +4,52 @@ import (
 	"encoding/json"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toPOUser 把用户领域实体转为 PO（逐字段显式映射，注册/OAuth 创建路径使用）。
-func toPOUser(user *identityentity.User) *po.User {
+func toPOUser(user *identitydomain.User) *po.User {
 	if user == nil {
 		return nil
 	}
 
 	return &po.User{
 		Model: po.Model{
-			ID:        user.ID,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
+			ID:        user.ID(),
+			CreatedAt: user.CreatedAt(),
+			UpdatedAt: user.UpdatedAt(),
 		},
-		Username:           user.Username,
-		Email:              user.Email,
-		Password:           user.Password,
-		RefreshTokenHash:   user.RefreshTokenHash,
-		MustChangePassword: user.MustChangePassword,
-		Avatar:             user.Avatar,
-		Description:        user.Description,
-		Gender:             user.Gender,
-		Birthday:           user.Birthday,
-		Level:              user.Level,
-		OpenID:             user.OpenID,
-		RegisterSource:     user.RegisterSource,
-		Exp:                user.Exp,
-		CoinCount:          user.CoinCount,
-		Status:             user.Status,
-		CurrentRoleID:      user.CurrentRoleID,
-		RegisterIP:         user.RegisterIP,
-		LastLoginIP:        user.LastLoginIP,
-		RegisterAddr:       user.RegisterAddr,
-		LastLoginAddr:      user.LastLoginAddr,
+		Username:           user.Username(),
+		Email:              user.Email(),
+		Password:           user.Password(),
+		RefreshTokenHash:   user.RefreshTokenHash(),
+		MustChangePassword: user.MustChangePassword(),
+		Avatar:             user.Avatar(),
+		Description:        user.Description(),
+		Gender:             user.Gender(),
+		Birthday:           user.Birthday(),
+		Level:              user.Level(),
+		OpenID:             user.OpenID(),
+		RegisterSource:     user.RegisterSource(),
+		Exp:                user.Exp(),
+		CoinCount:          user.CoinCount(),
+		Status:             user.Status(),
+		CurrentRoleID:      user.CurrentRoleID(),
+		RegisterIP:         user.RegisterIP(),
+		LastLoginIP:        user.LastLoginIP(),
+		RegisterAddr:       user.RegisterAddr(),
+		LastLoginAddr:      user.LastLoginAddr(),
 	}
 }
 
 // toDomainUserConf 把用户配置 PO 转为领域实体（LikeTags 在此解析）。
-func toDomainUserConf(row *po.UserConf) *identityentity.UserConf {
+func toDomainUserConf(row *po.UserConf) *identitydomain.UserConf {
 	if row == nil {
 		return nil
 	}
 
-	return &identityentity.UserConf{
+	return identitydomain.RestoreUserConf(identitydomain.UserConfSnapshot{
 		UserID:        row.UserID,
 		LikeTags:      decodeLikeTags(row.LikeTags),
 		BannerID:      row.BannerID,
@@ -59,7 +59,7 @@ func toDomainUserConf(row *po.UserConf) *identityentity.UserConf {
 		OpenFollow:    row.OpenFollow,
 		OpenLikeVideo: row.OpenLikeVideo,
 		OpenCoinVideo: row.OpenCoinVideo,
-	}
+	})
 }
 
 // toUserConfView 把用户配置 PO 转为读模型（LikeTags 保持原始 JSON 字节）。

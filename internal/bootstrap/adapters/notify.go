@@ -13,7 +13,7 @@ import (
 	dynamicapp "f_ccg_video_back_ddd/internal/application/dynamic"
 	notificationapp "f_ccg_video_back_ddd/internal/application/notification"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
-	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -40,9 +40,9 @@ func (a *Notifier) CreateNotices(ctx context.Context, notices []commentapp.Notic
 		return nil
 	}
 
-	rows := make([]notificationentity.Notification, 0, len(notices))
+	rows := make([]notificationdomain.Notification, 0, len(notices))
 	for _, n := range notices {
-		rows = append(rows, notificationentity.Notification{
+		rows = append(rows, *notificationdomain.NewNotification(notificationdomain.Draft{
 			Type:             n.Type,
 			ReceiverID:       n.ReceiverID,
 			ActionUserID:     n.ActionUserID,
@@ -54,10 +54,12 @@ func (a *Notifier) CreateNotices(ctx context.Context, notices []commentapp.Notic
 			VideoID:          n.VideoID,
 			VideoTitle:       n.VideoTitle,
 			CommentID:        n.CommentID,
-		})
+		}))
 	}
 
-	return a.delivery.CreateBatch(ctx, rows)
+	_, err := a.delivery.CreateBatch(ctx, rows)
+
+	return err
 }
 
 // InvalidateCount 实现 comment.Notifier / chat.NotificationBadgeInvalidator：失效角标计数缓存。
@@ -73,7 +75,7 @@ func (a *Notifier) NotifyDynamicLike(
 	actionUserID uint,
 	actionUserName, actionUserAvatar, title, content string,
 ) error {
-	return a.delivery.Create(ctx, &notificationentity.Notification{
+	_, err := a.delivery.Create(ctx, notificationdomain.NewNotification(notificationdomain.Draft{
 		Type:             enum.NotificationLikeDynamicType,
 		ReceiverID:       int(receiverID),
 		DynamicID:        dynamicID,
@@ -82,12 +84,14 @@ func (a *Notifier) NotifyDynamicLike(
 		ActionUserAvatar: actionUserAvatar,
 		Title:            title,
 		Content:          content,
-	})
+	}))
+
+	return err
 }
 
 // NotifyVideoLike 实现 video.VideoNotifier：视频被点赞通知。
 func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.VideoNotice) {
-	_ = a.delivery.Create(ctx, &notificationentity.Notification{
+	_, _ = a.delivery.Create(ctx, notificationdomain.NewNotification(notificationdomain.Draft{
 		Type:             enum.NotificationVideoLikeType,
 		ReceiverID:       int(notice.ReceiverID),
 		ActionUserID:     notice.ActionUserID,
@@ -97,7 +101,7 @@ func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.VideoNot
 		Content:          notice.Content,
 		VideoID:          notice.VideoID,
 		VideoTitle:       notice.VideoTitle,
-	})
+	}))
 }
 
 // NotifySystemBatch 实现 video.VideoNotifier：批量系统通知（举报处理结果）。
@@ -106,9 +110,9 @@ func (a *Notifier) NotifySystemBatch(ctx context.Context, notices []videoapp.Sys
 		return
 	}
 
-	rows := make([]notificationentity.Notification, 0, len(notices))
+	rows := make([]notificationdomain.Notification, 0, len(notices))
 	for _, n := range notices {
-		rows = append(rows, notificationentity.Notification{
+		rows = append(rows, *notificationdomain.NewNotification(notificationdomain.Draft{
 			Type:             enum.NotificationSystemType,
 			ReceiverID:       int(n.ReceiverID),
 			ActionUserID:     n.ActionUserID,
@@ -116,8 +120,8 @@ func (a *Notifier) NotifySystemBatch(ctx context.Context, notices []videoapp.Sys
 			ActionUserAvatar: n.ActionUserAvatar,
 			Title:            n.Title,
 			Content:          n.Content,
-		})
+		}))
 	}
 
-	_ = a.delivery.CreateBatch(ctx, rows)
+	_, _ = a.delivery.CreateBatch(ctx, rows)
 }

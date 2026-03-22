@@ -12,12 +12,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	mediaapplication "f_ccg_video_back_ddd/internal/application/media"
 	"fmt"
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/config"
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
 )
@@ -41,7 +41,7 @@ type MQService struct {
 }
 
 // 编译期断言：满足领域侧任务投递端口。
-var _ mediaport.TaskPublisher = (*MQService)(nil)
+var _ mediaapplication.TaskPublisher = (*MQService)(nil)
 
 // NewMQService 构造 MQ 服务。
 func NewMQService(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logger) *MQService {
@@ -92,7 +92,7 @@ func (s *MQService) Publish(ctx context.Context, topicAlias string, payload []by
 }
 
 // PublishTranscodeTask 把任务序列化为 Kafka 消息并发送到异步转码队列。
-func (s *MQService) PublishTranscodeTask(ctx context.Context, task mediaentity.TranscodeTask) error {
+func (s *MQService) PublishTranscodeTask(ctx context.Context, task mediadomain.TranscodeTask) error {
 	payload, err := json.Marshal(PayloadFromTask(task))
 	if err != nil {
 		return fmt.Errorf("marshal transcode payload: %w", err)

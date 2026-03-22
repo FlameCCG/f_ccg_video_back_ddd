@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -14,7 +12,7 @@ import (
 )
 
 // 编译期断言：满足领域侧账号仓储接口。
-var _ identityrepo.UserAccountRepository = (*UserRepository)(nil)
+var _ identitydomain.UserAccountRepository = (*UserRepository)(nil)
 
 // ExistsByUsernameOrEmail 判断用户名或邮箱是否已被占用。
 func (r *UserRepository) ExistsByUsernameOrEmail(ctx context.Context, username, email string) (bool, error) {
@@ -32,7 +30,7 @@ func (r *UserRepository) ExistsByUsernameOrEmail(ctx context.Context, username, 
 }
 
 // FindByUsernameOrEmail 按「用户名或邮箱」登录标识读取用户；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindByUsernameOrEmail(ctx context.Context, identifier string) (*identityentity.User, error) {
+func (r *UserRepository) FindByUsernameOrEmail(ctx context.Context, identifier string) (*identitydomain.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
 		Take(&row, "username = ? or email = ?", identifier, identifier).Error; err != nil {
@@ -47,7 +45,7 @@ func (r *UserRepository) FindByUsernameOrEmail(ctx context.Context, identifier s
 }
 
 // FindByEmail 按邮箱读取用户；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*identityentity.User, error) {
+func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*identitydomain.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).Take(&row, "email = ?", email).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -64,7 +62,7 @@ func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*identi
 func (r *UserRepository) FindByOpenIDAndSource(
 	ctx context.Context,
 	openID, registerSource string,
-) (*identityentity.User, error) {
+) (*identitydomain.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
 		Take(&row, "open_id = ? AND register_source = ?", openID, registerSource).Error; err != nil {
@@ -112,29 +110,29 @@ func (r *UserRepository) CountByEmailExcluding(
 	return count, nil
 }
 
-// Create 创建用户并写入 user_roles 关联，回填 user.ID。
+// Create 创建用户并写入 user_roles 关联，返回持久化后的用户。
 //
 // 要求在事务内调用，并在同一事务中调用 InitializeDefaults。
-func (r *UserRepository) Create(ctx context.Context, user *identityentity.User, roleID uint) error {
+func (r *UserRepository) Create(ctx context.Context, user *identitydomain.User, roleID uint) (*identitydomain.User, error) {
 	if user == nil {
-		return identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
 
 	row := toPOUser(user)
 
 	db := gormx.DB(ctx, r.db)
 	if err := db.Create(row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	user.ID = row.ID
-	user.CreatedAt = row.CreatedAt
-	user.UpdatedAt = row.UpdatedAt
-
-	return db.Create(&po.UserRole{
+	if err := db.Create(&po.UserRole{
 		UserID: row.ID,
 		RoleID: roleID,
-	}).Error
+	}).Error; err != nil {
+		return nil, err
+	}
+
+	return toDomainUser(row), nil
 }
 
 // DeleteByID 删除用户（Casbin 绑定失败后的补偿路径）。
@@ -142,35 +140,35 @@ func (r *UserRepository) DeleteByID(ctx context.Context, userID uint) error {
 	return gormx.DB(ctx, r.db).Delete(&po.User{}, userID).Error
 }
 
-// UpdatePassword 覆盖写密码哈希。
-func (r *UserRepository) UpdatePassword(ctx context.Context, userID uint, passwordHash string) error {
+// SaveCredentials 只保存领域动作改变的凭据列。
+func (r *UserRepository) SaveCredentials(ctx context.Context, user *identitydomain.User) error {
 	return gormx.DB(ctx, r.db).
 		Model(&po.User{}).
-		Where("id = ?", userID).
-		Updates(map[string]any{"password": passwordHash, "refresh_token_hash": "", "must_change_password": false}).Error
+		Where("id = ?", user.ID()).
+		Updates(map[string]any{"password": user.Password(), "refresh_token_hash": user.RefreshTokenHash(), "must_change_password": user.MustChangePassword()}).Error
 }
 
-// UpdateEmail 覆盖写邮箱。
-func (r *UserRepository) UpdateEmail(ctx context.Context, userID uint, email string) error {
+// SaveEmail 只保存绑定邮箱。
+func (r *UserRepository) SaveEmail(ctx context.Context, user *identitydomain.User) error {
 	return gormx.DB(ctx, r.db).
 		Model(&po.User{}).
-		Where("id = ?", userID).
-		Update("email", email).Error
+		Where("id = ?", user.ID()).
+		Update("email", user.Email()).Error
 }
 
-// UpdateCurrentRole 更新当前角色 ID。
-func (r *UserRepository) UpdateCurrentRole(ctx context.Context, userID, roleID uint) error {
+// SaveCurrentRole 只保存当前角色 ID。
+func (r *UserRepository) SaveCurrentRole(ctx context.Context, user *identitydomain.User) error {
 	return gormx.DB(ctx, r.db).
 		Model(&po.User{}).
-		Where("id = ?", userID).
-		Update("current_role_id", roleID).Error
+		Where("id = ?", user.ID()).
+		Update("current_role_id", user.CurrentRoleID()).Error
 }
 
 // UpdateProfile 部分更新用户资料。
 func (r *UserRepository) UpdateProfile(
 	ctx context.Context,
 	userID uint,
-	changes identityentity.ProfileChanges,
+	changes identitydomain.ProfileChanges,
 ) error {
 	updates := profileUpdateColumns(changes)
 	if len(updates) == 0 {
@@ -184,7 +182,7 @@ func (r *UserRepository) UpdateProfile(
 }
 
 // profileUpdateColumns 把领域侧的部分更新集合翻译为列名 → 值。
-func profileUpdateColumns(changes identityentity.ProfileChanges) map[string]any {
+func profileUpdateColumns(changes identitydomain.ProfileChanges) map[string]any {
 	updates := make(map[string]any, 5)
 
 	if changes.Username != nil {

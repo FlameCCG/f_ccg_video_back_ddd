@@ -20,7 +20,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 
 	"go.uber.org/zap"
@@ -71,7 +71,7 @@ func (r *HTTPDASHVariantResolver) Variants(
 	ctx context.Context,
 	resourceID uint,
 	mpdURL string,
-) ([]videovo.DASHVariant, error) {
+) ([]videodomain.DASHVariant, error) {
 	variants, err := r.fetch(ctx, mpdURL)
 	if err != nil {
 		r.logger.Warn("parse DASH mpd variants failed",
@@ -86,7 +86,7 @@ func (r *HTTPDASHVariantResolver) Variants(
 	return variants, nil
 }
 
-func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]videovo.DASHVariant, error) {
+func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]videodomain.DASHVariant, error) {
 	mpdURL = strings.TrimSpace(mpdURL)
 	if mpdURL == "" {
 		return nil, errEmptyMPDURL

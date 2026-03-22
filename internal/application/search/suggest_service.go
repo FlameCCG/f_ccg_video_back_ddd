@@ -2,11 +2,9 @@ package search
 
 import (
 	"context"
-	"strconv"
-	"strings"
 	"time"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -25,6 +23,8 @@ type SuggestService struct {
 	fallback SuggestFallbackQuery
 	cache    SuggestionCache
 	logger   *zap.Logger
+	keywords searchdomain.KeywordPolicy
+	pages    searchdomain.PaginationPolicy
 }
 
 // NewSuggestService 构造搜索联想服务。
@@ -34,20 +34,26 @@ func NewSuggestService(
 	cache SuggestionCache,
 	logger *zap.Logger,
 ) *SuggestService {
-	return &SuggestService{index: index, fallback: fallback, cache: cache, logger: logger}
+	return &SuggestService{
+		index:    index,
+		fallback: fallback,
+		cache:    cache,
+		logger:   logger,
+		keywords: searchdomain.KeywordPolicy{},
+		pages:    searchdomain.PaginationPolicy{},
+	}
 }
 
 // Suggest 返回联想候选项；ES 不可用或查询失败时回退 MySQL LIKE 查询。
 func (s *SuggestService) Suggest(ctx context.Context, prefix string, size int) ([]SuggestionItem, error) {
-	size = searchvo.NormalizeSuggestSize(size)
+	size = s.pages.NormalizeSuggestSize(size)
 
-	prefix = searchvo.NormalizeKeyword(prefix)
+	prefix = s.keywords.NormalizeKeyword(prefix)
 	if prefix == "" {
 		return []SuggestionItem{}, nil
 	}
 
-	cacheKey := suggestCacheKey(prefix, size)
-	if cached, ok := s.cache.Load(cacheKey); ok {
+	if cached, ok := s.cache.Load(prefix, size); ok {
 		return cached, nil
 	}
 
@@ -57,12 +63,12 @@ func (s *SuggestService) Suggest(ctx context.Context, prefix string, size int) (
 			return nil, err
 		}
 
-		s.cache.Store(cacheKey, items)
+		s.cache.Store(prefix, size, items)
 
 		return items, nil
 	}
 
-	parent := ensureContext(ctx)
+	parent := (callContext{}).ensure(ctx)
 
 	suggestCtx, cancel := context.WithTimeout(parent, suggestPrimaryTimeout)
 	defer cancel()
@@ -113,13 +119,13 @@ func (s *SuggestService) Suggest(ctx context.Context, prefix string, size int) (
 			return nil, fallbackErr
 		}
 
-		s.cache.Store(cacheKey, items)
+		s.cache.Store(prefix, size, items)
 
 		return items, nil
 	}
 
-	result := mergeSuggestionPriority(size, videoItems, userItems, tagItems)
-	s.cache.Store(cacheKey, result)
+	result := s.mergeSuggestionPriority(size, videoItems, userItems, tagItems)
+	s.cache.Store(prefix, size, result)
 
 	return result, nil
 }
@@ -130,7 +136,7 @@ func (s *SuggestService) fetch(parent context.Context, docType, prefix string, s
 		return []SuggestionItem{}, nil
 	}
 
-	ctx, cancel := context.WithTimeout(ensureContext(parent), suggestPrimaryTimeout)
+	ctx, cancel := context.WithTimeout((callContext{}).ensure(parent), suggestPrimaryTimeout)
 	defer cancel()
 
 	return s.index.FieldSuggest(ctx, docType, prefix, size)
@@ -142,30 +148,16 @@ func (s *SuggestService) fallbackSuggest(ctx context.Context, prefix string, siz
 		return []SuggestionItem{}, nil
 	}
 
-	ctx = ensureContext(ctx)
+	ctx = (callContext{}).ensure(ctx)
 
-	prefix = searchvo.NormalizeKeyword(prefix)
+	prefix = s.keywords.NormalizeKeyword(prefix)
 	if prefix == "" {
 		return []SuggestionItem{}, nil
 	}
 
 	result := make([]SuggestionItem, 0, size)
-	seen := make(map[string]struct{}, size)
-
 	appendItems := func(items []SuggestionItem) {
-		for _, item := range items {
-			key := item.DocType + "|" + item.Value
-			if _, ok := seen[key]; ok {
-				continue
-			}
-
-			seen[key] = struct{}{}
-
-			result = append(result, item)
-			if len(result) >= size {
-				return
-			}
-		}
+		result = s.selectSuggestions(size, false, result, items)
 	}
 
 	titles, err := s.fallback.VideoTitles(ctx, prefix, size)
@@ -173,7 +165,7 @@ func (s *SuggestService) fallbackSuggest(ctx context.Context, prefix string, siz
 		return nil, err
 	}
 
-	appendItems(buildSuggestionItems(titles, prefix, DocTypeVideo))
+	appendItems(s.buildSuggestionItems(titles, prefix, DocTypeVideo))
 
 	if len(result) < size {
 		usernames, err := s.fallback.Usernames(ctx, prefix, size-len(result))
@@ -181,7 +173,7 @@ func (s *SuggestService) fallbackSuggest(ctx context.Context, prefix string, siz
 			return nil, err
 		}
 
-		appendItems(buildSuggestionItems(usernames, prefix, DocTypeUser))
+		appendItems(s.buildSuggestionItems(usernames, prefix, DocTypeUser))
 	}
 
 	if len(result) < size {
@@ -190,14 +182,14 @@ func (s *SuggestService) fallbackSuggest(ctx context.Context, prefix string, siz
 			return nil, err
 		}
 
-		appendItems(buildSuggestionItems(names, prefix, DocTypeTag))
+		appendItems(s.buildSuggestionItems(names, prefix, DocTypeTag))
 	}
 
 	return result, nil
 }
 
 // buildSuggestionItems 把候选值列表包装为带高亮的联想项（丢弃空值）。
-func buildSuggestionItems(values []string, prefix, docType string) []SuggestionItem {
+func (s *SuggestService) buildSuggestionItems(values []string, prefix, docType string) []SuggestionItem {
 	items := make([]SuggestionItem, 0, len(values))
 
 	for _, value := range values {
@@ -207,7 +199,7 @@ func buildSuggestionItems(values []string, prefix, docType string) []SuggestionI
 
 		items = append(items, SuggestionItem{
 			Value:     value,
-			Highlight: searchvo.HighlightSuggestion(value, prefix),
+			Highlight: (SuggestionHighlighter{}).HighlightSuggestion(value, prefix),
 			DocType:   docType,
 		})
 	}
@@ -216,30 +208,23 @@ func buildSuggestionItems(values []string, prefix, docType string) []SuggestionI
 }
 
 // mergeSuggestionPriority 按分组顺序合并候选并按「类型+小写值」去重，最多取 size 条。
-func mergeSuggestionPriority(size int, groups ...[]SuggestionItem) []SuggestionItem {
-	result := make([]SuggestionItem, 0, size)
-	seen := make(map[string]struct{}, size)
-
-	for _, group := range groups {
-		for _, item := range group {
-			key := item.DocType + "|" + strings.ToLower(item.Value)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-
-			seen[key] = struct{}{}
-			result = append(result, item)
-
-			if len(result) >= size {
-				return result
-			}
-		}
-	}
-
-	return result
+func (s *SuggestService) mergeSuggestionPriority(size int, groups ...[]SuggestionItem) []SuggestionItem {
+	return s.selectSuggestions(size, true, groups...)
 }
 
-// suggestCacheKey 生成联想缓存键（小写前缀 + 候选数）。
-func suggestCacheKey(prefix string, size int) string {
-	return searchvo.LowerKeyword(prefix) + "|" + strconv.Itoa(size)
+// selectSuggestions 只转换候选事实和响应，高亮内容不进入领域。
+func (s *SuggestService) selectSuggestions(size int, foldCase bool, groups ...[]SuggestionItem) []SuggestionItem {
+	facts := make([][]searchdomain.SuggestionCandidate, len(groups))
+	for group, items := range groups {
+		facts[group] = make([]searchdomain.SuggestionCandidate, len(items))
+		for i, item := range items {
+			facts[group][i] = searchdomain.SuggestionCandidate{Kind: item.DocType, Value: item.Value}
+		}
+	}
+	selected := (searchdomain.SuggestionPolicy{}).Select(size, foldCase, facts...)
+	result := make([]SuggestionItem, 0, len(selected))
+	for _, position := range selected {
+		result = append(result, groups[position.Group][position.Index])
+	}
+	return result
 }

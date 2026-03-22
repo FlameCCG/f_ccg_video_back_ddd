@@ -28,12 +28,12 @@ func (s *UserIndexService) SyncUserDocuments(ctx context.Context, userIDs ...uin
 		return nil
 	}
 
-	ids := uniqueUserIDs(userIDs)
+	ids := s.uniqueUserIDs(userIDs)
 	if len(ids) == 0 {
 		return nil
 	}
 
-	syncCtx, cancel := context.WithTimeout(ensureContext(ctx), userDocumentSyncTimeout)
+	syncCtx, cancel := context.WithTimeout((callContext{}).ensure(ctx), userDocumentSyncTimeout)
 	defer cancel()
 
 	docs, err := s.query.LoadDocuments(syncCtx, ids)
@@ -49,7 +49,7 @@ func (s *UserIndexService) SyncUserDocuments(ctx context.Context, userIDs ...uin
 }
 
 // uniqueUserIDs 去掉 0 值、去重并升序排序（保证 bulk 请求顺序稳定）。
-func uniqueUserIDs(userIDs []uint) []uint {
+func (s *UserIndexService) uniqueUserIDs(userIDs []uint) []uint {
 	if len(userIDs) == 0 {
 		return nil
 	}

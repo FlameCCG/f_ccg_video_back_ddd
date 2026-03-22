@@ -5,8 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
-	notificationrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -51,20 +50,20 @@ func (s *CountService) invalidateCount(receiverID int) {
 	}
 
 	if !s.cache.Available() {
-		if receiverID != notificationentity.BroadcastReceiverID {
-			s.countSFG.Forget(countSFKey(receiverID))
+		if receiverID != notificationdomain.BroadcastReceiverID {
+			s.countSFG.Forget(s.countSFKey(receiverID))
 		}
 
 		return
 	}
 
-	if receiverID == notificationentity.BroadcastReceiverID {
+	if receiverID == notificationdomain.BroadcastReceiverID {
 		s.cache.InvalidateAll()
 
 		return
 	}
 
-	s.countSFG.Forget(countSFKey(receiverID))
+	s.countSFG.Forget(s.countSFKey(receiverID))
 	s.cache.Invalidate(receiverID)
 }
 
@@ -89,7 +88,7 @@ func (s *CountService) invalidateCountForReceivers(receivers []int) {
 // refreshCountSummary 用本 CountService 实例内的 singleflight 合并同一接收者的并发重建。
 // 它避免本进程重复查库，不是多实例分布式锁；回调内再次检查 fresh 缓存以复用刚完成的结果。
 func (s *CountService) refreshCountSummary(ctx context.Context, receiverID int) (*NotificationCountSummary, error) {
-	value, err, _ := s.countSFG.Do(countSFKey(receiverID), func() (any, error) {
+	value, err, _ := s.countSFG.Do(s.countSFKey(receiverID), func() (any, error) {
 		if cached, fresh, ok := s.cache.Load(receiverID); ok && fresh {
 			return *cached, nil
 		}
@@ -162,30 +161,29 @@ func (s *CountService) loadCountSummary(ctx context.Context, receiverID int) (No
 	}
 
 	return NotificationCountSummary{
-		Reply: groupedCounts[enum.NotificationApplyType],
-		Like: groupedCounts[enum.NotificationVideoLikeType] +
-			groupedCounts[enum.NotificationLikeCommentType] +
-			groupedCounts[enum.NotificationLikeDynamicType],
-		At:      groupedCounts[enum.NotificationAtType],
-		System:  groupedCounts[enum.NotificationSystemType],
+		Reply:   s.types.SumByCategory(groupedCounts, "reply"),
+		Like:    s.types.SumByCategory(groupedCounts, "like"),
+		At:      s.types.SumByCategory(groupedCounts, "at"),
+		System:  s.types.SumByCategory(groupedCounts, "system"),
 		Message: message,
 	}, nil
 }
 
-func countSFKey(receiverID int) string {
+func (s *CountService) countSFKey(receiverID int) string {
 	return strconv.Itoa(receiverID)
 }
 
 // CountService 负责角标缓存、未读组合和后台刷新。
 type CountService struct {
-	repo     notificationrepo.Repository
+	repo     notificationdomain.Repository
 	cache    CountCache
 	chat     ChatUnreadCounter
 	tasks    *ctxutil.DetachedTaskGroup
 	countSFG singleflight.Group
 	logger   *zap.Logger
+	types    notificationdomain.TypePolicy
 }
 
-func NewCountService(repo notificationrepo.Repository, cache CountCache, chat ChatUnreadCounter, tasks *ctxutil.DetachedTaskGroup, logger *zap.Logger) *CountService {
-	return &CountService{repo: repo, cache: cache, chat: chat, tasks: tasks, logger: logger}
+func NewCountService(repo notificationdomain.Repository, cache CountCache, chat ChatUnreadCounter, tasks *ctxutil.DetachedTaskGroup, logger *zap.Logger) *CountService {
+	return &CountService{repo: repo, cache: cache, chat: chat, tasks: tasks, logger: logger, types: notificationdomain.TypePolicy{}}
 }

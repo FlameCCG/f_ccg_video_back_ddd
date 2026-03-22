@@ -3,16 +3,15 @@ package adapters
 import (
 	"context"
 	"errors"
+	mediaapplication "f_ccg_video_back_ddd/internal/application/media"
 	"io"
 
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
 	searchapp "f_ccg_video_back_ddd/internal/application/search"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/casbins"
 )
 
@@ -104,8 +103,8 @@ func NewIdentityCoinLedger(coins *identityapp.CoinService) *IdentityCoinLedger {
 // LockAccounts 把账户不存在的错误翻译为 video 上下文的错误契约。
 func (a *IdentityCoinLedger) LockAccounts(ctx context.Context, userIDs []uint) error {
 	err := a.coins.LockAccounts(ctx, userIDs)
-	if errors.Is(err, identityerrors.ErrUserRecordNotFound) {
-		return videoerrors.ErrRecordNotFound
+	if errors.Is(err, identitydomain.ErrUserRecordNotFound) {
+		return videodomain.ErrRecordNotFound
 	}
 	return err
 }
@@ -125,7 +124,7 @@ func (a *IdentityCoinLedger) ApplyChange(
 
 // IsInsufficient 判断错误是否为「硬币余额不足」。
 func (a *IdentityCoinLedger) IsInsufficient(err error) bool {
-	return identityerrors.IsCoinInsufficient(err)
+	return identitydomain.IsCoinInsufficient(err)
 }
 
 // IdentityPublishedVideoStats 把 video 的作者统计读模型映射为 identity 端口模型。
@@ -155,13 +154,13 @@ func (a *IdentityPublishedVideoStats) AggregateByAuthor(
 
 // IdentityVideoTagWriter 把视频聚合的标签写入能力适配为 identity 的弱类型响应端口。
 type IdentityVideoTagWriter struct {
-	videos videorepo.TagRepository
+	videos videodomain.TagRepository
 }
 
 var _ identityapp.VideoTagWriter = (*IdentityVideoTagWriter)(nil)
 
 // NewIdentityVideoTagWriter 构造标签写入适配器。
-func NewIdentityVideoTagWriter(videos videorepo.TagRepository) *IdentityVideoTagWriter {
+func NewIdentityVideoTagWriter(videos videodomain.TagRepository) *IdentityVideoTagWriter {
 	return &IdentityVideoTagWriter{videos: videos}
 }
 
@@ -215,13 +214,13 @@ func (a *IdentitySearchQuery) SuggestFollowUsers(
 
 // IdentityBannerStorage 把 media 存储解析器适配为用户横幅存储端口。
 type IdentityBannerStorage struct {
-	resolver mediaport.StorageResolver
+	resolver mediaapplication.StorageResolver
 }
 
 var _ identityapp.BannerStorage = (*IdentityBannerStorage)(nil)
 
 // NewIdentityBannerStorage 构造横幅存储适配器。
-func NewIdentityBannerStorage(resolver mediaport.StorageResolver) *IdentityBannerStorage {
+func NewIdentityBannerStorage(resolver mediaapplication.StorageResolver) *IdentityBannerStorage {
 	return &IdentityBannerStorage{resolver: resolver}
 }
 

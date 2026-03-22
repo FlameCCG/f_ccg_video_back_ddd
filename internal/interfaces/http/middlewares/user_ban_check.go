@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -24,14 +24,12 @@ func (m *Middlewares) UserBanCheck() gin.HandlerFunc {
 
 		status, err := m.userStatus.CachedStatus(c.Request.Context(), uid)
 		if err != nil {
-			if errors.Is(err, identityerrors.ErrUserRecordNotFound) {
+			if errors.Is(err, identitydomain.ErrUserRecordNotFound) {
 				res.FailWithMsg("用户不存在", c)
 			} else {
 				res.FailWithMsg("查询用户失败", c)
 			}
-
 			c.Abort()
-
 			return
 		}
 
@@ -47,14 +45,13 @@ func (m *Middlewares) UserBanCheck() gin.HandlerFunc {
 		case enum.UserStatusBanned:
 			// 允许到期自动解封
 			record, err := m.banRecords.Latest(c.Request.Context(), uid)
-			if err == nil && record != nil && record.Status == enum.UserStatusBanned && record.EndAt != nil {
+			if err == nil && record != nil && record.Status() == enum.UserStatusBanned && record.EndAt() != nil {
 				now := time.Now()
-				if record.EndAt.Before(now) {
+				if record.EndAt().Before(now) {
 					unbanned, unbanErr := m.bans.ReleaseExpired(c.Request.Context(), uid, now)
 					if unbanErr != nil {
 						res.FailWithMsg("自动解封失败", c)
 						c.Abort()
-
 						return
 					}
 
@@ -66,8 +63,8 @@ func (m *Middlewares) UserBanCheck() gin.HandlerFunc {
 				}
 
 				msg := "账号已被封禁"
-				if record.Reason != "" {
-					msg = msg + "，原因：" + record.Reason
+				if record.Reason() != "" {
+					msg = msg + "，原因：" + record.Reason()
 				}
 
 				res.FailWithMsg(msg, c)

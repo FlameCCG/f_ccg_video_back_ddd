@@ -4,16 +4,14 @@ import (
 	"context"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
 // UserVideoService 用户主页视频与最近互动用例服务。
 type UserVideoService struct {
 	videos  UserVideoQuery
 	authors *AuthorService
-	history videorepo.HistoryRepository
+	history videodomain.HistoryRepository
 	stats   *StatsService
 }
 
@@ -21,7 +19,7 @@ type UserVideoService struct {
 func NewUserVideoService(
 	videos UserVideoQuery,
 	authors *AuthorService,
-	history videorepo.HistoryRepository,
+	history videodomain.HistoryRepository,
 	stats *StatsService,
 ) *UserVideoService {
 	return &UserVideoService{videos: videos, authors: authors, history: history, stats: stats}
@@ -36,14 +34,14 @@ func (s *UserVideoService) ListUserVideos(
 	page, pageSize, sort, auditStatus int,
 ) ([]UserVideoItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, videoerrors.ErrUserIDRequired
+		return nil, 0, videodomain.ErrUserIDRequired
 	}
 
-	page, pageSize = videovo.NormalizeUserVideoPaging(page, pageSize)
+	page, pageSize = (videodomain.ListingPolicy{}).UserVideoPage(page, pageSize)
 
 	username := s.authors.UsernameByID(ctx, userID)
 	if username == "" {
-		return nil, 0, videoerrors.ErrUserNotFound
+		return nil, 0, videodomain.ErrUserNotFound
 	}
 
 	isOwnerView := viewerID > 0 && viewerID == userID
@@ -79,10 +77,10 @@ func (s *UserVideoService) ListUserVideos(
 			Progress:   progress[row.ID],
 			CreatedAt:  row.CreatedAt,
 			Status:     int(row.Status),
-			StatusText: videovo.MapUserVideoStatusText(row.Status),
+			StatusText: (videodomain.Video{}).MapStatusText(row.Status),
 		}
 		if isOwnerView {
-			item.AuditStatus, item.AuditStatusText = videovo.MapUserVideoAuditStatus(row.Status)
+			item.AuditStatus, item.AuditStatusText = (videodomain.Video{}).MapAuditStatus(row.Status)
 		}
 
 		items = append(items, item)
@@ -99,12 +97,12 @@ func (s *UserVideoService) RecentActions(
 	limit int,
 ) ([]UserVideoItem, error) {
 	if userID == 0 {
-		return nil, videoerrors.ErrUserNotLogin
+		return nil, videodomain.ErrUserNotLogin
 	}
 
-	limit = videovo.NormalizeRecentActionLimit(limit)
+	limit = (videodomain.ListingPolicy{}).RecentLimit(limit)
 
-	if err := videovo.ValidateRecentActionType(action); err != nil {
+	if err := (videodomain.ListingPolicy{}).RecentAction(action); err != nil {
 		return nil, err
 	}
 
@@ -171,7 +169,7 @@ func (s *UserVideoService) progressMap(ctx context.Context, viewerID uint, rows 
 }
 
 // publishedStats 仅对已发布视频取 Redis 权威计数。
-func (s *UserVideoService) publishedStats(ctx context.Context, rows []UserVideoRow) map[uint]*videovo.Stats {
+func (s *UserVideoService) publishedStats(ctx context.Context, rows []UserVideoRow) map[uint]*videodomain.Stats {
 	videoIDs := make([]uint, 0, len(rows))
 
 	for _, row := range rows {

@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/media/mediaurl"
 	"fmt"
 	"strconv"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -98,19 +99,19 @@ func (c *DetailMetaCache) Load(ctx context.Context, videoID uint) (*app.DetailMe
 
 	if meta.StorageType == enum.StorageTypeMinio {
 		for i := range meta.Resources {
-			meta.Resources[i].FileURL = videovo.EnsurePlayableContentTypeURL(meta.Resources[i].FileURL)
+			meta.Resources[i].FileURL = (mediaurl.Formatter{}).PlayableContentTypeURL(meta.Resources[i].FileURL)
 		}
 
 		for i := range meta.Parts {
 			for j := range meta.Parts[i].Resources {
-				meta.Parts[i].Resources[j].FileURL = videovo.EnsurePlayableContentTypeURL(meta.Parts[i].Resources[j].FileURL)
+				meta.Parts[i].Resources[j].FileURL = (mediaurl.Formatter{}).PlayableContentTypeURL(meta.Parts[i].Resources[j].FileURL)
 			}
 		}
 	}
 
 	if len(meta.Resources) > 0 {
-		meta.Resources = videovo.DedupeResourceBriefs(meta.Resources)
-		videovo.SortResourceBriefs(meta.Resources)
+		meta.Resources = (videodomain.ResourcePolicy{}).Dedupe(meta.Resources)
+		(videodomain.ResourcePolicy{}).Sort(meta.Resources)
 	}
 
 	for i := range meta.Parts {
@@ -118,8 +119,8 @@ func (c *DetailMetaCache) Load(ctx context.Context, videoID uint) (*app.DetailMe
 			continue
 		}
 
-		meta.Parts[i].Resources = videovo.DedupeResourceBriefs(meta.Parts[i].Resources)
-		videovo.SortResourceBriefs(meta.Parts[i].Resources)
+		meta.Parts[i].Resources = (videodomain.ResourcePolicy{}).Dedupe(meta.Parts[i].Resources)
+		(videodomain.ResourcePolicy{}).Sort(meta.Parts[i].Resources)
 	}
 
 	infra.NormalizeSinglePartDetailMeta(&meta)

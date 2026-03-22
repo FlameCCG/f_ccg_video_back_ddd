@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 // GPU 失败冷却：一般故障 10 分钟；驱动/NVENC 版本不匹配等「不升级就不会好」的故障拉长，
@@ -109,13 +109,13 @@ func ClassifyInterruptReason(taskCtx context.Context, err error, sessionCanceled
 	}
 
 	switch {
-	case errors.Is(err, mediaerrors.ErrTranscodeProgressStalled) || causeIs(mediaerrors.ErrTranscodeProgressStalled):
+	case errors.Is(err, ErrTranscodeProgressStalled) || causeIs(ErrTranscodeProgressStalled):
 		return "progress_stalled"
-	case errors.Is(err, mediaerrors.ErrTranscodeEncodeTimeout) || causeIs(mediaerrors.ErrTranscodeEncodeTimeout):
+	case errors.Is(err, ErrTranscodeEncodeTimeout) || causeIs(ErrTranscodeEncodeTimeout):
 		return "encode_timeout"
-	case errors.Is(err, mediaerrors.ErrTranscodeUploadTimeout) || causeIs(mediaerrors.ErrTranscodeUploadTimeout):
+	case errors.Is(err, ErrTranscodeUploadTimeout) || causeIs(ErrTranscodeUploadTimeout):
 		return "upload_timeout"
-	case errors.Is(err, mediaerrors.ErrVideoDeleted) || causeIs(mediaerrors.ErrVideoDeleted):
+	case errors.Is(err, mediadomain.ErrVideoDeleted) || causeIs(mediadomain.ErrVideoDeleted):
 		return "video_deleted"
 	case sessionCanceled:
 		return "kafka_session_canceled"
@@ -130,9 +130,9 @@ func ClassifyInterruptReason(taskCtx context.Context, err error, sessionCanceled
 
 // TaskWasDeleted 报告任务是否因视频被删除而作废。
 func TaskWasDeleted(ctx context.Context, err error) bool {
-	if ctx != nil && errors.Is(context.Cause(ctx), mediaerrors.ErrVideoDeleted) {
+	if ctx != nil && errors.Is(context.Cause(ctx), mediadomain.ErrVideoDeleted) {
 		return true
 	}
 
-	return errors.Is(err, mediaerrors.ErrVideoDeleted)
+	return errors.Is(err, mediadomain.ErrVideoDeleted)
 }

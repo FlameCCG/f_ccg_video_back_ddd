@@ -9,12 +9,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// 联想测试覆盖关键词高亮、通配符转义、已发布状态与 SQLite 查询回退；各测试按所属规则或适配器分层。
+// 联想测试覆盖高亮、ES 通配符转义、已发布状态判断与 SQLite 查询回退。
 
 func TestMergeSuggestionPriority(t *testing.T) {
 	t.Parallel()
 
-	got := mergeSuggestionPriority(3,
+	got := new(SuggestService).mergeSuggestionPriority(3,
 		[]SuggestionItem{{Value: "v1", DocType: DocTypeVideo}},
 		[]SuggestionItem{{Value: "u1", DocType: DocTypeUser}, {Value: "v1", DocType: DocTypeVideo}},
 		[]SuggestionItem{{Value: "t1", DocType: DocTypeTag}},
@@ -37,7 +37,7 @@ func TestMergeSuggestionPriority(t *testing.T) {
 func TestMergeSuggestionPriorityDedupIsCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
-	got := mergeSuggestionPriority(10,
+	got := new(SuggestService).mergeSuggestionPriority(10,
 		[]SuggestionItem{{Value: "Alice", DocType: DocTypeUser}},
 		[]SuggestionItem{{Value: "alice", DocType: DocTypeUser}, {Value: "alice", DocType: DocTypeTag}},
 	)
@@ -78,7 +78,7 @@ func TestSuggestServesFromCacheWithoutQueryingES(t *testing.T) {
 
 	cache := newFakeSuggestionCache()
 	cached := []SuggestionItem{{Value: "cached", DocType: DocTypeVideo}}
-	cache.entries[suggestCacheKey("Go", 10)] = cached
+	cache.entries[cache.key("Go", 10)] = cached
 
 	index := &fakeSuggestSearch{available: true, err: errors.New("must not be called")}
 	svc := NewSuggestService(index, &fakeSuggestFallback{available: true}, cache, zap.NewNop())
@@ -90,15 +90,6 @@ func TestSuggestServesFromCacheWithoutQueryingES(t *testing.T) {
 
 	if !reflect.DeepEqual(items, cached) {
 		t.Fatalf("items = %+v, want %+v", items, cached)
-	}
-}
-
-// TestSuggestCacheKeyIgnoresCaseAndSurroundingSpace 缓存键按小写前缀 + size 归一。
-func TestSuggestCacheKeyIgnoresCaseAndSurroundingSpace(t *testing.T) {
-	t.Parallel()
-
-	if got, want := suggestCacheKey("  GoLang ", 10), "golang|10"; got != want {
-		t.Fatalf("suggestCacheKey = %q, want %q", got, want)
 	}
 }
 
@@ -227,7 +218,7 @@ func TestSuggestClampsSize(t *testing.T) {
 		t.Fatalf("clamped size = %d, want 20", got)
 	}
 
-	if _, ok := cache.entries[suggestCacheKey("x", 20)]; !ok {
+	if _, ok := cache.entries[cache.key("x", 20)]; !ok {
 		t.Fatalf("cache keys = %v", cache.entries)
 	}
 }
@@ -275,7 +266,7 @@ func TestSuggestPropagatesFallbackError(t *testing.T) {
 func TestBuildSuggestionItemsDropsBlankValuesAndHighlights(t *testing.T) {
 	t.Parallel()
 
-	items := buildSuggestionItems([]string{"HelloWorld", ""}, "hell", DocTypeVideo)
+	items := new(SuggestService).buildSuggestionItems([]string{"HelloWorld", ""}, "hell", DocTypeVideo)
 	if len(items) != 1 {
 		t.Fatalf("items = %+v, want 1 entry", items)
 	}

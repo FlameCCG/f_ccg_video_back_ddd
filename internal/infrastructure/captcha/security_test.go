@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/pkg/constants"
-	"github.com/alicebob/miniredis/v2"
-	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 func TestClickCaptchaRejectsRepeatedOrReorderedTargets(t *testing.T) {

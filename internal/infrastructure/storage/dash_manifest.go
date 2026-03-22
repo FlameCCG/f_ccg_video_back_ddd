@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/minio/minio-go/v7"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/minio/minio-go/v7"
 )
 
 // ReadDASHManifest returns bounded manifest bytes and directory-relative file

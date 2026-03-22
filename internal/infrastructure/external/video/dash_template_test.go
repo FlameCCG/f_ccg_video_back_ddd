@@ -3,10 +3,11 @@ package video_test
 import (
 	infra "f_ccg_video_back_ddd/internal/infrastructure/external/video"
 	"fmt"
-	"go.uber.org/zap"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func TestTemplateDASHReportsActualTotalOfInitializationAndSegments(t *testing.T) {

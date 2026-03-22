@@ -8,11 +8,7 @@ import (
 	"strings"
 
 	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	mediaservice "f_ccg_video_back_ddd/internal/domain/media/service"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
 )
@@ -29,13 +25,13 @@ type uploadResult struct {
 
 // variantPipelineRequest 是 MP4 多输出管线的一次运行请求。
 type variantPipelineRequest struct {
-	task       mediaentity.TranscodeTask
-	policy     *mediavo.TranscodePolicy
+	task       mediadomain.TranscodeTask
+	policy     *mediadomain.TranscodePolicy
 	checkpoint Checkpoint
 	srcPath    string
-	targets    []mediavo.TranscodeTarget
-	driver     mediaport.StorageDriver
-	meta       mediavo.VideoMeta
+	targets    []mediadomain.TranscodeTarget
+	driver     StorageDriver
+	meta       mediadomain.VideoMeta
 }
 
 // executeVariantPipeline 运行 MP4 多输出编码并上传产物，GPU 失败自动回退 CPU。
@@ -113,7 +109,7 @@ func (s *TranscodeService) runMP4Encode(
 		return nil, errors.New("no transcode targets")
 	}
 
-	if err := mediaservice.ValidateSourceTargetIsolation(req.srcPath, req.targets); err != nil {
+	if err := s.paths.ValidateSourceTargetIsolation(req.srcPath, req.targets); err != nil {
 		return nil, err
 	}
 
@@ -151,9 +147,9 @@ func (s *TranscodeService) runMP4Encode(
 // 串行上传，避免重编码刚结束又对 MinIO 打出多路上传压力。
 func (s *TranscodeService) uploadLocalMP4Outputs(
 	ctx context.Context,
-	targets []mediavo.TranscodeTarget,
+	targets []mediadomain.TranscodeTarget,
 	localPaths map[string]string,
-	driver mediaport.StorageDriver,
+	driver StorageDriver,
 	sourceDuration int,
 ) (map[string]uploadResult, error) {
 	resultMap := make(map[string]uploadResult, len(targets))
@@ -204,9 +200,9 @@ func (s *TranscodeService) uploadLocalMP4Outputs(
 // uploadOneLocalMP4 校验并上传单个本地 MP4（stat + probe + 按体积超时的 SaveTranscodeVideo）。
 func (s *TranscodeService) uploadOneLocalMP4(
 	ctx context.Context,
-	target mediavo.TranscodeTarget,
+	target mediadomain.TranscodeTarget,
 	localPath string,
-	driver mediaport.StorageDriver,
+	driver StorageDriver,
 	sourceDuration int,
 ) (uploadResult, error) {
 	empty := uploadResult{targetID: target.ID, resolution: target.Resolution}
@@ -225,7 +221,7 @@ func (s *TranscodeService) uploadOneLocalMP4(
 		return empty, fmt.Errorf("probe transcoded output %s failed: %w", target.ID, err)
 	}
 
-	if err := mediavo.ValidateTranscodedDuration(sourceDuration, meta.Duration); err != nil {
+	if err := (mediadomain.VideoMeta{Duration: sourceDuration}).ValidateTranscodedDuration(meta.Duration); err != nil {
 		return empty, fmt.Errorf("validate transcoded output %s: %w", target.ID, err)
 	}
 
@@ -244,7 +240,7 @@ func (s *TranscodeService) uploadOneLocalMP4(
 	url, size, err := driver.SaveTranscodeVideo(uploadCtx, target.RelativePath, fi.Size(), f, "video/mp4", target.Label)
 	if err != nil {
 		if errors.Is(uploadCtx.Err(), context.DeadlineExceeded) {
-			return empty, fmt.Errorf("%w after %s for %s (%d bytes): %w", mediaerrors.ErrTranscodeUploadTimeout, uploadTimeout, target.ID, fi.Size(), err)
+			return empty, fmt.Errorf("%w after %s for %s (%d bytes): %w", mediaruntime.ErrTranscodeUploadTimeout, uploadTimeout, target.ID, fi.Size(), err)
 		}
 
 		return empty, fmt.Errorf("upload transcoded output %s: %w", target.ID, err)
@@ -269,15 +265,15 @@ func (s *TranscodeService) uploadOneLocalMP4(
 func (s *TranscodeService) cleanupFailedNormalizedTargets(
 	ctx context.Context,
 	srcPath string,
-	targets []mediavo.TranscodeTarget,
-	driver mediaport.StorageDriver,
+	targets []mediadomain.TranscodeTarget,
+	driver StorageDriver,
 ) {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 
 	for _, target := range targets {
 		if !target.IsSource ||
-			strings.TrimSpace(target.RelativePath) == "" || mediavo.SourceTargetMatchesInput(srcPath, target.RelativePath) {
+			strings.TrimSpace(target.RelativePath) == "" || s.paths.SourceTargetMatchesInput(srcPath, target.RelativePath) {
 			continue
 		}
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
 )
@@ -42,7 +42,7 @@ func (s *Service) GenerateMenuSuggestion(
 		return "", err
 	}
 
-	model, err := aivo.NormalizeConfiguredModel("", cfg.ChatModel, toOptions(cfg.ChatModels), "聊天")
+	model, err := aidomain.Options(toOptions(cfg.ChatModels)).NormalizeConfiguredModel("", cfg.ChatModel, "聊天")
 	if err != nil {
 		return "", err
 	}

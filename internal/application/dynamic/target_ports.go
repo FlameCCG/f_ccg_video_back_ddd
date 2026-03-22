@@ -14,6 +14,6 @@ type UserProfileQuery interface {
 
 // VideoOwnershipQuery 视频归属读侧端口。
 type VideoOwnershipQuery interface {
-	// ExistsPublishedByAuthor 判定视频是否存在、已发布且属于指定作者。
-	ExistsPublishedByAuthor(ctx context.Context, videoID uint, authorUsername string) (bool, error)
+	// ExistsPublishedByAuthorForUpdate 在调用方事务中锁定并检查最新视频的发布状态和归属。
+	ExistsPublishedByAuthorForUpdate(ctx context.Context, videoID uint, authorUsername string) (bool, error)
 }

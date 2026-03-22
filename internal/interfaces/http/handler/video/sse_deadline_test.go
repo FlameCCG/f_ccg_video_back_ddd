@@ -3,10 +3,11 @@ package video
 import (
 	"context"
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"github.com/gin-gonic/gin"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type deadlineWriter struct {

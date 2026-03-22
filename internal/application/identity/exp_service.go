@@ -6,32 +6,30 @@ import (
 	"fmt"
 	"time"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // ExpService 经验用例服务。
 type ExpService struct {
 	txm     tx.Manager
-	users   identityrepo.UserRepository
-	records identityrepo.ExpRecordRepository
+	users   identitydomain.UserRepository
+	records identitydomain.ExpRecordRepository
 }
 
 // NewExpService 构造经验用例服务。
-func NewExpService(txm tx.Manager, users identityrepo.UserRepository, records identityrepo.ExpRecordRepository) *ExpService {
+func NewExpService(txm tx.Manager, users identitydomain.UserRepository, records identitydomain.ExpRecordRepository) *ExpService {
 	return &ExpService{txm: txm, users: users, records: records}
 }
 
 // LoginExp 每日登录加经验（同一用户每天最多一次）.
 func (s *ExpService) LoginExp(ctx context.Context, userID uint) error {
 	if userID == 0 {
-		return identityerrors.ErrUserNotLogin
+		return identitydomain.ErrUserNotLogin
 	}
 
 	key := "login:" + time.Now().Format("20060102")
-	_, _, err := s.addExpWithRecord(ctx, userID, identityentity.ExpPerLogin, fmt.Sprintf("每日登录 +%d", identityentity.ExpPerLogin), &key)
+	_, _, err := s.addExpWithRecord(ctx, userID, identitydomain.ExpPerLogin, fmt.Sprintf("每日登录 +%d", identitydomain.ExpPerLogin), &key)
 
 	return err
 }
@@ -39,11 +37,11 @@ func (s *ExpService) LoginExp(ctx context.Context, userID uint) error {
 // LikeExp 点赞加经验（同一用户每天最多一次，防循环点赞刷经验）.
 func (s *ExpService) LikeExp(ctx context.Context, userID uint) error {
 	if userID == 0 {
-		return identityerrors.ErrUserNotLogin
+		return identitydomain.ErrUserNotLogin
 	}
 
 	key := "like:" + time.Now().Format("20060102")
-	_, _, err := s.addExpWithRecord(ctx, userID, identityentity.ExpPerLike, fmt.Sprintf("点赞 +%d", identityentity.ExpPerLike), &key)
+	_, _, err := s.addExpWithRecord(ctx, userID, identitydomain.ExpPerLike, fmt.Sprintf("点赞 +%d", identitydomain.ExpPerLike), &key)
 
 	return err
 }
@@ -51,7 +49,7 @@ func (s *ExpService) LikeExp(ctx context.Context, userID uint) error {
 // CoinExpForVideo 投币加经验（同一用户同一视频仅一次，与投币关系对齐）.
 func (s *ExpService) CoinExpForVideo(ctx context.Context, userID, videoID uint, coins int64) error {
 	if userID == 0 {
-		return identityerrors.ErrUserNotLogin
+		return identitydomain.ErrUserNotLogin
 	}
 
 	if videoID == 0 {
@@ -66,21 +64,21 @@ func (s *ExpService) CoinExpForVideo(ctx context.Context, userID, videoID uint, 
 // WatchExp 每日观看视频加经验（同一用户每天最多一次）.
 func (s *ExpService) WatchExp(ctx context.Context, userID uint) error {
 	if userID == 0 {
-		return identityerrors.ErrUserNotLogin
+		return identitydomain.ErrUserNotLogin
 	}
 
 	key := "watch:" + time.Now().Format("20060102")
-	_, _, err := s.addExpWithRecord(ctx, userID, identityentity.ExpPerWatch, fmt.Sprintf("观看视频 +%d", identityentity.ExpPerWatch), &key)
+	_, _, err := s.addExpWithRecord(ctx, userID, identitydomain.ExpPerWatch, fmt.Sprintf("观看视频 +%d", identitydomain.ExpPerWatch), &key)
 
 	return err
 }
 
 func (s *ExpService) applyCoinExp(ctx context.Context, userID uint, coins int64, dedupKey *string) error {
-	if coins <= 0 {
+	delta, eligible := (identitydomain.ExperiencePolicy{}).CoinReward(coins)
+	if !eligible {
 		return nil
 	}
 
-	delta := coins * identityentity.ExpPerCoin
 	reason := fmt.Sprintf("投币 x%d +%d", coins, delta)
 	_, _, err := s.addExpWithRecord(ctx, userID, delta, reason, dedupKey)
 
@@ -93,9 +91,9 @@ func (s *ExpService) addExpWithRecord(
 	delta int64,
 	reason string,
 	dedupKey *string,
-) (*identityentity.User, bool, error) {
+) (*identitydomain.User, bool, error) {
 	if userID == 0 {
-		return nil, false, identityerrors.ErrUserNotLogin
+		return nil, false, identitydomain.ErrUserNotLogin
 	}
 
 	if delta == 0 {
@@ -110,12 +108,12 @@ func (s *ExpService) addExpWithRecord(
 		reason = "经验变动"
 	}
 
-	var out identityentity.User
+	var out identitydomain.User
 
 	applied := false
 
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		beforeExp, _, err := s.users.ExpAndLevelForUpdate(txCtx, userID)
+		account, err := s.users.ExpAndLevelForUpdate(txCtx, userID)
 		if err != nil {
 			return err
 		}
@@ -127,7 +125,6 @@ func (s *ExpService) addExpWithRecord(
 				return err
 			}
 		}
-		account := &identityentity.User{ID: userID, Exp: beforeExp}
 		applyDelta, allowed := account.ApplyExperience(delta, gainedToday)
 		if !allowed {
 			return nil
@@ -139,14 +136,14 @@ func (s *ExpService) addExpWithRecord(
 		}
 
 		if createErr := s.records.Create(txCtx, userID, applyDelta, recReason, dedupKey); createErr != nil {
-			if errors.Is(createErr, identityerrors.ErrDuplicateRecord) {
+			if errors.Is(createErr, identitydomain.ErrDuplicateRecord) {
 				return nil
 			}
 
 			return createErr
 		}
 
-		if updateErr := s.users.UpdateExpAndLevel(txCtx, userID, account.Exp, account.Level); updateErr != nil {
+		if updateErr := s.users.UpdateExpAndLevel(txCtx, userID, account.Exp(), account.Level()); updateErr != nil {
 			return updateErr
 		}
 

@@ -4,20 +4,18 @@ import (
 	"context"
 	"strings"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
-	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
-	commentvo "f_ccg_video_back_ddd/internal/domain/comment/valueobject"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 
 	"golang.org/x/sync/errgroup"
 )
 
 // List 获取作品的根评论列表（分页）。
 func (s *QueryService) List(ctx context.Context, params ListParams) ([]CommentItem, int64, error) {
-	if _, err := commentvo.ResolveTargetType(params.VideoID, params.DynamicID); err != nil {
+	if _, err := (commentdomain.Draft{VideoID: params.VideoID, DynamicID: params.DynamicID}).TargetType(); err != nil {
 		return nil, 0, err
 	}
 
-	page, pageSize := commentvo.NormalizePaging(params.Page, params.PageSize)
+	page, pageSize := s.pages.Normalize(params.Page, params.PageSize)
 
 	rows, total, err := s.query.ListRoots(ctx, RootListQuery{
 		VideoID:   params.VideoID,
@@ -35,7 +33,7 @@ func (s *QueryService) List(ctx context.Context, params ListParams) ([]CommentIt
 
 // Replies 获取某条评论的回复列表（分页）。
 func (s *QueryService) Replies(ctx context.Context, params RepliesParams) ([]CommentItem, int64, error) {
-	page, pageSize := commentvo.NormalizePaging(params.Page, params.PageSize)
+	page, pageSize := s.pages.Normalize(params.Page, params.PageSize)
 
 	rows, total, err := s.query.ListReplies(ctx, ReplyListQuery{
 		RootID:   params.RootID,
@@ -51,15 +49,15 @@ func (s *QueryService) Replies(ctx context.Context, params RepliesParams) ([]Com
 
 // ListByAuthor 创作中心查看本人视频的评论。
 func (s *QueryService) ListByAuthor(ctx context.Context, params CreatorListParams) ([]CommentItem, int64, error) {
-	if params.AuthorID == 0 {
-		return nil, 0, commenterrors.ErrAuthorIDRequired
+	if err := s.creators.RequireAuthor(params.AuthorID); err != nil {
+		return nil, 0, err
 	}
 
-	page, pageSize := commentvo.NormalizePaging(params.Page, params.PageSize)
+	page, pageSize := s.pages.Normalize(params.Page, params.PageSize)
 
 	username := s.related.UsernameByID(ctx, params.AuthorID)
 	if username == "" {
-		return nil, 0, commenterrors.ErrAuthorNotFound
+		return nil, 0, commentdomain.ErrAuthorNotFound
 	}
 
 	rows, total, err := s.query.ListByAuthor(ctx, CreatorListQuery{
@@ -202,13 +200,18 @@ func (s *QueryService) buildCommentItems(ctx context.Context, rows []CommentRow,
 
 // QueryService 负责评论查询与列表投影。
 type QueryService struct {
-	likes     commentrepo.LikeRepository
+	likes     commentdomain.LikeRepository
 	query     Query
 	related   RelatedQuery
 	likeCache LikeCache
 	cache     *LikeCacheCoordinator
+	pages     commentdomain.PagePolicy
+	creators  commentdomain.CreatorPolicy
 }
 
-func NewQueryService(likes commentrepo.LikeRepository, query Query, related RelatedQuery, likeCache LikeCache, cache *LikeCacheCoordinator) *QueryService {
-	return &QueryService{likes: likes, query: query, related: related, likeCache: likeCache, cache: cache}
+func NewQueryService(likes commentdomain.LikeRepository, query Query, related RelatedQuery, likeCache LikeCache, cache *LikeCacheCoordinator) *QueryService {
+	return &QueryService{
+		likes: likes, query: query, related: related, likeCache: likeCache, cache: cache,
+		pages: commentdomain.PagePolicy{}, creators: commentdomain.CreatorPolicy{},
+	}
 }

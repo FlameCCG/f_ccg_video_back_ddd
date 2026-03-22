@@ -9,8 +9,7 @@ import (
 	"time"
 
 	chatapp "f_ccg_video_back_ddd/internal/application/chat"
-	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -136,7 +135,7 @@ func TestConversationListViewSurfacesServiceError(t *testing.T) {
 	newHandler(&stubRepository{available: false}, &stubQuery{}).ConversationListView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.FailServiceCode || body.Msg != chaterrors.ErrStoreUnavailable.Error() {
+	if body.Code != res.FailServiceCode || body.Msg != chatdomain.ErrStoreUnavailable.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -162,13 +161,13 @@ func TestCreateConversationViewReturnsItem(t *testing.T) {
 	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	repo := &stubRepository{
 		available: true,
-		conversation: &chatentity.Conversation{
+		conversation: chatdomain.RestoreConversation(chatdomain.ConversationSnapshot{
 			ID:        "1_2",
-			MemberA:   chatentity.Member{UserID: 1, Unread: 4},
-			MemberB:   chatentity.Member{UserID: 2, Unread: 1},
+			MemberA:   chatdomain.Member{UserID: 1, Unread: 4},
+			MemberB:   chatdomain.Member{UserID: 2, Unread: 1},
 			CreatedAt: created,
 			UpdatedAt: created,
-		},
+		}),
 	}
 
 	recorder, ctx := newTestContext(http.MethodPost, "/v1/common/chat/conversations")
@@ -207,7 +206,7 @@ func TestCreateConversationViewRejectsSelf(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).CreateConversationView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != chaterrors.ErrSelfConversation.Error() {
+	if body := decodeResponse(t, recorder); body.Msg != chatdomain.ErrSelfConversation.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -268,8 +267,8 @@ func TestMessageListViewReturnsCursorEnvelope(t *testing.T) {
 	t.Parallel()
 
 	query := &stubQuery{messages: []chatapp.MessageItem{
-		{ID: "652f1a2b3c4d5e6f70819202", ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "b"},
-		{ID: "652f1a2b3c4d5e6f70819201", ConversationID: "1_2", SenderID: 2, ReceiverID: 1, Type: chatentity.MessageTypeText, Text: "a"},
+		{ID: "652f1a2b3c4d5e6f70819202", ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatdomain.MessageTypeText, Text: "b"},
+		{ID: "652f1a2b3c4d5e6f70819201", ConversationID: "1_2", SenderID: 2, ReceiverID: 1, Type: chatdomain.MessageTypeText, Text: "a"},
 	}}
 
 	recorder, ctx := newTestContext(http.MethodGet, "/v1/common/chat/messages")
@@ -328,7 +327,7 @@ func TestMessageListViewRejectsInvalidCursor(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MessageListView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != chaterrors.ErrInvalidCursor.Error() {
+	if body := decodeResponse(t, recorder); body.Msg != chatdomain.ErrInvalidCursor.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -379,7 +378,7 @@ func TestMarkReadViewRejectsSelfPeer(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MarkReadView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != chaterrors.ErrInvalidPeerID.Error() {
+	if body := decodeResponse(t, recorder); body.Msg != chatdomain.ErrInvalidPeerID.Error() {
 		t.Fatalf("body = %+v", body)
 	}
 }
@@ -426,7 +425,7 @@ func TestWSViewRequiresLogin(t *testing.T) {
 type stubRepository struct {
 	available bool
 
-	conversation *chatentity.Conversation
+	conversation *chatdomain.Conversation
 	matched      bool
 
 	hiddenFor  uint
@@ -439,28 +438,39 @@ func (s *stubRepository) Available() bool { return s.available }
 
 func (s *stubRepository) EnsureIndexes(context.Context) error { return nil }
 
-func (s *stubRepository) InsertMessage(_ context.Context, msg *chatentity.Message) error {
-	msg.ID = "652f1a2b3c4d5e6f70819200"
+func (s *stubRepository) InsertMessage(_ context.Context, msg *chatdomain.Message) (*chatdomain.Message, error) {
+	if msg == nil {
+		return nil, nil
+	}
 
-	return nil
+	snap := msg.Snapshot()
+	snap.ID = "652f1a2b3c4d5e6f70819200"
+
+	return chatdomain.RestoreMessage(snap), nil
 }
 
-func (s *stubRepository) ApplySend(context.Context, *chatentity.Message, string) error { return nil }
+func (s *stubRepository) ApplySend(context.Context, *chatdomain.Message, string) error { return nil }
 
-func (s *stubRepository) SendMessage(ctx context.Context, msg *chatentity.Message, preview string) error {
-	if err := s.InsertMessage(ctx, msg); err != nil {
-		return err
+func (s *stubRepository) SendMessage(ctx context.Context, msg *chatdomain.Message, preview string) (*chatdomain.Message, error) {
+	stored, err := s.InsertMessage(ctx, msg)
+	if err != nil {
+		return nil, err
 	}
-	return s.ApplySend(ctx, msg, preview)
+
+	if err := s.ApplySend(ctx, stored, preview); err != nil {
+		return nil, err
+	}
+
+	return stored, nil
 }
 
 func (s *stubRepository) UpsertConversation(
 	context.Context,
 	uint, uint,
 	time.Time,
-) (*chatentity.Conversation, error) {
+) (*chatdomain.Conversation, error) {
 	if s.conversation == nil {
-		return nil, chaterrors.ErrConversationNotFound
+		return nil, chatdomain.ErrConversationNotFound
 	}
 
 	return s.conversation, nil

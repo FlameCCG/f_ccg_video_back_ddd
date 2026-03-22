@@ -33,10 +33,10 @@ func (h *Handler) CreateFolderView(c *gin.Context) {
 	}
 
 	res.OkWithData(app.FolderDTO{
-		ID:        folder.ID,
-		UserID:    folder.UserID,
-		Name:      folder.Name,
-		IsDefault: folder.IsDefault,
+		ID:        folder.ID(),
+		UserID:    folder.UserID(),
+		Name:      folder.Name(),
+		IsDefault: folder.IsDefault(),
 	}, c)
 }
 
@@ -65,10 +65,10 @@ func (h *Handler) UpdateFolderView(c *gin.Context) {
 	}
 
 	res.OkWithData(app.FolderDTO{
-		ID:        folder.ID,
-		UserID:    folder.UserID,
-		Name:      folder.Name,
-		IsDefault: folder.IsDefault,
+		ID:        folder.ID(),
+		UserID:    folder.UserID(),
+		Name:      folder.Name(),
+		IsDefault: folder.IsDefault(),
 	}, c)
 }
 

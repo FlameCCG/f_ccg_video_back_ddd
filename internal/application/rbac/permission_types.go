@@ -1,19 +1,19 @@
 package rbac
 
 import (
-	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 )
 
 // AssignPermissionParams 分配/移除角色权限用例参数。
 type AssignPermissionParams struct {
 	RoleName    string
-	Permissions []rbacvo.PermissionItem
+	Permissions []rbacdomain.PermissionItem
 }
 
 // UpdateRolePermissionsParams 替换角色直接权限用例参数。
 type UpdateRolePermissionsParams struct {
 	RoleID           uint
-	Permissions      []rbacvo.PermissionItem
+	Permissions      []rbacdomain.PermissionItem
 	BreakInheritance bool
 }
 

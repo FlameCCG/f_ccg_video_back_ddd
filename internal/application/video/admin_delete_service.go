@@ -5,8 +5,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -19,9 +18,9 @@ func (s *AdminVideoService) Delete(
 	ctx context.Context,
 	videoIDs []uint,
 	hard bool,
-) (*videorepo.HardDeleteResult, error) {
+) (*videodomain.HardDeleteResult, error) {
 	if len(videoIDs) == 0 {
-		return nil, videoerrors.ErrVideoIDsRequired
+		return nil, videodomain.ErrVideoIDsRequired
 	}
 
 	if !hard {
@@ -31,8 +30,8 @@ func (s *AdminVideoService) Delete(
 	return s.hardDelete(ctx, videoIDs)
 }
 
-func (s *AdminVideoService) softDelete(ctx context.Context, videoIDs []uint) (*videorepo.HardDeleteResult, error) {
-	result := &videorepo.HardDeleteResult{}
+func (s *AdminVideoService) softDelete(ctx context.Context, videoIDs []uint) (*videodomain.HardDeleteResult, error) {
+	result := &videodomain.HardDeleteResult{}
 
 	rows, err := s.markDeleted(ctx, videoIDs)
 	if err != nil {
@@ -49,9 +48,9 @@ func (s *AdminVideoService) softDelete(ctx context.Context, videoIDs []uint) (*v
 	return result, nil
 }
 
-func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*videorepo.HardDeleteResult, error) {
-	var result *videorepo.HardDeleteResult
-	var storageTargets []videorepo.StorageDeleteTarget
+func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*videodomain.HardDeleteResult, error) {
+	var result *videodomain.HardDeleteResult
+	var storageTargets []videodomain.StorageDeleteTarget
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		if _, err := s.markDeleted(txCtx, videoIDs); err != nil {
 			return err
@@ -112,8 +111,8 @@ func (s *AdminVideoService) markDeleted(ctx context.Context, videoIDs []uint) (i
 		ids := make([]uint, 0, len(videos))
 		for _, video := range videos {
 			video.MarkDeleted()
-			target = video.Status
-			ids = append(ids, video.ID)
+			target = video.Status()
+			ids = append(ids, video.ID())
 		}
 		if len(ids) > 0 {
 			rows, err = s.videos.UpdateStatusBatch(txCtx, ids, target)
@@ -146,7 +145,7 @@ func (s *AdminVideoService) notifyDeletedVideoTranscodes(ctx context.Context, vi
 // deleteStorageFiles 清理对象存储：DASH 目录按前缀批量清扫，普通文件先做引用检查。
 func (s *AdminVideoService) deleteStorageFiles(
 	ctx context.Context,
-	targets []videorepo.StorageDeleteTarget,
+	targets []videodomain.StorageDeleteTarget,
 ) (deleted, skipped, failed int64) {
 	if len(targets) == 0 {
 		return 0, 0, 0

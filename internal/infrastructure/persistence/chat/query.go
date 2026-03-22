@@ -4,8 +4,7 @@ import (
 	"context"
 
 	app "f_ccg_video_back_ddd/internal/application/chat"
-	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -40,11 +39,11 @@ func (s *Store) ListConversations(
 	page, pageSize int,
 ) ([]app.ConversationItem, int64, error) {
 	if !s.Available() {
-		return nil, 0, chaterrors.ErrStoreUnavailable
+		return nil, 0, chatdomain.ErrStoreUnavailable
 	}
 
 	col := s.db.Collection(chatConversationsCol)
-	visibleFilter := visibleConversationFilter(userID)
+	visibleFilter := s.visibleConversationFilter(userID)
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: visibleFilter}},
 		{{
@@ -108,7 +107,7 @@ func (s *Store) ListConversations(
 			ID:          r.ID,
 			PeerID:      r.PeerID,
 			Unread:      r.Unread,
-			LastMessage: toLastMessageItem(r.LastMessage),
+			LastMessage: s.toLastMessageItem(r.LastMessage),
 			UpdatedAt:   r.UpdatedAt.Time().Unix(),
 		})
 	}
@@ -119,11 +118,11 @@ func (s *Store) ListConversations(
 // TotalUnread 汇总用户在所有可见会话中的未读总数。
 func (s *Store) TotalUnread(ctx context.Context, userID uint) (int64, error) {
 	if !s.Available() {
-		return 0, chaterrors.ErrStoreUnavailable
+		return 0, chatdomain.ErrStoreUnavailable
 	}
 
 	col := s.db.Collection(chatConversationsCol)
-	visibleFilter := visibleConversationFilter(userID)
+	visibleFilter := s.visibleConversationFilter(userID)
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: visibleFilter}},
 		{{Key: "$group", Value: bson.D{
@@ -165,16 +164,16 @@ func (s *Store) ListMessagesBefore(
 	limit int,
 ) ([]app.MessageItem, error) {
 	if !s.Available() {
-		return nil, chaterrors.ErrStoreUnavailable
+		return nil, chatdomain.ErrStoreUnavailable
 	}
 
-	conversationID := chatentity.BuildConversationID(userID, peerID)
+	conversationID := (*chatdomain.RestoreConversation(chatdomain.ConversationSnapshot{})).BuildConversationID(userID, peerID)
 	filter := bson.M{fieldConversationID: conversationID}
 
 	if before != "" {
 		oid, err := primitive.ObjectIDFromHex(before)
 		if err != nil {
-			return nil, chaterrors.ErrInvalidCursor
+			return nil, chatdomain.ErrInvalidCursor
 		}
 
 		filter[fieldID] = bson.M{"$lt": oid}
@@ -199,7 +198,7 @@ func (s *Store) ListMessagesBefore(
 			return nil, err
 		}
 
-		list = append(list, toMessageItem(&row))
+		list = append(list, s.toMessageItem(&row))
 	}
 
 	if err := cur.Err(); err != nil {

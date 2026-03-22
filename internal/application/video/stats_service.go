@@ -7,10 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
-	videoservice "f_ccg_video_back_ddd/internal/domain/video/service"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -25,7 +22,7 @@ const (
 // 权威计数在 Redis（Lua 原子增量 + dirty 集合 + version），Redis 不可用时退回 MySQL。
 // 该服务同时是 video 上下文对外暴露的计数入口（评论数由 comment 上下文调用）。
 type StatsService struct {
-	videos   videorepo.StatsRepository
+	videos   videodomain.StatsRepository
 	cache    StatsCache
 	hotRank  HotRankCache
 	authors  *AuthorService
@@ -35,7 +32,7 @@ type StatsService struct {
 
 // NewStatsService 构造视频统计用例服务。
 func NewStatsService(
-	videos videorepo.StatsRepository,
+	videos videodomain.StatsRepository,
 	cache StatsCache,
 	hotRank HotRankCache,
 	authors *AuthorService,
@@ -53,9 +50,9 @@ func NewStatsService(
 }
 
 // Load 读取视频统计：优先 Redis 权威计数，未命中回源 DB 并 SetNX 回填。
-func (s *StatsService) Load(ctx context.Context, videoID uint) (*videovo.Stats, error) {
+func (s *StatsService) Load(ctx context.Context, videoID uint) (*videodomain.Stats, error) {
 	if videoID == 0 {
-		return nil, videoerrors.ErrVideoIDRequired
+		return nil, videodomain.ErrVideoIDRequired
 	}
 
 	if stats, ok := s.cache.Load(ctx, videoID); ok && stats != nil {
@@ -73,7 +70,7 @@ func (s *StatsService) Load(ctx context.Context, videoID uint) (*videovo.Stats, 
 }
 
 // LoadBatch 批量读取 Redis 权威计数（缺失项不出现在结果里）。
-func (s *StatsService) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*videovo.Stats {
+func (s *StatsService) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*videodomain.Stats {
 	if len(videoIDs) == 0 {
 		return nil
 	}
@@ -82,9 +79,9 @@ func (s *StatsService) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]
 }
 
 // ApplyDelta 更新统计增量，按规定重试与降级；禁止 clear，也禁止以 DB 快照覆盖增量。
-func (s *StatsService) ApplyDelta(ctx context.Context, videoID uint, delta videovo.StatsDelta) (*videovo.Stats, error) {
+func (s *StatsService) ApplyDelta(ctx context.Context, videoID uint, delta videodomain.StatsDelta) (*videodomain.Stats, error) {
 	if videoID == 0 {
-		return nil, videoerrors.ErrVideoIDRequired
+		return nil, videodomain.ErrVideoIDRequired
 	}
 
 	if delta.IsZero() {
@@ -167,10 +164,10 @@ func (s *StatsService) ApplyDelta(ctx context.Context, videoID uint, delta video
 func (s *StatsService) ApplyCommittedDelta(
 	ctx context.Context,
 	videoID uint,
-	delta videovo.StatsDelta,
-) (*videovo.Stats, error) {
+	delta videodomain.StatsDelta,
+) (*videodomain.Stats, error) {
 	if videoID == 0 {
-		return nil, videoerrors.ErrVideoIDRequired
+		return nil, videodomain.ErrVideoIDRequired
 	}
 
 	if delta.IsZero() {
@@ -224,10 +221,10 @@ func (s *StatsService) ApplyCommittedDelta(
 func (s *StatsService) ApplyDeltaIfCached(
 	ctx context.Context,
 	videoID uint,
-	delta videovo.StatsDelta,
-) (*videovo.Stats, error) {
+	delta videodomain.StatsDelta,
+) (*videodomain.Stats, error) {
 	if videoID == 0 {
-		return nil, videoerrors.ErrVideoIDRequired
+		return nil, videodomain.ErrVideoIDRequired
 	}
 
 	if delta.IsZero() {
@@ -272,7 +269,7 @@ func (s *StatsService) RecordHotScoreDelta(ctx context.Context, videoID uint, we
 		return
 	}
 
-	score := videoservice.HotScoreDelta(weight, delta)
+	score := (videodomain.HeatPolicy{}).Delta(weight, delta)
 	if score == 0 {
 		return
 	}
@@ -286,12 +283,12 @@ func (s *StatsService) RecordHotScoreDelta(ctx context.Context, videoID uint, we
 
 // RecordHotScoreForComment 评论数变化时累加热度分（供 comment 上下文调用）。
 func (s *StatsService) RecordHotScoreForComment(ctx context.Context, videoID uint, delta int64) {
-	s.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreCommentWeight, delta)
+	s.RecordHotScoreDelta(ctx, videoID, videodomain.HotScoreCommentWeight, delta)
 }
 
 // UpdateCommentCount 更新视频评论数缓存并累加作者创作中心指标（供 comment 上下文调用）。
 func (s *StatsService) UpdateCommentCount(ctx context.Context, videoID uint, delta int64) {
-	if _, err := s.ApplyDelta(ctx, videoID, videovo.StatsDelta{CommentCount: delta}); err != nil {
+	if _, err := s.ApplyDelta(ctx, videoID, videodomain.StatsDelta{CommentCount: delta}); err != nil {
 		// 仅记录错误，不 clear redis，避免丢失并发增量。
 		s.logger.Warn("update comment count failed",
 			zap.Error(err),
@@ -332,7 +329,7 @@ func (s *StatsService) loadBasePayload(ctx context.Context, videoID uint) (strin
 	return string(data), nil
 }
 
-func (s *StatsService) applyDeltaToDB(ctx context.Context, videoID uint, delta videovo.StatsDelta) (*videovo.Stats, error) {
+func (s *StatsService) applyDeltaToDB(ctx context.Context, videoID uint, delta videodomain.StatsDelta) (*videodomain.Stats, error) {
 	if delta.IsZero() {
 		return s.videos.PublishedStats(ctx, videoID)
 	}

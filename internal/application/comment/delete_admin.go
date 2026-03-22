@@ -3,8 +3,7 @@ package comment
 import (
 	"context"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -14,8 +13,8 @@ import (
 //
 // 返回实际删除的评论数（含被连带删除的回复）。
 func (s *DeleteService) AdminDelete(ctx context.Context, commentIDs []uint) (int64, error) {
-	if len(commentIDs) == 0 {
-		return 0, commenterrors.ErrCommentIDsRequired
+	if err := s.deletes.RequireIDs(commentIDs); err != nil {
+		return 0, err
 	}
 
 	comments, err := s.comments.BriefByIDs(ctx, commentIDs)
@@ -27,31 +26,9 @@ func (s *DeleteService) AdminDelete(ctx context.Context, commentIDs []uint) (int
 		return 0, nil
 	}
 
-	rootIDs := make([]uint, 0, len(comments))
-	rootIDSet := make(map[uint]struct{})
-	replyRootDelta := make(map[uint]int64)
+	rootIDs := s.deletes.RootIDs(comments)
 
-	for _, c := range comments {
-		if c.ID == 0 {
-			continue
-		}
-
-		if c.RootID == nil {
-			rootIDs = append(rootIDs, c.ID)
-			rootIDSet[c.ID] = struct{}{}
-
-			continue
-		}
-		// 删除回复时，如果根评论不在本次删除列表，需要扣减 reply_count
-		if _, ok := rootIDSet[*c.RootID]; ok {
-			continue
-		}
-
-		replyRootDelta[*c.RootID]++
-	}
-
-	// 如果删除了根评论，需要把子评论一并删除
-	var children []commententity.Comment
+	var children []commentdomain.Comment
 
 	if len(rootIDs) > 0 {
 		children, err = s.comments.ChildrenBrief(ctx, rootIDs)
@@ -60,47 +37,15 @@ func (s *DeleteService) AdminDelete(ctx context.Context, commentIDs []uint) (int
 		}
 	}
 
-	videoDelta := make(map[uint]int64)
-	idsToDeleteSet := make(map[uint]struct{}, len(comments)+len(children))
-
-	var idsToDelete []uint
-
-	push := func(c commententity.Comment) {
-		if c.ID == 0 {
-			return
-		}
-
-		if _, ok := idsToDeleteSet[c.ID]; ok {
-			return
-		}
-
-		idsToDeleteSet[c.ID] = struct{}{}
-
-		idsToDelete = append(idsToDelete, c.ID)
-		if c.VideoID > 0 {
-			videoDelta[c.VideoID]++
-		}
-	}
-	for _, c := range comments {
-		push(c)
-	}
-
-	for _, c := range children {
-		push(c)
-	}
-
-	if len(idsToDelete) == 0 {
+	plan := s.deletes.Removal(comments, children)
+	if len(plan.IDs) == 0 {
 		return 0, nil
 	}
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		// 更新根评论 reply_count（仅删除回复且根评论未删除时）
-		for rootID, dec := range replyRootDelta {
+		for rootID, dec := range plan.ReplyDeltas {
 			if dec <= 0 {
-				continue
-			}
-
-			if _, ok := rootIDSet[rootID]; ok {
 				continue
 			}
 
@@ -109,17 +54,17 @@ func (s *DeleteService) AdminDelete(ctx context.Context, commentIDs []uint) (int
 			}
 		}
 
-		if err := s.likes.DeleteByCommentIDs(txCtx, idsToDelete); err != nil {
+		if err := s.likes.DeleteByCommentIDs(txCtx, plan.IDs); err != nil {
 			return err
 		}
 
-		return s.comments.DeleteByIDs(txCtx, idsToDelete)
+		return s.comments.DeleteByIDs(txCtx, plan.IDs)
 	}); err != nil {
 		return 0, err
 	}
 
 	// 更新视频统计缓存（最佳努力）
-	for videoID, dec := range videoDelta {
+	for videoID, dec := range plan.VideoDeltas {
 		if dec <= 0 {
 			continue
 		}
@@ -132,11 +77,11 @@ func (s *DeleteService) AdminDelete(ctx context.Context, commentIDs []uint) (int
 	cleanCtx, cancel := ctxutil.WithDetachedTimeout(ctx, ctxutil.ExternalShortTimeout)
 	defer cancel()
 
-	for _, id := range idsToDelete {
+	for _, id := range plan.IDs {
 		s.likeCache.Drop(cleanCtx, id)
 	}
 
-	s.logger.Info("admin delete comments ok", zap.Int("count", len(idsToDelete)))
+	s.logger.Info("admin delete comments ok", zap.Int("count", len(plan.IDs)))
 
-	return int64(len(idsToDelete)), nil
+	return int64(len(plan.IDs)), nil
 }

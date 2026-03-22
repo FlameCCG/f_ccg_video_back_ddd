@@ -2,7 +2,7 @@ package search
 
 import (
 	"context"
-	"strings"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"go.uber.org/zap"
 )
@@ -46,11 +46,11 @@ func (s *SearchService) hydrateVideoList(ctx context.Context, hits []SearchVideo
 		metaByID[row.ID] = row
 	}
 
-	applyVideoMeta(hits, metaByID)
+	s.applyVideoMeta(hits, metaByID)
 }
 
 // applyVideoMeta 就地回填非空的作者名与创建时间。
-func applyVideoMeta(hits []SearchVideoHit, metaByID map[uint]VideoSearchMeta) {
+func (s *SearchService) applyVideoMeta(hits []SearchVideoHit, metaByID map[uint]VideoSearchMeta) {
 	for i := range hits {
 		meta, ok := metaByID[hits[i].ID]
 		if !ok {
@@ -68,30 +68,15 @@ func applyVideoMeta(hits []SearchVideoHit, metaByID map[uint]VideoSearchMeta) {
 }
 
 // buildRelatedTags 从视频命中的标签中去重派生相关标签（最多 10 个）。
-func buildRelatedTags(videos []SearchVideoHit) []SearchTagHit {
-	seen := make(map[string]struct{})
-	tags := make([]SearchTagHit, 0)
-
-	for _, video := range videos {
-		for _, tag := range video.Tags {
-			tag = strings.TrimSpace(tag)
-			if tag == "" {
-				continue
-			}
-
-			if _, ok := seen[tag]; ok {
-				continue
-			}
-
-			seen[tag] = struct{}{}
-
-			tags = append(tags, SearchTagHit{Name: tag})
-
-			if len(tags) >= relatedTagLimit {
-				return tags
-			}
-		}
+func (s *SearchService) buildRelatedTags(videos []SearchVideoHit) []SearchTagHit {
+	groups := make([][]string, len(videos))
+	for i := range videos {
+		groups[i] = videos[i].Tags
 	}
-
+	names := (searchdomain.RelatedTagPolicy{}).Select(groups...)
+	tags := make([]SearchTagHit, len(names))
+	for i, name := range names {
+		tags[i] = SearchTagHit{Name: name}
+	}
 	return tags
 }

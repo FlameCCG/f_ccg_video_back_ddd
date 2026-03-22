@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 
 	"go.uber.org/zap"
 )
@@ -66,14 +66,14 @@ type PermissionItem struct {
 }
 
 // toDomainPermissions 把请求体权限项转为领域值对象。
-func toDomainPermissions(items []PermissionItem) []rbacvo.PermissionItem {
+func toDomainPermissions(items []PermissionItem) []rbacdomain.PermissionItem {
 	if items == nil {
 		return nil
 	}
 
-	result := make([]rbacvo.PermissionItem, 0, len(items))
+	result := make([]rbacdomain.PermissionItem, 0, len(items))
 	for _, item := range items {
-		result = append(result, rbacvo.PermissionItem{Resource: item.Resource, Action: item.Action})
+		result = append(result, rbacdomain.PermissionItem{Resource: item.Resource, Action: item.Action})
 	}
 
 	return result

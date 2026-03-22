@@ -7,58 +7,59 @@ import (
 	"testing"
 
 	"f_ccg_video_back_ddd/internal/config"
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"go.uber.org/zap"
 )
 
 type securityAccountRepo struct {
-	identityrepo.UserAccountRepository
+	identitydomain.UserAccountRepository
 	mu   sync.Mutex
-	user *identityentity.User
+	user *identitydomain.User
 }
 
-func (r *securityAccountRepo) FindByID(context.Context, uint) (*identityentity.User, error) {
+func (r *securityAccountRepo) FindByID(context.Context, uint) (*identitydomain.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	u := *r.user
 	return &u, nil
 }
-func (r *securityAccountRepo) FindByOpenIDAndSource(context.Context, string, string) (*identityentity.User, error) {
+func (r *securityAccountRepo) FindByOpenIDAndSource(context.Context, string, string) (*identitydomain.User, error) {
 	return nil, nil
 }
-func (r *securityAccountRepo) FindByEmail(context.Context, string) (*identityentity.User, error) {
+func (r *securityAccountRepo) FindByEmail(context.Context, string) (*identitydomain.User, error) {
 	return r.user, nil
 }
 func (r *securityAccountRepo) SetRefreshToken(_ context.Context, id uint, pwd, digest string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.user.ID != id || r.user.Password != pwd {
+	if r.user.ID() != id || r.user.Password() != pwd {
 		return false, nil
 	}
-	r.user.RefreshTokenHash = digest
+	snap := r.user.Snapshot()
+	snap.RefreshTokenHash = digest
+	*r.user = *identitydomain.RestoreUser(snap)
 	return true, nil
 }
 func (r *securityAccountRepo) RotateRefreshToken(_ context.Context, id uint, pwd, old, next string) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.user.ID != id || r.user.Password != pwd || r.user.RefreshTokenHash != old {
+	if r.user.ID() != id || r.user.Password() != pwd || r.user.RefreshTokenHash() != old {
 		return false, nil
 	}
-	r.user.RefreshTokenHash = next
+	snap := r.user.Snapshot()
+	snap.RefreshTokenHash = next
+	*r.user = *identitydomain.RestoreUser(snap)
 	return true, nil
 }
 
 type securityStatusRepo struct {
-	identityrepo.UserRepository
+	identitydomain.UserRepository
 	account *securityAccountRepo
 }
 
-func (r securityStatusRepo) FindByID(ctx context.Context, id uint) (*identityentity.User, error) {
+func (r securityStatusRepo) FindByID(ctx context.Context, id uint) (*identitydomain.User, error) {
 	return r.account.FindByID(ctx, id)
 }
 func newSecurityTokens() (*TokenService, loginConfigReaderStub) {
@@ -66,16 +67,16 @@ func newSecurityTokens() (*TokenService, loginConfigReaderStub) {
 	return NewTokenService(reader), reader
 }
 func TestOAuthDoesNotLinkPreexistingEmailAccount(t *testing.T) {
-	repo := &securityAccountRepo{user: &identityentity.User{ID: 9, Email: "victim@example.com"}}
+	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 9, Email: "victim@example.com"})}
 	service := &OAuthLoginService{users: repo}
-	user, err := service.findOrCreateUser(t.Context(), identityvo.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"})
+	user, err := service.findOrCreateUser(t.Context(), identitydomain.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"})
 	if !errors.Is(err, ErrOAuthAccountBindingRequired) || user != nil {
 		t.Fatalf("account linked: user=%v error=%v", user, err)
 	}
 }
 func TestPasswordChangeRevokesAccessAndRefreshAcrossServices(t *testing.T) {
 	tokens, _ := newSecurityTokens()
-	repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Username: "tester", Password: "salted-old-hash", Status: enum.UserStatusActive}}
+	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester", Password: "salted-old-hash", Status: enum.UserStatusActive})}
 	pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +85,9 @@ func TestPasswordChangeRevokesAccessAndRefreshAcrossServices(t *testing.T) {
 	if _, err := status.ValidateAccessToken(t.Context(), pair.AccessToken, "access-key"); err != nil {
 		t.Fatal(err)
 	}
-	repo.user.Password = "salted-new-hash"
+	snap := repo.user.Snapshot()
+	snap.Password = "salted-new-hash"
+	*repo.user = *identitydomain.RestoreUser(snap)
 	if _, err := status.ValidateAccessToken(t.Context(), pair.AccessToken, "access-key"); err == nil {
 		t.Fatal("old access survived password change")
 	}
@@ -94,7 +97,7 @@ func TestPasswordChangeRevokesAccessAndRefreshAcrossServices(t *testing.T) {
 }
 func TestRefreshTokenRotationIsSingleUseAndReplayRevokesSuccessor(t *testing.T) {
 	tokens, reader := newSecurityTokens()
-	repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Username: "tester", Password: "hash", Status: enum.UserStatusActive}}
+	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester", Password: "hash", Status: enum.UserStatusActive})}
 	original, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +119,7 @@ func TestRefreshTokenRotationIsSingleUseAndReplayRevokesSuccessor(t *testing.T) 
 }
 func TestConcurrentRefreshHasOneWinner(t *testing.T) {
 	tokens, _ := newSecurityTokens()
-	repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Password: "hash"}}
+	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Password: "hash"})}
 	pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 	if err != nil {
 		t.Fatal(err)
@@ -149,28 +152,28 @@ func TestConcurrentRefreshHasOneWinner(t *testing.T) {
 func TestBanBlocksRefreshIncludingTemporaryBan(t *testing.T) {
 	for _, state := range []enum.UserStatus{enum.UserStatusBanned, enum.UserStatusPermanentlyBanned} {
 		tokens, _ := newSecurityTokens()
-		repo := &securityAccountRepo{user: &identityentity.User{ID: 7, Password: "hash", Status: state}}
+		repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Password: "hash", Status: state})}
 		pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
 		if err != nil {
 			t.Fatal(err)
 		}
 		service := &LoginService{tokens: tokens, users: repo, logger: zap.NewNop()}
-		if _, err := service.RefreshToken(t.Context(), pair.RefreshToken); !errors.Is(err, identityerrors.ErrAccountBanned) {
+		if _, err := service.RefreshToken(t.Context(), pair.RefreshToken); !errors.Is(err, identitydomain.ErrAccountBanned) {
 			t.Fatalf("ban did not reject refresh: %v", err)
 		}
 	}
 }
 
 func TestOAuthCanAssociateExplicitlyVerifiedEmail(t *testing.T) {
-	repo := &securityAccountRepo{user: &identityentity.User{ID: 9, Email: "owner@example.com"}}
+	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 9, Email: "owner@example.com"})}
 	service := &OAuthLoginService{users: repo}
-	user, err := service.findOrCreateUser(t.Context(), identityvo.OAuthProfile{RegisterSource: "github", OpenID: "owner", Email: "owner@example.com", EmailVerified: true})
-	if err != nil || user == nil || user.ID != 9 {
+	user, err := service.findOrCreateUser(t.Context(), identitydomain.OAuthProfile{RegisterSource: "github", OpenID: "owner", Email: "owner@example.com", EmailVerified: true})
+	if err != nil || user == nil || user.ID() != 9 {
 		t.Fatalf("verified association user=%v err=%v", user, err)
 	}
 }
 func TestUnverifiedOAuthEmailUsesProviderFallback(t *testing.T) {
-	profile := identityvo.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"}
+	profile := identitydomain.OAuthProfile{RegisterSource: "github", OpenID: "attacker", Email: "victim@example.com"}
 	if got := profile.ResolvedEmail(); got == "victim@example.com" {
 		t.Fatal("unverified email stored as owned")
 	}

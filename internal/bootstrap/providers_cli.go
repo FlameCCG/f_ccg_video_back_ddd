@@ -1,20 +1,29 @@
 package bootstrap
 
 import (
+	contentopsapp "f_ccg_video_back_ddd/internal/application/contentops"
+	identityapp "f_ccg_video_back_ddd/internal/application/identity"
+	mediaapplication "f_ccg_video_back_ddd/internal/application/media"
 	provisioningapp "f_ccg_video_back_ddd/internal/application/provisioning"
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	rbacdomainrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	videoapp "f_ccg_video_back_ddd/internal/application/video"
+	"f_ccg_video_back_ddd/internal/bootstrap/adapters"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/auth"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
+	contentopsrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/contentops"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	identityrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/migration"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
 	provisioningrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/provisioning"
 	rbacrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
+	videorepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/search"
 	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
@@ -57,9 +66,16 @@ var BannerTaskProviderSet = wire.NewSet(
 	ctxutil.NewDetachedTaskGroup,
 	storage.NewMinIOClientPool,
 	storage.NewResolver,
-	wire.Bind(new(mediaport.StorageResolver), new(*storage.Resolver)),
-	provisioningrepo.NewBannerRepository,
-	wire.Bind(new(provisioningapp.BannerRepository), new(*provisioningrepo.BannerRepository)),
+	wire.Bind(new(mediaapplication.StorageResolver), new(*storage.Resolver)),
+	gormx.NewTxManager,
+	wire.Bind(new(tx.Manager), new(*gormx.TxManager)),
+	contentopsrepo.NewBannerRepository,
+	wire.Bind(new(contentopsdomain.DefaultBannerRepository), new(*contentopsrepo.BannerRepository)),
+	contentopsapp.NewDefaultBannerService,
+	provisioningrepo.NewBannerSchema,
+	wire.Bind(new(provisioningapp.BannerTableMigrator), new(*provisioningrepo.BannerSchema)),
+	adapters.NewDefaultBanners,
+	wire.Bind(new(provisioningapp.DefaultBanners), new(*adapters.DefaultBanners)),
 	NewBannerStorageResolverAdapter,
 	wire.Bind(new(cli.BannerStorageResolver), new(*BannerStorageResolverAdapter)),
 	cli.NewBannerExecutor,
@@ -72,9 +88,19 @@ var SuperUserTaskProviderSet = wire.NewSet(
 	wire.Bind(new(tx.Manager), new(*gormx.TxManager)),
 	auth.NewEnforcer,
 	identityrepo.NewUserRepository,
-	wire.Bind(new(provisioningrepo.UserDefaultsInitializer), new(*identityrepo.UserRepository)),
-	provisioningrepo.NewSuperUserRepository,
-	wire.Bind(new(provisioningapp.SuperUserRepository), new(*provisioningrepo.SuperUserRepository)),
+	wire.Bind(new(identitydomain.SystemAccountRepository), new(*identityrepo.UserRepository)),
+	videorepo.NewFolderRepository,
+	wire.Bind(new(videodomain.FolderRepository), new(*videorepo.FolderRepository)),
+	videoapp.NewDefaultFolderService,
+	wire.Bind(new(identityapp.DefaultFolderInitializer), new(*videoapp.DefaultFolderService)),
+	identityapp.NewSystemAccountService,
+	rbacrepo.NewRoleRepository,
+	wire.Bind(new(rbacdomain.RoleRepository), new(*rbacrepo.RoleRepository)),
+	rbacrepo.NewUserRoleRepository,
+	wire.Bind(new(rbacdomain.UserRoleRepository), new(*rbacrepo.UserRoleRepository)),
+	rbacapp.NewSystemRoleService,
+	adapters.NewSystemAccounts,
+	wire.Bind(new(provisioningapp.SystemAccounts), new(*adapters.SystemAccounts)),
 	provisioningrepo.NewCasbinRoleBinder,
 	wire.Bind(new(provisioningapp.CasbinRoleBinder), new(*provisioningrepo.CasbinRoleBinder)),
 	provisioningapp.NewSuperUserService,
@@ -100,11 +126,11 @@ var RBACInitTaskProviderSet = wire.NewSet(
 	rbacrepo.NewCasbinEnforcer,
 	wire.Bind(new(rbacapp.Enforcer), new(*rbacrepo.CasbinEnforcer)),
 	rbacrepo.NewRoleRepository,
-	wire.Bind(new(rbacdomainrepo.RoleRepository), new(*rbacrepo.RoleRepository)),
+	wire.Bind(new(rbacdomain.RoleRepository), new(*rbacrepo.RoleRepository)),
 	rbacrepo.NewMenuRepository,
-	wire.Bind(new(rbacdomainrepo.MenuRepository), new(*rbacrepo.MenuRepository)),
+	wire.Bind(new(rbacdomain.MenuRepository), new(*rbacrepo.MenuRepository)),
 	rbacrepo.NewRoleMenuRepository,
-	wire.Bind(new(rbacdomainrepo.RoleMenuRepository), new(*rbacrepo.RoleMenuRepository)),
+	wire.Bind(new(rbacdomain.RoleMenuRepository), new(*rbacrepo.RoleMenuRepository)),
 	rbacapp.NewInitService,
 	wire.Bind(new(cli.RBACInitializer), new(*rbacapp.InitService)),
 	cli.NewRBACInitExecutor,
@@ -114,7 +140,7 @@ var RBACInitTaskProviderSet = wire.NewSet(
 var ResourceSyncTaskProviderSet = wire.NewSet(
 	CLIDatabaseProviderSet,
 	rbacrepo.NewApiResourceRepository,
-	wire.Bind(new(rbacdomainrepo.ApiResourceRepository), new(*rbacrepo.ApiResourceRepository)),
+	wire.Bind(new(rbacdomain.ApiResourceRepository), new(*rbacrepo.ApiResourceRepository)),
 	rbacrepo.NewOpenAPIMetaLoader,
 	wire.Bind(new(rbacapp.ResourceMetaLoader), new(*rbacrepo.OpenAPIMetaLoader)),
 	validate.New,

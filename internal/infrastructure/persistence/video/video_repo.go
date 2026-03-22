@@ -7,10 +7,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -24,7 +21,7 @@ type VideoRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ videorepo.VideoRepository = (*VideoRepository)(nil)
+var _ videodomain.VideoRepository = (*VideoRepository)(nil)
 
 // NewVideoRepository 构造视频仓储。
 func NewVideoRepository(db *gorm.DB) *VideoRepository {
@@ -32,7 +29,7 @@ func NewVideoRepository(db *gorm.DB) *VideoRepository {
 }
 
 // FindByID 按主键读取视频；不存在时返回 (nil, nil)。
-func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*videoentity.Video, error) {
+func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*videodomain.Video, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "author_username", "status", "partition_id", "title", "cover", "duration",
@@ -50,7 +47,7 @@ func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*videoent
 	return toDomainVideo(&row), nil
 }
 
-func (r *VideoRepository) FindByIDForUpdate(ctx context.Context, videoID uint) (*videoentity.Video, error) {
+func (r *VideoRepository) FindByIDForUpdate(ctx context.Context, videoID uint) (*videodomain.Video, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Take(&row, "id = ?", videoID).Error; err != nil {
@@ -63,7 +60,7 @@ func (r *VideoRepository) FindByIDForUpdate(ctx context.Context, videoID uint) (
 }
 
 // FindByIDsForUpdate 以稳定顺序一次取得批量写侧快照，避免逐 ID 查询。
-func (r *VideoRepository) FindByIDsForUpdate(ctx context.Context, videoIDs []uint) ([]*videoentity.Video, error) {
+func (r *VideoRepository) FindByIDsForUpdate(ctx context.Context, videoIDs []uint) ([]*videodomain.Video, error) {
 	if len(videoIDs) == 0 {
 		return nil, nil
 	}
@@ -72,7 +69,7 @@ func (r *VideoRepository) FindByIDsForUpdate(ctx context.Context, videoIDs []uin
 		Where("id IN ?", videoIDs).Order("id ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	videos := make([]*videoentity.Video, 0, len(rows))
+	videos := make([]*videodomain.Video, 0, len(rows))
 	for i := range rows {
 		videos = append(videos, toDomainVideo(&rows[i]))
 	}
@@ -84,7 +81,7 @@ func (r *VideoRepository) FindByIDAndAuthorForUpdate(
 	ctx context.Context,
 	videoID uint,
 	authorUsername string,
-) (*videoentity.Video, error) {
+) (*videodomain.Video, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -125,7 +122,7 @@ func (r *VideoRepository) Exists(ctx context.Context, videoID uint) (bool, error
 }
 
 // PublishedStats 读取已发布视频的统计行；不存在时返回 ErrRecordNotFound。
-func (r *VideoRepository) PublishedStats(ctx context.Context, videoID uint) (*videovo.Stats, error) {
+func (r *VideoRepository) PublishedStats(ctx context.Context, videoID uint) (*videodomain.Stats, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
@@ -139,7 +136,7 @@ func (r *VideoRepository) PublishedStats(ctx context.Context, videoID uint) (*vi
 }
 
 // ApplyStatsDelta 在 MySQL 上以「不小于 0」表达式应用统计增量（仅已发布视频）。
-func (r *VideoRepository) ApplyStatsDelta(ctx context.Context, videoID uint, delta videovo.StatsDelta) error {
+func (r *VideoRepository) ApplyStatsDelta(ctx context.Context, videoID uint, delta videodomain.StatsDelta) error {
 	updates := statsDeltaUpdates(delta)
 	if len(updates) == 0 {
 		return nil
@@ -152,7 +149,7 @@ func (r *VideoRepository) ApplyStatsDelta(ctx context.Context, videoID uint, del
 }
 
 // statsDeltaUpdates 把统计增量转为「不小于 0」的列更新表达式。
-func statsDeltaUpdates(delta videovo.StatsDelta) map[string]any {
+func statsDeltaUpdates(delta videodomain.StatsDelta) map[string]any {
 	updates := make(map[string]any, 6)
 	if delta.Views != 0 {
 		updates["views"] = nonNegativeDeltaExpr("views", delta.Views)
@@ -217,7 +214,7 @@ func (r *VideoRepository) AuthorIDByVideoID(ctx context.Context, videoID uint) (
 	}
 
 	if video.AuthorUsername == "" {
-		return 0, videoerrors.ErrVideoAuthorNotFound
+		return 0, videodomain.ErrVideoAuthorNotFound
 	}
 
 	var user po.User
@@ -226,7 +223,7 @@ func (r *VideoRepository) AuthorIDByVideoID(ctx context.Context, videoID uint) (
 	}
 
 	if user.ID == 0 {
-		return 0, videoerrors.ErrVideoAuthorNotFound
+		return 0, videodomain.ErrVideoAuthorNotFound
 	}
 
 	return user.ID, nil
@@ -245,7 +242,7 @@ func (r *VideoRepository) PublishedAuthorIDByVideoID(ctx context.Context, videoI
 	}
 
 	if authorID == 0 {
-		return 0, videoerrors.ErrVideoAuthorNotFound
+		return 0, videodomain.ErrVideoAuthorNotFound
 	}
 
 	return authorID, nil
@@ -413,28 +410,28 @@ func (r *VideoRepository) CountByPartition(ctx context.Context, partitionID uint
 }
 
 // SaveRevision 只映射改稿字段；数据库列名留在适配器内，统计等独立写入不受影响。
-func (r *VideoRepository) SaveRevision(ctx context.Context, video *videoentity.Video) error {
-	if video == nil || video.ID == 0 {
-		return videoerrors.ErrRecordNotFound
+func (r *VideoRepository) SaveRevision(ctx context.Context, video *videodomain.Video) error {
+	if video == nil || video.ID() == 0 {
+		return videodomain.ErrRecordNotFound
 	}
 
 	return gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
-		Where("id = ?", video.ID).
+		Where("id = ?", video.ID()).
 		Updates(map[string]any{
-			"title":        video.Title,
-			"description":  video.Description,
-			"cover":        video.Cover,
-			"partition_id": video.PartitionID,
-			"is_original":  video.IsOriginal,
-			"status":       video.Status,
-			"is_scheduled": video.IsScheduled,
-			"approved_at":  video.ApprovedAt,
+			"title":        video.Title(),
+			"description":  video.Description(),
+			"cover":        video.Cover(),
+			"partition_id": video.PartitionID(),
+			"is_original":  video.IsOriginal(),
+			"status":       video.Status(),
+			"is_scheduled": video.IsScheduled(),
+			"approved_at":  video.ApprovedAt(),
 		}).Error
 }
 
 // ReplaceTags 覆盖视频的标签关联（tags 为空表示清空关联）。
-func (r *VideoRepository) ReplaceTags(ctx context.Context, videoID uint, tags []videoentity.Tag) error {
+func (r *VideoRepository) ReplaceTags(ctx context.Context, videoID uint, tags []videodomain.Tag) error {
 	target := &po.Video{Model: po.Model{ID: videoID}}
 	rows := toPOTags(tags)
 
@@ -452,7 +449,7 @@ func (r *VideoRepository) ReplaceTags(ctx context.Context, videoID uint, tags []
 }
 
 // TagsByVideoID 读取视频当前关联的标签。
-func (r *VideoRepository) TagsByVideoID(ctx context.Context, videoID uint) ([]videoentity.Tag, error) {
+func (r *VideoRepository) TagsByVideoID(ctx context.Context, videoID uint) ([]videodomain.Tag, error) {
 	var rows []po.Tag
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Video{Model: po.Model{ID: videoID}}).
@@ -465,9 +462,9 @@ func (r *VideoRepository) TagsByVideoID(ctx context.Context, videoID uint) ([]vi
 }
 
 // FindTagsByIDs 按 ID 批量读取标签（无匹配时返回非 nil 空切片，与 GORM Find 语义一致）。
-func (r *VideoRepository) FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]videoentity.Tag, error) {
+func (r *VideoRepository) FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]videodomain.Tag, error) {
 	if len(tagIDs) == 0 {
-		return []videoentity.Tag{}, nil
+		return []videodomain.Tag{}, nil
 	}
 
 	var rows []po.Tag
@@ -479,8 +476,8 @@ func (r *VideoRepository) FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]v
 }
 
 // CreateOrGetTag 创建标签（若已存在同名标签则返回现有）。
-func (r *VideoRepository) CreateOrGetTag(ctx context.Context, name string) (*videoentity.Tag, error) {
-	normalized, err := videoentity.ValidateTagName(name)
+func (r *VideoRepository) CreateOrGetTag(ctx context.Context, name string) (*videodomain.Tag, error) {
+	normalized, err := (videodomain.Tag{}).NormalizeName(name)
 	if err != nil {
 		return nil, err
 	}
@@ -539,7 +536,7 @@ func mapNotFound(err error) error {
 	}
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return videoerrors.ErrRecordNotFound
+		return videodomain.ErrRecordNotFound
 	}
 
 	return err

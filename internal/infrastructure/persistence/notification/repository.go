@@ -3,7 +3,7 @@
 // repository.go 实现 domain/notification 的仓储，actor_query.go 获取展示所需的操作者资料。
 // 用户资料投影不属于通知写模型，角标缓存的维护由应用层在相应操作后协调。
 //
-// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
+// 仓储遵守消费方端口的不存在与错误约定。写入后返回恢复出的实体，不回填调用方持有的值。
 package notification
 
 import (
@@ -11,8 +11,7 @@ import (
 	"errors"
 	"time"
 
-	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
-	notificationrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -26,19 +25,19 @@ type Repository struct {
 	db *gorm.DB
 }
 
-var _ notificationrepo.Repository = (*Repository)(nil)
+var _ notificationdomain.Repository = (*Repository)(nil)
 
 // NewRepository 构造通知仓储。
 func NewRepository(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func toDomain(row *po.UserGlobalNotification) *notificationentity.Notification {
+func (r *Repository) toDomain(row *po.UserGlobalNotification) *notificationdomain.Notification {
 	if row == nil {
 		return nil
 	}
 
-	return &notificationentity.Notification{
+	return notificationdomain.RestoreNotification(notificationdomain.Snapshot{
 		ID:               row.ID,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
@@ -54,84 +53,76 @@ func toDomain(row *po.UserGlobalNotification) *notificationentity.Notification {
 		VideoTitle:       row.VideoTitle,
 		DynamicID:        row.DynamicID,
 		CommentID:        row.CommentID,
-	}
+	})
 }
 
-func toPO(notice *notificationentity.Notification) *po.UserGlobalNotification {
+func (r *Repository) toPO(notice *notificationdomain.Notification) *po.UserGlobalNotification {
 	if notice == nil {
 		return nil
 	}
 
+	snap := notice.Snapshot()
+
 	return &po.UserGlobalNotification{
 		Model: po.Model{
-			ID:        notice.ID,
-			CreatedAt: notice.CreatedAt,
-			UpdatedAt: notice.UpdatedAt,
+			ID:        snap.ID,
+			CreatedAt: snap.CreatedAt,
+			UpdatedAt: snap.UpdatedAt,
 		},
-		Type:             notice.Type,
-		ReceiverID:       notice.ReceiverID,
-		ActionUserID:     notice.ActionUserID,
-		ActionUserAvatar: notice.ActionUserAvatar,
-		ActionUserName:   notice.ActionUserName,
-		Title:            notice.Title,
-		Content:          notice.Content,
-		Link:             notice.Link,
-		VideoID:          notice.VideoID,
-		VideoTitle:       notice.VideoTitle,
-		DynamicID:        notice.DynamicID,
-		CommentID:        notice.CommentID,
+		Type:             snap.Type,
+		ReceiverID:       snap.ReceiverID,
+		ActionUserID:     snap.ActionUserID,
+		ActionUserAvatar: snap.ActionUserAvatar,
+		ActionUserName:   snap.ActionUserName,
+		Title:            snap.Title,
+		Content:          snap.Content,
+		Link:             snap.Link,
+		VideoID:          snap.VideoID,
+		VideoTitle:       snap.VideoTitle,
+		DynamicID:        snap.DynamicID,
+		CommentID:        snap.CommentID,
 	}
 }
 
-func toDomainList(rows []po.UserGlobalNotification) []notificationentity.Notification {
-	out := make([]notificationentity.Notification, 0, len(rows))
+func (r *Repository) toDomainList(rows []po.UserGlobalNotification) []notificationdomain.Notification {
+	out := make([]notificationdomain.Notification, 0, len(rows))
 	for i := range rows {
-		out = append(out, *toDomain(&rows[i]))
+		out = append(out, *r.toDomain(&rows[i]))
 	}
 
 	return out
 }
 
-// Create 写入通知并回填自增 ID 与时间戳。
-func (r *Repository) Create(ctx context.Context, notice *notificationentity.Notification) error {
-	row := toPO(notice)
+// Create 写入通知并返回带自增 ID 与时间戳的实体。
+func (r *Repository) Create(ctx context.Context, notice *notificationdomain.Notification) (*notificationdomain.Notification, error) {
+	row := r.toPO(notice)
 	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	notice.ID = row.ID
-	notice.CreatedAt = row.CreatedAt
-	notice.UpdatedAt = row.UpdatedAt
-
-	return nil
+	return r.toDomain(row), nil
 }
 
 // CreateBatch 批量写入通知，失败时整批不生效。
-func (r *Repository) CreateBatch(ctx context.Context, notices []notificationentity.Notification) error {
+func (r *Repository) CreateBatch(ctx context.Context, notices []notificationdomain.Notification) ([]notificationdomain.Notification, error) {
 	if len(notices) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	rows := make([]po.UserGlobalNotification, 0, len(notices))
 	for i := range notices {
-		rows = append(rows, *toPO(&notices[i]))
+		rows = append(rows, *r.toPO(&notices[i]))
 	}
 
 	if err := gormx.DB(ctx, r.db).Create(&rows).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	for i := range rows {
-		notices[i].ID = rows[i].ID
-		notices[i].CreatedAt = rows[i].CreatedAt
-		notices[i].UpdatedAt = rows[i].UpdatedAt
-	}
-
-	return nil
+	return r.toDomainList(rows), nil
 }
 
 // FindByID 按主键读取通知；不存在时返回 (nil, nil)。
-func (r *Repository) FindByID(ctx context.Context, id uint) (*notificationentity.Notification, error) {
+func (r *Repository) FindByID(ctx context.Context, id uint) (*notificationdomain.Notification, error) {
 	var row po.UserGlobalNotification
 	if err := gormx.DB(ctx, r.db).First(&row, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -141,7 +132,7 @@ func (r *Repository) FindByID(ctx context.Context, id uint) (*notificationentity
 		return nil, err
 	}
 
-	return toDomain(&row), nil
+	return r.toDomain(&row), nil
 }
 
 // ListForReceiver 按接收者与类型集合分页查询（含全员广播 -1）。
@@ -150,9 +141,9 @@ func (r *Repository) ListForReceiver(
 	receiverID int,
 	types []enum.Type,
 	page, pageSize int,
-) ([]notificationentity.Notification, int64, error) {
+) ([]notificationdomain.Notification, int64, error) {
 	db := gormx.DB(ctx, r.db).Model(&po.UserGlobalNotification{}).
-		Where("receiver_id IN (?, ?)", receiverID, notificationentity.BroadcastReceiverID).
+		Where("receiver_id IN (?, ?)", receiverID, notificationdomain.BroadcastReceiverID).
 		Where("type IN ?", types)
 
 	var total int64
@@ -168,11 +159,25 @@ func (r *Repository) ListForReceiver(
 		return nil, 0, err
 	}
 
-	return toDomainList(list), total, nil
+	return r.toDomainList(list), total, nil
+}
+
+// FindByIDs 按主键批量读取；缺失的 ID 忽略。
+func (r *Repository) FindByIDs(ctx context.Context, ids []uint) ([]notificationdomain.Notification, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	var rows []po.UserGlobalNotification
+	if err := gormx.DB(ctx, r.db).Where("id IN ?", ids).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	return r.toDomainList(rows), nil
 }
 
 // ListSystem 分页查询系统通知（管理端）。
-func (r *Repository) ListSystem(ctx context.Context, page, pageSize int) ([]notificationentity.Notification, int64, error) {
+func (r *Repository) ListSystem(ctx context.Context, page, pageSize int) ([]notificationdomain.Notification, int64, error) {
 	db := gormx.DB(ctx, r.db).Model(&po.UserGlobalNotification{})
 
 	var total int64
@@ -189,7 +194,7 @@ func (r *Repository) ListSystem(ctx context.Context, page, pageSize int) ([]noti
 		return nil, 0, err
 	}
 
-	return toDomainList(list), total, nil
+	return r.toDomainList(list), total, nil
 }
 
 // VisibleIDs 过滤出对该接收者可见（个人或全员）的通知 ID。
@@ -197,39 +202,12 @@ func (r *Repository) VisibleIDs(ctx context.Context, receiverID int, ids []uint)
 	var validIDs []uint
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.UserGlobalNotification{}).
-		Where("id IN ? AND receiver_id IN (?, ?)", ids, receiverID, notificationentity.BroadcastReceiverID).
+		Where("id IN ? AND receiver_id IN (?, ?)", ids, receiverID, notificationdomain.BroadcastReceiverID).
 		Pluck("id", &validIDs).Error; err != nil {
 		return nil, err
 	}
 
 	return validIDs, nil
-}
-
-// CountUndeletable 统计给定 ID 中属于系统消息或全员广播的条数。
-func (r *Repository) CountUndeletable(ctx context.Context, ids []uint) (int64, error) {
-	var blocked int64
-	if err := gormx.DB(ctx, r.db).
-		Model(&po.UserGlobalNotification{}).
-		Where("id IN ?", ids).
-		Where("(type = ? OR receiver_id = -1)", enum.NotificationSystemType).
-		Count(&blocked).Error; err != nil {
-		return 0, err
-	}
-
-	return blocked, nil
-}
-
-// DeletableIDs 过滤出该接收者可删除的非系统通知 ID。
-func (r *Repository) DeletableIDs(ctx context.Context, receiverID int, ids []uint) ([]uint, error) {
-	var deletableIDs []uint
-	if err := gormx.DB(ctx, r.db).
-		Model(&po.UserGlobalNotification{}).
-		Where("id IN ? AND receiver_id = ? AND type <> ?", ids, receiverID, enum.NotificationSystemType).
-		Pluck("id", &deletableIDs).Error; err != nil {
-		return nil, err
-	}
-
-	return deletableIDs, nil
 }
 
 // DeleteForReceiver 删除接收者的通知及其已读记录（同一事务）。
@@ -273,28 +251,29 @@ func (r *Repository) DistinctReceivers(ctx context.Context, ids []uint) ([]int, 
 }
 
 // UpdateSystemContent 管理端更新系统通知内容，返回更新前的接收者。
-func (r *Repository) UpdateSystemContent(ctx context.Context, notice *notificationentity.Notification) (int, error) {
-	if notice == nil || notice.ID == 0 {
+func (r *Repository) UpdateSystemContent(ctx context.Context, notice *notificationdomain.Notification) (int, error) {
+	if notice == nil || notice.ID() == 0 {
 		return 0, gorm.ErrRecordNotFound
 	}
 
+	snap := notice.Snapshot()
 	db := gormx.DB(ctx, r.db)
 
 	var old po.UserGlobalNotification
-	if err := db.Select("id", "receiver_id").First(&old, notice.ID).Error; err != nil {
+	if err := db.Select("id", "receiver_id").First(&old, snap.ID).Error; err != nil {
 		return 0, err
 	}
 
 	if err := db.
 		Model(&po.UserGlobalNotification{}).
-		Where("id = ?", notice.ID).
+		Where("id = ?", snap.ID).
 		Updates(map[string]any{
-			"title":       notice.Title,
-			"content":     notice.Content,
-			"link":        notice.Link,
-			"receiver_id": notice.ReceiverID,
-			"video_id":    notice.VideoID,
-			"video_title": notice.VideoTitle,
+			"title":       snap.Title,
+			"content":     snap.Content,
+			"link":        snap.Link,
+			"receiver_id": snap.ReceiverID,
+			"video_id":    snap.VideoID,
+			"video_title": snap.VideoTitle,
 			"type":        enum.NotificationSystemType,
 		}).Error; err != nil {
 		return 0, err
@@ -345,7 +324,8 @@ func (r *Repository) ReadSet(ctx context.Context, userID uint, ids []uint) (map[
 
 // CountUnreadGrouped 按类型统计未读数量（未读 = 内容可见且无已读行）。
 func (r *Repository) CountUnreadGrouped(ctx context.Context, receiverID int) (map[enum.Type]int64, error) {
-	result := make(map[enum.Type]int64, len(notificationentity.AllTypes()))
+	types := (notificationdomain.TypePolicy{}).AllTypes()
+	result := make(map[enum.Type]int64, len(types))
 
 	type row struct {
 		Type  enum.Type `gorm:"column:type"`
@@ -357,9 +337,9 @@ func (r *Repository) CountUnreadGrouped(ctx context.Context, receiverID int) (ma
 		Table("user_global_notifications AS n").
 		Select("n.type, COUNT(*) AS total").
 		Joins("LEFT JOIN notification_user_reads AS r ON r.notification_id = n.id AND r.user_id = ?", receiverID).
-		Where("n.receiver_id IN (?, ?)", receiverID, notificationentity.BroadcastReceiverID).
+		Where("n.receiver_id IN (?, ?)", receiverID, notificationdomain.BroadcastReceiverID).
 		Where("r.notification_id IS NULL").
-		Where("n.type IN ?", notificationentity.AllTypes()).
+		Where("n.type IN ?", types).
 		Group("n.type").
 		Scan(&rows).Error; err != nil {
 		return nil, err

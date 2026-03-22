@@ -12,9 +12,7 @@ package media
 import (
 	"context"
 
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 // -----------------------------------------------------------------------------
@@ -29,10 +27,10 @@ import (
 // 实现：`*mq.TranscodeEngine`（`internal/infrastructure/mq`）。
 type MediaProber interface {
 	// ProbeVideo 探测本地媒体文件的分辨率、码率、编码、容器 brand 与时长。
-	ProbeVideo(ctx context.Context, path string) (mediavo.VideoMeta, error)
+	ProbeVideo(ctx context.Context, path string) (mediadomain.VideoMeta, error)
 	// SourceSize 返回任务源文件字节数：本地源用 os.Stat，远程源用 HTTP HEAD。
 	// 取不到不致命，调用方按 0 处理。
-	SourceSize(ctx context.Context, task mediaentity.TranscodeTask) (int64, error)
+	SourceSize(ctx context.Context, task mediadomain.TranscodeTask) (int64, error)
 }
 
 // Checkpoint 是一次转码任务的断点目录句柄（对应用层不透明）。
@@ -50,7 +48,7 @@ type Checkpoint interface {
 // 实现：`*mq.TranscodeEngine`。
 type CheckpointManager interface {
 	// OpenCheckpoint 打开（或创建）任务的断点目录；断点续传被关闭时退化为一次性临时目录。
-	OpenCheckpoint(task mediaentity.TranscodeTask) (Checkpoint, error)
+	OpenCheckpoint(task mediadomain.TranscodeTask) (Checkpoint, error)
 	// StartCheckpointJanitor 启动孤儿断点目录清扫：立即扫一次，此后周期扫，随 ctx 退出。
 	StartCheckpointJanitor(ctx context.Context)
 }
@@ -63,7 +61,7 @@ type SourceStager interface {
 	// PrepareSource 返回可供 ffmpeg 读取的本地路径与清理函数。
 	PrepareSource(
 		ctx context.Context,
-		task mediaentity.TranscodeTask,
+		task mediadomain.TranscodeTask,
 		ckpt Checkpoint,
 	) (localPath string, cleanup func(), err error)
 }
@@ -77,12 +75,12 @@ type ArtifactStateChecker interface {
 	// 且远端对象存在。命中时返回该资源行的 file_url。
 	TargetPersisted(
 		ctx context.Context,
-		task mediaentity.TranscodeTask,
-		target mediavo.TranscodeTarget,
-		driver mediaport.StorageDriver,
+		task mediadomain.TranscodeTask,
+		target mediadomain.TranscodeTarget,
+		driver StorageDriver,
 	) (string, bool)
 	// DASHPersisted 判断整套 DASH 是否已入库：自适应资源行指向本任务 manifest 且对象存在。
-	DASHPersisted(ctx context.Context, task mediaentity.TranscodeTask, driver mediaport.StorageDriver) bool
+	DASHPersisted(ctx context.Context, task mediadomain.TranscodeTask, driver StorageDriver) bool
 }
 
 // MP4EncodeRequest 是一批 MP4 输出目标的编码请求。
@@ -91,15 +89,15 @@ type ArtifactStateChecker interface {
 // 返回值覆盖 Targets 中的每一个目标，值为断点目录中已提交的本地产物路径。
 type MP4EncodeRequest struct {
 	// Task 本次转码任务。
-	Task mediaentity.TranscodeTask
+	Task mediadomain.TranscodeTask
 	// Policy 编码策略（由配置转换而来）。
-	Policy *mediavo.TranscodePolicy
+	Policy *mediadomain.TranscodePolicy
 	// Checkpoint 任务断点目录句柄。
 	Checkpoint Checkpoint
 	// SourcePath 已准备好的本地源文件路径。
 	SourcePath string
 	// Targets 本次要产出的全部 MP4 目标（已剔除 L1 已入库的目标）。
-	Targets []mediavo.TranscodeTarget
+	Targets []mediadomain.TranscodeTarget
 	// UseGPU 是否使用 NVENC 编码。
 	UseGPU bool
 	// SourceBitrate 源码率(kbps)，用于 -maxrate 预算。
@@ -111,7 +109,7 @@ type MP4EncodeRequest struct {
 	// HasAudio 源是否带音轨。
 	HasAudio bool
 	// ChunkPlan 分段计划；为空表示单次直跑。
-	ChunkPlan []mediavo.TranscodeChunk
+	ChunkPlan []mediadomain.TranscodeChunk
 }
 
 // DASHEncodeRequest 是整套 DASH 的编码请求。
@@ -120,15 +118,15 @@ type MP4EncodeRequest struct {
 // 返回值为断点目录中已提交的 DASH 目录（其中含 manifest.mpd 与各 representation）。
 type DASHEncodeRequest struct {
 	// Task 本次转码任务。
-	Task mediaentity.TranscodeTask
+	Task mediadomain.TranscodeTask
 	// Policy 编码策略。
-	Policy *mediavo.TranscodePolicy
+	Policy *mediadomain.TranscodePolicy
 	// Checkpoint 任务断点目录句柄。
 	Checkpoint Checkpoint
 	// SourcePath 已准备好的本地源文件路径。
 	SourcePath string
 	// Targets 各 representation 目标。
-	Targets []mediavo.TranscodeTarget
+	Targets []mediadomain.TranscodeTarget
 	// UseGPU 是否使用 NVENC 编码。
 	UseGPU bool
 	// SourceBitrate 源码率(kbps)。
@@ -140,7 +138,7 @@ type DASHEncodeRequest struct {
 	// HasAudio 源是否带音轨（决定 adaptation_sets 是否含音频）。
 	HasAudio bool
 	// ChunkPlan 分段计划；为空表示单次直跑。
-	ChunkPlan []mediavo.TranscodeChunk
+	ChunkPlan []mediadomain.TranscodeChunk
 }
 
 // TranscodeEncoder FFmpeg 编码执行端口。

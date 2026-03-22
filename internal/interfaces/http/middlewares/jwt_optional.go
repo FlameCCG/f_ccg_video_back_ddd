@@ -20,9 +20,9 @@ func (m *Middlewares) JwtOptional() gin.HandlerFunc {
 		}
 
 		token = strings.TrimPrefix(token, "Bearer ")
-		if user, err := m.resolveAccessUser(c, token); err == nil && !user.MustChangePassword {
-			c.Set("uid", strconv.FormatUint(uint64(user.ID), 10))
-			c.Set("username", user.Username)
+		if user, err := m.resolveAccessUser(c, token); err == nil && !user.MustChangePassword() {
+			c.Set("uid", strconv.FormatUint(uint64(user.ID()), 10))
+			c.Set("username", user.Username())
 		}
 
 		c.Next()

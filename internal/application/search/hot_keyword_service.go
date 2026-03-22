@@ -4,7 +4,7 @@ import (
 	"context"
 	"math"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 )
 
 // HotKeywordService 首页热搜词用例服务。
@@ -13,17 +13,24 @@ import (
 type HotKeywordService struct {
 	store    HotKeywordStore
 	fallback HotKeywordFallbackQuery
+	keywords searchdomain.KeywordPolicy
+	pages    searchdomain.PaginationPolicy
 }
 
 // NewHotKeywordService 构造热搜词服务。
 func NewHotKeywordService(store HotKeywordStore, fallback HotKeywordFallbackQuery) *HotKeywordService {
-	return &HotKeywordService{store: store, fallback: fallback}
+	return &HotKeywordService{
+		store:    store,
+		fallback: fallback,
+		keywords: searchdomain.KeywordPolicy{},
+		pages:    searchdomain.PaginationPolicy{},
+	}
 }
 
 // HotKeywords 返回热搜榜的一页数据与总量。
 func (s *HotKeywordService) HotKeywords(ctx context.Context, page, pageSize int) ([]HotKeywordItem, int64, error) {
-	ctx = ensureContext(ctx)
-	pagination := searchvo.NormalizeHotKeywordPagination(page, pageSize)
+	ctx = (callContext{}).ensure(ctx)
+	pagination := s.pages.NormalizeHotKeywordPagination(page, pageSize)
 
 	if !s.store.Available() {
 		return s.fallbackHotKeywords(ctx, pagination)
@@ -61,7 +68,7 @@ func (s *HotKeywordService) HotKeywords(ctx context.Context, page, pageSize int)
 	items := make([]HotKeywordItem, 0, len(members))
 
 	for _, member := range members {
-		keyword := searchvo.NormalizeHotKeyword(member.Member)
+		keyword := s.keywords.NormalizeHotKeyword(member.Member)
 		if keyword == "" {
 			continue
 		}
@@ -77,24 +84,24 @@ func (s *HotKeywordService) HotKeywords(ctx context.Context, page, pageSize int)
 
 // RecordHotKeyword 记录搜索关键词热度，仅在 Redis 可用时生效。
 func (s *HotKeywordService) RecordHotKeyword(ctx context.Context, keyword string) {
-	keyword = searchvo.NormalizeHotKeyword(keyword)
+	keyword = s.keywords.NormalizeHotKeyword(keyword)
 	if keyword == "" || !s.store.Available() {
 		return
 	}
 
-	s.store.Incr(ensureContext(ctx), keyword)
+	s.store.Incr((callContext{}).ensure(ctx), keyword)
 }
 
 // fallbackHotKeywords 用热门视频标题拼装热搜榜（内存分页）。
 func (s *HotKeywordService) fallbackHotKeywords(
 	ctx context.Context,
-	pagination searchvo.Pagination,
+	pagination searchdomain.Pagination,
 ) ([]HotKeywordItem, int64, error) {
 	if !s.fallback.Available() {
 		return []HotKeywordItem{}, 0, nil
 	}
 
-	rows, err := s.fallback.HotVideoTitles(ctx, searchvo.HotKeywordSampleSize(pagination.Page, pagination.PageSize))
+	rows, err := s.fallback.HotVideoTitles(ctx, s.pages.HotKeywordSampleSize(pagination.Page, pagination.PageSize))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -104,7 +111,7 @@ func (s *HotKeywordService) fallbackHotKeywords(
 	seen := make(map[string]struct{}, len(rows))
 
 	for _, row := range rows {
-		keyword := searchvo.NormalizeHotKeyword(row.Title)
+		keyword := s.keywords.NormalizeHotKeyword(row.Title)
 		if keyword == "" {
 			continue
 		}
@@ -122,7 +129,7 @@ func (s *HotKeywordService) fallbackHotKeywords(
 
 	total := int64(len(items))
 
-	start, end := searchvo.SliceWindow(len(items), pagination)
+	start, end := s.pages.SliceWindow(len(items), pagination)
 	if start == end {
 		return []HotKeywordItem{}, total, nil
 	}

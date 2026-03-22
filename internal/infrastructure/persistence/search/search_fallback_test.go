@@ -8,7 +8,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/search"
@@ -110,7 +110,7 @@ func TestSearchVideosOnlyReturnsPublishedAndMatchesTitleOrAuthor(t *testing.T) {
 		Keyword:   "教程",
 		Page:      1,
 		PageSize:  20,
-		VideoSort: searchvo.VideoSortRelevance,
+		VideoSort: searchdomain.VideoSortRelevance,
 	})
 	if err != nil {
 		t.Fatalf("SearchVideos: %v", err)
@@ -163,10 +163,10 @@ func TestSearchVideosAppliesBusinessSortAndPaging(t *testing.T) {
 		order int
 		want  []uint
 	}{
-		{name: "views desc", sort: searchvo.VideoSortViews, order: searchvo.SortOrderDesc, want: []uint{2, 3, 1}},
-		{name: "views asc", sort: searchvo.VideoSortViews, order: searchvo.SortOrderAsc, want: []uint{1, 3, 2}},
-		{name: "danmu desc", sort: searchvo.VideoSortDanmu, order: searchvo.SortOrderDesc, want: []uint{3, 1, 2}},
-		{name: "duration asc", sort: searchvo.VideoSortDuration, order: searchvo.SortOrderAsc, want: []uint{3, 2, 1}},
+		{name: "views desc", sort: searchdomain.VideoSortViews, order: searchdomain.SortOrderDesc, want: []uint{2, 3, 1}},
+		{name: "views asc", sort: searchdomain.VideoSortViews, order: searchdomain.SortOrderAsc, want: []uint{1, 3, 2}},
+		{name: "danmu desc", sort: searchdomain.VideoSortDanmu, order: searchdomain.SortOrderDesc, want: []uint{3, 1, 2}},
+		{name: "duration asc", sort: searchdomain.VideoSortDuration, order: searchdomain.SortOrderAsc, want: []uint{3, 2, 1}},
 	}
 
 	for _, tt := range tests {
@@ -195,8 +195,8 @@ func TestSearchVideosAppliesBusinessSortAndPaging(t *testing.T) {
 		Keyword:    "教程",
 		Page:       2,
 		PageSize:   2,
-		VideoSort:  searchvo.VideoSortViews,
-		VideoOrder: searchvo.SortOrderDesc,
+		VideoSort:  searchdomain.VideoSortViews,
+		VideoOrder: searchdomain.SortOrderDesc,
 	})
 	if err != nil {
 		t.Fatalf("SearchVideos: %v", err)
@@ -220,8 +220,8 @@ func TestSearchUsersAggregatesFollowerCountAndSorts(t *testing.T) {
 		Keyword:   "ali",
 		Page:      1,
 		PageSize:  20,
-		UserSort:  searchvo.UserSortFollowers,
-		UserOrder: searchvo.SortOrderDesc,
+		UserSort:  searchdomain.UserSortFollowers,
+		UserOrder: searchdomain.SortOrderDesc,
 	})
 	if err != nil {
 		t.Fatalf("SearchUsers: %v", err)
@@ -245,8 +245,8 @@ func TestSearchUsersAggregatesFollowerCountAndSorts(t *testing.T) {
 		Keyword:   "ali",
 		Page:      1,
 		PageSize:  20,
-		UserSort:  searchvo.UserSortLevel,
-		UserOrder: searchvo.SortOrderAsc,
+		UserSort:  searchdomain.UserSortLevel,
+		UserOrder: searchdomain.SortOrderAsc,
 	})
 	if err != nil {
 		t.Fatalf("SearchUsers: %v", err)

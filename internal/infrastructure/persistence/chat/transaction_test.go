@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -22,8 +22,8 @@ func TestSendMessageTransaction(t *testing.T) {
 			mtest.CreateCommandErrorResponse(mtest.CommandError{Code: 121, Message: "summary rejected"}),
 			mtest.CreateSuccessResponse(),
 		)
-		msg := &chatentity.Message{ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "hello", CreatedAt: time.Now()}
-		if err := store.SendMessage(context.Background(), msg, "hello"); err == nil {
+		msg := chatdomain.RestoreMessage(chatdomain.MessageSnapshot{ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatdomain.MessageTypeText, Text: "hello", CreatedAt: time.Now()})
+		if _, err := store.SendMessage(context.Background(), msg, "hello"); err == nil {
 			mt.Fatal("expected summary error")
 		}
 		events := mt.GetAllStartedEvents()
@@ -45,12 +45,13 @@ func TestSendMessageTransaction(t *testing.T) {
 		now := time.Now().Truncate(time.Millisecond)
 		mt.AddMockResponses(
 			mtest.CreateCursorResponse(0, mt.DB.Name()+"."+chatMessagesCol, mtest.FirstBatch, bson.D{
-				{Key: "_id", Value: oid}, {Key: fieldConversationID, Value: "1_2"}, {Key: fieldSenderID, Value: 1}, {Key: fieldReceiverID, Value: 2}, {Key: "type", Value: chatentity.MessageTypeText}, {Key: "text", Value: "hello"}, {Key: fieldCreatedAt, Value: now},
+				{Key: "_id", Value: oid}, {Key: fieldConversationID, Value: "1_2"}, {Key: fieldSenderID, Value: 1}, {Key: fieldReceiverID, Value: 2}, {Key: "type", Value: chatdomain.MessageTypeText}, {Key: "text", Value: "hello"}, {Key: fieldCreatedAt, Value: now},
 			}),
 			mtest.CreateSuccessResponse(),
 		)
-		msg := &chatentity.Message{ID: oid.Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatentity.MessageTypeText, Text: "hello"}
-		if err := NewStore(mt.DB).SendMessage(context.Background(), msg, "hello"); err != nil {
+		msg := chatdomain.RestoreMessage(chatdomain.MessageSnapshot{ID: oid.Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: chatdomain.MessageTypeText, Text: "hello"})
+		stored, err := NewStore(mt.DB).SendMessage(context.Background(), msg, "hello")
+		if err != nil {
 			mt.Fatal(err)
 		}
 		for _, event := range mt.GetAllStartedEvents() {
@@ -58,8 +59,11 @@ func TestSendMessageTransaction(t *testing.T) {
 				mt.Fatalf("duplicate message wrote %s", event.CommandName)
 			}
 		}
-		if !msg.CreatedAt.Equal(now) {
-			mt.Fatalf("created time = %v, want %v", msg.CreatedAt, now)
+		if !msg.CreatedAt().IsZero() {
+			mt.Fatal("input message must stay unchanged")
+		}
+		if stored == nil || !stored.CreatedAt().Equal(now) {
+			mt.Fatalf("created time = %v, want %v", stored.CreatedAt(), now)
 		}
 	})
 }

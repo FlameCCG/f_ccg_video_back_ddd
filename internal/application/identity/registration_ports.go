@@ -18,3 +18,8 @@ type UserRoleBinder interface {
 type DefaultFolderEnsurer interface {
 	EnsureDefaultFolder(ctx context.Context, userID uint) error
 }
+
+// DefaultFolderInitializer 在账号创建事务中初始化视频上下文的默认收藏夹，不触发缓存协调。
+type DefaultFolderInitializer interface {
+	InitializeDefaultFolder(ctx context.Context, userID uint) error
+}

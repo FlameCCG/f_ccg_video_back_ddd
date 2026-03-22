@@ -9,7 +9,7 @@ import (
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -20,8 +20,8 @@ const defaultSchedulerInterval = 5 * time.Second
 // Scheduler 视频定时发布调度器，由 bootstrap 加入 App 的后台组件序列，统一管理启停顺序。
 type Scheduler struct {
 	txm         tx.Manager
-	videos      videorepo.VideoRepository
-	store       ScheduleStore
+	videos      videodomain.VideoRepository
+	store       videodomain.ScheduleRepository
 	vectors     *VectorSyncService
 	cfgProvider shared.ConfigReader
 	interval    time.Duration
@@ -36,8 +36,8 @@ type Scheduler struct {
 // NewScheduler 构造视频定时发布调度器。
 func NewScheduler(
 	txm tx.Manager,
-	videos videorepo.VideoRepository,
-	store ScheduleStore,
+	videos videodomain.VideoRepository,
+	store videodomain.ScheduleRepository,
 	vectors *VectorSyncService,
 	cfgProvider shared.ConfigReader,
 	logger *zap.Logger,
@@ -129,10 +129,7 @@ func (s *Scheduler) loop(ctx context.Context) {
 // 开启审核时不扫描 Review，避免轮询替代人工审核；真正发布前仍需重新锁定并检查。
 func (s *Scheduler) flushDue(ctx context.Context) {
 	reviewEnabled := contentReviewEnabled(s.cfgProvider.Get())
-	statuses := []enum.VideoStatus{enum.VideoStatusScheduled}
-	if !reviewEnabled {
-		statuses = append(statuses, enum.VideoStatusReview)
-	}
+	statuses := (videodomain.Video{}).DueScanStatuses(reviewEnabled)
 	videoIDs, err := s.store.DueVideoIDs(ctx, time.Now(), statuses)
 	if err != nil {
 		s.logger.Error("fetch scheduled videos failed", zap.Error(err))
@@ -173,7 +170,7 @@ func (s *Scheduler) processDueScheduledVideo(ctx context.Context, videoID uint, 
 		var publishAt *time.Time
 		var previousStatus enum.VideoStatus
 		if video != nil {
-			previousStatus = video.Status
+			previousStatus = video.Status()
 			publishAt, err = s.store.PublishTime(txCtx, videoID)
 			if err != nil {
 				return err
@@ -181,7 +178,7 @@ func (s *Scheduler) processDueScheduledVideo(ctx context.Context, videoID uint, 
 		}
 		decision := video.PublishWhenDue(publishAt, time.Now(), reviewEnabled)
 		if decision.Published {
-			rows, err := s.videos.UpdateStatusFrom(txCtx, videoID, previousStatus, video.Status)
+			rows, err := s.videos.UpdateStatusFrom(txCtx, videoID, previousStatus, video.Status())
 			if err != nil {
 				return err
 			}

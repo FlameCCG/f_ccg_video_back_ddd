@@ -3,7 +3,7 @@ package comment
 import (
 	"context"
 
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 )
 
 // Query 评论自身的读侧投影端口（实现在 infrastructure/persistence/comment）。
@@ -22,5 +22,5 @@ type Query interface {
 	CountByVideo(ctx context.Context, videoID uint) (int64, error)
 	// ParentBrief 读取同一对象下的父评论投影（user_id / root_id / 用户名）；
 	// 不存在时返回 (nil, nil)。
-	ParentBrief(ctx context.Context, parentID, videoID, dynamicID uint) (*commententity.ParentBrief, error)
+	ParentBrief(ctx context.Context, parentID, videoID, dynamicID uint) (*commentdomain.ParentBrief, error)
 }

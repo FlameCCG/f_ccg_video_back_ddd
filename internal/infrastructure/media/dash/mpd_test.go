@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
 // TestParseMPDVariants_VideoAndAudio 覆盖 MPD 解析：视频按高度降序、音频在最后。
@@ -81,21 +81,21 @@ func TestParseMPDVariants_VideoAndAudio(t *testing.T) {
 func TestResolutionLabelFromSize(t *testing.T) {
 	t.Parallel()
 
-	if !strings.Contains(videovo.ResolutionLabelFromSize(1280, 720), "720") {
-		t.Fatal(videovo.ResolutionLabelFromSize(1280, 720))
+	if !strings.Contains((videodomain.ResourcePolicy{}).ResolutionLabel(1280, 720), "720") {
+		t.Fatal((videodomain.ResourcePolicy{}).ResolutionLabel(1280, 720))
 	}
 
-	if !strings.Contains(videovo.ResolutionLabelFromSize(640, 360), "360") {
-		t.Fatal(videovo.ResolutionLabelFromSize(640, 360))
+	if !strings.Contains((videodomain.ResourcePolicy{}).ResolutionLabel(640, 360), "360") {
+		t.Fatal((videodomain.ResourcePolicy{}).ResolutionLabel(640, 360))
 	}
 
 	// 电影宽银幕 4K：高度只有 1632，宽度达到 3840，仍是 4K 超高清。
-	got := videovo.ResolutionLabelFromSize(3840, 1632)
+	got := (videodomain.ResourcePolicy{}).ResolutionLabel(3840, 1632)
 	if !strings.Contains(got, "4k") || strings.Contains(got, "1080") {
 		t.Fatalf("ultrawide 4k label = %q", got)
 	}
 
-	if got := videovo.ResolutionLabelFromSize(3840, 2160); !strings.Contains(got, "4k") {
+	if got := (videodomain.ResourcePolicy{}).ResolutionLabel(3840, 2160); !strings.Contains(got, "4k") {
 		t.Fatalf("2160 label = %q", got)
 	}
 }
@@ -104,15 +104,15 @@ func TestResolutionLabelFromSize(t *testing.T) {
 func TestIsDASHResource(t *testing.T) {
 	t.Parallel()
 
-	if !videovo.IsDASHResource(videovo.ResourceBrief{Format: "dash"}) {
+	if !(videodomain.ResourcePolicy{}).IsDASH(videodomain.ResourceBrief{Format: "dash"}) {
 		t.Fatal("format dash")
 	}
 
-	if !videovo.IsDASHResource(videovo.ResourceBrief{FileURL: "http://x/a/manifest.mpd"}) {
+	if !(videodomain.ResourcePolicy{}).IsDASH(videodomain.ResourceBrief{FileURL: "http://x/a/manifest.mpd"}) {
 		t.Fatal("mpd suffix")
 	}
 
-	if videovo.IsDASHResource(videovo.ResourceBrief{Format: "mp4", FileURL: "http://x/a.mp4"}) {
+	if (videodomain.ResourcePolicy{}).IsDASH(videodomain.ResourceBrief{Format: "mp4", FileURL: "http://x/a.mp4"}) {
 		t.Fatal("mp4 should not match")
 	}
 }

@@ -7,10 +7,11 @@ import (
 	infra "f_ccg_video_back_ddd/internal/infrastructure/external/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 	"fmt"
-	"go.uber.org/zap"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func TestStoredDASHResolvesRootRelativeManifestAndBatchesManySegments(t *testing.T) {

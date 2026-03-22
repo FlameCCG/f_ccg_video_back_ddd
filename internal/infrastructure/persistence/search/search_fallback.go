@@ -4,7 +4,7 @@ import (
 	"context"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -39,7 +39,7 @@ func (q *SearchFallbackQuery) SearchVideos(
 		return nil, 0, nil
 	}
 
-	keyword := searchvo.NormalizeKeyword(opts.Keyword)
+	keyword := (searchdomain.KeywordPolicy{}).NormalizeKeyword(opts.Keyword)
 	if keyword == "" {
 		return nil, 0, nil
 	}
@@ -66,7 +66,7 @@ func (q *SearchFallbackQuery) SearchVideos(
 		Where("title LIKE ? OR author_username LIKE ?", like, like).
 		Preload("Tags")
 
-	query = applyVideoFallbackSort(query, opts, keyword, prefix)
+	query = q.applyVideoFallbackSort(query, opts, keyword, prefix)
 
 	offset := max((opts.Page-1)*opts.PageSize, 0)
 
@@ -77,7 +77,7 @@ func (q *SearchFallbackQuery) SearchVideos(
 
 	items := make([]app.SearchVideoHit, 0, len(videos))
 	for _, video := range videos {
-		items = append(items, toSearchVideoHit(video))
+		items = append(items, (hitMapping{}).toSearchVideoHit(video))
 	}
 
 	return items, total, nil
@@ -92,7 +92,7 @@ func (q *SearchFallbackQuery) SearchUsers(
 		return nil, 0, nil
 	}
 
-	keyword := searchvo.NormalizeKeyword(opts.Keyword)
+	keyword := (searchdomain.KeywordPolicy{}).NormalizeKeyword(opts.Keyword)
 	if keyword == "" {
 		return nil, 0, nil
 	}
@@ -120,12 +120,12 @@ func (q *SearchFallbackQuery) SearchUsers(
 		Where("users.username LIKE ?", like)
 
 	switch opts.UserSort {
-	case searchvo.UserSortLevel:
-		query = query.Order("users.level " + sqlSortDirection(opts.UserOrder))
-	case searchvo.UserSortCreatedAt:
-		query = query.Order("users.created_at " + sqlSortDirection(opts.UserOrder))
+	case searchdomain.UserSortLevel:
+		query = query.Order("users.level " + q.sqlSortDirection(opts.UserOrder))
+	case searchdomain.UserSortCreatedAt:
+		query = query.Order("users.created_at " + q.sqlSortDirection(opts.UserOrder))
 	default:
-		query = query.Order("follower_count " + sqlSortDirection(opts.UserOrder))
+		query = query.Order("follower_count " + q.sqlSortDirection(opts.UserOrder))
 	}
 
 	query = query.Order("users.id DESC")
@@ -137,7 +137,7 @@ func (q *SearchFallbackQuery) SearchUsers(
 
 	users := make([]app.SearchUserHit, 0, len(rows))
 	for _, row := range rows {
-		users = append(users, toSearchUserHit(row))
+		users = append(users, (hitMapping{}).toSearchUserHit(row))
 	}
 
 	return users, total, nil
@@ -149,7 +149,7 @@ func (q *SearchFallbackQuery) CountUsers(ctx context.Context, keyword string) (i
 		return 0, nil
 	}
 
-	keyword = searchvo.NormalizeKeyword(keyword)
+	keyword = (searchdomain.KeywordPolicy{}).NormalizeKeyword(keyword)
 	if keyword == "" {
 		return 0, nil
 	}
@@ -183,18 +183,18 @@ func (q *SearchFallbackQuery) VideoMetaByIDs(ctx context.Context, ids []uint) ([
 }
 
 // applyVideoFallbackSort 施加视频回退排序：非相关性排序按业务字段，相关性排序按字面命中优先级。
-func applyVideoFallbackSort(query *gorm.DB, opts app.SearchOptions, keyword, prefix string) *gorm.DB {
+func (q *SearchFallbackQuery) applyVideoFallbackSort(query *gorm.DB, opts app.SearchOptions, keyword, prefix string) *gorm.DB {
 	if query == nil {
 		return nil
 	}
 
 	switch opts.VideoSort {
-	case searchvo.VideoSortViews:
-		query = query.Order("views " + sqlSortDirection(opts.VideoOrder))
-	case searchvo.VideoSortDanmu:
-		query = query.Order("danmu_count " + sqlSortDirection(opts.VideoOrder))
-	case searchvo.VideoSortDuration:
-		query = query.Order("duration " + sqlSortDirection(opts.VideoOrder))
+	case searchdomain.VideoSortViews:
+		query = query.Order("views " + q.sqlSortDirection(opts.VideoOrder))
+	case searchdomain.VideoSortDanmu:
+		query = query.Order("danmu_count " + q.sqlSortDirection(opts.VideoOrder))
+	case searchdomain.VideoSortDuration:
+		query = query.Order("duration " + q.sqlSortDirection(opts.VideoOrder))
 	default:
 		query = query.Order(clause.Expr{
 			SQL: `CASE
@@ -212,8 +212,8 @@ ELSE 4
 }
 
 // sqlSortDirection 把排序方向枚举翻译成 SQL 关键字。
-func sqlSortDirection(order int) string {
-	if order == searchvo.SortOrderAsc {
+func (*SearchFallbackQuery) sqlSortDirection(order int) string {
+	if order == searchdomain.SortOrderAsc {
 		return "ASC"
 	}
 

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -62,35 +62,34 @@ func TestBannerRepositoryCreateAndRead(t *testing.T) {
 	repo, _, _ := newBannerFixture(t)
 	ctx := context.Background()
 
-	banner := &contentopsentity.Banner{
-		Cover:       "https://example.com/a.png",
-		Href:        "https://example.com",
-		Show:        true,
-		Type:        enum.BannerTypeHome,
-		PartitionID: 0,
-	}
-	if err := repo.Create(ctx, banner); err != nil {
+	banner := contentopsdomain.NewBanner("https://example.com/a.png", "https://example.com", true)
+	saved, err := repo.Create(ctx, banner)
+	if err != nil {
 		t.Fatalf("create banner failed: %v", err)
 	}
 
-	if banner.ID == 0 {
-		t.Fatal("create should backfill auto increment id")
+	if saved == nil || saved.ID() == 0 {
+		t.Fatal("create should return auto increment id")
 	}
 
-	if banner.CreatedAt.IsZero() {
-		t.Fatal("create should backfill created_at")
+	if saved.CreatedAt().IsZero() {
+		t.Fatal("create should return created_at")
 	}
 
-	found, err := repo.FindByID(ctx, banner.ID)
+	if banner.ID() != 0 || !banner.CreatedAt().IsZero() {
+		t.Fatal("create must not mutate the input banner")
+	}
+
+	found, err := repo.FindByID(ctx, saved.ID())
 	if err != nil {
 		t.Fatalf("find banner failed: %v", err)
 	}
 
-	if found == nil || found.Cover != banner.Cover || found.Type != enum.BannerTypeHome {
+	if found == nil || found.Cover() != banner.Cover() || found.Type() != enum.BannerTypeHome {
 		t.Fatalf("unexpected banner: %+v", found)
 	}
 
-	missing, err := repo.FindByID(ctx, banner.ID+999)
+	missing, err := repo.FindByID(ctx, saved.ID()+999)
 	if err != nil {
 		t.Fatalf("find missing banner should not error: %v", err)
 	}
@@ -127,7 +126,7 @@ func TestBannerRepositoryListVisibleFiltersAndOrder(t *testing.T) {
 	}
 
 	// id DESC 排序
-	if list[0].Cover != "home-2" || list[1].Cover != "home-1" {
+	if list[0].Cover() != "home-2" || list[1].Cover() != "home-1" {
 		t.Fatalf("expected id desc order, got %+v", list)
 	}
 
@@ -162,7 +161,7 @@ func TestBannerRepositoryListAdminPaging(t *testing.T) {
 		seedBanner(t, db, &row, true)
 	}
 
-	query := contentopsentity.BannerAdminQuery{Page: 1, PageSize: 2, Type: enum.BannerTypeHome}
+	query := contentopsdomain.BannerAdminQuery{Page: 1, PageSize: 2, Type: enum.BannerTypeHome}
 	query.Normalize()
 
 	list, total, err := repo.ListAdmin(ctx, query)
@@ -179,7 +178,7 @@ func TestBannerRepositoryListAdminPaging(t *testing.T) {
 	}
 
 	partitionID := uint(1)
-	filtered := contentopsentity.BannerAdminQuery{PartitionID: &partitionID}
+	filtered := contentopsdomain.BannerAdminQuery{PartitionID: &partitionID}
 	filtered.Normalize()
 
 	list, total, err = repo.ListAdmin(ctx, filtered)
@@ -192,7 +191,7 @@ func TestBannerRepositoryListAdminPaging(t *testing.T) {
 	}
 
 	missingPartition := uint(99)
-	none := contentopsentity.BannerAdminQuery{PartitionID: &missingPartition}
+	none := contentopsdomain.BannerAdminQuery{PartitionID: &missingPartition}
 	none.Normalize()
 
 	list, total, err = repo.ListAdmin(ctx, none)
@@ -229,7 +228,7 @@ func TestBannerRepositoryListVisibleByIDsKeepsRequestedOrder(t *testing.T) {
 		t.Fatalf("expected 3 banners (missing id skipped), got %d", len(list))
 	}
 
-	if list[0].Cover != "c" || list[1].Cover != "a" || list[2].Cover != "b" {
+	if list[0].Cover() != "c" || list[1].Cover() != "a" || list[2].Cover() != "b" {
 		t.Fatalf("expected requested order, got %+v", list)
 	}
 
@@ -247,8 +246,9 @@ func TestBannerRepositoryUpdateAndDelete(t *testing.T) {
 	repo, _, _ := newBannerFixture(t)
 	ctx := context.Background()
 
-	banner := &contentopsentity.Banner{Cover: "old", Show: true, Type: enum.BannerTypeHome}
-	if err := repo.Create(ctx, banner); err != nil {
+	banner := contentopsdomain.NewBanner("old", "", true)
+	saved, err := repo.Create(ctx, banner)
+	if err != nil {
 		t.Fatalf("create banner failed: %v", err)
 	}
 
@@ -257,7 +257,7 @@ func TestBannerRepositoryUpdateAndDelete(t *testing.T) {
 	bannerType := enum.BannerTypeTop
 	partitionID := uint(0)
 
-	if err := repo.Update(ctx, banner.ID, contentopsentity.BannerChanges{
+	if err := repo.Update(ctx, saved.ID(), contentopsdomain.BannerChanges{
 		Cover:       &cover,
 		Show:        &show,
 		Type:        &bannerType,
@@ -266,12 +266,12 @@ func TestBannerRepositoryUpdateAndDelete(t *testing.T) {
 		t.Fatalf("update banner failed: %v", err)
 	}
 
-	updated, err := repo.FindByID(ctx, banner.ID)
+	updated, err := repo.FindByID(ctx, saved.ID())
 	if err != nil {
 		t.Fatalf("find updated banner failed: %v", err)
 	}
 
-	if updated.Cover != "new" || updated.Show || updated.Type != enum.BannerTypeTop {
+	if updated == nil || updated.Cover() != "new" || updated.Show() || updated.Type() != enum.BannerTypeTop {
 		t.Fatalf("unexpected updated banner: %+v", updated)
 	}
 
@@ -285,15 +285,15 @@ func TestBannerRepositoryUpdateAndDelete(t *testing.T) {
 		t.Fatalf("hidden banner should not be visible, got %+v", visible)
 	}
 
-	if err := repo.Update(ctx, banner.ID, contentopsentity.BannerChanges{}); err == nil {
+	if err := repo.Update(ctx, saved.ID(), contentopsdomain.BannerChanges{}); err == nil {
 		t.Fatal("empty changes should be rejected")
 	}
 
-	if err := repo.Delete(ctx, []uint{banner.ID}); err != nil {
+	if err := repo.Delete(ctx, []uint{saved.ID()}); err != nil {
 		t.Fatalf("delete banner failed: %v", err)
 	}
 
-	deleted, err := repo.FindByID(ctx, banner.ID)
+	deleted, err := repo.FindByID(ctx, saved.ID())
 	if err != nil {
 		t.Fatalf("find deleted banner failed: %v", err)
 	}

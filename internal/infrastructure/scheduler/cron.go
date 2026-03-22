@@ -1,7 +1,7 @@
 // Package scheduler 将 cron 触发器接到平台维护和上传清理用例。
 //
 // cron.go/jobs.go 负责调度生命周期与触发；其余文件适配点赞队列、视频统计、热榜和到期封禁的数据访问。
-// 业务计算留在 application/platform 与 domain/platform，上传清理经 UploadCleanupJob 端口调用 video 用例。
+// 业务计算留在 application/identity、comment、video 与对应领域政策，上传清理经 platformapp.UploadCleanupJob 端口调用 video 用例。
 // Redis 到数据库的回写跨越两个系统，消费确认与版本比较决定失败后的恢复行为，不能按数据库事务理解整个任务。
 //
 // 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
@@ -9,6 +9,7 @@ package scheduler
 
 import (
 	"context"
+	platformapp "f_ccg_video_back_ddd/internal/application/platform"
 	"sync"
 	"time"
 
@@ -51,11 +52,11 @@ type cronJob struct {
 // 生命周期方法 Start / Stop 与 App 的其它后台组件一致；
 // Stop 幂等，且会尽量等待在途任务结束。
 type CronComponent struct {
-	commentLike   CommentLikeSyncJob
-	videoStat     VideoStatSyncJob
-	hotRank       HotRankDecayJob
-	autoUnban     AutoUnbanJob
-	uploadCleanup UploadCleanupJob
+	commentLike   platformapp.CommentLikeSyncJob
+	videoStat     platformapp.VideoStatSyncJob
+	hotRank       platformapp.HotRankDecayJob
+	autoUnban     platformapp.AutoUnbanJob
+	uploadCleanup platformapp.UploadCleanupJob
 	logger        *zap.Logger
 
 	mu      sync.Mutex
@@ -64,13 +65,13 @@ type CronComponent struct {
 
 // NewCronComponent 构造定时任务调度组件。
 //
-// 既有四个任务由 application/platform 实现，上传清理由 application/video 实现。
+// 维护任务由 identity、comment、video 用例实现，经 platform 消费方端口接入。
 func NewCronComponent(
-	commentLike CommentLikeSyncJob,
-	videoStat VideoStatSyncJob,
-	hotRank HotRankDecayJob,
-	autoUnban AutoUnbanJob,
-	uploadCleanup UploadCleanupJob,
+	commentLike platformapp.CommentLikeSyncJob,
+	videoStat platformapp.VideoStatSyncJob,
+	hotRank platformapp.HotRankDecayJob,
+	autoUnban platformapp.AutoUnbanJob,
+	uploadCleanup platformapp.UploadCleanupJob,
 	logger *zap.Logger,
 ) *CronComponent {
 	return &CronComponent{

@@ -4,8 +4,7 @@ import (
 	"context"
 	"time"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
-	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -47,7 +46,7 @@ func (s *LikeCacheCoordinator) ensureLikeCacheReady(ctx context.Context, comment
 // 读路径 / 异步重建使用：DB=0 时会写入 count=0，避免列表反复 miss。
 func (s *LikeCacheCoordinator) rebuildLikeCache(ctx context.Context, commentID uint) error {
 	if !s.likeCache.Available() || commentID == 0 {
-		return commenterrors.ErrLikeCacheUnavailable
+		return commentdomain.ErrLikeCacheUnavailable
 	}
 
 	cacheCtx, cancel := context.WithTimeout(ctx, likeCacheDBTimeout)
@@ -99,12 +98,12 @@ func (s *LikeCacheCoordinator) scheduleLikeCacheRebuild(parent context.Context, 
 
 // LikeCacheCoordinator 负责点赞缓存完整性与重建。
 type LikeCacheCoordinator struct {
-	likes     commentrepo.LikeRepository
+	likes     commentdomain.LikeRepository
 	likeCache LikeCache
 	tasks     *ctxutil.DetachedTaskGroup
 	logger    *zap.Logger
 }
 
-func NewLikeCacheCoordinator(likes commentrepo.LikeRepository, likeCache LikeCache, tasks *ctxutil.DetachedTaskGroup, logger *zap.Logger) *LikeCacheCoordinator {
+func NewLikeCacheCoordinator(likes commentdomain.LikeRepository, likeCache LikeCache, tasks *ctxutil.DetachedTaskGroup, logger *zap.Logger) *LikeCacheCoordinator {
 	return &LikeCacheCoordinator{likes: likes, likeCache: likeCache, tasks: tasks, logger: logger}
 }

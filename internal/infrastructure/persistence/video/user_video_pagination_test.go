@@ -5,10 +5,11 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
 	"fmt"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 	"path/filepath"
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestUserVideoPaginationKeepsTotalOnLaterAndEmptyPages(t *testing.T) {

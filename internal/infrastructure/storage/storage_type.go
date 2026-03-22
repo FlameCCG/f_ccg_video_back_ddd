@@ -2,9 +2,9 @@ package storage
 
 import (
 	"errors"
+	mediaapplication "f_ccg_video_back_ddd/internal/application/media"
 
 	"f_ccg_video_back_ddd/internal/config/site"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
@@ -23,7 +23,7 @@ type Resolver struct {
 }
 
 // 编译期断言：满足领域侧存储解析端口。
-var _ mediaport.StorageResolver = (*Resolver)(nil)
+var _ mediaapplication.StorageResolver = (*Resolver)(nil)
 
 // NewResolver 构造存储驱动解析器。
 func NewResolver(
@@ -50,7 +50,7 @@ func (r *Resolver) storageConfig() (*site.Storage, error) {
 }
 
 // Resolve 按站点配置选择本地或 MinIO 存储驱动。
-func (r *Resolver) Resolve() (mediaport.StorageDriver, error) {
+func (r *Resolver) Resolve() (mediaapplication.StorageDriver, error) {
 	cfg, err := r.storageConfig()
 	if err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func (r *Resolver) Resolve() (mediaport.StorageDriver, error) {
 }
 
 // ResolveByType 按显式存储类型选择驱动；未知类型退回按站点配置解析。
-func (r *Resolver) ResolveByType(storageType enum.VideoStorageType) (mediaport.StorageDriver, error) {
+func (r *Resolver) ResolveByType(storageType enum.VideoStorageType) (mediaapplication.StorageDriver, error) {
 	cfg, err := r.storageConfig()
 	if err != nil {
 		// 返回约定的驱动解析错误文案。

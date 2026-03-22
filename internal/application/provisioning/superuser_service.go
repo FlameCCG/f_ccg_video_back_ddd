@@ -27,12 +27,12 @@ type SuperUserResult struct {
 // SuperUserService 超级管理员初始化用例。
 type SuperUserService struct {
 	txm    tx.Manager
-	repo   SuperUserRepository
+	repo   SystemAccounts
 	binder CasbinRoleBinder
 }
 
 // NewSuperUserService 构造超级管理员初始化用例。
-func NewSuperUserService(repo SuperUserRepository, binder CasbinRoleBinder, txm tx.Manager) *SuperUserService {
+func NewSuperUserService(repo SystemAccounts, binder CasbinRoleBinder, txm tx.Manager) *SuperUserService {
 	return &SuperUserService{repo: repo, binder: binder, txm: txm}
 }
 

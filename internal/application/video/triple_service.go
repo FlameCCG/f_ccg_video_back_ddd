@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoservice "f_ccg_video_back_ddd/internal/domain/video/service"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/coinutil"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -23,10 +21,10 @@ func (s *InteractionService) Triple(
 	coins int64,
 ) (*TripleResult, error) {
 	if userID == 0 {
-		return nil, videoerrors.ErrUserNotLogin
+		return nil, videodomain.ErrUserNotLogin
 	}
 
-	coins = videovo.NormalizeTripleCoins(coins)
+	coins = (videodomain.CoinPolicy{}).Triple(coins)
 
 	if err := s.videos.EnsurePublished(ctx, videoID); err != nil {
 		return nil, err
@@ -40,10 +38,10 @@ func (s *InteractionService) Triple(
 		return nil, err
 	}
 
-	var applied videovo.TripleOutcome
+	var applied videodomain.TripleOutcome
 
 	err = s.txm.Do(ctx, func(txCtx context.Context) error {
-		res, txErr := s.applyTriple(txCtx, videoID, userID, folder.ID, coins)
+		res, txErr := s.applyTriple(txCtx, videoID, userID, folder.ID(), coins)
 		if txErr != nil {
 			return txErr
 		}
@@ -57,7 +55,7 @@ func (s *InteractionService) Triple(
 	}
 
 	// 提交后统一写展示计数
-	statsDelta := videovo.StatsDelta{
+	statsDelta := videodomain.StatsDelta{
 		Likes:         applied.LikeDelta,
 		FavoriteCount: applied.FavDelta,
 		CoinCount:     applied.CoinDelta,
@@ -77,7 +75,7 @@ func (s *InteractionService) Triple(
 	}
 
 	if stats == nil {
-		stats = &videovo.Stats{}
+		stats = &videodomain.Stats{}
 	}
 
 	// 副作用：热度 / 分析 / 经验 / 通知（失败不影响三连成功）
@@ -86,7 +84,7 @@ func (s *InteractionService) Triple(
 	}
 
 	if applied.FavDelta != 0 {
-		s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreFavoriteWeight, applied.FavDelta)
+		s.stats.RecordHotScoreDelta(ctx, videoID, videodomain.HotScoreFavoriteWeight, applied.FavDelta)
 
 		if applied.AuthorID > 0 {
 			_ = s.creators.IncrFavorites(ctx, applied.AuthorID, applied.FavDelta)
@@ -94,7 +92,7 @@ func (s *InteractionService) Triple(
 	}
 
 	if applied.CoinDelta > 0 {
-		s.stats.RecordHotScoreDelta(ctx, videoID, videoservice.HotScoreCoinWeight, applied.CoinDelta)
+		s.stats.RecordHotScoreDelta(ctx, videoID, videodomain.HotScoreCoinWeight, applied.CoinDelta)
 
 		if applied.AuthorID > 0 {
 			_ = s.creators.IncrCoins(ctx, applied.AuthorID, applied.CoinDelta)
@@ -129,8 +127,8 @@ func (s *InteractionService) applyTriple(
 	ctx context.Context,
 	videoID, userID, folderID uint,
 	coins int64,
-) (*videovo.TripleOutcome, error) {
-	out := &videovo.TripleOutcome{}
+) (*videodomain.TripleOutcome, error) {
+	out := &videodomain.TripleOutcome{}
 
 	authorID, err := s.videos.PublishedAuthorIDByVideoID(ctx, videoID)
 	if err != nil {
@@ -145,7 +143,7 @@ func (s *InteractionService) applyTriple(
 
 	// --- 点赞 ensure（只加不减）---
 	if err := s.likes.Create(ctx, videoID, userID); err != nil {
-		if !errors.Is(err, videoerrors.ErrDuplicateLike) {
+		if !errors.Is(err, videodomain.ErrDuplicateLike) {
 			return nil, err
 		}
 		// 已赞
@@ -166,15 +164,15 @@ func (s *InteractionService) applyTriple(
 	}
 
 	// 首次被该用户收藏：涨 favorite_count + 作者奖励
-	if created && !existsAny {
+	if (videodomain.FavoritePolicy{}).FirstAddition(created, existsAny) {
 		out.FavDelta = 1
 		out.NewlyFaved = true
 
-		if authorID > 0 && authorID != userID {
+		if reward := (videodomain.FavoritePolicy{}).AuthorReward(authorID, userID); reward != 0 {
 			key := favoriteRewardKey(userID, videoID)
 			if err := s.ledger.ApplyChange(
 				ctx,
-				authorID, videovo.FavoriteAuthorReward, "作品被收藏 +"+coinutil.Format(videovo.FavoriteAuthorReward),
+				authorID, reward, "作品被收藏 +"+coinutil.Format(reward),
 				&key,
 			); err != nil {
 				return nil, err
@@ -211,13 +209,13 @@ func (s *InteractionService) applyCoinWithoutRelock(
 	videoID, userID, authorID uint,
 	coins int64,
 ) (int64, error) {
-	add, err := videovo.ClampCoins(coins)
+	add, err := (videodomain.CoinPolicy{}).Clamp(coins)
 	if err != nil {
 		return 0, err
 	}
 
 	if createErr := s.coins.Create(ctx, videoID, userID, add); createErr != nil {
-		if errors.Is(createErr, videoerrors.ErrDuplicateCoin) {
+		if errors.Is(createErr, videodomain.ErrDuplicateCoin) {
 			return 0, nil
 		}
 

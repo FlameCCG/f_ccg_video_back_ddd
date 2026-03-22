@@ -6,10 +6,11 @@ import (
 	commentrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/comment"
 	dynamicrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/dynamic"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 	"path/filepath"
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestAdminDeleteCascadesAtomically(t *testing.T) {

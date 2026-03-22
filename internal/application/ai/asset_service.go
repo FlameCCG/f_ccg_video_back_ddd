@@ -7,8 +7,7 @@ import (
 	"net/url"
 	"strings"
 
-	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 )
 
 // OpenAssetStream 代理拉取上游资源流（仅放行白名单域名，防 SSRF）.
@@ -28,11 +27,11 @@ func (s *Service) OpenAssetStream(
 	}
 
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return nil, aierrors.ErrUnsupportedAssetScheme
+		return nil, aidomain.ErrUnsupportedAssetScheme
 	}
 
-	if !aivo.IsAllowedAssetHost(parsed.Hostname()) {
-		return nil, aierrors.ErrAssetHostNotAllowed
+	if !(aidomain.GenerationPolicy{}).IsAllowedAssetHost(parsed.Hostname()) {
+		return nil, aidomain.ErrAssetHostNotAllowed
 	}
 
 	return s.assets.Open(ctx, snapshot.runtime, parsed.String(), incomingHeaders)

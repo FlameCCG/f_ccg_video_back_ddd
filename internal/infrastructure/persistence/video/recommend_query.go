@@ -6,7 +6,7 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -43,7 +43,7 @@ func (q *RecommendQuery) BaseVideo(ctx context.Context, videoID uint) (uint, err
 		Where("id = ? AND status = ?", videoID, enum.VideoStatusPublished).
 		First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, videoerrors.ErrVideoNotPublished
+			return 0, videodomain.ErrVideoNotPublished
 		}
 
 		return 0, err

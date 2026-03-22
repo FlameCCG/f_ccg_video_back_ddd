@@ -2,13 +2,9 @@ package identity
 
 import (
 	"context"
-	"strings"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"golang.org/x/sync/errgroup"
@@ -18,8 +14,8 @@ import (
 type ProfileService struct {
 	cfgProvider shared.ConfigReader
 	txm         tx.Manager
-	users       identityrepo.UserAccountRepository
-	confs       identityrepo.UserConfRepository
+	users       identitydomain.UserAccountRepository
+	confs       identitydomain.UserConfRepository
 	banners     UserBannerCatalog
 	relations   UserRelationQuery
 	roles       UserRoleQuery
@@ -32,8 +28,8 @@ type ProfileService struct {
 func NewProfileService(
 	cfgProvider shared.ConfigReader,
 	txm tx.Manager,
-	users identityrepo.UserAccountRepository,
-	confs identityrepo.UserConfRepository,
+	users identitydomain.UserAccountRepository,
+	confs identitydomain.UserConfRepository,
 	banners UserBannerCatalog,
 	relations UserRelationQuery,
 	roles UserRoleQuery,
@@ -59,7 +55,7 @@ func NewProfileService(
 func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoResult, error) {
 	user, conf, err := s.users.FindWithConfByID(ctx, userID)
 	if err != nil || user == nil {
-		return nil, identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
 
 	var (
@@ -87,22 +83,22 @@ func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoRe
 
 	return &UserInfoResult{
 		IsAdmin:        isAdmin,
-		ID:             user.ID,
-		Username:       user.Username,
-		Email:          user.Email,
-		Avatar:         user.Avatar,
+		ID:             user.ID(),
+		Username:       user.Username(),
+		Email:          user.Email(),
+		Avatar:         user.Avatar(),
 		BannerURL:      bannerURL,
-		Description:    user.Description,
-		Gender:         user.Gender,
-		Birthday:       identityvo.FormatBirthday(user.Birthday),
-		Level:          user.Level,
-		Exp:            user.Exp,
-		CoinCount:      user.CoinCount,
+		Description:    user.Description(),
+		Gender:         user.Gender(),
+		Birthday:       user.FormattedBirthday(),
+		Level:          user.Level(),
+		Exp:            user.Exp(),
+		CoinCount:      user.CoinCount(),
 		FollowCount:    counts.FocusCount,
 		FansCount:      counts.FansCount,
 		DynamicCount:   counts.DynamicCount,
-		RegisterSource: user.RegisterSource,
-		LikeTags:       resolveLikeTags(conf),
+		RegisterSource: user.RegisterSource(),
+		LikeTags:       conf.PublicLikeTags(),
 		HasPassword:    user.HasPassword(),
 		IsThirdParty:   user.IsThirdParty(),
 	}, nil
@@ -112,13 +108,13 @@ func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoRe
 func (s *ProfileService) UserDetail(ctx context.Context, userID uint) (*UserDetailResult, error) {
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil || user == nil {
-		return nil, identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
 
 	conf, err := s.confs.FindByUserID(ctx, userID)
 	if err != nil {
 		// 关联用户配置查询失败时，整个用户详情查询失败。
-		return nil, identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
 
 	var (
@@ -133,27 +129,27 @@ func (s *ProfileService) UserDetail(ctx context.Context, userID uint) (*UserDeta
 		return nil
 	})
 	group.Go(func() error {
-		stats = s.videoStats.AggregateByAuthor(groupCtx, user.Username)
+		stats = s.videoStats.AggregateByAuthor(groupCtx, user.Username())
 
 		return nil
 	})
 	_ = group.Wait()
 
 	return &UserDetailResult{
-		ID:          user.ID,
-		Username:    user.Username,
-		Avatar:      user.Avatar,
+		ID:          user.ID(),
+		Username:    user.Username(),
+		Avatar:      user.Avatar(),
 		BannerURL:   s.ResolveUserBannerURL(ctx, conf),
-		Description: user.Description,
-		Gender:      user.Gender,
-		Birthday:    identityvo.FormatBirthday(user.Birthday),
-		Level:       user.Level,
-		Exp:         user.Exp,
+		Description: user.Description(),
+		Gender:      user.Gender(),
+		Birthday:    user.FormattedBirthday(),
+		Level:       user.Level(),
+		Exp:         user.Exp(),
 		FollowCount: counts.FocusCount,
 		FansCount:   counts.FansCount,
 		TotalLikes:  stats.TotalLikes,
 		TotalViews:  stats.TotalViews,
-		LikeTags:    resolveLikeTags(conf),
+		LikeTags:    conf.PublicLikeTags(),
 	}, nil
 }
 
@@ -161,32 +157,32 @@ func (s *ProfileService) UserDetail(ctx context.Context, userID uint) (*UserDeta
 func (s *ProfileService) AdminUserInfo(ctx context.Context, userID uint) (*AdminUserInfoResult, error) {
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil || user == nil {
-		return nil, identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
 
 	roleMap, err := s.roles.RoleMap(ctx, userID)
 	if err != nil {
-		return nil, identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
 
 	counts := s.relations.RelationCounts(ctx, userID, false)
 
 	return &AdminUserInfoResult{
-		ID:             user.ID,
-		Username:       user.Username,
-		Email:          user.Email,
-		Avatar:         user.Avatar,
-		Description:    user.Description,
-		Gender:         user.Gender,
-		Birthday:       identityvo.FormatBirthday(user.Birthday),
-		Level:          user.Level,
-		Exp:            user.Exp,
-		CoinCount:      user.CoinCount,
+		ID:             user.ID(),
+		Username:       user.Username(),
+		Email:          user.Email(),
+		Avatar:         user.Avatar(),
+		Description:    user.Description(),
+		Gender:         user.Gender(),
+		Birthday:       user.FormattedBirthday(),
+		Level:          user.Level(),
+		Exp:            user.Exp(),
+		CoinCount:      user.CoinCount(),
 		FollowCount:    counts.FocusCount,
 		FansCount:      counts.FansCount,
 		DynamicCount:   s.relations.DynamicCount(ctx, userID),
-		CurrentRoleID:  user.CurrentRoleID,
-		RegisterSource: user.RegisterSource,
+		CurrentRoleID:  user.CurrentRoleID(),
+		RegisterSource: user.RegisterSource(),
 		RoleMap:        roleMap,
 	}, nil
 }
@@ -195,40 +191,38 @@ func (s *ProfileService) AdminUserInfo(ctx context.Context, userID uint) (*Admin
 //
 // 用户侧与管理端共用此实现。
 func (s *ProfileService) UpdateProfile(ctx context.Context, in UpdateProfileInput) error {
-	user, err := s.users.FindByID(ctx, in.UserID)
-	if err != nil || user == nil {
-		return identityerrors.ErrUserNotFound
-	}
-
-	changes, err := s.buildProfileChanges(ctx, in, user)
-	if err != nil {
-		return err
-	}
-
-	if changes.IsEmpty() {
-		return identityerrors.ErrNoFieldsToUpdate
-	}
-
-	usernameChanged := changes.Username != nil
-	oldUsername := user.Username
-
-	if usernameChanged {
-		newUsername := *changes.Username
-		if err = s.txm.Do(ctx, func(txCtx context.Context) error {
-			if updateErr := s.users.UpdateProfile(txCtx, in.UserID, changes); updateErr != nil {
-				return updateErr
-			}
-
-			return s.renamer.RenameAuthor(txCtx, oldUsername, newUsername)
-		}); err != nil {
-			return ErrUpdateUserFailed
+	var (
+		oldUsername   string
+		changes       identitydomain.ProfileChanges
+		validationErr error
+	)
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		// 改名联动必须基于同一事务中锁定的最新用户名，避免并发请求使用同一个旧值。
+		user, err := s.users.FindByIDForUpdate(txCtx, in.UserID)
+		if err != nil || user == nil {
+			validationErr = identitydomain.ErrUserNotFound
+			return validationErr
 		}
-	} else if err = s.users.UpdateProfile(ctx, in.UserID, changes); err != nil {
+		changes, validationErr = s.buildProfileChanges(txCtx, in, user)
+		if validationErr != nil {
+			return validationErr
+		}
+		oldUsername = user.Username()
+		if err := s.users.UpdateProfile(txCtx, in.UserID, changes); err != nil {
+			return err
+		}
+		if changes.Username != nil {
+			return s.renamer.RenameAuthor(txCtx, oldUsername, *changes.Username)
+		}
+		return nil
+	})
+	if validationErr != nil {
+		return validationErr
+	}
+	if err != nil {
 		return ErrUpdateUserFailed
 	}
-
 	s.invalidateAfterProfileUpdate(ctx, in.UserID, oldUsername, changes)
-
 	return nil
 }
 
@@ -236,52 +230,23 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, in UpdateProfileInpu
 func (s *ProfileService) buildProfileChanges(
 	ctx context.Context,
 	in UpdateProfileInput,
-	user *identityentity.User,
-) (identityentity.ProfileChanges, error) {
-	var changes identityentity.ProfileChanges
-
+	user *identitydomain.User,
+) (identitydomain.ProfileChanges, error) {
 	if in.Username != "" {
 		// 统计失败时按「未占用」继续（唯一索引兜底）。
 		count, _ := s.users.CountByUsernameExcluding(ctx, in.Username, in.UserID)
-		if count > 0 {
-			return changes, identityerrors.ErrUsernameExists
-		}
-
-		if in.Username != user.Username {
-			username := in.Username
-			changes.Username = &username
+		if err := user.EnsureUsernameAvailable(count); err != nil {
+			return identitydomain.ProfileChanges{}, err
 		}
 	}
 
-	if in.Avatar != "" {
-		avatar := in.Avatar
-		changes.Avatar = &avatar
-	}
-
-	if in.Description != "" {
-		description := in.Description
-		changes.Description = &description
-	}
-
-	if in.Gender != nil {
-		if err := identityvo.ValidateGender(*in.Gender); err != nil {
-			return changes, err
-		}
-
-		gender := *in.Gender
-		changes.Gender = &gender
-	}
-
-	if in.Birthday != "" {
-		birthday, err := identityvo.ParseBirthday(in.Birthday)
-		if err != nil {
-			return changes, err
-		}
-
-		changes.Birthday = &birthday
-	}
-
-	return changes, nil
+	return user.PlanProfile(identitydomain.ProfileInput{
+		Username:    in.Username,
+		Avatar:      in.Avatar,
+		Description: in.Description,
+		Gender:      in.Gender,
+		Birthday:    in.Birthday,
+	})
 }
 
 // invalidateAfterProfileUpdate 资料变更后失效用户名派生缓存与视频详情缓存。
@@ -292,7 +257,7 @@ func (s *ProfileService) invalidateAfterProfileUpdate(
 	ctx context.Context,
 	userID uint,
 	oldUsername string,
-	changes identityentity.ProfileChanges,
+	changes identitydomain.ProfileChanges,
 ) {
 	if s.caches == nil {
 		return
@@ -316,18 +281,12 @@ func (s *ProfileService) invalidateAfterProfileUpdate(
 }
 
 // ResolveUserBannerURL 解析用户主页横幅地址：自定义 URL 优先，其次系统横幅。
-func (s *ProfileService) ResolveUserBannerURL(ctx context.Context, conf *identityentity.UserConf) string {
-	if conf != nil {
-		if url := strings.TrimSpace(conf.BannerURL); url != "" {
-			return url
-		}
+func (s *ProfileService) ResolveUserBannerURL(ctx context.Context, conf *identitydomain.UserConf) string {
+	if url := conf.CustomBannerURL(); url != "" {
+		return url
 	}
 
-	bannerID := identityvo.ResolveDefaultUserBannerID(s.configuredDefaultBannerID())
-	if conf != nil && conf.BannerID > 0 {
-		bannerID = conf.BannerID
-	}
-
+	bannerID := conf.SystemBannerID(s.configuredDefaultBannerID())
 	if bannerID == 0 {
 		return ""
 	}
@@ -347,13 +306,4 @@ func (s *ProfileService) configuredDefaultBannerID() uint {
 	}
 
 	return cfg.Site.DefaultUserBannerID
-}
-
-// resolveLikeTags 归一化用户喜欢的标签；配置缺失时返回空切片而非 nil。
-func resolveLikeTags(conf *identityentity.UserConf) []string {
-	if conf == nil {
-		return []string{}
-	}
-
-	return identityvo.NormalizeLikeTags(conf.LikeTags)
 }

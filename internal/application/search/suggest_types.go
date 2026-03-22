@@ -1,17 +1,17 @@
 package search
 
 import (
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 )
 
 // 联想候选项类型标签（转发领域定义，直接出现在响应 JSON 的 docType 字段）.
 const (
 	// DocTypeVideo 视频标题联想.
-	DocTypeVideo = searchvo.DocTypeVideo
+	DocTypeVideo = searchdomain.DocTypeVideo
 	// DocTypeUser 用户名联想.
-	DocTypeUser = searchvo.DocTypeUser
+	DocTypeUser = searchdomain.DocTypeUser
 	// DocTypeTag 标签联想.
-	DocTypeTag = searchvo.DocTypeTag
+	DocTypeTag = searchdomain.DocTypeTag
 )
 
 // SuggestionItem 表示搜索联想候选项.

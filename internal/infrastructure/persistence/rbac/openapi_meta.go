@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,15 +25,15 @@ func NewOpenAPIMetaLoader() *OpenAPIMetaLoader {
 // Load 读取并解析 OpenAPI 文档，返回以「METHOD path」为键的说明表。
 //
 // 任何失败都返回空表 + 错误，由调用方降级为默认说明。
-func (l *OpenAPIMetaLoader) Load() (map[string]rbacentity.ResourceMeta, error) {
+func (l *OpenAPIMetaLoader) Load() (map[string]rbacdomain.ResourceMeta, error) {
 	path, err := resolveOpenAPIPath()
 	if err != nil {
-		return map[string]rbacentity.ResourceMeta{}, err
+		return map[string]rbacdomain.ResourceMeta{}, err
 	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return map[string]rbacentity.ResourceMeta{}, rbacerrors.ErrOpenAPIRead
+		return map[string]rbacdomain.ResourceMeta{}, rbacdomain.ErrOpenAPIRead
 	}
 
 	var doc struct {
@@ -44,15 +43,15 @@ func (l *OpenAPIMetaLoader) Load() (map[string]rbacentity.ResourceMeta, error) {
 		} `yaml:"paths"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return map[string]rbacentity.ResourceMeta{}, rbacerrors.ErrOpenAPIParse
+		return map[string]rbacdomain.ResourceMeta{}, rbacdomain.ErrOpenAPIParse
 	}
 
-	result := make(map[string]rbacentity.ResourceMeta)
+	result := make(map[string]rbacdomain.ResourceMeta)
 
 	for p, ops := range doc.Paths {
 		for method, op := range ops {
 			key := strings.ToUpper(method) + " " + p
-			result[key] = rbacentity.ResourceMeta{Summary: op.Summary, Tags: op.Tags}
+			result[key] = rbacdomain.ResourceMeta{Summary: op.Summary, Tags: op.Tags}
 		}
 	}
 
@@ -81,5 +80,5 @@ func resolveOpenAPIPath() (string, error) {
 		}
 	}
 
-	return "", rbacerrors.ErrOpenAPINotFound
+	return "", rbacdomain.ErrOpenAPINotFound
 }

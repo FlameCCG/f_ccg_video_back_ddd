@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sort"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"go.uber.org/zap"
 )
@@ -21,11 +21,19 @@ type MentionService struct {
 	relations MentionRelationQuery
 	index     MentionSearch
 	logger    *zap.Logger
+	keywords  searchdomain.KeywordPolicy
+	pages     searchdomain.PaginationPolicy
 }
 
 // NewMentionService 构造 @ 提及联想服务。
 func NewMentionService(relations MentionRelationQuery, index MentionSearch, logger *zap.Logger) *MentionService {
-	return &MentionService{relations: relations, index: index, logger: logger}
+	return &MentionService{
+		relations: relations,
+		index:     index,
+		logger:    logger,
+		keywords:  searchdomain.KeywordPolicy{},
+		pages:     searchdomain.PaginationPolicy{},
+	}
 }
 
 // SuggestFollowUsers 返回当前用户关注列表中匹配关键词的用户（好友优先），以及匹配总量。
@@ -39,9 +47,9 @@ func (s *MentionService) SuggestFollowUsers(
 		return nil, 0, ErrInvalidMentionUserID
 	}
 
-	ctx = ensureContext(ctx)
-	pagination := searchvo.NormalizeMentionPagination(page, pageSize)
-	keyword = searchvo.NormalizeKeyword(keyword)
+	ctx = (callContext{}).ensure(ctx)
+	pagination := s.pages.NormalizeMentionPagination(page, pageSize)
+	keyword = s.keywords.NormalizeKeyword(keyword)
 
 	users, err := s.relations.FollowingWithFriendFlag(ctx, userID)
 	if err != nil {
@@ -53,9 +61,9 @@ func (s *MentionService) SuggestFollowUsers(
 	}
 
 	if keyword == "" {
-		sortMentionUsers(users)
+		s.sortMentionUsers(users)
 
-		return paginateMentionUsers(users, pagination), int64(len(users)), nil
+		return s.paginateMentionUsers(users, pagination), int64(len(users)), nil
 	}
 
 	matchedUsers, err := s.filterByKeyword(ctx, users, keyword)
@@ -63,9 +71,9 @@ func (s *MentionService) SuggestFollowUsers(
 		return nil, 0, err
 	}
 
-	sortMentionUsers(matchedUsers)
+	s.sortMentionUsers(matchedUsers)
 
-	return paginateMentionUsers(matchedUsers, pagination), int64(len(matchedUsers)), nil
+	return s.paginateMentionUsers(matchedUsers, pagination), int64(len(matchedUsers)), nil
 }
 
 // filterByKeyword 合并 ES 命中与本地字面命中；ES 出错只记日志并退化为本地匹配。
@@ -98,7 +106,7 @@ func (s *MentionService) filterByKeyword(
 	}
 
 	for _, user := range users {
-		if !searchvo.MatchesUsername(user.Username, keyword) {
+		if !s.keywords.MatchesUsername(user.Username, keyword) {
 			continue
 		}
 
@@ -114,29 +122,22 @@ func (s *MentionService) filterByKeyword(
 		result = append(result, user)
 	}
 
-	sortMentionUsers(result)
+	s.sortMentionUsers(result)
 
 	return result, nil
 }
 
 // sortMentionUsers 排序规则：互关好友优先 → 粉丝数降序 → ID 升序。
-func sortMentionUsers(users []MentionUser) {
+func (s *MentionService) sortMentionUsers(users []MentionUser) {
+	order := searchdomain.MentionOrder{}
 	sort.SliceStable(users, func(i, j int) bool {
-		if users[i].IsFriend != users[j].IsFriend {
-			return users[i].IsFriend && !users[j].IsFriend
-		}
-
-		if users[i].FollowerCount != users[j].FollowerCount {
-			return users[i].FollowerCount > users[j].FollowerCount
-		}
-
-		return users[i].ID < users[j].ID
+		return order.Less(searchdomain.MentionCandidate{ID: users[i].ID, IsFriend: users[i].IsFriend, FollowerCount: users[i].FollowerCount}, searchdomain.MentionCandidate{ID: users[j].ID, IsFriend: users[j].IsFriend, FollowerCount: users[j].FollowerCount})
 	})
 }
 
 // paginateMentionUsers 内存分页；越界返回空列表。
-func paginateMentionUsers(users []MentionUser, pagination searchvo.Pagination) []MentionUser {
-	start, end := searchvo.SliceWindow(len(users), pagination)
+func (s *MentionService) paginateMentionUsers(users []MentionUser, pagination searchdomain.Pagination) []MentionUser {
+	start, end := s.pages.SliceWindow(len(users), pagination)
 	if start == end {
 		return []MentionUser{}
 	}

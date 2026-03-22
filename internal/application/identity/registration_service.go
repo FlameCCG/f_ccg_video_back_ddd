@@ -3,11 +3,7 @@ package identity
 import (
 	"context"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/encrypt"
@@ -17,22 +13,24 @@ import (
 
 // RegistrationService 邮箱注册用例服务。
 type RegistrationService struct {
-	txm    tx.Manager
-	users  identityrepo.UserAccountRepository
-	roles  UserRoleQuery
-	binder UserRoleBinder
-	logger *zap.Logger
+	txm     tx.Manager
+	users   identitydomain.UserAccountRepository
+	roles   UserRoleQuery
+	binder  UserRoleBinder
+	folders DefaultFolderInitializer
+	logger  *zap.Logger
 }
 
 // NewRegistrationService 构造邮箱注册服务。
 func NewRegistrationService(
 	txm tx.Manager,
-	users identityrepo.UserAccountRepository,
+	users identitydomain.UserAccountRepository,
 	roles UserRoleQuery,
 	binder UserRoleBinder,
+	folders DefaultFolderInitializer,
 	logger *zap.Logger,
 ) *RegistrationService {
-	return &RegistrationService{txm: txm, users: users, roles: roles, binder: binder, logger: logger}
+	return &RegistrationService{txm: txm, users: users, roles: roles, binder: binder, folders: folders, logger: logger}
 }
 
 // EmailRegister 邮箱注册：写用户 + 默认角色关联（同一事务），提交后再绑定 Casbin 角色。
@@ -49,8 +47,8 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 		s.logger.Warn("查询用户名/邮箱占用失败", zap.Error(err))
 	}
 
-	if exists {
-		return identityerrors.ErrUserOrEmailExists
+	if err := (identitydomain.RegistrationPolicy{}).EnsureAvailable(exists); err != nil {
+		return err
 	}
 
 	// bcrypt 放在事务外，避免长时间占用连接。
@@ -58,18 +56,10 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	if err != nil {
 		s.logger.Error("密码加密失败", zap.Error(err))
 
-		return identityerrors.ErrPasswordHashFailed
+		return identitydomain.ErrPasswordHashFailed
 	}
 
-	user := &identityentity.User{
-		Username:       in.Username,
-		Password:       string(passwordHash),
-		Email:          in.Email,
-		RegisterIP:     in.RegisterIP,
-		RegisterAddr:   in.RegisterAddr,
-		RegisterSource: identityvo.RegisterSourceEmail,
-		Gender:         enum.GenderUnknown,
-	}
+	var user *identitydomain.User
 
 	if err = s.txm.Do(ctx, func(txCtx context.Context) error {
 		roleID, roleErr := s.roles.RoleIDByName(txCtx, constants.CommonUserRole)
@@ -79,25 +69,31 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 			return roleErr
 		}
 
-		user.CurrentRoleID = roleID
+		user = identitydomain.NewEmailUser(in.Username, string(passwordHash), in.Email, in.RegisterIP, in.RegisterAddr, roleID)
 
-		if createErr := s.users.Create(txCtx, user, roleID); createErr != nil {
+		saved, createErr := s.users.Create(txCtx, user, roleID)
+		if createErr != nil {
 			s.logger.Error("创建用户失败", zap.Error(createErr))
 
 			return createErr
 		}
 
-		return s.users.InitializeDefaults(txCtx, user.ID)
+		user = saved
+
+		if err := s.users.InitializeDefaults(txCtx, user.ID()); err != nil {
+			return err
+		}
+		return s.folders.InitializeDefaultFolder(txCtx, user.ID())
 	}); err != nil {
 		return ErrRegisterFailed
 	}
 
 	// Casbin 在 Commit 之后写入，避免 Commit 失败留下幽灵权限。
-	if err = s.binder.AddRoleForUser(user.ID, constants.CommonUserRole); err != nil {
-		s.logger.Error("添加 Casbin 角色关联失败，尝试补偿删除用户", zap.Error(err), zap.Uint("userId", user.ID))
+	if err = s.binder.AddRoleForUser(user.ID(), constants.CommonUserRole); err != nil {
+		s.logger.Error("添加 Casbin 角色关联失败，尝试补偿删除用户", zap.Error(err), zap.Uint("userId", user.ID()))
 		// 补偿：清理已提交用户，避免无角色半成品账号。
-		if delErr := s.users.DeleteByID(ctx, user.ID); delErr != nil {
-			s.logger.Error("补偿删除注册用户失败", zap.Error(delErr), zap.Uint("userId", user.ID))
+		if delErr := s.users.DeleteByID(ctx, user.ID()); delErr != nil {
+			s.logger.Error("补偿删除注册用户失败", zap.Error(delErr), zap.Uint("userId", user.ID()))
 		}
 
 		return ErrRegisterFailed

@@ -8,17 +8,17 @@
 package identity
 
 import (
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toDomainUser 把用户 PO 转为领域实体。
-func toDomainUser(row *po.User) *identityentity.User {
+func toDomainUser(row *po.User) *identitydomain.User {
 	if row == nil {
 		return nil
 	}
 
-	return &identityentity.User{
+	return identitydomain.RestoreUser(identitydomain.UserSnapshot{
 		ID:                 row.ID,
 		CreatedAt:          row.CreatedAt,
 		UpdatedAt:          row.UpdatedAt,
@@ -42,16 +42,16 @@ func toDomainUser(row *po.User) *identityentity.User {
 		LastLoginIP:        row.LastLoginIP,
 		RegisterAddr:       row.RegisterAddr,
 		LastLoginAddr:      row.LastLoginAddr,
-	}
+	})
 }
 
 // toDomainBanRecord 把封禁记录 PO 转为领域实体。
-func toDomainBanRecord(row *po.UserBanRecord) *identityentity.BanRecord {
+func toDomainBanRecord(row *po.UserBanRecord) *identitydomain.BanRecord {
 	if row == nil {
 		return nil
 	}
 
-	return &identityentity.BanRecord{
+	return identitydomain.RestoreBanRecord(identitydomain.BanRecordSnapshot{
 		ID:         row.ID,
 		CreatedAt:  row.CreatedAt,
 		UpdatedAt:  row.UpdatedAt,
@@ -63,28 +63,28 @@ func toDomainBanRecord(row *po.UserBanRecord) *identityentity.BanRecord {
 		EndAt:      row.EndAt,
 		OperatorID: row.OperatorID,
 		IsUnbanned: row.IsUnbanned,
-	}
+	})
 }
 
 // toPOBanRecord 把封禁记录领域实体转为 PO。
-func toPOBanRecord(record *identityentity.BanRecord) *po.UserBanRecord {
+func toPOBanRecord(record *identitydomain.BanRecord) *po.UserBanRecord {
 	if record == nil {
 		return nil
 	}
 
 	return &po.UserBanRecord{
 		Model: po.Model{
-			ID:        record.ID,
-			CreatedAt: record.CreatedAt,
-			UpdatedAt: record.UpdatedAt,
+			ID:        record.ID(),
+			CreatedAt: record.CreatedAt(),
+			UpdatedAt: record.UpdatedAt(),
 		},
-		UserID:     record.UserID,
-		Status:     record.Status,
-		Reason:     record.Reason,
-		Days:       record.Days,
-		StartAt:    record.StartAt,
-		EndAt:      record.EndAt,
-		OperatorID: record.OperatorID,
-		IsUnbanned: record.IsUnbanned,
+		UserID:     record.UserID(),
+		Status:     record.Status(),
+		Reason:     record.Reason(),
+		Days:       record.Days(),
+		StartAt:    record.StartAt(),
+		EndAt:      record.EndAt(),
+		OperatorID: record.OperatorID(),
+		IsUnbanned: record.IsUnbanned(),
 	}
 }

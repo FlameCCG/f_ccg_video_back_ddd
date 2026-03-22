@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
@@ -49,7 +49,7 @@ func TestParseVideoListSupportsSnakeAndCamelFields(t *testing.T) {
 		},
 	}
 
-	list := parseVideoList(res)
+	list := (Adapter{}).parseVideoList(res)
 	if len(list) != 2 {
 		t.Fatalf("expected 2 hits, got %d", len(list))
 	}
@@ -84,7 +84,7 @@ func TestParseVideoListSkipsUndecodableHits(t *testing.T) {
 		},
 	}
 
-	list := parseVideoList(res)
+	list := (Adapter{}).parseVideoList(res)
 	if len(list) != 1 || list[0].ID != 3 {
 		t.Fatalf("list = %+v", list)
 	}
@@ -94,16 +94,16 @@ func TestParseVideoListSkipsUndecodableHits(t *testing.T) {
 func TestParseVideoHitsReturnsZeroOnShardError(t *testing.T) {
 	t.Parallel()
 
-	if got := parseVideoHits(nil, zap.NewNop()); got.Total != 0 || got.Items != nil {
+	if got := (Adapter{}).parseVideoHits(nil, zap.NewNop()); got.Total != 0 || got.Items != nil {
 		t.Fatalf("nil response = %+v", got)
 	}
 
 	res := &elastic.SearchResult{Error: &elastic.ErrorDetails{Type: "search_phase_execution_exception"}}
-	if got := parseVideoHits(res, zap.NewNop()); got.Total != 0 || got.Items != nil {
+	if got := (Adapter{}).parseVideoHits(res, zap.NewNop()); got.Total != 0 || got.Items != nil {
 		t.Fatalf("errored response = %+v", got)
 	}
 
-	if got := parseUserHits(res, zap.NewNop()); got.Total != 0 || got.Items != nil {
+	if got := (Adapter{}).parseUserHits(res, zap.NewNop()); got.Total != 0 || got.Items != nil {
 		t.Fatalf("errored user response = %+v", got)
 	}
 }
@@ -122,7 +122,7 @@ func TestParseUserListDecodesFields(t *testing.T) {
 		},
 	}
 
-	list := parseUserList(res)
+	list := (Adapter{}).parseUserList(res)
 	if len(list) != 1 {
 		t.Fatalf("expected 1 hit, got %d", len(list))
 	}
@@ -153,7 +153,7 @@ func TestParseSuggestHitsDeduplicatesCaseInsensitively(t *testing.T) {
 		},
 	}
 
-	items := parseSuggestHits(resp, searchvo.DocTypeVideo, "hell", 10)
+	items := (Adapter{}).parseSuggestHits(resp, searchdomain.DocTypeVideo, "hell", 10)
 	if len(items) != 2 {
 		t.Fatalf("items = %+v, want 2 entries", items)
 	}
@@ -162,11 +162,11 @@ func TestParseSuggestHitsDeduplicatesCaseInsensitively(t *testing.T) {
 		t.Fatalf("first item = %+v", items[0])
 	}
 
-	if items[0].DocType != searchvo.DocTypeVideo {
+	if items[0].DocType != searchdomain.DocTypeVideo {
 		t.Fatalf("docType = %q", items[0].DocType)
 	}
 
-	if got := parseSuggestHits(resp, searchvo.DocTypeVideo, "hell", 1); len(got) != 1 {
+	if got := (Adapter{}).parseSuggestHits(resp, searchdomain.DocTypeVideo, "hell", 1); len(got) != 1 {
 		t.Fatalf("size clamp failed: %+v", got)
 	}
 }
@@ -183,7 +183,7 @@ func TestParseSuggestHitsForTagsPrefersLiteralMatches(t *testing.T) {
 		},
 	}
 
-	items := parseSuggestHits(resp, searchvo.DocTypeTag, "教程", 10)
+	items := (Adapter{}).parseSuggestHits(resp, searchdomain.DocTypeTag, "教程", 10)
 	if len(items) != 2 || items[0].Value != "教程" || items[1].Value != "Go 教程" {
 		t.Fatalf("items = %+v", items)
 	}
@@ -198,8 +198,8 @@ func TestParseSuggestHitsForUsers(t *testing.T) {
 		},
 	}
 
-	items := parseSuggestHits(resp, searchvo.DocTypeUser, "ali", 10)
-	if len(items) != 1 || items[0].Value != "alice" || items[0].DocType != searchvo.DocTypeUser {
+	items := (Adapter{}).parseSuggestHits(resp, searchdomain.DocTypeUser, "ali", 10)
+	if len(items) != 1 || items[0].Value != "alice" || items[0].DocType != searchdomain.DocTypeUser {
 		t.Fatalf("items = %+v", items)
 	}
 }
@@ -213,7 +213,7 @@ func TestParseSuggestHitsReturnsEmptySliceForNoHits(t *testing.T) {
 		{},
 		{Hits: &elastic.SearchHits{}},
 	} {
-		items := parseSuggestHits(resp, searchvo.DocTypeVideo, "x", 10)
+		items := (Adapter{}).parseSuggestHits(resp, searchdomain.DocTypeVideo, "x", 10)
 		if items == nil || len(items) != 0 {
 			t.Fatalf("items = %v, want empty slice", items)
 		}
@@ -223,21 +223,21 @@ func TestParseSuggestHitsReturnsEmptySliceForNoHits(t *testing.T) {
 func TestParseMentionSearchHitUserID(t *testing.T) {
 	t.Parallel()
 
-	if got := parseMentionSearchHitUserID(&elastic.SearchHit{Id: "users:56"}); got != 56 {
+	if got := (Adapter{}).parseMentionSearchHitUserID(&elastic.SearchHit{Id: "users:56"}); got != 56 {
 		t.Fatalf("expected 56, got %d", got)
 	}
 
-	if got := parseMentionSearchHitUserID(&elastic.SearchHit{Id: "78"}); got != 78 {
+	if got := (Adapter{}).parseMentionSearchHitUserID(&elastic.SearchHit{Id: "78"}); got != 78 {
 		t.Fatalf("expected 78, got %d", got)
 	}
 
-	if got := parseMentionSearchHitUserID(nil); got != 0 {
+	if got := (Adapter{}).parseMentionSearchHitUserID(nil); got != 0 {
 		t.Fatalf("nil hit = %d, want 0", got)
 	}
 
 	// _id 无法解析时回落到 fields.id。
 	hit := &elastic.SearchHit{Id: "users:abc", Fields: map[string]any{"id": float64(91)}}
-	if got := parseMentionSearchHitUserID(hit); got != 91 {
+	if got := (Adapter{}).parseMentionSearchHitUserID(hit); got != 91 {
 		t.Fatalf("fields fallback = %d, want 91", got)
 	}
 }

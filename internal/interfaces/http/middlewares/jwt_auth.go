@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/pkg/authsession"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -91,7 +91,7 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 		c.Abort()
 		return false
 	}
-	if user.MustChangePassword && c.FullPath() != "/v1/common/user/password/change" {
+	if user.MustChangePassword() && c.FullPath() != "/v1/common/user/password/change" {
 		res.FailWithMsg("please change your initial password", c)
 		c.Abort()
 		return false
@@ -101,18 +101,18 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 		if err != nil {
 			return err
 		}
-		if current.MustChangePassword {
+		if current.MustChangePassword() {
 			return errors.New("initial password change required")
 		}
 		return nil
 	}))
-	return m.authenticateResolvedUser(c, strconv.FormatUint(uint64(user.ID), 10), user.Username)
+	return m.authenticateResolvedUser(c, strconv.FormatUint(uint64(user.ID()), 10), user.Username())
 }
 
 type requestAuthentication struct {
 	token  string
 	secret string
-	user   *identityentity.User
+	user   *identitydomain.User
 	err    error
 }
 
@@ -120,7 +120,7 @@ const requestAuthenticationKey = "middlewares.jwt.authentication"
 
 // resolveAccessUser only reuses validation within this request and for the same
 // token and signing key. Long-lived session validators deliberately bypass it.
-func (m *Middlewares) resolveAccessUser(c *gin.Context, token string) (*identityentity.User, error) {
+func (m *Middlewares) resolveAccessUser(c *gin.Context, token string) (*identitydomain.User, error) {
 	secret := m.accessSecret()
 	if cached, ok := c.Get(requestAuthenticationKey); ok {
 		if result, ok := cached.(requestAuthentication); ok && result.token == token && result.secret == secret {

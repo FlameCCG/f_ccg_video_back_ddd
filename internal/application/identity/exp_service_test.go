@@ -7,7 +7,7 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/config"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
@@ -83,8 +83,8 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 		t.Fatalf("reload user: %v", err)
 	}
 
-	if user.Exp != identityentity.DailyExpCap {
-		t.Fatalf("exp after like clamp = %d, want %d", user.Exp, identityentity.DailyExpCap)
+	if user.Exp != identitydomain.DailyExpCap {
+		t.Fatalf("exp after like clamp = %d, want %d", user.Exp, identitydomain.DailyExpCap)
 	}
 
 	// 已达上限：登录/观看/再点赞均不应再涨
@@ -108,8 +108,8 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 		t.Fatalf("reload user after cap: %v", err)
 	}
 
-	if user.Exp != identityentity.DailyExpCap {
-		t.Fatalf("exp after more ops = %d, want stay at %d", user.Exp, identityentity.DailyExpCap)
+	if user.Exp != identitydomain.DailyExpCap {
+		t.Fatalf("exp after more ops = %d, want stay at %d", user.Exp, identitydomain.DailyExpCap)
 	}
 
 	var gained int64
@@ -120,8 +120,8 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 		t.Fatalf("sum records: %v", err)
 	}
 
-	if gained != identityentity.DailyExpCap {
-		t.Fatalf("sum of positive records = %d, want %d", gained, identityentity.DailyExpCap)
+	if gained != identitydomain.DailyExpCap {
+		t.Fatalf("sum of positive records = %d, want %d", gained, identitydomain.DailyExpCap)
 	}
 }
 
@@ -141,8 +141,8 @@ func TestLikeExpDailyIdempotent(t *testing.T) {
 		t.Fatalf("reload user: %v", err)
 	}
 
-	if user.Exp != identityentity.ExpPerLike {
-		t.Fatalf("exp after loop = %d, want %d (daily idempotent)", user.Exp, identityentity.ExpPerLike)
+	if user.Exp != identitydomain.ExpPerLike {
+		t.Fatalf("exp after loop = %d, want %d (daily idempotent)", user.Exp, identitydomain.ExpPerLike)
 	}
 
 	var recCount int64
@@ -154,6 +154,41 @@ func TestLikeExpDailyIdempotent(t *testing.T) {
 
 	if recCount != 1 {
 		t.Fatalf("like exp records = %d, want 1", recCount)
+	}
+}
+
+func TestCoinExpPreservesEligibilityDeduplicationAndLedgerAmount(t *testing.T) {
+	svc, db, userID := newExpFixture(t)
+	for _, coins := range []int64{-1, 0} {
+		if err := svc.CoinExpForVideo(t.Context(), userID, 10, coins); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int64
+	if err := db.Model(&po.UserExpRecord{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("nonpositive coin count created experience ledger entries")
+	}
+	for range 2 {
+		if err := svc.CoinExpForVideo(t.Context(), userID, 10, 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var user po.User
+	var record po.UserExpRecord
+	if err := db.First(&user, userID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&po.UserExpRecord{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || user.Exp != 30 || user.Level != 1 || record.Delta != 30 || record.Reason != "投币 x2 +30" {
+		t.Fatalf("coin experience contract changed: count=%d exp=%d level=%d record=%+v", count, user.Exp, user.Level, record)
 	}
 }
 
@@ -177,8 +212,8 @@ func TestCalcLevel(t *testing.T) {
 	}
 
 	for exp, want := range cases {
-		if got := identityentity.CalcLevel(exp); got != want {
-			t.Fatalf("CalcLevel(%d) = %d, want %d", exp, got, want)
+		if got := (identitydomain.ExperiencePolicy{}).Level(exp); got != want {
+			t.Fatalf("Level(%d) = %d, want %d", exp, got, want)
 		}
 	}
 }
@@ -187,19 +222,20 @@ func TestCalcLevel(t *testing.T) {
 func TestClampDailyExpGain(t *testing.T) {
 	t.Parallel()
 
-	if applied, allowed := identityentity.ClampDailyExpGain(-5, 60); !allowed || applied != -5 {
+	policy := identitydomain.ExperiencePolicy{}
+	if applied, allowed := policy.ClampDaily(-5, 60); !allowed || applied != -5 {
 		t.Fatalf("negative delta should pass through, got (%d, %v)", applied, allowed)
 	}
 
-	if applied, allowed := identityentity.ClampDailyExpGain(10, 55); !allowed || applied != 5 {
+	if applied, allowed := policy.ClampDaily(10, 55); !allowed || applied != 5 {
 		t.Fatalf("expected clamp to 5, got (%d, %v)", applied, allowed)
 	}
 
-	if _, allowed := identityentity.ClampDailyExpGain(10, identityentity.DailyExpCap); allowed {
+	if _, allowed := policy.ClampDaily(10, identitydomain.DailyExpCap); allowed {
 		t.Fatal("expected not allowed when daily cap reached")
 	}
 
-	if applied, allowed := identityentity.ClampDailyExpGain(10, 0); !allowed || applied != 10 {
+	if applied, allowed := policy.ClampDaily(10, 0); !allowed || applied != 10 {
 		t.Fatalf("expected full delta, got (%d, %v)", applied, allowed)
 	}
 }

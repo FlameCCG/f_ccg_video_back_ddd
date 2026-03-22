@@ -3,8 +3,7 @@ package notification
 import (
 	"context"
 
-	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
-	notificationrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 )
 
 // List 用户通知分页列表；isRead 由 notification_user_reads 推导（有行 = 已读）。
@@ -13,16 +12,16 @@ func (s *InboxService) List(
 	receiverID, page, pageSize int,
 	category string,
 ) ([]NotificationItem, int64, error) {
-	page, pageSize = normalizePaging(page, pageSize)
+	page, pageSize = (notificationdomain.PagePolicy{}).Normalize(page, pageSize)
 
-	types := notificationentity.TypesByCategory(category)
+	types := s.types.TypesByCategory(category)
 
 	list, total, err := s.repo.ListForReceiver(ctx, receiverID, types, page, pageSize)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	readSet, err := s.repo.ReadSet(ctx, uint(receiverID), notificationIDs(list))
+	readSet, err := s.repo.ReadSet(ctx, uint(receiverID), s.notificationIDs(list))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -30,23 +29,24 @@ func (s *InboxService) List(
 	items := make([]NotificationItem, 0, len(list))
 
 	for _, n := range list {
-		_, isRead := readSet[n.ID]
+		_, isRead := readSet[n.ID()]
+		snap := n.Snapshot()
 		items = append(items, NotificationItem{
-			ID:               n.ID,
-			Type:             n.Type,
-			ReceiverID:       n.ReceiverID,
-			ActionUserID:     n.ActionUserID,
-			ActionUserAvatar: n.ActionUserAvatar,
-			ActionUserName:   n.ActionUserName,
-			Title:            n.Title,
-			Content:          n.Content,
-			VideoID:          n.VideoID,
-			VideoTitle:       n.VideoTitle,
-			Link:             n.Link,
-			CommentID:        n.CommentID,
-			DynamicID:        n.DynamicID,
+			ID:               snap.ID,
+			Type:             snap.Type,
+			ReceiverID:       snap.ReceiverID,
+			ActionUserID:     snap.ActionUserID,
+			ActionUserAvatar: snap.ActionUserAvatar,
+			ActionUserName:   snap.ActionUserName,
+			Title:            snap.Title,
+			Content:          snap.Content,
+			VideoID:          snap.VideoID,
+			VideoTitle:       snap.VideoTitle,
+			Link:             snap.Link,
+			CommentID:        snap.CommentID,
+			DynamicID:        snap.DynamicID,
 			IsRead:           isRead,
-			CreatedAt:        n.CreatedAt,
+			CreatedAt:        snap.CreatedAt,
 		})
 	}
 
@@ -83,18 +83,20 @@ func (s *InboxService) Delete(ctx context.Context, receiverID int, ids []uint) e
 		return nil
 	}
 
-	blocked, err := s.repo.CountUndeletable(ctx, ids)
+	notices, err := s.repo.FindByIDs(ctx, ids)
 	if err != nil {
 		return err
 	}
 
-	if blocked > 0 {
-		return notificationentity.ErrSystemNotificationNotDeletable
-	}
+	deletableIDs := make([]uint, 0, len(notices))
+	for i := range notices {
+		if err := notices[i].EnsureDeletable(); err != nil {
+			return err
+		}
 
-	deletableIDs, err := s.repo.DeletableIDs(ctx, receiverID, ids)
-	if err != nil {
-		return err
+		if notices[i].DeletableBy(receiverID) {
+			deletableIDs = append(deletableIDs, notices[i].ID())
+		}
 	}
 
 	if len(deletableIDs) == 0 {
@@ -110,12 +112,12 @@ func (s *InboxService) Delete(ctx context.Context, receiverID int, ids []uint) e
 	return nil
 }
 
-func notificationIDs(list []notificationentity.Notification) []uint {
+func (s *InboxService) notificationIDs(list []notificationdomain.Notification) []uint {
 	ids := make([]uint, 0, len(list))
 
-	for _, n := range list {
-		if n.ID != 0 {
-			ids = append(ids, n.ID)
+	for i := range list {
+		if id := list[i].ID(); id != 0 {
+			ids = append(ids, id)
 		}
 	}
 
@@ -124,10 +126,11 @@ func notificationIDs(list []notificationentity.Notification) []uint {
 
 // InboxService 负责接收者收件箱与已读状态。
 type InboxService struct {
-	repo   notificationrepo.Repository
+	repo   notificationdomain.Repository
 	counts *CountService
+	types  notificationdomain.TypePolicy
 }
 
-func NewInboxService(repo notificationrepo.Repository, counts *CountService) *InboxService {
-	return &InboxService{repo: repo, counts: counts}
+func NewInboxService(repo notificationdomain.Repository, counts *CountService) *InboxService {
+	return &InboxService{repo: repo, counts: counts, types: notificationdomain.TypePolicy{}}
 }

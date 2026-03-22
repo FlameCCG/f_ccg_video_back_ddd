@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
-	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
@@ -17,8 +15,8 @@ import (
 // 优先走 Redis Lua 原子切换（成功即返回，落库由回写队列异步完成）；
 // 缓存不可用或失败时回退 DB 事务，保证成功路径的数据持久化。
 func (s *LikeService) ToggleLike(ctx context.Context, userID, commentID uint) (int64, bool, error) {
-	if userID == 0 {
-		return 0, false, commenterrors.ErrUserNotLogin
+	if err := s.login.Require(userID); err != nil {
+		return 0, false, err
 	}
 
 	// 校验评论存在（并拦截无效 ID）
@@ -28,7 +26,7 @@ func (s *LikeService) ToggleLike(ctx context.Context, userID, commentID uint) (i
 	}
 
 	if target == nil {
-		return 0, false, commenterrors.ErrCommentNotFound
+		return 0, false, commentdomain.ErrCommentNotFound
 	}
 
 	if s.likeCache.Available() {
@@ -69,13 +67,13 @@ func (s *LikeService) toggleLikeWithDB(ctx context.Context, userID, commentID ui
 	var count int64
 	liked := false
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		err := s.likes.Create(txCtx, &commententity.Like{CommentID: commentID, UserID: userID})
+		_, err := s.likes.Create(txCtx, &commentdomain.Like{CommentID: commentID, UserID: userID})
 		if err == nil {
 			liked = true
 			if err := s.comments.IncrLikeCount(txCtx, commentID); err != nil {
 				return err
 			}
-		} else if errors.Is(err, commenterrors.ErrLikeDuplicated) {
+		} else if errors.Is(err, commentdomain.ErrLikeDuplicated) {
 			existing, err := s.likes.Find(txCtx, commentID, userID)
 			if err != nil {
 				return err
@@ -101,14 +99,18 @@ func (s *LikeService) toggleLikeWithDB(ctx context.Context, userID, commentID ui
 // LikeService 负责点赞切换与数据库降级。
 type LikeService struct {
 	txm           tx.Manager
-	comments      commentrepo.Repository
-	likes         commentrepo.LikeRepository
+	comments      commentdomain.Repository
+	likes         commentdomain.LikeRepository
 	likeCache     LikeCache
 	logger        *zap.Logger
 	cache         *LikeCacheCoordinator
 	notifications *NotificationDispatcher
+	login         commentdomain.LoginPolicy
 }
 
-func NewLikeService(txm tx.Manager, comments commentrepo.Repository, likes commentrepo.LikeRepository, likeCache LikeCache, logger *zap.Logger, cache *LikeCacheCoordinator, notifications *NotificationDispatcher) *LikeService {
-	return &LikeService{txm: txm, comments: comments, likes: likes, likeCache: likeCache, logger: logger, cache: cache, notifications: notifications}
+func NewLikeService(txm tx.Manager, comments commentdomain.Repository, likes commentdomain.LikeRepository, likeCache LikeCache, logger *zap.Logger, cache *LikeCacheCoordinator, notifications *NotificationDispatcher) *LikeService {
+	return &LikeService{
+		txm: txm, comments: comments, likes: likes, likeCache: likeCache, logger: logger,
+		cache: cache, notifications: notifications, login: commentdomain.LoginPolicy{},
+	}
 }

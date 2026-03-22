@@ -11,7 +11,7 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 
@@ -19,7 +19,7 @@ import (
 )
 
 type cleanupReferences struct {
-	videorepo.CleanupRepository
+	videodomain.CleanupRepository
 	paths map[string]bool
 	err   error
 }

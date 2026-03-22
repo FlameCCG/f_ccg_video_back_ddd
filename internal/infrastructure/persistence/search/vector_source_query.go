@@ -68,8 +68,8 @@ func (q *VectorSourceQuery) Load(ctx context.Context, videoID uint) (app.VideoVe
 		Partition:   video.VideoPartition.Name,
 		Status:      video.Status,
 		CreatedAt:   video.CreatedAt,
-		Tags:        tagNamesOf(video.Tags),
-		PartTitles:  extractPartTitles(video.VideoParts),
+		Tags:        (hitMapping{}).tagNamesOf(video.Tags),
+		PartTitles:  (hitMapping{}).extractPartTitles(video.VideoParts),
 	}, nil
 }
 
@@ -124,13 +124,13 @@ func (q *VectorSourceQuery) PublishedAfter(
 
 	sources := make([]app.VideoVectorSource, 0, len(videos))
 	for _, video := range videos {
-		sources = append(sources, toVectorSource(video))
+		sources = append(sources, (hitMapping{}).toVectorSource(video))
 	}
 
 	return sources, nil
 }
 
-func toVectorSource(video po.Video) app.VideoVectorSource {
+func (m hitMapping) toVectorSource(video po.Video) app.VideoVectorSource {
 	return app.VideoVectorSource{
 		ID:          video.ID,
 		Title:       video.Title,
@@ -139,13 +139,13 @@ func toVectorSource(video po.Video) app.VideoVectorSource {
 		Partition:   video.VideoPartition.Name,
 		Status:      video.Status,
 		CreatedAt:   video.CreatedAt,
-		Tags:        tagNamesOf(video.Tags),
-		PartTitles:  extractPartTitles(video.VideoParts),
+		Tags:        m.tagNamesOf(video.Tags),
+		PartTitles:  m.extractPartTitles(video.VideoParts),
 	}
 }
 
 // tagNamesOf 取标签名（无标签时返回 nil，与向量文本构造侧的判空一致）。
-func tagNamesOf(tags []po.Tag) []string {
+func (hitMapping) tagNamesOf(tags []po.Tag) []string {
 	if len(tags) == 0 {
 		return nil
 	}

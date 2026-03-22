@@ -8,9 +8,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
@@ -37,7 +35,7 @@ func (g *fakeMenuGenerator) GenerateMenuSuggestion(
 	}
 	g.menuJSON = append([]byte(nil), menuTableJSON...)
 
-	suggestion := &rbacvo.MenuSuggestion{
+	suggestion := &rbacdomain.MenuSuggestion{
 		TitleEn:   "Users",
 		TitleJa:   "ユーザー",
 		Icon:      "<svg></svg>",
@@ -54,26 +52,31 @@ func TestMenuServiceCreateOrdersAndGrantsCreatorRole(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := rbacentity.NewRole("创建者", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("创建者", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
+	} else {
+		*role = *created
 	}
 
 	user := po.User{
 		Username:      "menu_creator",
 		Email:         "menu_creator@example.com",
 		Password:      "x",
-		CurrentRoleID: role.ID,
+		CurrentRoleID: role.ID(),
 	}
 	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error; err != nil {
 		t.Fatalf("seed creator: %v", err)
 	}
 
 	for index, title := range []string{"A", "B", "C"} {
-		menu := rbacentity.NewMenu(title, "", "", "", "", "", "", false, nil, uint(index+1))
+		menu, err := rbacdomain.NewMenu(title, "", "", "", "", "", "", false, nil, uint(index+1))
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := s.menus.Create(ctx, app.CreateMenuParams{
-			Title:     menu.Title,
-			SortOrder: menu.SortOrder,
+			Title:     menu.Title(),
+			SortOrder: menu.SortOrder(),
 			CreatorID: user.ID,
 		}); err != nil {
 			t.Fatalf("create seed menu %q: %v", title, err)
@@ -104,7 +107,7 @@ func TestMenuServiceCreateOrdersAndGrantsCreatorRole(t *testing.T) {
 	}
 
 	var roleMenus []po.RoleMenu
-	if err := s.db.Where("role_id = ?", role.ID).Find(&roleMenus).Error; err != nil {
+	if err := s.db.Where("role_id = ?", role.ID()).Find(&roleMenus).Error; err != nil {
 		t.Fatalf("load creator role menus: %v", err)
 	}
 	if len(roleMenus) != len(want) {
@@ -127,7 +130,7 @@ func TestMenuServiceCreateRejectsUnsafeIcon(t *testing.T) {
 		"<a href=\"javascript:alert(1)\">x</a>",
 	} {
 		err := s.menus.Create(ctx, app.CreateMenuParams{Title: "X", Icon: icon})
-		if !errors.Is(err, rbacvo.ErrMenuIconUnsafe) {
+		if !errors.Is(err, rbacdomain.ErrMenuIconUnsafe) {
 			t.Fatalf("create with icon %q: err = %v, want ErrMenuIconUnsafe", icon, err)
 		}
 	}
@@ -147,13 +150,13 @@ func TestMenuServiceUpdateRejectsUnsafeIcon(t *testing.T) {
 
 	unsafe := "<script>alert(1)</script>"
 	err := s.menus.Update(ctx, app.UpdateMenuParams{ID: 1, Icon: &unsafe})
-	if !errors.Is(err, rbacvo.ErrMenuIconUnsafe) {
+	if !errors.Is(err, rbacdomain.ErrMenuIconUnsafe) {
 		t.Fatalf("update with unsafe icon: err = %v, want ErrMenuIconUnsafe", err)
 	}
 
 	tooLong := strings.Repeat("a", 2049)
 	err = s.menus.Update(ctx, app.UpdateMenuParams{ID: 1, Icon: &tooLong})
-	if !errors.Is(err, rbacvo.ErrMenuIconTooLong) {
+	if !errors.Is(err, rbacdomain.ErrMenuIconTooLong) {
 		t.Fatalf("update with oversized icon: err = %v, want ErrMenuIconTooLong", err)
 	}
 }
@@ -162,16 +165,18 @@ func TestMenuServiceCreateAcceptsSafeIconAndPersists(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := rbacentity.NewRole("创建者", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("创建者", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
+	} else {
+		*role = *created
 	}
 
 	user := po.User{
 		Username:      "icon_creator",
 		Email:         "icon_creator@example.com",
 		Password:      "x",
-		CurrentRoleID: role.ID,
+		CurrentRoleID: role.ID(),
 	}
 	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error; err != nil {
 		t.Fatalf("seed creator: %v", err)
@@ -203,8 +208,8 @@ func TestMenuServiceCreateRollsBackWithoutCreatorRole(t *testing.T) {
 		Title:     "orphan",
 		SortOrder: 1,
 		CreatorID: 999,
-	}); err != rbacerrors.ErrMenuCreatorRoleMissing {
-		t.Fatalf("create error = %v, want %v", err, rbacerrors.ErrMenuCreatorRoleMissing)
+	}); err != rbacdomain.ErrMenuCreatorRoleMissing {
+		t.Fatalf("create error = %v, want %v", err, rbacdomain.ErrMenuCreatorRoleMissing)
 	}
 
 	var count int64
@@ -220,11 +225,13 @@ func TestMenuServiceMoveAndRejectParentCycle(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	role := rbacentity.NewRole("创建者", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("创建者", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatalf("seed role: %v", err)
+	} else {
+		*role = *created
 	}
-	user := po.User{Username: "move_creator", Email: "move@example.com", Password: "x", CurrentRoleID: role.ID}
+	user := po.User{Username: "move_creator", Email: "move@example.com", Password: "x", CurrentRoleID: role.ID()}
 	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error; err != nil {
 		t.Fatalf("seed creator: %v", err)
 	}
@@ -272,8 +279,8 @@ func TestMenuServiceMoveAndRejectParentCycle(t *testing.T) {
 		ID:             ids[0],
 		ParentID:       &child,
 		ParentProvided: true,
-	}); err != rbacerrors.ErrMenuParentCycle {
-		t.Fatalf("parent cycle error = %v, want %v", err, rbacerrors.ErrMenuParentCycle)
+	}); err != rbacdomain.ErrMenuParentCycle {
+		t.Fatalf("parent cycle error = %v, want %v", err, rbacdomain.ErrMenuParentCycle)
 	}
 }
 
@@ -281,16 +288,20 @@ func TestMenuServiceGenerateUsesCompleteMenuData(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
 
-	menu := rbacentity.NewMenu("系统管理", "System", "システム", "<svg></svg>", "/system", "System", "Layout", false, nil, 1)
+	menu, err := rbacdomain.NewMenu("系统管理", "System", "システム", "<svg></svg>", "/system", "System", "Layout", false, nil, 1)
+
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := s.db.Create(&po.Menu{
-		Title:     menu.Title,
-		TitleEn:   menu.TitleEn,
-		TitleJa:   menu.TitleJa,
-		Icon:      menu.Icon,
-		Path:      menu.Path,
-		Name:      menu.Name,
-		Component: menu.Component,
-		SortOrder: menu.SortOrder,
+		Title:     menu.Title(),
+		TitleEn:   menu.TitleEn(),
+		TitleJa:   menu.TitleJa(),
+		Icon:      menu.Icon(),
+		Path:      menu.Path(),
+		Name:      menu.Name(),
+		Component: menu.Component(),
+		SortOrder: menu.SortOrder(),
 	}).Error; err != nil {
 		t.Fatalf("seed menu: %v", err)
 	}

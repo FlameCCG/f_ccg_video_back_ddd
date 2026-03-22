@@ -20,14 +20,21 @@ func TestRefreshDigestCASAndPasswordUpdate(t *testing.T) {
 	if err := db.Exec("UPDATE users SET must_change_password = 1 WHERE id = 1").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.UpdatePassword(t.Context(), 1, "new-password-hash"); err != nil {
+	account, err := repo.FindByID(t.Context(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := account.ResetPassword("new-password-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveCredentials(t.Context(), account); err != nil {
 		t.Fatal(err)
 	}
 	user, err := repo.FindByID(t.Context(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.RefreshTokenHash != "" || user.MustChangePassword || user.Password != "new-password-hash" {
+	if user.RefreshTokenHash() != "" || user.MustChangePassword() || user.Password() != "new-password-hash" {
 		t.Fatalf("credential state not reset: %+v", user)
 	}
 	if ok, err := repo.SetRefreshToken(t.Context(), 1, "password-hash", "stale-login"); err != nil || ok {

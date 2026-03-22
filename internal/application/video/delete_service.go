@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -13,11 +12,11 @@ import (
 // DeleteService 作者删稿用例服务。
 type DeleteService struct {
 	txm       tx.Manager
-	videos    videorepo.VideoRepository
+	videos    videodomain.VideoRepository
 	facts     VideoFactsQuery
 	comments  CommentPurger
 	canceller TranscodeCanceller
-	schedule  ScheduleStore
+	schedule  videodomain.ScheduleRepository
 	authors   *AuthorService
 	logger    *zap.Logger
 }
@@ -25,11 +24,11 @@ type DeleteService struct {
 // NewDeleteService 构造作者删稿用例服务。
 func NewDeleteService(
 	txm tx.Manager,
-	videos videorepo.VideoRepository,
+	videos videodomain.VideoRepository,
 	facts VideoFactsQuery,
 	comments CommentPurger,
 	canceller TranscodeCanceller,
-	schedule ScheduleStore,
+	schedule videodomain.ScheduleRepository,
 	authors *AuthorService,
 	logger *zap.Logger,
 ) *DeleteService {
@@ -48,11 +47,11 @@ func NewDeleteService(
 // DeleteVideo 将视频状态改为已删除（仅作者），并清理其评论与评论点赞。
 func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) error {
 	if videoID == 0 {
-		return videoerrors.ErrVideoIDRequired
+		return videodomain.ErrVideoIDRequired
 	}
 
 	if userID == 0 {
-		return videoerrors.ErrNotLoggedIn
+		return videodomain.ErrNotLoggedIn
 	}
 
 	var (
@@ -67,7 +66,7 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 			return err
 		}
 		if video == nil {
-			return videoerrors.ErrRecordNotFound
+			return videodomain.ErrRecordNotFound
 		}
 		username, _ := s.facts.UsernameByUserID(txCtx, userID)
 		changed, err = video.DeleteBy(username)
@@ -75,7 +74,7 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 			return err
 		}
 
-		if updateErr := s.videos.UpdateStatus(txCtx, videoID, video.Status); updateErr != nil {
+		if updateErr := s.videos.UpdateStatus(txCtx, videoID, video.Status()); updateErr != nil {
 			return updateErr
 		}
 

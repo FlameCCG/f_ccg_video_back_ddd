@@ -3,10 +3,7 @@ package comment
 import (
 	"context"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
-	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
-	commentvo "f_ccg_video_back_ddd/internal/domain/comment/valueobject"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -22,7 +19,7 @@ import (
 // 回复时校验父评论并推导 rootID → 落库（回复与根评论回复数同事务）→
 // 同步更新视频评论数 → 异步热度打点与通知。
 func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, error) {
-	draft, _, err := (commententity.Draft{
+	draft, _, err := (commentdomain.Draft{
 		UserID:        cmd.UserID,
 		VideoID:       cmd.VideoID,
 		DynamicID:     cmd.DynamicID,
@@ -44,7 +41,7 @@ func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*Comment
 		filteredAt []uint
 	)
 
-	candidates := commentvo.NormalizeAtUserIDs(draft.UserID, draft.AtUserIDs)
+	candidates := draft.NormalizeAtUserIDs()
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
@@ -68,7 +65,7 @@ func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*Comment
 			}
 
 			if brief == nil {
-				return commenterrors.ErrVideoNotPublished
+				return commentdomain.ErrVideoNotPublished
 			}
 
 			video = brief
@@ -83,7 +80,7 @@ func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*Comment
 			}
 
 			if brief == nil {
-				return commenterrors.ErrDynamicNotFound
+				return commentdomain.ErrDynamicNotFound
 			}
 
 			dynamic = brief
@@ -112,14 +109,14 @@ func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*Comment
 		rootID  *uint
 	)
 
-	if commententity.HasParent(draft.ParentID) {
+	if draft.HasParent() {
 		parent, err := s.query.ParentBrief(ctx, *draft.ParentID, draft.VideoID, draft.DynamicID)
 		if err != nil {
 			return nil, err
 		}
 
 		if parent == nil {
-			return nil, commenterrors.ErrParentNotFound
+			return nil, commentdomain.ErrParentNotFound
 		}
 
 		replyTo = &ReplyInfo{
@@ -129,23 +126,31 @@ func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*Comment
 		rootID = parent.RootForReply(*draft.ParentID)
 	}
 
-	entity, err := commententity.NewComment(draft, rootID)
+	entity, err := commentdomain.NewComment(draft, rootID)
 	if err != nil {
 		return nil, err
 	}
 
 	if rootID != nil && *rootID > 0 {
 		if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-			if err := s.comments.Create(txCtx, entity); err != nil {
+			created, err := s.comments.Create(txCtx, entity)
+			if err != nil {
 				return err
 			}
+
+			entity = created
 
 			return s.comments.IncrReplyCount(txCtx, *rootID)
 		}); err != nil {
 			return nil, err
 		}
-	} else if err := s.comments.Create(ctx, entity); err != nil {
-		return nil, err
+	} else {
+		created, err := s.comments.Create(ctx, entity)
+		if err != nil {
+			return nil, err
+		}
+
+		entity = created
 	}
 
 	if draft.VideoID > 0 {
@@ -161,21 +166,21 @@ func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*Comment
 	s.notifications.scheduleCreateNotifications(ctx, actor, video, dynamic, entity, replyTo)
 
 	return &CommentItem{
-		ID:            entity.ID,
-		Content:       entity.Content,
-		UserID:        entity.UserID,
+		ID:            entity.ID(),
+		Content:       entity.Content(),
+		UserID:        entity.UserID(),
 		Username:      actor.Username,
 		Avatar:        actor.Avatar,
-		VideoID:       entity.VideoID,
-		DynamicID:     entity.DynamicID,
-		ParentID:      entity.ParentID,
-		RootID:        entity.RootID,
-		AtUserIDs:     entity.AtUserIDs,
-		Pictures:      entity.Pictures,
+		VideoID:       entity.VideoID(),
+		DynamicID:     entity.DynamicID(),
+		ParentID:      entity.ParentID(),
+		RootID:        entity.RootID(),
+		AtUserIDs:     entity.AtUserIDs(),
+		Pictures:      entity.Pictures(),
 		LikeCount:     0,
 		ReplyCount:    0,
-		CommenterAddr: entity.CommenterAddr,
-		CreatedAt:     entity.CreatedAt,
+		CommenterAddr: entity.CommenterAddr(),
+		CreatedAt:     entity.CreatedAt(),
 		IsLiked:       false,
 		ReplyTo:       replyTo,
 	}, nil
@@ -184,7 +189,7 @@ func (s *CreateService) Create(ctx context.Context, cmd CreateCommand) (*Comment
 // CreateService 负责创建评论与回复。
 type CreateService struct {
 	txm           tx.Manager
-	comments      commentrepo.Repository
+	comments      commentdomain.Repository
 	query         Query
 	related       RelatedQuery
 	videos        VideoCommentCounter
@@ -193,6 +198,6 @@ type CreateService struct {
 	notifications *NotificationDispatcher
 }
 
-func NewCreateService(txm tx.Manager, comments commentrepo.Repository, query Query, related RelatedQuery, videos VideoCommentCounter, hotScore VideoHotScoreRecorder, tasks *ctxutil.DetachedTaskGroup, notifications *NotificationDispatcher) *CreateService {
+func NewCreateService(txm tx.Manager, comments commentdomain.Repository, query Query, related RelatedQuery, videos VideoCommentCounter, hotScore VideoHotScoreRecorder, tasks *ctxutil.DetachedTaskGroup, notifications *NotificationDispatcher) *CreateService {
 	return &CreateService{txm: txm, comments: comments, query: query, related: related, videos: videos, hotScore: hotScore, tasks: tasks, notifications: notifications}
 }

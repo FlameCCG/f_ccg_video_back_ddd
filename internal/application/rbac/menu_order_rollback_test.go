@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	"f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	"f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
 
@@ -15,7 +14,7 @@ import (
 )
 
 type failingMenuSort struct {
-	repository.MenuRepository
+	rbacdomain.MenuRepository
 	calls   int
 	failure error
 }
@@ -35,7 +34,7 @@ func TestMenuSortSaveFailureRollsBackSequence(t *testing.T) {
 	s := newSuite(t)
 	repo := infra.NewMenuRepository(s.db)
 	for i := uint(1); i <= 3; i++ {
-		if err := repo.Create(t.Context(), &entity.Menu{ID: i, Title: string(rune('A' + i)), SortOrder: i}); err != nil {
+		if _, err := repo.Create(t.Context(), rbacdomain.RestoreMenu(rbacdomain.MenuSnapshot{ID: i, Title: string(rune('A' + i)), SortOrder: i})); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -50,7 +49,7 @@ func TestMenuSortSaveFailureRollsBackSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, m := range menus {
-		if m.ID != uint(i+1) || m.SortOrder != uint(i+1) {
+		if m.ID() != uint(i+1) || m.SortOrder() != uint(i+1) {
 			t.Fatalf("partial reorder: %+v", menus)
 		}
 	}

@@ -13,9 +13,7 @@ import (
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	identityhandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/identity"
@@ -29,7 +27,7 @@ import (
 )
 
 type submissionStatusCache struct {
-	identityport.UserStatusCache
+	identityapp.UserStatusCache
 	status enum.UserStatus
 }
 
@@ -38,11 +36,11 @@ func (s *submissionStatusCache) Load(context.Context, uint) (enum.UserStatus, bo
 }
 
 type routeSubmissionUsers struct {
-	identityrepo.UserRepository
+	identitydomain.UserRepository
 }
 
-func (*routeSubmissionUsers) FindByID(context.Context, uint) (*identityentity.User, error) {
-	return &identityentity.User{ID: 7, Username: "admin", Status: enum.UserStatusActive}, nil
+func (*routeSubmissionUsers) FindByID(context.Context, uint) (*identitydomain.User, error) {
+	return identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "admin", Status: enum.UserStatusActive}), nil
 }
 
 type routeSubmissionRoles struct {

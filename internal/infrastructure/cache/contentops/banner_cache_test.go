@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"github.com/alicebob/miniredis/v2"
@@ -44,9 +44,9 @@ func TestBannerCacheStoreLoadInvalidate(t *testing.T) {
 	cache := NewBannerCache(client, zap.NewNop())
 
 	homePartition := uint(0)
-	items := []contentopsentity.Banner{
-		{ID: 2, Cover: "b", Show: true, Type: enum.BannerTypeHome},
-		{ID: 1, Cover: "a", Show: true, Type: enum.BannerTypeHome},
+	items := []contentopsdomain.Banner{
+		*contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{ID: 2, Cover: "b", Show: true, Type: enum.BannerTypeHome}),
+		*contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{ID: 1, Cover: "a", Show: true, Type: enum.BannerTypeHome}),
 	}
 
 	cache.StoreVisible(enum.BannerTypeHome, &homePartition, items)
@@ -65,8 +65,17 @@ func TestBannerCacheStoreLoadInvalidate(t *testing.T) {
 		t.Fatal("cache should hit")
 	}
 
-	if len(loaded) != 2 || loaded[0].ID != 2 || loaded[1].Cover != "a" {
+	if len(loaded) != 2 || loaded[0].ID() != 2 || loaded[1].Cover() != "a" {
 		t.Fatalf("unexpected cached items: %+v", loaded)
+	}
+
+	raw, err := server.Get(key)
+	if err != nil {
+		t.Fatalf("read cache payload: %v", err)
+	}
+	const wantPayload = `[{"id":2,"cover":"b","href":"","show":true,"type":1,"partitionId":0},{"id":1,"cover":"a","href":"","show":true,"type":1,"partitionId":0}]`
+	if raw != wantPayload {
+		t.Fatalf("cache payload changed: %s", raw)
 	}
 
 	// 缓存另一个 key，验证按前缀整体失效
@@ -102,6 +111,45 @@ func TestBannerCacheDropsCorruptedValue(t *testing.T) {
 
 	if server.Exists(key) {
 		t.Fatal("corrupted cache key should be deleted")
+	}
+}
+
+func TestBannerCacheLoadsLegacyNullAsEmptyList(t *testing.T) {
+	server, client := newTestRedis(t)
+	cache := NewBannerCache(client, zap.NewNop())
+	if err := server.Set("banner:visible:1:0", "null"); err != nil {
+		t.Fatal(err)
+	}
+	partition := uint(0)
+	loaded, ok := cache.LoadVisible(enum.BannerTypeHome, &partition)
+	if !ok || loaded == nil || len(loaded) != 0 {
+		t.Fatalf("legacy null: hit=%v list=%#v, want non-nil empty list", ok, loaded)
+	}
+}
+
+func TestBannerCacheLoadsLegacyPayload(t *testing.T) {
+	server, client := newTestRedis(t)
+	cache := NewBannerCache(client, zap.NewNop())
+
+	key := "banner:visible:1:0"
+	payload := `[{"id":2,"cover":"b","href":"","show":true,"type":1,"partitionId":7},{"id":1,"cover":"","href":"","show":false,"type":3,"partitionId":0}]`
+	if err := server.Set(key, payload); err != nil {
+		t.Fatalf("seed legacy cache failed: %v", err)
+	}
+
+	homePartition := uint(0)
+	loaded, ok := cache.LoadVisible(enum.BannerTypeHome, &homePartition)
+	if !ok {
+		t.Fatal("legacy cache should hit")
+	}
+
+	if len(loaded) != 2 || loaded[0].ID() != 2 || loaded[0].Cover() != "b" || !loaded[0].Show() ||
+		loaded[0].Type() != enum.BannerTypeHome || loaded[0].PartitionID() != 7 || loaded[0].Href() != "" {
+		t.Fatalf("unexpected first legacy banner: %+v", loaded[0].Snapshot())
+	}
+
+	if loaded[1].ID() != 1 || loaded[1].Cover() != "" || loaded[1].Show() || loaded[1].Type() != enum.BannerTypeUser || loaded[1].PartitionID() != 0 {
+		t.Fatalf("unexpected empty-value legacy banner: %+v", loaded[1].Snapshot())
 	}
 }
 

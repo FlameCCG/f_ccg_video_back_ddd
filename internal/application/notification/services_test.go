@@ -2,6 +2,7 @@ package notification_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -9,8 +10,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/notification"
-	"f_ccg_video_back_ddd/internal/domain/notification/entity"
-	"f_ccg_video_back_ddd/internal/domain/notification/repository"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/notification"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -56,7 +56,7 @@ func (c *countCache) Invalidate(id int) {
 func (c *countCache) InvalidateAll() { c.mu.Lock(); defer c.mu.Unlock(); c.data = nil; c.all++ }
 
 type countRepo struct {
-	repository.Repository
+	notificationdomain.Repository
 	fail  error
 	check func(context.Context)
 	batch func()
@@ -68,11 +68,14 @@ func (r countRepo) CountUnreadGrouped(ctx context.Context, id int) (map[enum.Typ
 	}
 	return map[enum.Type]int64{enum.NotificationApplyType: int64(id), enum.NotificationVideoLikeType: 1, enum.NotificationLikeCommentType: 2, enum.NotificationLikeDynamicType: 3, enum.NotificationAtType: 4, enum.NotificationSystemType: 5}, r.fail
 }
-func (r countRepo) CreateBatch(context.Context, []entity.Notification) error {
+func (r countRepo) CreateBatch(_ context.Context, notices []notificationdomain.Notification) ([]notificationdomain.Notification, error) {
 	if r.batch != nil {
 		r.batch()
 	}
-	return r.fail
+	if r.fail != nil {
+		return nil, r.fail
+	}
+	return notices, nil
 }
 
 type unreadChat struct{ fail error }
@@ -90,7 +93,11 @@ func TestDeliveryInvalidatesOnlyAfterSuccessfulBatch(t *testing.T) {
 	}}
 	counts := app.NewCountService(repo, cache, unreadChat{}, nil, zap.NewNop())
 	delivery := app.NewDeliveryService(repo, counts)
-	if err := delivery.CreateBatch(t.Context(), []entity.Notification{{ReceiverID: 1}, {ReceiverID: 1}, {ReceiverID: 2}}); err != nil {
+	if _, err := delivery.CreateBatch(t.Context(), []notificationdomain.Notification{
+		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 1}),
+		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 1}),
+		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 2}),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if !committed || !reflect.DeepEqual(cache.invalidated, []int{1, 2}) {
@@ -98,7 +105,7 @@ func TestDeliveryInvalidatesOnlyAfterSuccessfulBatch(t *testing.T) {
 	}
 	failure := errors.New("insert failed")
 	delivery = app.NewDeliveryService(countRepo{fail: failure}, counts)
-	if err := delivery.CreateBatch(t.Context(), []entity.Notification{{ReceiverID: 3}}); !errors.Is(err, failure) {
+	if _, err := delivery.CreateBatch(t.Context(), []notificationdomain.Notification{*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 3})}); !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
 	if len(cache.invalidated) != 2 {
@@ -183,15 +190,20 @@ func TestInboxReceiverIsolationAndAdminReceiverChanges(t *testing.T) {
 	delivery := app.NewDeliveryService(repo, counts)
 	inbox := app.NewInboxService(repo, counts)
 	admin := app.NewAdminService(repo, nil, counts)
-	rows := []entity.Notification{{ReceiverID: 1, Type: enum.NotificationApplyType}, {ReceiverID: 2, Type: enum.NotificationApplyType}, {ReceiverID: -1, Type: enum.NotificationSystemType}}
-	if err := delivery.CreateBatch(t.Context(), rows); err != nil {
+	rows := []notificationdomain.Notification{
+		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 1, Type: enum.NotificationApplyType}),
+		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: 2, Type: enum.NotificationApplyType}),
+		*notificationdomain.NewNotification(notificationdomain.Draft{ReceiverID: notificationdomain.BroadcastReceiverID, Type: enum.NotificationSystemType}),
+	}
+	saved, err := delivery.CreateBatch(t.Context(), rows)
+	if err != nil {
 		t.Fatal(err)
 	}
 	items, total, err := inbox.List(t.Context(), 1, 1, 20, "")
 	if err != nil || total != 2 || len(items) != 2 {
 		t.Fatalf("items=%+v total=%d err=%v", items, total, err)
 	}
-	ids := []uint{rows[0].ID, rows[1].ID, rows[2].ID}
+	ids := []uint{saved[0].ID(), saved[1].ID(), saved[2].ID()}
 	if err := inbox.MarkRead(t.Context(), 1, ids); err != nil {
 		t.Fatal(err)
 	}
@@ -206,24 +218,49 @@ func TestInboxReceiverIsolationAndAdminReceiverChanges(t *testing.T) {
 	if len(read1) != 2 || len(read2) != 0 {
 		t.Fatalf("reads leaked: %v %v", read1, read2)
 	}
-	if _, leaked := read1[rows[1].ID]; leaked {
+	if _, leaked := read1[saved[1].ID()]; leaked {
 		t.Fatal("marked other receiver's notice")
 	}
 	if err := inbox.Delete(t.Context(), 1, ids[:2]); err != nil {
 		t.Fatal(err)
 	}
-	other, err := repo.FindByID(t.Context(), rows[1].ID)
+	other, err := repo.FindByID(t.Context(), saved[1].ID())
 	if err != nil || other == nil {
 		t.Fatalf("deleted other receiver: %v", err)
 	}
-	if err := inbox.Delete(t.Context(), 1, ids[2:]); !errors.Is(err, entity.ErrSystemNotificationNotDeletable) {
+	if err := inbox.Delete(t.Context(), 1, ids[2:]); !errors.Is(err, notificationdomain.ErrSystemNotificationNotDeletable) {
 		t.Fatal(err)
 	}
 	cache.invalidated = nil
-	if err := admin.UpdateSystemNotice(t.Context(), app.UpdateSystemNoticeCommand{ID: rows[1].ID, ReceiverID: 1, Title: "moved"}); err != nil {
+	if err := admin.UpdateSystemNotice(t.Context(), app.UpdateSystemNoticeCommand{ID: saved[1].ID(), ReceiverID: 1, Title: "moved"}); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(cache.invalidated, []int{2, 1}) {
 		t.Fatalf("old/new receivers=%v", cache.invalidated)
+	}
+}
+
+func TestAdminNotificationJSONMatchesLegacyEntity(t *testing.T) {
+	raw, err := json.Marshal(app.AdminNotification{Type: enum.NotificationSystemType, ReceiverID: notificationdomain.BroadcastReceiverID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"id", "type", "receiverID", "actionUserID", "actionUserAvatar", "actionUserName", "title", "content", "link", "videoID", "videoTitle", "dynamicID", "commentID"} {
+		if _, ok := fields[key]; !ok {
+			t.Fatalf("missing %s in %s", key, raw)
+		}
+	}
+	if _, ok := fields["createdAt"]; ok {
+		t.Fatal("createdAt leaked")
+	}
+	if _, ok := fields["updatedAt"]; ok {
+		t.Fatal("updatedAt leaked")
+	}
+	if !json.Valid(raw) || fields["title"] != "" || fields["receiverID"] != float64(notificationdomain.BroadcastReceiverID) {
+		t.Fatalf("zero values or names changed: %s", raw)
 	}
 }

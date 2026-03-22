@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -18,7 +17,7 @@ type RoleRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ rbacrepo.RoleRepository = (*RoleRepository)(nil)
+var _ rbacdomain.RoleRepository = (*RoleRepository)(nil)
 
 // NewRoleRepository 构造角色仓储。
 func NewRoleRepository(db *gorm.DB) *RoleRepository {
@@ -26,7 +25,7 @@ func NewRoleRepository(db *gorm.DB) *RoleRepository {
 }
 
 // FindByID 按主键读取角色；不存在时返回 (nil, nil)。
-func (r *RoleRepository) FindByID(ctx context.Context, roleID uint) (*rbacentity.Role, error) {
+func (r *RoleRepository) FindByID(ctx context.Context, roleID uint) (*rbacdomain.Role, error) {
 	var row po.Role
 	if err := gormx.DB(ctx, r.db).First(&row, roleID).Error; err != nil {
 		return nil, ignoreNotFound(err)
@@ -36,7 +35,7 @@ func (r *RoleRepository) FindByID(ctx context.Context, roleID uint) (*rbacentity
 }
 
 // FindBriefByID 只读 id/name/desc；不存在时返回 (nil, nil)。
-func (r *RoleRepository) FindBriefByID(ctx context.Context, roleID uint) (*rbacentity.Role, error) {
+func (r *RoleRepository) FindBriefByID(ctx context.Context, roleID uint) (*rbacdomain.Role, error) {
 	var row po.Role
 	if err := gormx.DB(ctx, r.db).Select("id", "name", "desc").First(&row, roleID).Error; err != nil {
 		return nil, ignoreNotFound(err)
@@ -46,7 +45,7 @@ func (r *RoleRepository) FindBriefByID(ctx context.Context, roleID uint) (*rbace
 }
 
 // FindIDByID 只读主键，用于「角色是否存在」校验；不存在时返回 (nil, nil)。
-func (r *RoleRepository) FindIDByID(ctx context.Context, roleID uint) (*rbacentity.Role, error) {
+func (r *RoleRepository) FindIDByID(ctx context.Context, roleID uint) (*rbacdomain.Role, error) {
 	var row po.Role
 	if err := gormx.DB(ctx, r.db).Select("id").First(&row, roleID).Error; err != nil {
 		return nil, ignoreNotFound(err)
@@ -56,7 +55,7 @@ func (r *RoleRepository) FindIDByID(ctx context.Context, roleID uint) (*rbacenti
 }
 
 // FindByName 按角色名读取；不存在时返回 (nil, nil)。
-func (r *RoleRepository) FindByName(ctx context.Context, name string) (*rbacentity.Role, error) {
+func (r *RoleRepository) FindByName(ctx context.Context, name string) (*rbacdomain.Role, error) {
 	var row po.Role
 	if err := gormx.DB(ctx, r.db).Take(&row, "name = ?", name).Error; err != nil {
 		return nil, ignoreNotFound(err)
@@ -66,7 +65,7 @@ func (r *RoleRepository) FindByName(ctx context.Context, name string) (*rbacenti
 }
 
 // FindWithMenusByID 读取角色并预加载其菜单；不存在时返回 (nil, nil)。
-func (r *RoleRepository) FindWithMenusByID(ctx context.Context, roleID uint) (*rbacentity.Role, error) {
+func (r *RoleRepository) FindWithMenusByID(ctx context.Context, roleID uint) (*rbacdomain.Role, error) {
 	var row po.Role
 	if err := gormx.DB(ctx, r.db).Preload("Menus").First(&row, roleID).Error; err != nil {
 		return nil, ignoreNotFound(err)
@@ -76,7 +75,7 @@ func (r *RoleRepository) FindWithMenusByID(ctx context.Context, roleID uint) (*r
 }
 
 // FindByIDs 批量读取角色。
-func (r *RoleRepository) FindByIDs(ctx context.Context, roleIDs []uint) ([]*rbacentity.Role, error) {
+func (r *RoleRepository) FindByIDs(ctx context.Context, roleIDs []uint) ([]*rbacdomain.Role, error) {
 	var rows []po.Role
 	if err := gormx.DB(ctx, r.db).Where("id IN ?", roleIDs).Find(&rows).Error; err != nil {
 		return nil, err
@@ -86,7 +85,7 @@ func (r *RoleRepository) FindByIDs(ctx context.Context, roleIDs []uint) ([]*rbac
 }
 
 // FindBriefByNames 按角色名批量读取 id/name。
-func (r *RoleRepository) FindBriefByNames(ctx context.Context, names []string) ([]*rbacentity.Role, error) {
+func (r *RoleRepository) FindBriefByNames(ctx context.Context, names []string) ([]*rbacdomain.Role, error) {
 	var rows []po.Role
 	if err := gormx.DB(ctx, r.db).Select("id", "name").Where("name IN ?", names).Find(&rows).Error; err != nil {
 		return nil, err
@@ -106,7 +105,7 @@ func (r *RoleRepository) CountByName(ctx context.Context, name string) (int64, e
 }
 
 // ListWithMenus 读取全部角色并预加载菜单。
-func (r *RoleRepository) ListWithMenus(ctx context.Context) ([]*rbacentity.Role, error) {
+func (r *RoleRepository) ListWithMenus(ctx context.Context) ([]*rbacdomain.Role, error) {
 	var rows []po.Role
 	if err := gormx.DB(ctx, r.db).Preload("Menus").Find(&rows).Error; err != nil {
 		return nil, err
@@ -116,7 +115,7 @@ func (r *RoleRepository) ListWithMenus(ctx context.Context) ([]*rbacentity.Role,
 }
 
 // ListBrief 读取全部角色的 id/name/desc。
-func (r *RoleRepository) ListBrief(ctx context.Context) ([]*rbacentity.Role, error) {
+func (r *RoleRepository) ListBrief(ctx context.Context) ([]*rbacdomain.Role, error) {
 	var rows []po.Role
 	if err := gormx.DB(ctx, r.db).Select("id", "name", "desc").Find(&rows).Error; err != nil {
 		return nil, err
@@ -137,18 +136,19 @@ func (r *RoleRepository) UserCount(ctx context.Context, roleID uint) (int64, err
 	return count, nil
 }
 
-// Create 创建角色并回填自增 ID 与时间戳。
-func (r *RoleRepository) Create(ctx context.Context, role *rbacentity.Role) error {
+// Create 创建角色并返回带自增 ID 与时间戳的角色。
+func (r *RoleRepository) Create(ctx context.Context, role *rbacdomain.Role) (*rbacdomain.Role, error) {
 	row := toPORole(role)
 	if err := gormx.DB(ctx, r.db).Create(&row).Error; err != nil {
-		return err
+		return nil, err
 	}
 
-	role.ID = row.ID
-	role.CreatedAt = row.CreatedAt
-	role.UpdatedAt = row.UpdatedAt
+	snapshot := role.Snapshot()
+	snapshot.ID = row.ID
+	snapshot.CreatedAt = row.CreatedAt
+	snapshot.UpdatedAt = row.UpdatedAt
 
-	return nil
+	return rbacdomain.RestoreRole(snapshot), nil
 }
 
 // UpdateNameAndDesc 更新角色名与描述；两者均为 nil 时不产生 UPDATE。
@@ -180,7 +180,7 @@ func (r *RoleRepository) DeleteByID(ctx context.Context, roleID uint) error {
 }
 
 // AppendMenus 向角色追加直连菜单关联（role_menus.is_inherited 取默认值 false）。
-func (r *RoleRepository) AppendMenus(ctx context.Context, role *rbacentity.Role, menus []*rbacentity.Menu) error {
+func (r *RoleRepository) AppendMenus(ctx context.Context, role *rbacdomain.Role, menus []*rbacdomain.Menu) error {
 	if role == nil || len(menus) == 0 {
 		return nil
 	}

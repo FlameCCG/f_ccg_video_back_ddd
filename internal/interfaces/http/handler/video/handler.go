@@ -143,14 +143,14 @@ func (h *Handler) resolveUID(c *gin.Context) uint {
 	token = strings.TrimPrefix(token, "Bearer ")
 
 	user, err := h.userStatus.ValidateAccessToken(c.Request.Context(), token, h.accessSecret())
-	if err != nil || user.MustChangePassword {
+	if err != nil || user.MustChangePassword() {
 		return 0
 	}
 
-	uidStr := strconv.FormatUint(uint64(user.ID), 10)
+	uidStr := strconv.FormatUint(uint64(user.ID()), 10)
 	c.Set("uid", uidStr)
 
-	return user.ID
+	return user.ID()
 }
 
 // parseUIDFromToken 从 query token 或 Authorization 头解析 uid（WebSocket 入口使用）。
@@ -169,7 +169,7 @@ func (h *Handler) parseUIDFromToken(c *gin.Context, queryToken, headerToken stri
 		return 0
 	}
 	user, err := h.userStatus.ValidateAccessToken(c.Request.Context(), token, h.accessSecret())
-	if err != nil || user.MustChangePassword {
+	if err != nil || user.MustChangePassword() {
 		return 0
 	}
 	c.Request = c.Request.WithContext(authsession.WithValidator(c.Request.Context(), func(ctx context.Context) error {
@@ -177,10 +177,10 @@ func (h *Handler) parseUIDFromToken(c *gin.Context, queryToken, headerToken stri
 		if err != nil {
 			return err
 		}
-		if current.MustChangePassword {
+		if current.MustChangePassword() {
 			return errors.New("initial password change required")
 		}
 		return nil
 	}))
-	return user.ID
+	return user.ID()
 }

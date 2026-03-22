@@ -12,8 +12,7 @@ import (
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
 	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
 )
@@ -21,7 +20,7 @@ import (
 // -----------------------------------------------------------------------------
 // 分段转码（chunked encode）的执行侧
 //
-// 切块计划由领域层确定性推导（media.PlanTranscodeChunks / TranscodePolicy.ChunkPlan）；
+// 切块计划由领域层确定性推导（SegmentPlanner / TranscodePolicy.ChunkPlan）；
 // 本文件只负责按计划跑 FFmpeg、提交块产物、编码共享音轨并 `-c copy` 拼装。
 //
 // 关键约束：
@@ -35,17 +34,17 @@ import (
 // chunkedEncodeRequest 是一次块级编码的参数集合。
 type chunkedEncodeRequest struct {
 	pipelineName   string
-	task           mediaentity.TranscodeTask
-	policy         *mediavo.TranscodePolicy
+	task           mediadomain.TranscodeTask
+	policy         *mediadomain.TranscodePolicy
 	srcPath        string
-	targets        []mediavo.TranscodeTarget
+	targets        []mediadomain.TranscodeTarget
 	useGPU         bool
 	forceKFSec     int
 	sourceBitrate  int
 	sourceDuration int
 	sourceCodec    string
 	checkpoint     *transcodeCheckpoint
-	plan           []mediavo.TranscodeChunk
+	plan           []mediadomain.TranscodeChunk
 }
 
 // encodeChunkedTargets 按切块计划逐块编码 targets（纯视频多输出），返回每块的产物路径表。
@@ -76,7 +75,7 @@ func (e *TranscodeEngine) encodeChunkedTargets(
 			return nil, fmt.Errorf("chunked encode canceled at chunk %d: %w", chunk.Index, err)
 		}
 
-		dirName := mediavo.ChunkArtifactDirName(req.pipelineName, req.useGPU, chunk.Index)
+		dirName := chunk.ArtifactDirName(req.pipelineName, req.useGPU)
 		if files, ok := committedChunkFiles(req.checkpoint, dirName, names); ok {
 			perChunk[ci] = files
 			reused++
@@ -113,7 +112,7 @@ func (e *TranscodeEngine) encodeChunkedTargets(
 func (e *TranscodeEngine) runOneChunk(
 	ctx context.Context,
 	req chunkedEncodeRequest,
-	chunk mediavo.TranscodeChunk,
+	chunk mediadomain.TranscodeChunk,
 	dirName string,
 	names []string,
 	baseCb mediaruntime.ProgressCallback,
@@ -135,13 +134,13 @@ func (e *TranscodeEngine) runOneChunk(
 	useHardwareScale := req.policy.UseHardwareScale(req.useGPU)
 	filter := buildFilterComplex(req.targets, req.useGPU, useHardwareScale)
 
-	span := &mediavo.FFmpegChunkSpan{
+	span := &mediadomain.FFmpegChunkSpan{
 		StartSec:              chunk.StartSec,
 		LenSec:                chunk.LenSec,
 		VideoOnly:             true,
 		ForceKeyframeEverySec: req.forceKFSec,
 	}
-	if mediavo.IsLastChunk(req.plan, chunk) {
+	if chunk.IsLast(req.plan) {
 		// 末块编到源结尾（不加 -t）：ffprobe 时长整数截断的小数尾巴不能丢。
 		span.LenSec = 0
 	}
@@ -213,7 +212,7 @@ func (e *TranscodeEngine) runOneChunk(
 			return nil, fmt.Errorf("probe chunk %d output %s: %w", chunk.Index, req.targets[i].ID, err)
 		}
 
-		if err := mediavo.ValidateTranscodedDuration(chunk.LenSec, meta.Duration); err != nil {
+		if err := (mediadomain.VideoMeta{Duration: chunk.LenSec}).ValidateTranscodedDuration(meta.Duration); err != nil {
 			return nil, fmt.Errorf("validate chunk %d output %s: %w", chunk.Index, req.targets[i].ID, err)
 		}
 	}
@@ -246,9 +245,9 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 	ckpt.audioMu.Lock()
 	defer ckpt.audioMu.Unlock()
 
-	if p, ok := ckpt.CommittedFilePath(mediavo.TranscodeAudioTrackName); ok {
+	if p, ok := ckpt.CommittedFilePath(mediadomain.TranscodeAudioTrackName); ok {
 		dur, err := probeContainerDurationSec(ctx, p)
-		if err == nil && mediavo.ValidateTranscodedDuration(sourceDurationSec, dur) == nil {
+		if err == nil && (mediadomain.VideoMeta{Duration: sourceDurationSec}).ValidateTranscodedDuration(dur) == nil {
 			return p, nil
 		}
 
@@ -256,7 +255,7 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 			zap.String("path", p),
 			zap.Error(err),
 		)
-		ckpt.DiscardCommitted(mediavo.TranscodeAudioTrackName)
+		ckpt.DiscardCommitted(mediadomain.TranscodeAudioTrackName)
 	}
 
 	attemptDir, err := ckpt.AttemptDir("audio")
@@ -266,7 +265,7 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 
 	defer func() { _ = os.RemoveAll(attemptDir) }()
 
-	outPath := filepath.Join(attemptDir, mediavo.TranscodeAudioTrackName)
+	outPath := filepath.Join(attemptDir, mediadomain.TranscodeAudioTrackName)
 
 	encodeCtx, cancel := context.WithTimeout(ctx, mediaruntime.CalcAudioEncodeTimeout(sourceDurationSec))
 	defer cancel()
@@ -286,11 +285,11 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 		return "", fmt.Errorf("probe shared audio track: %w", err)
 	}
 
-	if err := mediavo.ValidateTranscodedDuration(sourceDurationSec, dur); err != nil {
+	if err := (mediadomain.VideoMeta{Duration: sourceDurationSec}).ValidateTranscodedDuration(dur); err != nil {
 		return "", fmt.Errorf("validate shared audio track: %w", err)
 	}
 
-	return ckpt.CommitFile(outPath, mediavo.TranscodeAudioTrackName)
+	return ckpt.CommitFile(outPath, mediadomain.TranscodeAudioTrackName)
 }
 
 // -----------------------------------------------------------------------------
@@ -302,10 +301,10 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 	ctx context.Context,
 	req mediaapp.MP4EncodeRequest,
 	ckpt *transcodeCheckpoint,
-	targets []mediavo.TranscodeTarget,
+	targets []mediadomain.TranscodeTarget,
 ) (map[string]string, error) {
 	perChunk, err := e.encodeChunkedTargets(ctx, chunkedEncodeRequest{
-		pipelineName:   mediavo.TranscodePipelineMP4,
+		pipelineName:   mediadomain.TranscodePipelineMP4,
 		task:           req.Task,
 		policy:         req.Policy,
 		srcPath:        req.SourcePath,
@@ -381,7 +380,7 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 			return nil, fmt.Errorf("probe assembled output %s: %w", target.ID, err)
 		}
 
-		if err := mediavo.ValidateTranscodedDuration(req.SourceDuration, meta.Duration); err != nil {
+		if err := (mediadomain.VideoMeta{Duration: req.SourceDuration}).ValidateTranscodedDuration(meta.Duration); err != nil {
 			return nil, fmt.Errorf("validate assembled output %s: %w", target.ID, err)
 		}
 
@@ -394,7 +393,7 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 	}
 
 	// 全部目标已拼装并提交为最终断点单元，块产物即刻回收磁盘。
-	discardTranscodeChunks(ckpt, mediavo.TranscodePipelineMP4)
+	discardTranscodeChunks(ckpt, mediadomain.TranscodePipelineMP4)
 
 	return results, nil
 }
@@ -404,7 +403,7 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 func (e *TranscodeEngine) muxChunkedDASH(
 	ctx context.Context,
 	ckpt *transcodeCheckpoint,
-	targets []mediavo.TranscodeTarget,
+	targets []mediadomain.TranscodeTarget,
 	perChunk []map[string]string,
 	audioPath, tmpDir, mpdPath, fileHash string,
 	segDur int,

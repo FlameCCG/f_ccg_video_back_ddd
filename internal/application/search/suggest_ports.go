@@ -28,9 +28,11 @@ type SuggestFallbackQuery interface {
 }
 
 // SuggestionCache 联想结果的进程内短 TTL 缓存端口.
+//
+// 缓存键由适配器按「小写前缀 + 候选数」生成，调用方不拼 key。
 type SuggestionCache interface {
-	// Load 读取缓存；未命中或已过期返回 false。
-	Load(key string) ([]SuggestionItem, bool)
-	// Store 写入缓存并刷新过期时间。
-	Store(key string, items []SuggestionItem)
+	// Load 按前缀和候选数读取缓存；未命中或已过期返回 false。
+	Load(prefix string, size int) ([]SuggestionItem, bool)
+	// Store 按前缀和候选数写入缓存并刷新过期时间。
+	Store(prefix string, size int, items []SuggestionItem)
 }

@@ -6,9 +6,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/dynamic"
-	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
-	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
-	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/dynamic"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -144,25 +142,30 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 
-	created, err := dynamicentity.NewDynamic(1, "  hello  ", " img.png ")
+	created, err := dynamicdomain.NewDynamic(1, "  hello  ", " img.png ")
 	if err != nil {
 		t.Fatalf("NewDynamic: %v", err)
 	}
 
-	if err := f.dynamics.Create(ctx, created); err != nil {
+	saved, err := f.dynamics.Create(ctx, created)
+	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if created.ID == 0 || created.CreatedAt.IsZero() {
-		t.Fatalf("Create 应回填 ID 与 CreatedAt，got %+v", created)
+	if saved == nil || saved.ID() == 0 || saved.CreatedAt().IsZero() {
+		t.Fatalf("Create 应返回带 ID 与 CreatedAt 的实体，got %+v", saved)
 	}
 
-	got, err := f.dynamics.FindByID(ctx, created.ID)
+	if created.ID() != 0 {
+		t.Fatal("Create 不应回写调用方持有的实例")
+	}
+
+	got, err := f.dynamics.FindByID(ctx, saved.ID())
 	if err != nil {
 		t.Fatalf("FindByID: %v", err)
 	}
 
-	if got == nil || got.Content != "hello" || got.ImageURL != "img.png" || got.UserID != 1 {
+	if got == nil || got.Content() != "hello" || got.ImageURL() != "img.png" || got.UserID() != 1 {
 		t.Fatalf("FindByID = %+v", got)
 	}
 
@@ -171,7 +174,7 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 		t.Fatalf("FindByID(9999) = %+v, %v; want nil, nil", missing, err)
 	}
 
-	exists, err := f.dynamics.ExistsByID(ctx, created.ID)
+	exists, err := f.dynamics.ExistsByID(ctx, saved.ID())
 	if err != nil || !exists {
 		t.Fatalf("ExistsByID = %v, %v; want true, nil", exists, err)
 	}
@@ -181,16 +184,16 @@ func TestDynamicRepositoryCRUD(t *testing.T) {
 		t.Fatalf("ExistsByID(9999) = %v, %v; want false, nil", exists, err)
 	}
 
-	notice, err := f.dynamics.FindNoticeTargetByID(ctx, created.ID)
-	if err != nil || notice == nil || notice.Content != "hello" || notice.UserID != 1 {
+	notice, err := f.dynamics.FindNoticeTargetByID(ctx, saved.ID())
+	if err != nil || notice == nil || notice.Content() != "hello" || notice.UserID() != 1 {
 		t.Fatalf("FindNoticeTargetByID = %+v, %v", notice, err)
 	}
 
-	if err := f.dynamics.DeleteByID(ctx, created.ID); err != nil {
+	if err := f.dynamics.DeleteByID(ctx, saved.ID()); err != nil {
 		t.Fatalf("DeleteByID: %v", err)
 	}
 
-	if got, err := f.dynamics.FindByID(ctx, created.ID); err != nil || got != nil {
+	if got, err := f.dynamics.FindByID(ctx, saved.ID()); err != nil || got != nil {
 		t.Fatalf("删除后 FindByID = %+v, %v; want nil, nil", got, err)
 	}
 
@@ -218,8 +221,8 @@ func TestDynamicRepositoryPinAndLikeCount(t *testing.T) {
 		t.Fatalf("FindByID: %v", err)
 	}
 
-	if !pinned.IsPinned || pinned.PinnedAt == nil {
-		t.Fatalf("SetPinned 后 = %+v", pinned)
+	if !pinned.IsPinned() || pinned.PinnedAt() == nil {
+		t.Fatalf("SetPinned 后 = %+v", pinned.Snapshot())
 	}
 
 	if err := f.dynamics.ClearPinnedByUser(ctx, 1); err != nil {
@@ -231,8 +234,8 @@ func TestDynamicRepositoryPinAndLikeCount(t *testing.T) {
 		t.Fatalf("FindByID: %v", err)
 	}
 
-	if cleared.IsPinned || cleared.PinnedAt != nil {
-		t.Fatalf("ClearPinnedByUser 后 = %+v", cleared)
+	if cleared.IsPinned() || cleared.PinnedAt() != nil {
+		t.Fatalf("ClearPinnedByUser 后 = %+v", cleared.Snapshot())
 	}
 
 	if err := f.dynamics.SetPinned(ctx, 2, &now); err != nil {
@@ -243,7 +246,7 @@ func TestDynamicRepositoryPinAndLikeCount(t *testing.T) {
 		t.Fatalf("ClearPinned: %v", err)
 	}
 
-	if got, _ := f.dynamics.FindByID(ctx, 2); got.IsPinned {
+	if got, _ := f.dynamics.FindByID(ctx, 2); got.IsPinned() {
 		t.Error("ClearPinned 未生效")
 	}
 
@@ -299,20 +302,19 @@ func TestReadRepository(t *testing.T) {
 	}
 
 	at := time.Now().Add(-time.Hour).Truncate(time.Second)
-	record := &dynamicentity.ReadRecord{
-		UserID:           2,
-		AuthorID:         1,
-		LastReadWorkType: enum.WorkTypeDynamic,
-		LastReadWorkID:   1,
-		LastReadWorkAt:   at,
-	}
+	record := dynamicdomain.NewReadRecord(2, 1, enum.WorkTypeDynamic, 1, at)
 
-	if err := f.reads.Create(ctx, record); err != nil {
+	saved, err := f.reads.Create(ctx, record)
+	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if record.ID == 0 {
-		t.Error("Create 应回填自增 ID")
+	if saved == nil || saved.ID() == 0 {
+		t.Fatal("Create 应返回带自增 ID 的实体")
+	}
+
+	if record.ID() != 0 {
+		t.Fatal("Create 不应回写调用方持有的实例")
 	}
 
 	got, err := f.reads.FindByUserAndAuthor(ctx, 2, 1)
@@ -320,12 +322,12 @@ func TestReadRepository(t *testing.T) {
 		t.Fatalf("FindByUserAndAuthor = %+v, %v", got, err)
 	}
 
-	if got.LastReadWorkID != 1 || got.LastReadWorkType != enum.WorkTypeDynamic {
-		t.Fatalf("读到的位点 = %+v", got)
+	if got.LastReadWorkID() != 1 || got.LastReadWorkType() != enum.WorkTypeDynamic {
+		t.Fatalf("读到的位点 = %+v", got.Snapshot())
 	}
 
 	next := at.Add(time.Minute)
-	if err := f.reads.Advance(ctx, got.ID, enum.WorkTypeVideo, 1, next); err != nil {
+	if advanced, err := f.reads.Advance(ctx, got.ID(), enum.WorkTypeVideo, 1, next); err != nil || !advanced {
 		t.Fatalf("Advance: %v", err)
 	}
 
@@ -334,8 +336,8 @@ func TestReadRepository(t *testing.T) {
 		t.Fatalf("FindByUserAndAuthor: %v", err)
 	}
 
-	if advanced.LastReadWorkType != enum.WorkTypeVideo || !advanced.LastReadWorkAt.Equal(next) {
-		t.Fatalf("Advance 后 = %+v, want video @ %v", advanced, next)
+	if advanced.LastReadWorkType() != enum.WorkTypeVideo || !advanced.LastReadWorkAt().Equal(next) {
+		t.Fatalf("Advance 后 = %+v, want video @ %v", advanced.Snapshot(), next)
 	}
 }
 
@@ -386,12 +388,12 @@ func TestUserProfileAndFollowQueries(t *testing.T) {
 		t.Error("FollowedAt 应取自 user_focus.created_at")
 	}
 
-	owned, err := f.videos.ExistsPublishedByAuthor(ctx, 1, "alice")
+	owned, err := f.videos.ExistsPublishedByAuthorForUpdate(ctx, 1, "alice")
 	if err != nil || !owned {
 		t.Fatalf("ExistsPublishedByAuthor(1, alice) = %v, %v; want true", owned, err)
 	}
 
-	owned, err = f.videos.ExistsPublishedByAuthor(ctx, 1, "bob")
+	owned, err = f.videos.ExistsPublishedByAuthorForUpdate(ctx, 1, "bob")
 	if err != nil || owned {
 		t.Fatalf("ExistsPublishedByAuthor(1, bob) = %v, %v; want false", owned, err)
 	}
@@ -454,7 +456,7 @@ func TestFeedQuery(t *testing.T) {
 	f := newFixture(t)
 	ctx := t.Context()
 
-	sources := dynamicvo.BuildFeedSources(0)
+	sources := (dynamicdomain.FeedPolicy{}).BuildFeedSources(0)
 
 	rows, err := f.feed.ListAuthorWorks(ctx, app.AuthorFeedParams{
 		AuthorID:       1,
@@ -503,14 +505,14 @@ func TestFeedQuery(t *testing.T) {
 
 	// 仅视频 / 仅动态。
 	rows, err = f.feed.ListAuthorWorks(ctx, app.AuthorFeedParams{
-		AuthorID: 1, AuthorUsername: "alice", Sources: dynamicvo.BuildFeedSources(1), Limit: 10,
+		AuthorID: 1, AuthorUsername: "alice", Sources: (dynamicdomain.FeedPolicy{}).BuildFeedSources(1), Limit: 10,
 	})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("仅视频 = %d 行, %v", len(rows), err)
 	}
 
 	rows, err = f.feed.ListAuthorWorks(ctx, app.AuthorFeedParams{
-		AuthorID: 1, AuthorUsername: "alice", Sources: dynamicvo.BuildFeedSources(2), Limit: 10,
+		AuthorID: 1, AuthorUsername: "alice", Sources: (dynamicdomain.FeedPolicy{}).BuildFeedSources(2), Limit: 10,
 	})
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("仅动态 = %d 行, %v", len(rows), err)
@@ -564,7 +566,7 @@ func TestFeedQueryOwnerViewIncludesUnpublished(t *testing.T) {
 	}
 
 	params := app.AuthorFeedParams{
-		AuthorID: 1, AuthorUsername: "alice", Sources: dynamicvo.BuildFeedSources(1), Limit: 10,
+		AuthorID: 1, AuthorUsername: "alice", Sources: (dynamicdomain.FeedPolicy{}).BuildFeedSources(1), Limit: 10,
 	}
 
 	rows, err := f.feed.ListAuthorWorks(ctx, params)
@@ -673,8 +675,8 @@ func TestFeedServiceFollowingAggregate(t *testing.T) {
 		})
 	}
 
-	if _, _, err := service.ListFeed(ctx, 0, 0, 0, 1, 20); err != dynamicerrors.ErrUserNotLogin {
-		t.Fatalf("anonymous following feed error = %v, want %v", err, dynamicerrors.ErrUserNotLogin)
+	if _, _, err := service.ListFeed(ctx, 0, 0, 0, 1, 20); err != dynamicdomain.ErrUserNotLogin {
+		t.Fatalf("anonymous following feed error = %v, want %v", err, dynamicdomain.ErrUserNotLogin)
 	}
 }
 

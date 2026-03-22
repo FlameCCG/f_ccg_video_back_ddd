@@ -29,7 +29,7 @@ func newTestRedis(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
 func TestUserChannelFormat(t *testing.T) {
 	t.Parallel()
 
-	if got, want := userChannel(42), constants.ChatUserChannelPrefix+"42"; got != want {
+	if got, want := (EventBus{}).userChannel(42), constants.ChatUserChannelPrefix+"42"; got != want {
 		t.Fatalf("userChannel(42) = %q, want %q", got, want)
 	}
 }
@@ -60,7 +60,7 @@ func TestEventBusPublishAndSubscribeRoundTrip(t *testing.T) {
 	defer stop()
 
 	// 等订阅真正建立后再发布，避免消息落在订阅之前。
-	waitForSubscribers(t, client, userChannel(7))
+	waitForSubscribers(t, client, (EventBus{}).userChannel(7))
 
 	bus.Publish(context.Background(), 7, []byte(`{"serverId":"a"}`))
 

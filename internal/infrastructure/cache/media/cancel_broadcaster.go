@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	mediaapplication "f_ccg_video_back_ddd/internal/application/media"
 	"fmt"
 	"sync"
 	"time"
 
 	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -30,7 +30,7 @@ type CancelBroadcaster struct {
 	redis *redis.Client
 }
 
-var _ mediaport.CancelBroadcaster = (*CancelBroadcaster)(nil)
+var _ mediaapplication.CancelBroadcaster = (*CancelBroadcaster)(nil)
 
 // NewCancelBroadcaster 构造取消事件广播器。
 func NewCancelBroadcaster(redisClient *redis.Client) *CancelBroadcaster {

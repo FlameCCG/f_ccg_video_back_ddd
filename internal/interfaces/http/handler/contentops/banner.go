@@ -70,7 +70,7 @@ func (h *Handler) ListView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(list, c)
+	res.OkWithData((app.BannerDTO{}).FromBanners(list), c)
 }
 
 // AdminListView 后台轮播图列表.
@@ -96,7 +96,7 @@ func (h *Handler) AdminListView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithList(list, total, c)
+	res.OkWithList((app.BannerDTO{}).FromBanners(list), total, c)
 }
 
 // AdminCreateView 创建轮播图.
@@ -124,7 +124,7 @@ func (h *Handler) AdminCreateView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(banner, c)
+	res.OkWithData((app.BannerDTO{}).FromBanner(*banner), c)
 }
 
 // AdminUpdateView 更新轮播图.

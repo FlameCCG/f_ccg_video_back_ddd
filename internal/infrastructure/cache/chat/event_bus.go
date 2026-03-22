@@ -41,7 +41,7 @@ func (b *EventBus) Available() bool {
 }
 
 // userChannel 返回用户事件频道名。
-func userChannel(userID uint) string {
+func (EventBus) userChannel(userID uint) string {
 	return constants.ChatUserChannelPrefix + strconv.FormatUint(uint64(userID), 10)
 }
 
@@ -58,7 +58,7 @@ func (b *EventBus) Publish(ctx context.Context, userID uint, payload []byte) {
 	pubCtx, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
 
-	if err := b.redis.Publish(pubCtx, userChannel(userID), payload).Err(); err != nil {
+	if err := b.redis.Publish(pubCtx, b.userChannel(userID), payload).Err(); err != nil {
 		b.logger.Warn("publish chat event failed", zap.Error(err), zap.Uint("userId", userID))
 	}
 }
@@ -74,7 +74,7 @@ func (b *EventBus) Subscribe(userID uint, handler func(payload []byte)) func() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	pubsub := b.redis.Subscribe(ctx, userChannel(userID))
+	pubsub := b.redis.Subscribe(ctx, b.userChannel(userID))
 
 	go func() {
 		defer func() { _ = pubsub.Close() }()

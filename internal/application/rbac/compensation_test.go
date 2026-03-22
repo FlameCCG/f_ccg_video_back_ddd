@@ -7,10 +7,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
-	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -60,7 +57,7 @@ func roleServiceFor(s *suite, e app.Enforcer, m tx.Manager) *app.RoleService {
 func TestCreateRollsBackPartialPolicy(t *testing.T) {
 	s := newSuite(t)
 	enforcer := &failingPolicy{Enforcer: s.enforcer, failAddAt: 2}
-	err := roleServiceFor(s, enforcer, gormx.NewTxManager(s.db)).Create(context.Background(), app.CreateRoleParams{Name: "partial", Permissions: []rbacvo.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}})
+	err := roleServiceFor(s, enforcer, gormx.NewTxManager(s.db)).Create(context.Background(), app.CreateRoleParams{Name: "partial", Permissions: []rbacdomain.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}})
 	if err == nil {
 		t.Fatal("expected add failure")
 	}
@@ -72,15 +69,17 @@ func TestCreateRollsBackPartialPolicy(t *testing.T) {
 func TestPermissionReplacementRestoresPreviousSet(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := rbacentity.NewRole("replace", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("replace", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
+	} else {
+		*role = *created
 	}
-	_, _ = s.enforcer.AddPolicy(role.Name, "/old", "GET")
+	_, _ = s.enforcer.AddPolicy(role.Name(), "/old", "GET")
 	previous, _ := s.enforcer.GetPolicy()
 	enforcer := &failingPolicy{Enforcer: s.enforcer, failAddAt: 2}
 	svc := app.NewPermissionService(s.roleRepo, infra.NewRoleMenuRepository(s.db), infra.NewApiResourceRepository(s.db), enforcer, app.NewRoleGraph(enforcer), infra.NewPermissionEvaluator(), zap.NewNop())
-	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID, Permissions: []rbacvo.PermissionItem{{Resource: "/new1", Action: "GET"}, {Resource: "/new2", Action: "POST"}}}); err == nil {
+	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID(), Permissions: []rbacdomain.PermissionItem{{Resource: "/new1", Action: "GET"}, {Resource: "/new2", Action: "POST"}}}); err == nil {
 		t.Fatal("expected second add failure")
 	}
 	if got, _ := s.enforcer.GetPolicy(); !reflect.DeepEqual(got, previous) {
@@ -91,21 +90,23 @@ func TestPermissionReplacementRestoresPreviousSet(t *testing.T) {
 func TestPermissionReplacementRestoresInheritedMenus(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := rbacentity.NewRole("break-inheritance", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("break-inheritance", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
+	} else {
+		*role = *created
 	}
 	menus := infra.NewRoleMenuRepository(s.db)
-	if err := menus.CreateIgnoreConflict(ctx, rbacentity.NewInheritedRoleMenus(role.ID, []uint{99})); err != nil {
+	if err := menus.CreateIgnoreConflict(ctx, rbacdomain.NewInheritedRoleMenus(role.ID(), []uint{99})); err != nil {
 		t.Fatal(err)
 	}
-	_, _ = s.enforcer.AddRoleForUser(role.Name, "parent")
+	_, _ = s.enforcer.AddRoleForUser(role.Name(), "parent")
 	enforcer := &failingPolicy{Enforcer: s.enforcer, failAddAt: 2}
 	svc := app.NewPermissionService(s.roleRepo, menus, infra.NewApiResourceRepository(s.db), enforcer, app.NewRoleGraph(enforcer), infra.NewPermissionEvaluator(), zap.NewNop())
-	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID, BreakInheritance: true, Permissions: []rbacvo.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}}); err == nil {
+	if err := svc.UpdateRolePermissions(ctx, app.UpdateRolePermissionsParams{RoleID: role.ID(), BreakInheritance: true, Permissions: []rbacdomain.PermissionItem{{Resource: "/one", Action: "GET"}, {Resource: "/two", Action: "POST"}}}); err == nil {
 		t.Fatal("expected failure")
 	}
-	inherited, err := menus.InheritedMenuIDs(ctx, role.ID)
+	inherited, err := menus.InheritedMenuIDs(ctx, role.ID())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,16 +121,18 @@ func TestPermissionReplacementRestoresInheritedMenus(t *testing.T) {
 func TestUserRoleCommitFailureNeverChangesCasbin(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := rbacentity.NewRole("grant", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("grant", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
+	} else {
+		*role = *created
 	}
 	user := po.User{Username: "grant-user", Email: "grant@example.test"}
 	if err := s.db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := roleServiceFor(s, s.enforcer, failedCommit{gormx.NewTxManager(s.db)})
-	if err := svc.AssignUserRoles(ctx, user.ID, []uint{role.ID}); err == nil {
+	if err := svc.AssignUserRoles(ctx, user.ID, []uint{role.ID()}); err == nil {
 		t.Fatal("expected commit failure")
 	}
 	if len(s.enforcer.groups) != 0 || s.enforcer.saved != 0 {
@@ -145,16 +148,18 @@ func TestUserRoleCommitFailureNeverChangesCasbin(t *testing.T) {
 func TestUserRoleSaveFailureCompensatesBothStores(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := rbacentity.NewRole("grant", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("grant", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
+	} else {
+		*role = *created
 	}
 	user := po.User{Username: "save-user", Email: "save@example.test"}
 	if err := s.db.Create(&user).Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := roleServiceFor(s, &failingPolicy{Enforcer: s.enforcer, failSave: true}, gormx.NewTxManager(s.db))
-	if err := svc.AssignUserRoles(ctx, user.ID, []uint{role.ID}); err == nil {
+	if err := svc.AssignUserRoles(ctx, user.ID, []uint{role.ID()}); err == nil {
 		t.Fatal("expected save failure")
 	}
 	if len(s.enforcer.groups) != 0 {
@@ -169,56 +174,60 @@ func TestUserRoleSaveFailureCompensatesBothStores(t *testing.T) {
 func TestDeletePolicyFailureLeavesRoleRetryable(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	role := rbacentity.NewRole("delete", "")
-	if err := s.roleRepo.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("delete", "")
+	if created, err := s.roleRepo.Create(ctx, role); err != nil {
 		t.Fatal(err)
+	} else {
+		*role = *created
 	}
-	_, _ = s.enforcer.AddPolicy(role.Name, "/old", "GET")
+	_, _ = s.enforcer.AddPolicy(role.Name(), "/old", "GET")
 	svc := roleServiceFor(s, &failingPolicy{Enforcer: s.enforcer, failSave: true}, gormx.NewTxManager(s.db))
-	if err := svc.Delete(ctx, role.ID); err == nil {
+	if err := svc.Delete(ctx, role.ID()); err == nil {
 		t.Fatal("expected save failure")
 	}
-	if got, err := s.roleRepo.FindByID(ctx, role.ID); err != nil || got == nil {
+	if got, err := s.roleRepo.FindByID(ctx, role.ID()); err != nil || got == nil {
 		t.Fatalf("role lost before policy save: %v %v", got, err)
 	}
 	if len(s.enforcer.policies) != 1 {
 		t.Fatalf("old policy was not restored: %v", s.enforcer.policies)
 	}
-	if err := svc.Delete(ctx, role.ID); err != nil {
+	if err := svc.Delete(ctx, role.ID()); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 }
 
 type failingInheritedMenus struct {
-	rbacrepo.RoleMenuRepository
+	rbacdomain.RoleMenuRepository
 }
 
 func (failingInheritedMenus) DistinctMenuIDsByRole(context.Context, uint) ([]uint, error) {
 	return []uint{1}, nil
 }
 func (failingInheritedMenus) MenuIDsByRole(context.Context, uint) ([]uint, error) { return nil, nil }
-func (failingInheritedMenus) CreateIgnoreConflict(context.Context, []rbacentity.RoleMenu) error {
+func (failingInheritedMenus) CreateIgnoreConflict(context.Context, []rbacdomain.RoleMenu) error {
 	return injectedFailure
 }
 
 func TestInheritanceMenuFailureRemovesNewEdge(t *testing.T) {
 	s := newSuite(t)
 	ctx := context.Background()
-	child := rbacentity.NewRole("child", "")
-	parent := rbacentity.NewRole("parent", "")
-	for _, role := range []*rbacentity.Role{child, parent} {
-		if err := s.roleRepo.Create(ctx, role); err != nil {
+	child := rbacdomain.NewRole("child", "")
+	parent := rbacdomain.NewRole("parent", "")
+	for _, role := range []*rbacdomain.Role{child, parent} {
+		if created, err := s.roleRepo.Create(ctx, role); err != nil {
 			t.Fatal(err)
+		} else {
+			*role = *created
 		}
 	}
 	svc := app.NewInheritService(s.roleRepo, failingInheritedMenus{}, s.enforcer, app.NewRoleGraph(s.enforcer), zap.NewNop())
-	if err := svc.Assign(ctx, child.ID, parent.ID); err == nil {
+	if err := svc.Assign(ctx, child.ID(), parent.ID()); err == nil {
 		t.Fatal("expected menu failure")
 	}
 	if len(s.enforcer.groups) != 0 {
 		t.Fatalf("failed inheritance remains effective: %v", s.enforcer.groups)
 	}
-	if err := svc.Assign(ctx, child.ID, parent.ID); !errors.Is(err, rbacerrors.ErrInheritFailed) {
+	if err := svc.Assign(ctx, child.ID(), parent.ID()); !errors.Is(err, rbacdomain.ErrInheritFailed) {
 		t.Fatalf("retry must attempt menus again, got %v", err)
 	}
 }

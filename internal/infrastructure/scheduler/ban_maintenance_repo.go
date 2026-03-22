@@ -2,15 +2,16 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
-	platformservice "f_ccg_video_back_ddd/internal/domain/platform/service"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // BanMaintenanceRepository 封禁维护仓储的 GORM 实现（写侧投影，直连 users / user_ban_records）。
@@ -18,7 +19,7 @@ type BanMaintenanceRepository struct {
 	db *gorm.DB
 }
 
-var _ app.BanMaintenanceRepository = (*BanMaintenanceRepository)(nil)
+var _ identitydomain.BanMaintenanceRepository = (*BanMaintenanceRepository)(nil)
 
 // NewBanMaintenanceRepository 构造封禁维护仓储。
 func NewBanMaintenanceRepository(db *gorm.DB) *BanMaintenanceRepository {
@@ -36,7 +37,7 @@ type expiredBanRow struct {
 //
 // 子查询取每个 user_id 的 MAX(id)，再 JOIN users，
 // 过滤 u.status 与 r.status 为封禁中、r.end_at 非空且已到期。
-func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time.Time) ([]platformservice.ExpiredBan, error) {
+func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time.Time) ([]identitydomain.ExpiredBan, error) {
 	db := gormx.DB(ctx, r.db)
 
 	subQuery := db.Model(&po.UserBanRecord{}).
@@ -60,9 +61,9 @@ func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time
 		return nil, err
 	}
 
-	expired := make([]platformservice.ExpiredBan, 0, len(rows))
+	expired := make([]identitydomain.ExpiredBan, 0, len(rows))
 	for _, row := range rows {
-		expired = append(expired, platformservice.ExpiredBan{
+		expired = append(expired, identitydomain.ExpiredBan{
 			RecordID: row.RecordID,
 			UserID:   row.UserID,
 			EndAt:    row.EndAt,
@@ -73,15 +74,57 @@ func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time
 }
 
 // ActivateBannedUsers 将仍处于封禁态的指定用户批量置为正常状态。
+func (r *BanMaintenanceRepository) LatestBansForUpdate(ctx context.Context, userIDs []uint) ([]identitydomain.BanReleaseState, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+	db := gormx.DB(ctx, r.db)
+	var users []po.User
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "status").Where("id IN ?", userIDs).Order("id ASC").Find(&users).Error; err != nil {
+		return nil, err
+	}
+	// 锁定读与用户行锁采用相同顺序。反连接直接选最新记录，避免子查询的旧一致性快照。
+	var records []po.UserBanRecord
+	if err := db.Table("user_ban_records AS r").Select("r.*").
+		Joins("LEFT JOIN user_ban_records AS newer ON newer.user_id = r.user_id AND newer.id > r.id").
+		Where("r.user_id IN ? AND newer.id IS NULL", userIDs).
+		Order("r.user_id ASC").Clauses(clause.Locking{Strength: "UPDATE"}).Find(&records).Error; err != nil {
+		return nil, err
+	}
+	byUser := make(map[uint]*identitydomain.BanRecord, len(records))
+	for _, record := range records {
+		byUser[record.UserID] = identitydomain.RestoreBanRecord(identitydomain.BanRecordSnapshot{
+			ID: record.ID, UserID: record.UserID, Status: record.Status,
+			EndAt: record.EndAt, IsUnbanned: record.IsUnbanned,
+		})
+	}
+	states := make([]identitydomain.BanReleaseState, 0, len(users))
+	for _, user := range users {
+		states = append(states, identitydomain.BanReleaseState{
+			User:   identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: user.ID, Status: user.Status}),
+			Record: byUser[user.ID],
+		})
+	}
+	return states, nil
+}
+
 func (r *BanMaintenanceRepository) ActivateBannedUsers(ctx context.Context, userIDs []uint) error {
 	if len(userIDs) == 0 {
 		return nil
 	}
 
-	return gormx.DB(ctx, r.db).
+	result := gormx.DB(ctx, r.db).
 		Model(&po.User{}).
 		Where("id IN ? AND status = ?", userIDs, enum.UserStatusBanned).
-		Update("status", enum.UserStatusActive).Error
+		Update("status", enum.UserStatusActive)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != int64(len(userIDs)) {
+		return fmt.Errorf("auto unban state changed: updated %d of %d users", result.RowsAffected, len(userIDs))
+	}
+	return nil
 }
 
 // MarkBanRecordsUnbanned 批量标记原封禁记录已解封。

@@ -2,8 +2,6 @@ package runtime
 
 import (
 	"testing"
-
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 )
 
 func TestParseFFmpegProgressLine(t *testing.T) {
@@ -47,13 +45,5 @@ func TestInjectFFmpegProgressArgs(t *testing.T) {
 	out2 := InjectFFmpegProgressArgs(out)
 	if len(out2) != len(out) {
 		t.Fatalf("should not inject twice: %#v", out2)
-	}
-}
-
-func TestTranscodeProgressKey(t *testing.T) {
-	t.Parallel()
-
-	if mediavo.TranscodeProgressKey(3, 0) == mediavo.TranscodeProgressKey(3, 1) {
-		t.Fatal("part key should differ")
 	}
 }

@@ -17,8 +17,8 @@ import (
 // 端口阅读：一次性建号和横幅初始化经最小存取能力执行，CLI 任务本身不直接依赖数据库句柄。
 // 角色引擎和对象存储具有独立失败点，重复执行规则应查看服务与适配器的实际约定。
 
-// SuperUserRepository 超级管理员初始化所需的持久化端口。
-type SuperUserRepository interface {
+// SystemAccounts 消费身份与权限上下文的一次性初始化能力；适配位于 bootstrap。
+type SystemAccounts interface {
 	// EnsureAdminRole 读取或创建管理员角色，返回角色 ID 与名称。
 	EnsureAdminRole(ctx context.Context) (roleID uint, roleName string, created bool, err error)
 	// UpsertSuperUser 创建或更新超级管理员账号，返回用户 ID 与是否为新建。
@@ -40,11 +40,16 @@ type StorageDriver interface {
 	SaveFile(ctx context.Context, path string, size int64, reader io.Reader, contentType string) (string, error)
 }
 
-// BannerRepository Banner 初始化所需的持久化端口。
-type BannerRepository interface {
+// DefaultBanners 消费运营上下文的横幅初始化能力和表迁移协调。
+type DefaultBanners interface {
 	// MigrateBannerTable 确保 banner 表已存在。
 	MigrateBannerTable(ctx context.Context) error
 	// UpsertBannerByCover 按封面 URL 幂等写入横幅：不存在则新建，存在则更新类型并置为显示。
 	// 返回 true 表示新建。
 	UpsertBannerByCover(ctx context.Context, coverURL string, bannerType enum.BannerType) (created bool, err error)
+}
+
+// BannerTableMigrator 仅负责技术性的表迁移，不声明领域状态写入。
+type BannerTableMigrator interface {
+	MigrateBannerTable(ctx context.Context) error
 }

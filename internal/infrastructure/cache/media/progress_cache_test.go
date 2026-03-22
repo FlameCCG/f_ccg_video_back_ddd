@@ -3,11 +3,12 @@ package media
 import (
 	"context"
 	"f_ccg_video_back_ddd/pkg/constants"
+	"testing"
+	"time"
+
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
-	"testing"
-	"time"
 )
 
 func TestRedisProgressPumpCloseUnblocksFullOutput(t *testing.T) {
@@ -54,5 +55,46 @@ func TestRedisProgressPumpCloseUnblocksFullOutput(t *testing.T) {
 				t.Fatal("Redis progress pump leaked")
 			}
 		})
+	}
+}
+
+// TestTranscodeProgressKey 保持已有 Redis 进度 key：分P 与视频级、分P 集合必须可区分。
+func TestTranscodeProgressKey(t *testing.T) {
+	t.Parallel()
+
+	cache := &ProgressCache{}
+	if cache.progressKey(3, 0) == cache.progressKey(3, 1) {
+		t.Fatal("part key should differ")
+	}
+
+	if cache.progressPartsKey(3) == cache.progressKey(3, 0) {
+		t.Fatal("parts hash key must differ from the video-level key")
+	}
+
+	if cache.partFieldKey(7) != "7" {
+		t.Fatalf("partFieldKey(7) = %q, want 7", cache.partFieldKey(7))
+	}
+
+	if got, want := cache.progressKey(3, 0), constants.TranscodeProgressKeyPrefix+"3"; got != want {
+		t.Fatalf("video key = %q, want %q", got, want)
+	}
+
+	if got, want := cache.progressKey(3, 1), constants.TranscodeProgressKeyPrefix+"3:1"; got != want {
+		t.Fatalf("part key = %q, want %q", got, want)
+	}
+
+	if got, want := cache.progressPartsKey(3), constants.TranscodeProgressKeyPrefix+"3:parts"; got != want {
+		t.Fatalf("parts key = %q, want %q", got, want)
+	}
+}
+
+func TestTranscodeProgressPartsKey(t *testing.T) {
+	t.Parallel()
+	cache := &ProgressCache{}
+	if cache.progressPartsKey(3) == cache.progressKey(3, 0) {
+		t.Fatal("parts hash key must differ from the video-level key")
+	}
+	if cache.partFieldKey(7) != "7" {
+		t.Fatalf("part field = %q, want 7", cache.partFieldKey(7))
 	}
 }

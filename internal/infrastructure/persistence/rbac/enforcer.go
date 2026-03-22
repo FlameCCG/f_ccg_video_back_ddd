@@ -2,7 +2,7 @@ package rbac
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	rbacservice "f_ccg_video_back_ddd/internal/domain/rbac/service"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/casbin/casbin/v2/util"
@@ -144,7 +144,7 @@ func (e *CasbinEnforcer) SavePolicy() error {
 type GlobPathMatcher struct{}
 
 // 编译期断言：满足领域侧声明的匹配端口。
-var _ rbacservice.PathMatcher = GlobPathMatcher{}
+var _ rbacdomain.PathMatcher = GlobPathMatcher{}
 
 // NewGlobPathMatcher 构造 glob 路径匹配器。
 func NewGlobPathMatcher() GlobPathMatcher {
@@ -157,8 +157,8 @@ func (GlobPathMatcher) Match(request, pattern string) (bool, error) {
 }
 
 // NewPermissionEvaluator 用 glob 匹配器构造领域侧权限覆盖判定器。
-func NewPermissionEvaluator() *rbacservice.PermissionEvaluator {
-	return rbacservice.NewPermissionEvaluator(NewGlobPathMatcher())
+func NewPermissionEvaluator() *rbacdomain.PermissionEvaluator {
+	return rbacdomain.NewPermissionEvaluator(NewGlobPathMatcher())
 }
 
 // RestorePolicy restores the complete pre-operation model even when a mutation failed midway.

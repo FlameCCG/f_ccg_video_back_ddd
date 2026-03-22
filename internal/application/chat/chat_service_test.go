@@ -9,9 +9,7 @@ import (
 	"testing"
 	"time"
 
-	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
-	chatvo "f_ccg_video_back_ddd/internal/domain/chat/valueobject"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 
 	"go.uber.org/zap"
 )
@@ -40,31 +38,31 @@ func TestAllMethodsRequireStore(t *testing.T) {
 	svc := NewService(repo, query, &fakeFollowRelation{}, &fakeBadgeInvalidator{}, zap.NewNop())
 	ctx := context.Background()
 
-	if _, err := svc.SendMessage(ctx, 1, 2, chatentity.MessageTypeText, "hi", "", nil); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, err := svc.SendMessage(ctx, 1, 2, chatdomain.MessageTypeText, "hi", "", nil); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("SendMessage err = %v", err)
 	}
 
-	if _, _, err := svc.ListConversations(ctx, 1, 1, 20); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, _, err := svc.ListConversations(ctx, 1, 1, 20); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("ListConversations err = %v", err)
 	}
 
-	if _, err := svc.ListMessages(ctx, 1, 2, ""); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, err := svc.ListMessages(ctx, 1, 2, ""); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("ListMessages err = %v", err)
 	}
 
-	if err := svc.MarkRead(ctx, 1, 2); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if err := svc.MarkRead(ctx, 1, 2); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("MarkRead err = %v", err)
 	}
 
-	if _, err := svc.TotalUnread(ctx, 1); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, err := svc.TotalUnread(ctx, 1); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("TotalUnread err = %v", err)
 	}
 
-	if _, err := svc.CreateConversation(ctx, 1, 2); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, err := svc.CreateConversation(ctx, 1, 2); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("CreateConversation err = %v", err)
 	}
 
-	if err := svc.DeleteConversation(ctx, 1, 2); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if err := svc.DeleteConversation(ctx, 1, 2); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("DeleteConversation err = %v", err)
 	}
 
@@ -87,27 +85,27 @@ func TestSendMessageValidatesParticipantsAndContent(t *testing.T) {
 		media      *MediaItem
 		wantErr    error
 	}{
-		{name: "no sender", senderID: 0, receiverID: 2, msgType: chatentity.MessageTypeText, text: "hi", wantErr: chaterrors.ErrNotLoggedIn},
-		{name: "no receiver", senderID: 1, receiverID: 0, msgType: chatentity.MessageTypeText, text: "hi", wantErr: chaterrors.ErrNotLoggedIn},
-		{name: "self", senderID: 1, receiverID: 1, msgType: chatentity.MessageTypeText, text: "hi", wantErr: chaterrors.ErrSelfMessage},
-		{name: "empty text", senderID: 1, receiverID: 2, msgType: chatentity.MessageTypeText, wantErr: chaterrors.ErrEmptyText},
+		{name: "no sender", senderID: 0, receiverID: 2, msgType: chatdomain.MessageTypeText, text: "hi", wantErr: chatdomain.ErrNotLoggedIn},
+		{name: "no receiver", senderID: 1, receiverID: 0, msgType: chatdomain.MessageTypeText, text: "hi", wantErr: chatdomain.ErrNotLoggedIn},
+		{name: "self", senderID: 1, receiverID: 1, msgType: chatdomain.MessageTypeText, text: "hi", wantErr: chatdomain.ErrSelfMessage},
+		{name: "empty text", senderID: 1, receiverID: 2, msgType: chatdomain.MessageTypeText, wantErr: chatdomain.ErrEmptyText},
 		{
 			name:     "text too long",
 			senderID: 1, receiverID: 2,
-			msgType: chatentity.MessageTypeText,
+			msgType: chatdomain.MessageTypeText,
 			text:    strings.Repeat("字", 1001),
-			wantErr: chaterrors.ErrTextTooLong,
+			wantErr: chatdomain.ErrTextTooLong,
 		},
-		{name: "empty emoji", senderID: 1, receiverID: 2, msgType: chatentity.MessageTypeEmoji, wantErr: chaterrors.ErrEmptyEmoji},
-		{name: "image without media", senderID: 1, receiverID: 2, msgType: chatentity.MessageTypeImage, wantErr: chaterrors.ErrEmptyMediaURL},
+		{name: "empty emoji", senderID: 1, receiverID: 2, msgType: chatdomain.MessageTypeEmoji, wantErr: chatdomain.ErrEmptyEmoji},
+		{name: "image without media", senderID: 1, receiverID: 2, msgType: chatdomain.MessageTypeImage, wantErr: chatdomain.ErrEmptyMediaURL},
 		{
 			name:     "sticker with blank url",
 			senderID: 1, receiverID: 2,
-			msgType: chatentity.MessageTypeSticker,
+			msgType: chatdomain.MessageTypeSticker,
 			media:   &MediaItem{},
-			wantErr: chaterrors.ErrEmptyMediaURL,
+			wantErr: chatdomain.ErrEmptyMediaURL,
 		},
-		{name: "unsupported type", senderID: 1, receiverID: 2, msgType: "audio", wantErr: chaterrors.ErrUnsupportedMessageType},
+		{name: "unsupported type", senderID: 1, receiverID: 2, msgType: "audio", wantErr: chatdomain.ErrUnsupportedMessageType},
 	}
 
 	for _, tt := range tests {
@@ -134,7 +132,7 @@ func TestSendMessagePersistsAndAdvancesConversation(t *testing.T) {
 
 	svc, repo, _, _, badges := newService()
 
-	msg, err := svc.SendMessage(context.Background(), 9, 3, chatentity.MessageTypeText, "你好", "", nil)
+	msg, err := svc.SendMessage(context.Background(), 9, 3, chatdomain.MessageTypeText, "你好", "", nil)
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
@@ -148,7 +146,7 @@ func TestSendMessagePersistsAndAdvancesConversation(t *testing.T) {
 		t.Fatalf("conversationId = %q, want 3_9", msg.ConversationID)
 	}
 
-	if msg.SenderID != 9 || msg.ReceiverID != 3 || msg.Type != chatentity.MessageTypeText || msg.Text != "你好" {
+	if msg.SenderID != 9 || msg.ReceiverID != 3 || msg.Type != chatdomain.MessageTypeText || msg.Text != "你好" {
 		t.Fatalf("message = %+v", msg)
 	}
 
@@ -178,17 +176,17 @@ func TestSendMessageBuildsPreviewPerType(t *testing.T) {
 		media   *MediaItem
 		want    string
 	}{
-		{name: "text", msgType: chatentity.MessageTypeText, text: "简短", want: "简短"},
+		{name: "text", msgType: chatdomain.MessageTypeText, text: "简短", want: "简短"},
 		{
 			name:    "long text truncated",
-			msgType: chatentity.MessageTypeText,
+			msgType: chatdomain.MessageTypeText,
 			text:    strings.Repeat("字", 51),
 			want:    strings.Repeat("字", 50) + "...",
 		},
-		{name: "image", msgType: chatentity.MessageTypeImage, media: &MediaItem{URL: "http://x/a.png"}, want: "[图片]"},
-		{name: "emoji with value", msgType: chatentity.MessageTypeEmoji, emoji: ":)", want: ":)"},
-		{name: "emoji from text", msgType: chatentity.MessageTypeEmoji, text: "^_^", want: "[表情]"},
-		{name: "sticker", msgType: chatentity.MessageTypeSticker, media: &MediaItem{URL: "http://x/s.png"}, want: "[表情包]"},
+		{name: "image", msgType: chatdomain.MessageTypeImage, media: &MediaItem{URL: "http://x/a.png"}, want: "[图片]"},
+		{name: "emoji with value", msgType: chatdomain.MessageTypeEmoji, emoji: ":)", want: ":)"},
+		{name: "emoji from text", msgType: chatdomain.MessageTypeEmoji, text: "^_^", want: "[表情]"},
+		{name: "sticker", msgType: chatdomain.MessageTypeSticker, media: &MediaItem{URL: "http://x/s.png"}, want: "[表情包]"},
 	}
 
 	for _, tt := range tests {
@@ -217,7 +215,7 @@ func TestSendMessageCarriesMediaThroughDomain(t *testing.T) {
 	svc, repo, _, _, _ := newService()
 	media := &MediaItem{URL: "http://x/a.png", Mime: "image/png", Width: 4, Height: 5, Size: 678}
 
-	msg, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeImage, "", "", media)
+	msg, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeImage, "", "", media)
 	if err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
@@ -226,7 +224,7 @@ func TestSendMessageCarriesMediaThroughDomain(t *testing.T) {
 		t.Fatalf("media = %+v, want %+v", msg.Media, media)
 	}
 
-	if got := repo.inserted[0].Media; got == nil || got.URL != media.URL || got.Size != media.Size {
+	if got := repo.inserted[0].Media(); got == nil || got.URL != media.URL || got.Size != media.Size {
 		t.Fatalf("persisted media = %+v", got)
 	}
 }
@@ -238,7 +236,7 @@ func TestSendMessageSkipsLimitWhenReceiverFollowsSender(t *testing.T) {
 	svc, repo, _, follows, _ := newService()
 	follows.following = true
 
-	if _, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil); err != nil {
+	if _, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
@@ -261,8 +259,8 @@ func TestSendMessageEnforcesDailyLimitForNonFollower(t *testing.T) {
 	follows.following = false
 	repo.exists[messageWindow{conversationID: "1_2", senderID: 1, receiverID: 2}] = true
 
-	_, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil)
-	if !errors.Is(err, chaterrors.ErrDailySendLimit) {
+	_, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil)
+	if !errors.Is(err, chatdomain.ErrDailySendLimit) {
 		t.Fatalf("err = %v, want ErrDailySendLimit", err)
 	}
 
@@ -280,7 +278,7 @@ func TestSendMessageAllowsSecondMessageAfterReply(t *testing.T) {
 	repo.exists[messageWindow{conversationID: "1_2", senderID: 1, receiverID: 2}] = true
 	repo.exists[messageWindow{conversationID: "1_2", senderID: 2, receiverID: 1}] = true
 
-	if _, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil); err != nil {
+	if _, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
@@ -296,7 +294,7 @@ func TestSendMessageAllowsFirstMessageOfDay(t *testing.T) {
 	svc, repo, _, follows, _ := newService()
 	follows.following = false
 
-	if _, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil); err != nil {
+	if _, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
@@ -313,7 +311,7 @@ func TestSendMessageIgnoresFollowLookupFailure(t *testing.T) {
 	svc, repo, _, follows, _ := newService()
 	follows.err = errors.New("db down")
 
-	if _, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil); err != nil {
+	if _, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 
@@ -335,7 +333,7 @@ func TestSendMessagePropagatesWindowLookupError(t *testing.T) {
 	repo.existsErr = errors.New("mongo down")
 
 	wantErr := repo.existsErr
-	if _, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil); !errors.Is(err, wantErr) {
+	if _, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil); !errors.Is(err, wantErr) {
 		t.Fatalf("err = %v, want %v", err, wantErr)
 	}
 }
@@ -350,7 +348,7 @@ func TestSendMessagePropagatesPersistenceErrors(t *testing.T) {
 		repo.insertErr = errors.New("insert failed")
 
 		if _, err := svc.SendMessage(
-			context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil,
+			context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil,
 		); !errors.Is(err, repo.insertErr) {
 			t.Fatalf("err = %v", err)
 		}
@@ -367,7 +365,7 @@ func TestSendMessagePropagatesPersistenceErrors(t *testing.T) {
 		repo.applyErr = errors.New("upsert failed")
 
 		if _, err := svc.SendMessage(
-			context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil,
+			context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil,
 		); !errors.Is(err, repo.applyErr) {
 			t.Fatalf("err = %v", err)
 		}
@@ -385,7 +383,7 @@ func TestSendMessageToleratesMissingBadgePort(t *testing.T) {
 	repo := &fakeRepository{available: true, exists: make(map[messageWindow]bool)}
 	svc := NewService(repo, &fakeQuery{}, &fakeFollowRelation{following: true}, nil, zap.NewNop())
 
-	if _, err := svc.SendMessage(context.Background(), 1, 2, chatentity.MessageTypeText, "hi", "", nil); err != nil {
+	if _, err := svc.SendMessage(context.Background(), 1, 2, chatdomain.MessageTypeText, "hi", "", nil); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 }
@@ -401,10 +399,10 @@ func TestListConversationsNormalizesPaging(t *testing.T) {
 		wantPage     int
 		wantPageSize int
 	}{
-		{name: "defaults", page: 0, pageSize: 0, wantPage: 1, wantPageSize: chatvo.DefaultConversationPageSize},
-		{name: "clamped", page: 2, pageSize: 1_000, wantPage: 2, wantPageSize: chatvo.MaxConversationPageSize},
+		{name: "defaults", page: 0, pageSize: 0, wantPage: 1, wantPageSize: chatdomain.DefaultConversationPageSize},
+		{name: "clamped", page: 2, pageSize: 1_000, wantPage: 2, wantPageSize: chatdomain.MaxConversationPageSize},
 		{name: "kept", page: 3, pageSize: 15, wantPage: 3, wantPageSize: 15},
-		{name: "negative", page: -1, pageSize: -5, wantPage: 1, wantPageSize: chatvo.DefaultConversationPageSize},
+		{name: "negative", page: -1, pageSize: -5, wantPage: 1, wantPageSize: chatdomain.DefaultConversationPageSize},
 	}
 
 	for _, tt := range tests {
@@ -436,7 +434,7 @@ func TestListConversationsRejectsAnonymous(t *testing.T) {
 
 	svc, _, query, _, _ := newService()
 
-	if _, _, err := svc.ListConversations(context.Background(), 0, 1, 20); !errors.Is(err, chaterrors.ErrNotLoggedIn) {
+	if _, _, err := svc.ListConversations(context.Background(), 0, 1, 20); !errors.Is(err, chatdomain.ErrNotLoggedIn) {
 		t.Fatalf("err = %v, want ErrNotLoggedIn", err)
 	}
 
@@ -456,10 +454,10 @@ func TestListMessagesValidatesPeerAndCursor(t *testing.T) {
 		before  string
 		wantErr error
 	}{
-		{name: "not logged in", userID: 0, peerID: 2, wantErr: chaterrors.ErrNotLoggedIn},
-		{name: "empty peer", userID: 1, peerID: 0, wantErr: chaterrors.ErrEmptyPeerID},
-		{name: "self peer", userID: 1, peerID: 1, wantErr: chaterrors.ErrInvalidPeerID},
-		{name: "bad cursor", userID: 1, peerID: 2, before: "zzz", wantErr: chaterrors.ErrInvalidCursor},
+		{name: "not logged in", userID: 0, peerID: 2, wantErr: chatdomain.ErrNotLoggedIn},
+		{name: "empty peer", userID: 1, peerID: 0, wantErr: chatdomain.ErrEmptyPeerID},
+		{name: "self peer", userID: 1, peerID: 1, wantErr: chatdomain.ErrInvalidPeerID},
+		{name: "bad cursor", userID: 1, peerID: 2, before: "zzz", wantErr: chatdomain.ErrInvalidCursor},
 	}
 
 	for _, tt := range tests {
@@ -485,8 +483,8 @@ func TestListMessagesTrimsPageAndSetsCursor(t *testing.T) {
 	t.Parallel()
 
 	// 仓储按 _id 降序返回 11 条（MessageFetchLimit）。
-	rows := make([]MessageItem, 0, chatvo.MessageFetchLimit)
-	for i := chatvo.MessageFetchLimit; i >= 1; i-- {
+	rows := make([]MessageItem, 0, chatdomain.MessageFetchLimit)
+	for i := chatdomain.MessageFetchLimit; i >= 1; i-- {
 		rows = append(rows, MessageItem{ID: strconv.Itoa(i)})
 	}
 
@@ -498,16 +496,16 @@ func TestListMessagesTrimsPageAndSetsCursor(t *testing.T) {
 		t.Fatalf("ListMessages: %v", err)
 	}
 
-	if query.lastLimit != chatvo.MessageFetchLimit {
-		t.Fatalf("limit = %d, want %d", query.lastLimit, chatvo.MessageFetchLimit)
+	if query.lastLimit != chatdomain.MessageFetchLimit {
+		t.Fatalf("limit = %d, want %d", query.lastLimit, chatdomain.MessageFetchLimit)
 	}
 
 	if !res.HasMore {
 		t.Fatal("hasMore must be true when the extra row comes back")
 	}
 
-	if len(res.List) != chatvo.MessagePageSize {
-		t.Fatalf("page size = %d, want %d", len(res.List), chatvo.MessagePageSize)
+	if len(res.List) != chatdomain.MessagePageSize {
+		t.Fatalf("page size = %d, want %d", len(res.List), chatdomain.MessagePageSize)
 	}
 
 	// 截掉第 11 条后倒序：最早的是 "2"，最新的是 "11"。
@@ -599,15 +597,15 @@ func TestMarkReadValidatesPeer(t *testing.T) {
 	svc, _, _, _, _ := newService()
 	ctx := context.Background()
 
-	if err := svc.MarkRead(ctx, 0, 2); !errors.Is(err, chaterrors.ErrNotLoggedIn) {
+	if err := svc.MarkRead(ctx, 0, 2); !errors.Is(err, chatdomain.ErrNotLoggedIn) {
 		t.Fatalf("err = %v", err)
 	}
 
-	if err := svc.MarkRead(ctx, 1, 0); !errors.Is(err, chaterrors.ErrEmptyPeerID) {
+	if err := svc.MarkRead(ctx, 1, 0); !errors.Is(err, chatdomain.ErrEmptyPeerID) {
 		t.Fatalf("err = %v", err)
 	}
 
-	if err := svc.MarkRead(ctx, 1, 1); !errors.Is(err, chaterrors.ErrInvalidPeerID) {
+	if err := svc.MarkRead(ctx, 1, 1); !errors.Is(err, chatdomain.ErrInvalidPeerID) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -640,7 +638,7 @@ func TestTotalUnreadSatisfiesNotificationPort(t *testing.T) {
 		t.Fatalf("total = %d, want 12", total)
 	}
 
-	if _, err := svc.TotalUnread(context.Background(), 0); !errors.Is(err, chaterrors.ErrNotLoggedIn) {
+	if _, err := svc.TotalUnread(context.Background(), 0); !errors.Is(err, chatdomain.ErrNotLoggedIn) {
 		t.Fatalf("anonymous err = %v, want ErrNotLoggedIn", err)
 	}
 
@@ -659,14 +657,14 @@ func TestCreateConversationMapsPeerAndUnread(t *testing.T) {
 	updated := created.Add(time.Hour)
 
 	svc, repo, _, _, _ := newService()
-	repo.upsert = &chatentity.Conversation{
+	repo.upsert = chatdomain.RestoreConversation(chatdomain.ConversationSnapshot{
 		ID:          "3_9",
-		MemberA:     chatentity.Member{UserID: 3, Unread: 1},
-		MemberB:     chatentity.Member{UserID: 9, Unread: 4},
-		LastMessage: &chatentity.LastMessage{MsgID: "abc", Type: chatentity.MessageTypeText, Preview: "hi", SenderID: 3, CreatedAt: created},
+		MemberA:     chatdomain.Member{UserID: 3, Unread: 1},
+		MemberB:     chatdomain.Member{UserID: 9, Unread: 4},
+		LastMessage: &chatdomain.LastMessage{MsgID: "abc", Type: chatdomain.MessageTypeText, Preview: "hi", SenderID: 3, CreatedAt: created},
 		CreatedAt:   created,
 		UpdatedAt:   updated,
-	}
+	})
 
 	item, err := svc.CreateConversation(context.Background(), 9, 3)
 	if err != nil {
@@ -693,12 +691,12 @@ func TestCreateConversationFallsBackToCreatedAt(t *testing.T) {
 	created := time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)
 
 	svc, repo, _, _, _ := newService()
-	repo.upsert = &chatentity.Conversation{
+	repo.upsert = chatdomain.RestoreConversation(chatdomain.ConversationSnapshot{
 		ID:        "1_2",
-		MemberA:   chatentity.Member{UserID: 1},
-		MemberB:   chatentity.Member{UserID: 2},
+		MemberA:   chatdomain.Member{UserID: 1},
+		MemberB:   chatdomain.Member{UserID: 2},
 		CreatedAt: created,
-	}
+	})
 
 	item, err := svc.CreateConversation(context.Background(), 1, 2)
 	if err != nil {
@@ -722,15 +720,15 @@ func TestCreateConversationUsesDedicatedSelfError(t *testing.T) {
 	svc, _, _, _, _ := newService()
 	ctx := context.Background()
 
-	if _, err := svc.CreateConversation(ctx, 5, 5); !errors.Is(err, chaterrors.ErrSelfConversation) {
+	if _, err := svc.CreateConversation(ctx, 5, 5); !errors.Is(err, chatdomain.ErrSelfConversation) {
 		t.Fatalf("err = %v, want ErrSelfConversation", err)
 	}
 
-	if _, err := svc.CreateConversation(ctx, 0, 2); !errors.Is(err, chaterrors.ErrNotLoggedIn) {
+	if _, err := svc.CreateConversation(ctx, 0, 2); !errors.Is(err, chatdomain.ErrNotLoggedIn) {
 		t.Fatalf("err = %v", err)
 	}
 
-	if _, err := svc.CreateConversation(ctx, 1, 0); !errors.Is(err, chaterrors.ErrEmptyPeerID) {
+	if _, err := svc.CreateConversation(ctx, 1, 0); !errors.Is(err, chatdomain.ErrEmptyPeerID) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -739,9 +737,9 @@ func TestCreateConversationPropagatesRepositoryError(t *testing.T) {
 	t.Parallel()
 
 	svc, repo, _, _, _ := newService()
-	repo.upsertErr = chaterrors.ErrConversationNotFound
+	repo.upsertErr = chatdomain.ErrConversationNotFound
 
-	if _, err := svc.CreateConversation(context.Background(), 1, 2); !errors.Is(err, chaterrors.ErrConversationNotFound) {
+	if _, err := svc.CreateConversation(context.Background(), 1, 2); !errors.Is(err, chatdomain.ErrConversationNotFound) {
 		t.Fatalf("err = %v, want ErrConversationNotFound", err)
 	}
 }
@@ -767,15 +765,15 @@ func TestDeleteConversationValidatesPeer(t *testing.T) {
 	svc, repo, _, _, _ := newService()
 	ctx := context.Background()
 
-	if err := svc.DeleteConversation(ctx, 0, 2); !errors.Is(err, chaterrors.ErrNotLoggedIn) {
+	if err := svc.DeleteConversation(ctx, 0, 2); !errors.Is(err, chatdomain.ErrNotLoggedIn) {
 		t.Fatalf("err = %v", err)
 	}
 
-	if err := svc.DeleteConversation(ctx, 1, 0); !errors.Is(err, chaterrors.ErrEmptyPeerID) {
+	if err := svc.DeleteConversation(ctx, 1, 0); !errors.Is(err, chatdomain.ErrEmptyPeerID) {
 		t.Fatalf("err = %v", err)
 	}
 
-	if err := svc.DeleteConversation(ctx, 1, 1); !errors.Is(err, chaterrors.ErrInvalidPeerID) {
+	if err := svc.DeleteConversation(ctx, 1, 1); !errors.Is(err, chatdomain.ErrInvalidPeerID) {
 		t.Fatalf("err = %v", err)
 	}
 

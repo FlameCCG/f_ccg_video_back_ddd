@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -49,7 +49,7 @@ func (s *Service) buildResponsesSystemPrompt(
 	analysis, err := s.analyzeVideoQuery(
 		promptCtx,
 		cfg,
-		runtime, aivo.FirstNonEmpty(model, cfg.ChatModel), conv,
+		runtime, (aidomain.PromptVideoCandidate{}).FirstNonEmpty(model, cfg.ChatModel), conv,
 	)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -70,7 +70,7 @@ func (s *Service) buildResponsesSystemPrompt(
 		return basePrompt, err
 	}
 
-	contextPrompt, err := aivo.BuildPromptVideoContext(limit, candidateSet)
+	contextPrompt, err := (promptVideoContext{}).Build(candidateSet, limit)
 	if err != nil {
 		return basePrompt, err
 	}
@@ -90,8 +90,8 @@ func (s *Service) analyzeVideoQuery(
 	runtime RuntimeConfig,
 	model string,
 	conv conversation,
-) (aivo.VideoQueryAnalysis, error) {
-	var analysis aivo.VideoQueryAnalysis
+) (aidomain.VideoQueryAnalysis, error) {
+	var analysis aidomain.VideoQueryAnalysis
 
 	transcript := conv.transcript(analysisHistoryMessages, analysisHistoryCharsPerMessage)
 	if strings.TrimSpace(transcript) == "" {
@@ -108,19 +108,21 @@ func (s *Service) analyzeVideoQuery(
 		Runtime: runtime,
 		Model:   model,
 		Messages: []*schema.Message{
-			schema.SystemMessage(aivo.VideoQueryAnalysisPrompt),
+			schema.SystemMessage(aidomain.VideoQueryAnalysisPrompt),
 			schema.UserMessage(transcript),
 		},
-		MaxTokens: aivo.AnalysisMaxOutputTokens,
+		MaxTokens: aidomain.AnalysisMaxOutputTokens,
 	})
 	if err != nil {
 		return analysis, err
 	}
-	if err = json.Unmarshal([]byte(extractJSONObject(text)), &analysis); err != nil {
+	var payload VideoQueryAnalysis
+	if err = json.Unmarshal([]byte(extractJSONObject(text)), &payload); err != nil {
 		return analysis, fmt.Errorf("解析视频查询分析结果失败: %w", err)
 	}
 
-	analysis.Keywords = aivo.NormalizeAnalysisKeywords(analysis.Keywords)
+	analysis = aidomain.VideoQueryAnalysis{Intent: payload.Intent, Keywords: payload.Keywords}
+	analysis.Keywords = analysis.NormalizeAnalysisKeywords(analysis.Keywords)
 	s.logger.Debug(
 		"video query analysis",
 		zap.String("intent", analysis.Intent),
@@ -146,15 +148,15 @@ func (s *Service) loadPromptVideoCandidates(
 	conv conversation,
 	keywords []string,
 	limit int,
-) (aivo.PromptVideoCandidateSet, error) {
+) (aidomain.PromptVideoCandidateSet, error) {
 	if s.prompts == nil || !s.prompts.Available() {
-		return aivo.PromptVideoCandidateSet{}, nil
+		return aidomain.PromptVideoCandidateSet{}, nil
 	}
 
-	keywords = aivo.NormalizeAnalysisKeywords(keywords)
+	keywords = (aidomain.VideoQueryAnalysis{}).NormalizeAnalysisKeywords(keywords)
 	images := conv.queryImages()
 	if len(keywords) == 0 && len(images) == 0 {
-		return aivo.PromptVideoCandidateSet{}, nil
+		return aidomain.PromptVideoCandidateSet{}, nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -162,13 +164,13 @@ func (s *Service) loadPromptVideoCandidates(
 
 	ids, retrievalMode := s.searchPromptVideoIDs(ctx, conv, keywords, limit)
 	if len(ids) == 0 {
-		latestIDs, err := s.prompts.LatestPublishedIDs(ctx, aivo.EnsurePositiveLimit(limit))
+		latestIDs, err := s.prompts.LatestPublishedIDs(ctx, (aidomain.PromptVideoCandidateSet{}).EnsurePositiveLimit(limit))
 		if err != nil {
-			return aivo.PromptVideoCandidateSet{}, err
+			return aidomain.PromptVideoCandidateSet{}, err
 		}
 		if len(latestIDs) == 0 {
-			return aivo.PromptVideoCandidateSet{
-				RetrievalMode: aivo.RetrievalModeLatest,
+			return aidomain.PromptVideoCandidateSet{
+				RetrievalMode: aidomain.RetrievalModeLatest,
 				QueryKeywords: keywords,
 				UsedImage:     len(images) > 0,
 			}, nil
@@ -176,7 +178,7 @@ func (s *Service) loadPromptVideoCandidates(
 
 		return s.hydratePromptVideoCandidates(
 			ctx,
-			latestIDs, aivo.RetrievalModeLatest, keywords,
+			latestIDs, aidomain.RetrievalModeLatest, keywords,
 			len(images) > 0,
 		)
 	}
@@ -196,18 +198,18 @@ func (s *Service) hydratePromptVideoCandidates(
 	retrievalMode string,
 	keywords []string,
 	usedImage bool,
-) (aivo.PromptVideoCandidateSet, error) {
+) (aidomain.PromptVideoCandidateSet, error) {
 	inputs, err := s.prompts.Load(ctx, ids)
 	if err != nil {
-		return aivo.PromptVideoCandidateSet{}, err
+		return aidomain.PromptVideoCandidateSet{}, err
 	}
 
-	items := make([]aivo.PromptVideoCandidate, 0, len(inputs))
+	items := make([]aidomain.PromptVideoCandidate, 0, len(inputs))
 	for _, input := range inputs {
-		items = append(items, aivo.NewPromptVideoCandidate(input))
+		items = append(items, aidomain.NewPromptVideoCandidate(input))
 	}
 
-	return aivo.PromptVideoCandidateSet{
+	return aidomain.PromptVideoCandidateSet{
 		RetrievalMode: retrievalMode,
 		QueryKeywords: keywords,
 		UsedImage:     usedImage,
@@ -222,10 +224,10 @@ func (s *Service) searchPromptVideoIDs(
 	keywords []string,
 	limit int,
 ) ([]uint, string) {
-	limit = aivo.EnsurePositiveLimit(limit)
+	limit = (aidomain.PromptVideoCandidateSet{}).EnsurePositiveLimit(limit)
 	images := conv.queryImages()
 	input := VideoVectorQuery{
-		Text: aivo.TrimPromptText(strings.TrimSpace(conv.LatestUserText), vectorQueryMaxChars),
+		Text: (aidomain.PromptVideoCandidate{}).TrimPromptText(strings.TrimSpace(conv.LatestUserText), vectorQueryMaxChars),
 	}
 	if len(images) > 0 {
 		input.ImageURL = images[0]
@@ -240,9 +242,9 @@ func (s *Service) searchPromptVideoIDs(
 		case err != nil:
 			s.logger.Warn("search video vector index failed, fallback to keyword match", zap.Error(err))
 		case len(ids) > 0 && input.ImageURL != "":
-			return ids, aivo.RetrievalModeImageVector
+			return ids, aidomain.RetrievalModeImageVector
 		case len(ids) > 0:
-			return ids, aivo.RetrievalModeVector
+			return ids, aidomain.RetrievalModeVector
 		}
 	}
 
@@ -250,10 +252,10 @@ func (s *Service) searchPromptVideoIDs(
 	if err != nil {
 		s.logger.Warn("keyword match for AI video search failed", zap.Error(err))
 
-		return nil, aivo.RetrievalModeKeyword
+		return nil, aidomain.RetrievalModeKeyword
 	}
 
-	return ids, aivo.RetrievalModeKeyword
+	return ids, aidomain.RetrievalModeKeyword
 }
 
 func resolvePromptCandidateLimit(cfg *config.AI) int {
@@ -261,11 +263,11 @@ func resolvePromptCandidateLimit(cfg *config.AI) int {
 		return cfg.VectorTopK
 	}
 
-	return aivo.DefaultCandidateLimit
+	return aidomain.DefaultCandidateLimit
 }
 
 func resolveAnalysisTimeout(cfg *config.AI) time.Duration {
-	timeout := aivo.DefaultAnalysisTimeoutSec * time.Second
+	timeout := aidomain.DefaultAnalysisTimeoutSec * time.Second
 	if cfg == nil || cfg.TimeoutSec <= 0 {
 		return timeout
 	}

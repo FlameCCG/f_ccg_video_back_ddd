@@ -2,11 +2,11 @@ package scheduler
 
 import (
 	"context"
+	identityapplication "f_ccg_video_back_ddd/internal/application/identity"
 	"path/filepath"
 	"testing"
 	"time"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -20,17 +20,23 @@ import (
 // statusWriteRecorder 记录 write-through 的用户状态缓存写入，替代 identity 上下文的真实实现。
 type statusWriteRecorder struct {
 	writes map[uint]enum.UserStatus
+	db     *gorm.DB
 }
 
-func newStatusWriteRecorder() *statusWriteRecorder {
-	return &statusWriteRecorder{writes: make(map[uint]enum.UserStatus)}
+func newStatusWriteRecorder(db *gorm.DB) *statusWriteRecorder {
+	return &statusWriteRecorder{writes: make(map[uint]enum.UserStatus), db: db}
 }
 
-func (r *statusWriteRecorder) Write(userID uint, status enum.UserStatus) {
-	r.writes[userID] = status
+func (r *statusWriteRecorder) Refresh(ctx context.Context, userID uint) error {
+	var user po.User
+	if err := r.db.WithContext(ctx).Select("id", "status").First(&user, userID).Error; err != nil {
+		return err
+	}
+	r.writes[userID] = user.Status
+	return nil
 }
 
-var _ app.UserStatusWriter = (*statusWriteRecorder)(nil)
+var _ identityapplication.UserStatusRefresher = (*statusWriteRecorder)(nil)
 
 func openAutoUnbanTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -94,8 +100,8 @@ func TestAutoUnbanReleasesOnlyExpiredBans(t *testing.T) {
 	seedBanUser(t, db, 3, enum.UserStatusPermanentlyBanned, nil)
 	seedBanUser(t, db, 4, enum.UserStatusActive, nil)
 
-	recorder := newStatusWriteRecorder()
-	service := app.NewAutoUnbanService(
+	recorder := newStatusWriteRecorder(db)
+	service := identityapplication.NewAutoUnbanService(
 		gormx.NewTxManager(db),
 		NewBanMaintenanceRepository(db),
 		recorder,
@@ -146,8 +152,8 @@ func TestAutoUnbanNoopWhenNothingExpired(t *testing.T) {
 
 	seedBanUser(t, db, 5, enum.UserStatusBanned, ptrTime(time.Now().Add(time.Hour)))
 
-	recorder := newStatusWriteRecorder()
-	service := app.NewAutoUnbanService(
+	recorder := newStatusWriteRecorder(db)
+	service := identityapplication.NewAutoUnbanService(
 		gormx.NewTxManager(db),
 		NewBanMaintenanceRepository(db),
 		recorder,

@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/coinutil"
 )
@@ -18,12 +16,12 @@ import (
 // tx.Manager 开启事务，context 向仓储传递事务句柄，以便硬币流水与调用方写入共享同一事务。
 type CoinService struct {
 	txm      tx.Manager
-	accounts identityrepo.CoinAccountRepository
-	records  identityrepo.CoinRecordRepository
+	accounts identitydomain.CoinAccountRepository
+	records  identitydomain.CoinRecordRepository
 }
 
 // NewCoinService 构造硬币用例服务。
-func NewCoinService(txm tx.Manager, accounts identityrepo.CoinAccountRepository, records identityrepo.CoinRecordRepository) *CoinService {
+func NewCoinService(txm tx.Manager, accounts identitydomain.CoinAccountRepository, records identitydomain.CoinRecordRepository) *CoinService {
 	return &CoinService{txm: txm, accounts: accounts, records: records}
 }
 
@@ -47,10 +45,10 @@ func (s *CoinService) ApplyChange(ctx context.Context, userID uint, delta float6
 		ctx = context.TODO()
 	}
 	if userID == 0 {
-		return result, identityerrors.ErrUserNotLogin
+		return result, identitydomain.ErrUserNotLogin
 	}
-	delta = coinutil.Round(delta)
-	if delta == 0 {
+	change := identitydomain.NewCoinChange(delta)
+	if change.IsZero() {
 		return result, nil
 	}
 	if reason == "" {
@@ -68,11 +66,11 @@ func (s *CoinService) ApplyChange(ctx context.Context, userID uint, delta float6
 				return err
 			}
 		}
-		if err := account.ApplyChange(delta); err != nil {
+		if err := account.ApplyChange(change); err != nil {
 			return err
 		}
-		if err := s.records.Create(txCtx, userID, delta, reason, dedupKey); err != nil {
-			if errors.Is(err, identityerrors.ErrDuplicateRecord) {
+		if err := s.records.Create(txCtx, userID, change.Amount(), reason, dedupKey); err != nil {
+			if errors.Is(err, identitydomain.ErrDuplicateRecord) {
 				return nil
 			}
 			return err
@@ -93,13 +91,13 @@ func (s *CoinService) ApplyChange(ctx context.Context, userID uint, delta float6
 // LoginCoin 每日登录加硬币（同一用户每天最多一次）。
 func (s *CoinService) LoginCoin(ctx context.Context, userID uint) error {
 	if userID == 0 {
-		return identityerrors.ErrUserNotLogin
+		return identitydomain.ErrUserNotLogin
 	}
 
 	key := "login:" + time.Now().Format("20060102")
 	_, err := s.ApplyChange(
 		ctx,
-		userID, identityentity.CoinLoginReward, "每日登录 +"+coinutil.Format(identityentity.CoinLoginReward),
+		userID, identitydomain.CoinLoginReward, "每日登录 +"+coinutil.Format(identitydomain.CoinLoginReward),
 		&key,
 	)
 
@@ -110,7 +108,7 @@ func (s *CoinService) LoginCoin(ctx context.Context, userID uint) error {
 // A reversal can make the earned balance negative if the reward was already spent;
 // spending remains disallowed by ApplyChange until the debt is covered.
 func (s *CoinService) RevokeFavoriteReward(ctx context.Context, authorID, actorID, videoID uint) error {
-	if authorID == 0 || authorID == actorID {
+	if !(identitydomain.FavoriteRewardPolicy{}).CanRevoke(authorID, actorID) {
 		return nil
 	}
 	return s.txm.Do(ctx, func(txCtx context.Context) error {
@@ -127,8 +125,8 @@ func (s *CoinService) RevokeFavoriteReward(ctx context.Context, authorID, actorI
 			return err
 		}
 		revokeKey := "revoke:" + key
-		if err := s.records.Create(txCtx, authorID, -identityentity.CoinFavoriteReward, "取消收藏，收回作品收藏奖励", &revokeKey); err != nil {
-			if errors.Is(err, identityerrors.ErrDuplicateRecord) {
+		if err := s.records.Create(txCtx, authorID, -identitydomain.CoinFavoriteReward, "取消收藏，收回作品收藏奖励", &revokeKey); err != nil {
+			if errors.Is(err, identitydomain.ErrDuplicateRecord) {
 				return nil
 			}
 			return err

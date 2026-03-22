@@ -3,8 +3,7 @@ package mq
 import (
 	"encoding/json"
 
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -23,7 +22,7 @@ type TranscodePayload struct {
 }
 
 // PayloadFromTask 把领域任务实体转成 Kafka 消息体。
-func PayloadFromTask(task mediaentity.TranscodeTask) TranscodePayload {
+func PayloadFromTask(task mediadomain.TranscodeTask) TranscodePayload {
 	return TranscodePayload{
 		ResolutionList: task.ResolutionList,
 		StorageType:    task.StorageType,
@@ -37,8 +36,8 @@ func PayloadFromTask(task mediaentity.TranscodeTask) TranscodePayload {
 }
 
 // Task 把 Kafka 消息体转成领域任务实体。
-func (p TranscodePayload) Task() mediaentity.TranscodeTask {
-	return mediaentity.TranscodeTask{
+func (p TranscodePayload) Task() mediadomain.TranscodeTask {
+	return mediadomain.TranscodeTask{
 		ResolutionList: p.ResolutionList,
 		StorageType:    p.StorageType,
 		SourcePath:     p.SourcePath,
@@ -61,15 +60,15 @@ func decodeTranscodePayload(payloadBytes []byte) (TranscodePayload, error) {
 }
 
 // taskIdentityFromMessage 只解析消息中的身份字段，用于在完整反序列化失败时仍能定位任务。
-func taskIdentityFromMessage(payloadBytes []byte) mediavo.TaskKey {
+func taskIdentityFromMessage(payloadBytes []byte) mediadomain.TaskKey {
 	var identity struct {
 		VideoID     uint `json:"videoId"`
 		VideoPartID uint `json:"videoPartId"`
 	}
 
 	if err := json.Unmarshal(payloadBytes, &identity); err != nil {
-		return mediavo.TaskKey{}
+		return mediadomain.TaskKey{}
 	}
 
-	return mediavo.TaskKey{VideoID: identity.VideoID, PartID: identity.VideoPartID}
+	return mediadomain.TaskKey{VideoID: identity.VideoID, PartID: identity.VideoPartID}
 }

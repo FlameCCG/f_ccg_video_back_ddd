@@ -46,8 +46,8 @@ func (a *Adapter) MultiSearch(ctx context.Context, opts app.SearchOptions, from 
 	}
 
 	resp, err := a.client.MultiSearch().
-		Add(buildVideoSearchRequest(opts, from)).
-		Add(buildUserSearchRequest(opts, from)).
+		Add(a.buildVideoSearchRequest(opts, from)).
+		Add(a.buildUserSearchRequest(opts, from)).
 		Do(ctx)
 	if err != nil {
 		return app.CombinedHits{}, err
@@ -58,8 +58,8 @@ func (a *Adapter) MultiSearch(ctx context.Context, opts app.SearchOptions, from 
 	}
 
 	return app.CombinedHits{
-		Videos: parseVideoHits(resp.Responses[0], a.logger),
-		Users:  parseUserHits(resp.Responses[1], a.logger),
+		Videos: a.parseVideoHits(resp.Responses[0], a.logger),
+		Users:  a.parseUserHits(resp.Responses[1], a.logger),
 	}, nil
 }
 
@@ -69,8 +69,8 @@ func (a *Adapter) SearchVideos(ctx context.Context, opts app.SearchOptions, from
 		return app.VideoHits{}, app.ErrESUnavailable
 	}
 
-	source := buildVideoSearchSource(opts, from)
-	applyVideoSortToSource(source, opts.VideoSort, opts.VideoOrder)
+	source := a.buildVideoSearchSource(opts, from)
+	a.applyVideoSortToSource(source, opts.VideoSort, opts.VideoOrder)
 
 	resp, err := a.client.Search().
 		Index(constants.VideoSearchIndex).
@@ -80,7 +80,7 @@ func (a *Adapter) SearchVideos(ctx context.Context, opts app.SearchOptions, from
 		return app.VideoHits{}, err
 	}
 
-	return app.VideoHits{Total: resp.TotalHits(), Items: parseVideoList(resp)}, nil
+	return app.VideoHits{Total: resp.TotalHits(), Items: a.parseVideoList(resp)}, nil
 }
 
 // SearchUsers 检索用户索引（排序 + 高亮）。
@@ -89,8 +89,8 @@ func (a *Adapter) SearchUsers(ctx context.Context, opts app.SearchOptions, from 
 		return app.UserHits{}, app.ErrESUnavailable
 	}
 
-	source := buildUserSearchSource(opts, from)
-	applyUserSortToSource(source, opts.UserSort, opts.UserOrder)
+	source := a.buildUserSearchSource(opts, from)
+	a.applyUserSortToSource(source, opts.UserSort, opts.UserOrder)
 
 	resp, err := a.client.Search().
 		Index(constants.UserSearchIndex).
@@ -100,7 +100,7 @@ func (a *Adapter) SearchUsers(ctx context.Context, opts app.SearchOptions, from 
 		return app.UserHits{}, err
 	}
 
-	return app.UserHits{Total: resp.TotalHits(), Items: parseUserList(resp)}, nil
+	return app.UserHits{Total: resp.TotalHits(), Items: a.parseUserList(resp)}, nil
 }
 
 // CountUsers 只取用户索引命中总量（size=0）。
@@ -112,7 +112,7 @@ func (a *Adapter) CountUsers(ctx context.Context, keyword string) (int64, error)
 	resp, err := a.client.Search().
 		Index(constants.UserSearchIndex).
 		SearchSource(elastic.NewSearchSource().
-			Query(buildUserQuery(keyword)).
+			Query(a.buildUserQuery(keyword)).
 			Size(0).
 			TrackTotalHits(true)).
 		Do(ctx)
@@ -140,8 +140,8 @@ func (a *Adapter) FieldSuggest(
 	// 过采样以便去重后仍够 size；上限控制查询成本。
 	candidateSize := min(max(size*4, size), suggestCandidateLimit)
 
-	query := buildSuggestQuery(docType, prefix)
-	if suggestPublishedOnly(docType) {
+	query := a.buildSuggestQuery(docType, prefix)
+	if a.suggestPublishedOnly(docType) {
 		query = elastic.NewBoolQuery().
 			Must(query).
 			Filter(elastic.NewTermQuery("status", int(enum.VideoStatusPublished)))
@@ -149,12 +149,12 @@ func (a *Adapter) FieldSuggest(
 
 	source := elastic.NewSearchSource().
 		Query(query).
-		FetchSourceContext(elastic.NewFetchSourceContext(true).Include(suggestSourceFields(docType)...)).
+		FetchSourceContext(elastic.NewFetchSourceContext(true).Include(a.suggestSourceFields(docType)...)).
 		Size(candidateSize).
 		Sort("_score", false).
 		TrackTotalHits(false)
 
-	index := suggestIndexFor(docType)
+	index := (esContract{}).SuggestIndex(docType)
 
 	resp, err := elastic.NewSearchService(a.client).
 		Index(index).
@@ -167,7 +167,7 @@ func (a *Adapter) FieldSuggest(
 		return nil, err
 	}
 
-	return parseSuggestHits(resp, docType, prefix, size), nil
+	return a.parseSuggestHits(resp, docType, prefix, size), nil
 }
 
 // MatchUserIDs 在候选用户 ID 集合内做用户名/拼音匹配，返回命中的用户 ID（ES 相关性顺序）。
@@ -188,7 +188,7 @@ func (a *Adapter) MatchUserIDs(ctx context.Context, userIDs []uint, keyword stri
 	source := elastic.NewSearchSource().
 		Query(elastic.NewBoolQuery().
 			Filter(elastic.NewTermsQuery("id", ids...)).
-			Must(buildUserQuery(keyword)),
+			Must(a.buildUserQuery(keyword)),
 		).
 		FetchSource(false).
 		Size(len(userIDs)).
@@ -209,7 +209,7 @@ func (a *Adapter) MatchUserIDs(ctx context.Context, userIDs []uint, keyword stri
 	matched := make([]uint, 0, len(resp.Hits.Hits))
 
 	for _, hit := range resp.Hits.Hits {
-		if id := parseMentionSearchHitUserID(hit); id != 0 {
+		if id := a.parseMentionSearchHitUserID(hit); id != 0 {
 			matched = append(matched, id)
 		}
 	}

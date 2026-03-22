@@ -6,14 +6,14 @@ import (
 	"reflect"
 	"testing"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"go.uber.org/zap"
 )
 
 // 提及搜索测试覆盖用户 ID 解码。
 //
-// 文档 _id 解析在 domain/search 的 ParseDocumentID 中验证；命中字段提取在 infrastructure/search 的 parseMentionSearchHitUserID 中验证。
+// 文档 _id 解析由 esContract.ParseDocumentID 处理，命中字段提取在 infrastructure/search 的 parseMentionSearchHitUserID 中完成。
 
 func TestSortMentionUsers(t *testing.T) {
 	t.Parallel()
@@ -25,7 +25,7 @@ func TestSortMentionUsers(t *testing.T) {
 		{ID: 4, Username: "d", FollowerCount: 8, IsFriend: false},
 	}
 
-	sortMentionUsers(users)
+	new(MentionService).sortMentionUsers(users)
 
 	got := []uint{users[0].ID, users[1].ID, users[2].ID, users[3].ID}
 
@@ -40,7 +40,7 @@ func TestPaginateMentionUsers(t *testing.T) {
 
 	users := []MentionUser{{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}}
 
-	page := paginateMentionUsers(users, mentionPage(2, 2))
+	page := new(MentionService).paginateMentionUsers(users, mentionPage(2, 2))
 	got := []uint{page[0].ID, page[1].ID}
 
 	want := []uint{3, 4}
@@ -49,7 +49,7 @@ func TestPaginateMentionUsers(t *testing.T) {
 	}
 
 	// 越界页返回空切片（而非 nil），保证响应里是 [] 。
-	if out := paginateMentionUsers(users, mentionPage(9, 2)); out == nil || len(out) != 0 {
+	if out := new(MentionService).paginateMentionUsers(users, mentionPage(9, 2)); out == nil || len(out) != 0 {
 		t.Fatalf("out-of-range page = %v", out)
 	}
 }
@@ -183,8 +183,8 @@ func TestSuggestFollowUsersPropagatesRelationError(t *testing.T) {
 }
 
 // mentionPage 构造测试用的规范化分页参数。
-func mentionPage(page, pageSize int) searchvo.Pagination {
-	return searchvo.NormalizeMentionPagination(page, pageSize)
+func mentionPage(page, pageSize int) searchdomain.Pagination {
+	return (searchdomain.PaginationPolicy{}).NormalizeMentionPagination(page, pageSize)
 }
 
 func mentionIDs(users []MentionUser) []uint {

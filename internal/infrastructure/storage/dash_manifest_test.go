@@ -5,12 +5,13 @@ import (
 	"f_ccg_video_back_ddd/internal/config/site"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"fmt"
-	"github.com/minio/minio-go/v7"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/minio/minio-go/v7"
+	"go.uber.org/zap"
 )
 
 func TestDASHManifestReadsMinIOOnceAndListsSizesInOneBatch(t *testing.T) {

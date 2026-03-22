@@ -2,10 +2,11 @@ package scheduler
 
 import (
 	"context"
+	commentapplication "f_ccg_video_back_ddd/internal/application/comment"
+	videoapplication "f_ccg_video_back_ddd/internal/application/video"
 	"path/filepath"
 	"testing"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -119,7 +120,7 @@ func TestSyncVideoStatUpdatesOnlyDirtyEntries(t *testing.T) {
 		t.Fatalf("seed dirty set failed: %v", err)
 	}
 
-	service := app.NewVideoStatSyncService(
+	service := videoapplication.NewVideoStatSyncService(
 		NewVideoStatsCache(redisClient, zap.NewNop()),
 		NewVideoStatsProjection(db),
 		zap.NewNop(),
@@ -190,7 +191,7 @@ func TestSyncCommentLikeRecoversProcessingQueue(t *testing.T) {
 		t.Fatalf("seed processing queue failed: %v", err)
 	}
 
-	service := app.NewCommentLikeSyncService(
+	service := commentapplication.NewCommentLikeSyncService(
 		gormx.NewTxManager(db),
 		NewCommentLikeQueue(redisClient),
 		NewCommentLikeProjection(db),

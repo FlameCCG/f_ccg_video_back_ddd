@@ -1,19 +1,18 @@
 package ai
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/config"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
 )
 
 const (
-	defaultHistoryMaxTurns = 20
-	defaultHistoryMaxChars = 24000
 	maxInlineImageURLChars = 512
 	maxQueryImages         = 3
 	imagePlaceholderText   = "[用户上传的图片]"
@@ -34,6 +33,13 @@ func (c conversation) HasMessages() bool {
 	}
 
 	return false
+}
+
+// hasInput 判断原始 JSON 是否有实际内容（非空、非 null）。
+func (conversation) hasInput(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+
+	return len(trimmed) > 0 && string(trimmed) != "null"
 }
 
 func parseConversation(raw json.RawMessage) (conversation, error) {
@@ -97,11 +103,11 @@ func splitContentParts(content any) (string, []string) {
 			}
 		case map[string]any:
 			switch strings.TrimSpace(conversationString(value["type"])) {
-			case "", aivo.ContentTypeText, "input_text", "output_text":
+			case "", contentTypeText, "input_text", "output_text":
 				if text := strings.TrimSpace(conversationString(value["text"])); text != "" {
 					texts = append(texts, text)
 				}
-			case aivo.ContentTypeImageURL, "input_image", "image":
+			case contentTypeImageURL, "input_image", "image":
 				if imageURL := conversationImageURL(value); imageURL != "" {
 					images = append(images, imageURL)
 				}
@@ -115,10 +121,10 @@ func splitContentParts(content any) (string, []string) {
 }
 
 func conversationImageURL(part map[string]any) string {
-	if imageURL := strings.TrimSpace(conversationString(part[aivo.ContentTypeImageURL])); imageURL != "" {
+	if imageURL := strings.TrimSpace(conversationString(part[contentTypeImageURL])); imageURL != "" {
 		return imageURL
 	}
-	if nested, ok := part[aivo.ContentTypeImageURL].(map[string]any); ok {
+	if nested, ok := part[contentTypeImageURL].(map[string]any); ok {
 		if imageURL := strings.TrimSpace(conversationString(nested["url"])); imageURL != "" {
 			return imageURL
 		}
@@ -153,57 +159,23 @@ func composeMessageText(text string, images []string) string {
 // trimHistory 保留系统消息，并从最新非系统消息向前按消息条数和 rune 文本预算取历史。
 // 最新一条即使超出文本预算也会保留；随后去掉开头非 user 消息，因此预算并非严格的总 token 上限。
 func (c conversation) trimHistory(cfg *config.AI) conversation {
-	maxTurns, maxChars := historyLimits(cfg)
-
-	systemMessages := make([]*schema.Message, 0, len(c.Messages))
-	messages := make([]*schema.Message, 0, len(c.Messages))
-	for _, message := range c.Messages {
-		if message == nil {
-			continue
+	turns, chars := 0, 0
+	if cfg != nil {
+		turns, chars = cfg.HistoryMaxTurns, cfg.HistoryMaxChars
+	}
+	facts := make([]aidomain.HistoryMessage, len(c.Messages))
+	for i, message := range c.Messages {
+		if message != nil {
+			facts[i] = aidomain.HistoryMessage{Present: true, System: message.Role == schema.System, User: message.Role == schema.User, TextRunes: len([]rune(messageText(message)))}
 		}
-		if message.Role == schema.System {
-			systemMessages = append(systemMessages, message)
-
-			continue
-		}
-		messages = append(messages, message)
 	}
-
-	if len(messages) > maxTurns {
-		messages = messages[len(messages)-maxTurns:]
+	positions := (aidomain.HistoryPolicy{}).Select(facts, turns, chars)
+	selected := make([]*schema.Message, 0, len(positions))
+	for _, i := range positions {
+		selected = append(selected, c.Messages[i])
 	}
-
-	budget := maxChars
-	start := len(messages)
-	for index := len(messages) - 1; index >= 0; index-- {
-		cost := len([]rune(messageText(messages[index])))
-		if budget-cost < 0 && index != len(messages)-1 {
-			break
-		}
-		budget -= cost
-		start = index
-	}
-	messages = messages[start:]
-
-	for len(messages) > 0 && messages[0].Role != schema.User {
-		messages = messages[1:]
-	}
-
-	c.Messages = append(systemMessages, messages...)
-
+	c.Messages = selected
 	return c
-}
-
-func historyLimits(cfg *config.AI) (int, int) {
-	maxTurns, maxChars := defaultHistoryMaxTurns, defaultHistoryMaxChars
-	if cfg != nil && cfg.HistoryMaxTurns > 0 {
-		maxTurns = cfg.HistoryMaxTurns
-	}
-	if cfg != nil && cfg.HistoryMaxChars > 0 {
-		maxChars = cfg.HistoryMaxChars
-	}
-
-	return maxTurns, maxChars
 }
 
 func messageText(message *schema.Message) string {
@@ -305,7 +277,7 @@ func (c conversation) transcript(maxMessages, maxCharsPerMessage int) string {
 		if message.Role == schema.Assistant {
 			speaker = "助手"
 		}
-		lines = append(lines, speaker+": "+aivo.TrimPromptText(messageText(message), maxCharsPerMessage))
+		lines = append(lines, speaker+": "+(aidomain.PromptVideoCandidate{}).TrimPromptText(messageText(message), maxCharsPerMessage))
 	}
 
 	return strings.Join(lines, "\n")

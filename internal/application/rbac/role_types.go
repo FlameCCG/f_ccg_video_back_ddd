@@ -1,8 +1,7 @@
 package rbac
 
 import (
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 )
 
 // CreateRoleParams 创建角色用例参数。
@@ -10,7 +9,7 @@ type CreateRoleParams struct {
 	Name        string
 	Desc        string
 	MenuIDs     []uint
-	Permissions []rbacvo.PermissionItem
+	Permissions []rbacdomain.PermissionItem
 	CopyRoleID  uint
 }
 
@@ -23,6 +22,6 @@ type UpdateRoleParams struct {
 
 // RoleMenusResp 角色菜单详情响应（直连 + 继承，各自成树）。
 type RoleMenusResp struct {
-	DirectMenus  []*rbacentity.Menu `json:"directMenus"`
-	InheritMenus []*rbacentity.Menu `json:"inheritMenus"`
+	DirectMenus  []*MenuDTO `json:"directMenus"`
+	InheritMenus []*MenuDTO `json:"inheritMenus"`
 }

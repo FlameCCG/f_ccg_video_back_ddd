@@ -2,7 +2,7 @@ package video
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/video"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -43,21 +43,22 @@ type DeletePartitionReq struct {
 func (h *AdminHandler) CreatePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[CreatePartitionReq](c)
 
-	p := videoentity.Partition{
+	p := videodomain.Partition{
 		Name:          req.Name,
 		Icon:          req.Icon,
 		SortOrder:     req.SortOrder,
 		IsActive:      req.IsActive,
 		IsSubmittable: req.IsSubmittable,
 	}
-	if err := h.partition.Create(c.Request.Context(), &p); err != nil {
+	created, err := h.partition.Create(c.Request.Context(), &p)
+	if err != nil {
 		res.FailWithMsg("创建失败", c)
 
 		return
 	}
 
 	res.OkWithData(app.PartitionItem{
-		ID:            p.ID,
+		ID:            created.ID,
 		Name:          p.Name,
 		Icon:          p.Icon,
 		SortOrder:     p.SortOrder,
@@ -70,7 +71,7 @@ func (h *AdminHandler) CreatePartitionView(c *gin.Context) {
 func (h *AdminHandler) UpdatePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[UpdatePartitionReq](c)
 
-	p := videoentity.Partition{
+	p := videodomain.Partition{
 		ID:            req.ID,
 		Name:          req.Name,
 		Icon:          req.Icon,

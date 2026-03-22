@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 
-	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -23,7 +21,7 @@ type UserRoleRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ rbacrepo.UserRoleRepository = (*UserRoleRepository)(nil)
+var _ rbacdomain.UserRoleRepository = (*UserRoleRepository)(nil)
 
 // NewUserRoleRepository 构造用户-角色绑定仓储。
 func NewUserRoleRepository(db *gorm.DB) *UserRoleRepository {
@@ -61,11 +59,11 @@ func (r *UserRoleRepository) CurrentRoleID(ctx context.Context, userID uint) (ui
 }
 
 // RolesByUser 读取用户已绑定的角色；用户不存在时返回 domain.ErrUserNotFound。
-func (r *UserRoleRepository) RolesByUser(ctx context.Context, userID uint) ([]*rbacentity.Role, error) {
+func (r *UserRoleRepository) RolesByUser(ctx context.Context, userID uint) ([]*rbacdomain.Role, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).Preload("Roles").First(&row, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, rbacerrors.ErrUserNotFound
+			return nil, rbacdomain.ErrUserNotFound
 		}
 
 		return nil, err
@@ -75,7 +73,7 @@ func (r *UserRoleRepository) RolesByUser(ctx context.Context, userID uint) ([]*r
 }
 
 // AppendRoles 为用户追加角色绑定（已存在的绑定忽略）。
-func (r *UserRoleRepository) AppendRoles(ctx context.Context, userID uint, roles []*rbacentity.Role) error {
+func (r *UserRoleRepository) AppendRoles(ctx context.Context, userID uint, roles []*rbacdomain.Role) error {
 	rows := toPOUserRoles(userID, roles)
 	if len(rows) == 0 {
 		return nil
@@ -87,7 +85,7 @@ func (r *UserRoleRepository) AppendRoles(ctx context.Context, userID uint, roles
 }
 
 // RemoveRoles 移除用户的角色绑定。
-func (r *UserRoleRepository) RemoveRoles(ctx context.Context, userID uint, roles []*rbacentity.Role) error {
+func (r *UserRoleRepository) RemoveRoles(ctx context.Context, userID uint, roles []*rbacdomain.Role) error {
 	roleIDs := roleIDsOf(roles)
 	if len(roleIDs) == 0 {
 		return nil
@@ -99,7 +97,7 @@ func (r *UserRoleRepository) RemoveRoles(ctx context.Context, userID uint, roles
 }
 
 // ReplaceRoles 用给定集合整体替换用户的角色绑定。
-func (r *UserRoleRepository) ReplaceRoles(ctx context.Context, userID uint, roles []*rbacentity.Role) error {
+func (r *UserRoleRepository) ReplaceRoles(ctx context.Context, userID uint, roles []*rbacdomain.Role) error {
 	db := gormx.DB(ctx, r.db)
 	roleIDs := roleIDsOf(roles)
 
@@ -118,30 +116,30 @@ func (r *UserRoleRepository) ReplaceRoles(ctx context.Context, userID uint, role
 }
 
 // toPOUserRoles 构造用户-角色关联行（跳过空角色与零值 ID）。
-func toPOUserRoles(userID uint, roles []*rbacentity.Role) []po.UserRole {
+func toPOUserRoles(userID uint, roles []*rbacdomain.Role) []po.UserRole {
 	rows := make([]po.UserRole, 0, len(roles))
 
 	for _, role := range roles {
-		if role == nil || role.ID == 0 {
+		if role == nil || role.ID() == 0 {
 			continue
 		}
 
-		rows = append(rows, po.UserRole{UserID: userID, RoleID: role.ID})
+		rows = append(rows, po.UserRole{UserID: userID, RoleID: role.ID()})
 	}
 
 	return rows
 }
 
 // roleIDsOf 提取角色主键列表（跳过空角色与零值 ID）。
-func roleIDsOf(roles []*rbacentity.Role) []uint {
+func roleIDsOf(roles []*rbacdomain.Role) []uint {
 	ids := make([]uint, 0, len(roles))
 
 	for _, role := range roles {
-		if role == nil || role.ID == 0 {
+		if role == nil || role.ID() == 0 {
 			continue
 		}
 
-		ids = append(ids, role.ID)
+		ids = append(ids, role.ID())
 	}
 
 	return ids

@@ -3,8 +3,7 @@ package rbac
 import (
 	"context"
 
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
-	rbacrepo "f_ccg_video_back_ddd/internal/domain/rbac/repository"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -21,7 +20,7 @@ type RoleMenuRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ rbacrepo.RoleMenuRepository = (*RoleMenuRepository)(nil)
+var _ rbacdomain.RoleMenuRepository = (*RoleMenuRepository)(nil)
 
 // NewRoleMenuRepository 构造角色-菜单关联仓储。
 func NewRoleMenuRepository(db *gorm.DB) *RoleMenuRepository {
@@ -90,7 +89,7 @@ func (r *RoleMenuRepository) DistinctMenuIDsByRoles(ctx context.Context, roleIDs
 }
 
 // CreateIgnoreConflict 批量写入关联，冲突行忽略。
-func (r *RoleMenuRepository) CreateIgnoreConflict(ctx context.Context, items []rbacentity.RoleMenu) error {
+func (r *RoleMenuRepository) CreateIgnoreConflict(ctx context.Context, items []rbacdomain.RoleMenu) error {
 	if len(items) == 0 {
 		return nil
 	}

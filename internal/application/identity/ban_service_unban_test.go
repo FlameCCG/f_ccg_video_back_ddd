@@ -7,8 +7,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	identityrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
@@ -35,7 +34,9 @@ func (*banStatusCache) Generation(context.Context, uint) int64 {
 	return 0
 }
 
-func (*banStatusCache) StoreIfGenerationMatch(context.Context, uint, enum.UserStatus, int64) {}
+func (c *banStatusCache) StoreIfGenerationMatch(_ context.Context, userID uint, status enum.UserStatus, _ int64) {
+	c.writes[userID] = status
+}
 
 func (c *banStatusCache) Write(userID uint, status enum.UserStatus) {
 	c.writes[userID] = status
@@ -43,7 +44,7 @@ func (c *banStatusCache) Write(userID uint, status enum.UserStatus) {
 
 func (*banStatusCache) Invalidate(uint) {}
 
-var _ identityport.UserStatusCache = (*banStatusCache)(nil)
+var _ app.UserStatusCache = (*banStatusCache)(nil)
 
 type banFixture struct {
 	service *app.BanService
@@ -119,7 +120,7 @@ func TestBanServiceApplyUnbanMarksOriginalRecordWithoutCreatingActiveRecord(t *t
 	fixture := newBanFixture(t)
 	record := seedBannedUser(t, fixture.db, time.Now().Add(24*time.Hour))
 
-	result, err := fixture.service.Apply(context.Background(), identityentity.BanAction{
+	result, err := fixture.service.Apply(context.Background(), identitydomain.BanAction{
 		UserID: 1,
 		Status: enum.UserStatusActive,
 		Reason: "管理员解封",

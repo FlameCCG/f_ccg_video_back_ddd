@@ -4,9 +4,8 @@ import (
 	"context"
 	"errors"
 
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
@@ -23,7 +22,7 @@ type UserRepository struct {
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ identityrepo.UserRepository = (*UserRepository)(nil)
+var _ identitydomain.UserRepository = (*UserRepository)(nil)
 
 // NewUserRepository 构造用户仓储。
 func NewUserRepository(db *gorm.DB, cfgProvider *infraconfig.Provider) *UserRepository {
@@ -33,14 +32,14 @@ func NewUserRepository(db *gorm.DB, cfgProvider *infraconfig.Provider) *UserRepo
 func (r *UserRepository) defaultUserBannerID() uint {
 	cfg := r.cfgProvider.Get()
 	if cfg == nil || cfg.Site == nil {
-		return identityvo.FallbackDefaultUserBannerID
+		return identitydomain.FallbackDefaultUserBannerID
 	}
 
-	return identityvo.ResolveDefaultUserBannerID(cfg.Site.DefaultUserBannerID)
+	return (identitydomain.BannerPolicy{}).ResolveDefaultID(cfg.Site.DefaultUserBannerID)
 }
 
 // FindByID 按主键读取用户；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindByID(ctx context.Context, userID uint) (*identityentity.User, error) {
+func (r *UserRepository) FindByID(ctx context.Context, userID uint) (*identitydomain.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).First(&row, "id = ?", userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -57,7 +56,7 @@ func (r *UserRepository) FindByID(ctx context.Context, userID uint) (*identityen
 func (r *UserRepository) FindWithConfByID(
 	ctx context.Context,
 	userID uint,
-) (*identityentity.User, *identityentity.UserConf, error) {
+) (*identitydomain.User, *identitydomain.UserConf, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).Joins("UserConf").First(&row, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -71,7 +70,7 @@ func (r *UserRepository) FindWithConfByID(
 }
 
 // FindStatusByID 只读 id/status/username；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindStatusByID(ctx context.Context, userID uint) (*identityentity.User, error) {
+func (r *UserRepository) FindStatusByID(ctx context.Context, userID uint) (*identitydomain.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "status", "username").
@@ -88,7 +87,7 @@ func (r *UserRepository) FindStatusByID(ctx context.Context, userID uint) (*iden
 }
 
 // FindProfileByID 只读 id/username/avatar；不存在时返回 (nil, nil)。
-func (r *UserRepository) FindProfileByID(ctx context.Context, userID uint) (*identityentity.User, error) {
+func (r *UserRepository) FindProfileByID(ctx context.Context, userID uint) (*identitydomain.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "username", "avatar").
@@ -117,12 +116,46 @@ func (r *UserRepository) UsernameByID(ctx context.Context, userID uint) (string,
 	return username, nil
 }
 
-// UpdateStatus 更新用户状态。
-func (r *UserRepository) UpdateStatus(ctx context.Context, userID uint, status enum.UserStatus) error {
+// SaveStatus 仅更新封禁动作涉及的状态列。
+func (r *UserRepository) SaveStatus(ctx context.Context, user *identitydomain.User) error {
 	return gormx.DB(ctx, r.db).
 		Model(&po.User{}).
-		Where("id = ?", userID).
-		Update("status", status).Error
+		Where("id = ?", user.ID()).
+		Update("status", user.Status()).Error
+}
+
+func (r *UserRepository) FindByIDForUpdate(ctx context.Context, userID uint) (*identitydomain.User, error) {
+	var row po.User
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).Take(&row, "id = ?", userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toDomainUser(&row), nil
+}
+
+func (r *UserRepository) FindByEmailForUpdate(ctx context.Context, email string) (*identitydomain.User, error) {
+	var row po.User
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).Where("email = ?", email).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toDomainUser(&row), nil
+}
+
+func (r *UserRepository) FindStatusByIDForUpdate(ctx context.Context, userID uint) (*identitydomain.User, error) {
+	var row po.User
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id", "status", "username").Take(&row, "id = ?", userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toDomainUser(&row), nil
 }
 
 // ActivateIfBanned 仅当用户仍处于限时封禁态时置为正常，返回是否更新成功。
@@ -138,17 +171,21 @@ func (r *UserRepository) ActivateIfBanned(ctx context.Context, userID uint) (boo
 	return result.RowsAffected > 0, nil
 }
 
-// ExpAndLevelForUpdate 以行锁读取经验与等级（要求在事务内调用）。
-func (r *UserRepository) ExpAndLevelForUpdate(ctx context.Context, userID uint) (int64, int, error) {
+// ExpAndLevelForUpdate 以行锁读取经验账户（要求在事务内调用）。
+func (r *UserRepository) ExpAndLevelForUpdate(ctx context.Context, userID uint) (*identitydomain.User, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("id", "exp", "level").
 		Take(&row, "id = ?", userID).Error; err != nil {
-		return 0, 0, err
+		return nil, err
 	}
 
-	return row.Exp, row.Level, nil
+	return identitydomain.RestoreUser(identitydomain.UserSnapshot{
+		ID:    row.ID,
+		Exp:   row.Exp,
+		Level: row.Level,
+	}), nil
 }
 
 // UpdateExpAndLevel 覆盖写经验与等级。

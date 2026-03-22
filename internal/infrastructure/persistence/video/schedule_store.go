@@ -5,9 +5,8 @@ import (
 	"errors"
 	"time"
 
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -19,7 +18,7 @@ type ScheduleStore struct {
 	db *gorm.DB
 }
 
-var _ app.ScheduleStore = (*ScheduleStore)(nil)
+var _ videodomain.ScheduleRepository = (*ScheduleStore)(nil)
 
 // NewScheduleStore 将发布计划端口绑定到共享 MySQL 连接；实际操作仍经 gormx 选择事务。
 func NewScheduleStore(db *gorm.DB) *ScheduleStore { return &ScheduleStore{db: db} }
@@ -30,7 +29,7 @@ func (s *ScheduleStore) Available() bool { return s != nil && s.db != nil }
 // Add 保存计划时刻并设置定时意图；调用方需要自行保证视频存在、业务状态正确及事务范围。
 func (s *ScheduleStore) Add(ctx context.Context, videoID uint, when time.Time) error {
 	if videoID == 0 {
-		return videoerrors.ErrVideoIDRequired
+		return videodomain.ErrVideoIDRequired
 	}
 	return gormx.DB(ctx, s.db).Model(&po.Video{}).Where("id = ?", videoID).
 		UpdateColumns(map[string]any{"publish_at": when, "is_scheduled": true}).Error
@@ -43,7 +42,7 @@ func (s *ScheduleStore) Remove(ctx context.Context, videoID uint) error {
 
 func (s *ScheduleStore) save(ctx context.Context, videoID uint, when *time.Time) error {
 	if videoID == 0 {
-		return videoerrors.ErrVideoIDRequired
+		return videodomain.ErrVideoIDRequired
 	}
 	return gormx.DB(ctx, s.db).Model(&po.Video{}).Where("id = ?", videoID).
 		UpdateColumn("publish_at", when).Error

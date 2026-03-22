@@ -5,8 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
 
@@ -52,27 +51,31 @@ func TestFolderRepositoryUpdate(t *testing.T) {
 	t.Parallel()
 	repo := infra.NewFolderRepository(openFolderRepoTestDB(t))
 
-	folder := &videoentity.FavoriteFolder{UserID: 7, Name: "旧名字"}
-	if err := repo.Create(t.Context(), folder); err != nil {
-		t.Fatalf("create: %v", err)
+	folder := videodomain.RestoreFavoriteFolder(videodomain.FavoriteFolderSnapshot{UserID: 7, Name: "旧名字"})
+	if created, err := repo.Create(t.Context(), folder); err != nil {
+		t.Fatal(err)
+	} else {
+		*folder = *created
 	}
 
-	folder.Name = "新名字"
+	if err := folder.Rename("新名字"); err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.Update(t.Context(), folder); err != nil {
 		t.Fatalf("update: %v", err)
 	}
 
-	got, err := repo.FindByIDAndUser(t.Context(), 7, folder.ID)
+	got, err := repo.FindByIDAndUser(t.Context(), 7, folder.ID())
 	if err != nil {
 		t.Fatalf("find: %v", err)
 	}
 
-	if got.Name != "新名字" {
-		t.Fatalf("name = %q, want %q", got.Name, "新名字")
+	if got.Name() != "新名字" {
+		t.Fatalf("name = %q, want %q", got.Name(), "新名字")
 	}
 
-	if got.UserID != 7 {
-		t.Fatalf("userID = %d, want 7", got.UserID)
+	if got.UserID() != 7 {
+		t.Fatalf("userID = %d, want 7", got.UserID())
 	}
 }
 
@@ -81,11 +84,11 @@ func TestFolderRepositoryUpdateRejectsInvalidParam(t *testing.T) {
 	t.Parallel()
 	repo := infra.NewFolderRepository(openFolderRepoTestDB(t))
 
-	if err := repo.Update(t.Context(), nil); !errors.Is(err, videoerrors.ErrParamInvalid) {
-		t.Fatalf("nil folder err = %v, want %v", err, videoerrors.ErrParamInvalid)
+	if err := repo.Update(t.Context(), nil); !errors.Is(err, videodomain.ErrParamInvalid) {
+		t.Fatalf("nil folder err = %v, want %v", err, videodomain.ErrParamInvalid)
 	}
 
-	if err := repo.Update(t.Context(), &videoentity.FavoriteFolder{}); !errors.Is(err, videoerrors.ErrParamInvalid) {
-		t.Fatalf("zero id err = %v, want %v", err, videoerrors.ErrParamInvalid)
+	if err := repo.Update(t.Context(), videodomain.RestoreFavoriteFolder(videodomain.FavoriteFolderSnapshot{})); !errors.Is(err, videodomain.ErrParamInvalid) {
+		t.Fatalf("zero id err = %v, want %v", err, videodomain.ErrParamInvalid)
 	}
 }

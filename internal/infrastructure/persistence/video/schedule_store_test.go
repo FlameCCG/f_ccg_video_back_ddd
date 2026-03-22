@@ -11,8 +11,7 @@ import (
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -30,7 +29,7 @@ func scheduleVideo(t *testing.T, f *fixture, status enum.VideoStatus) uint {
 	return row.ID
 }
 
-func scheduleRunner(f *fixture, store app.ScheduleStore, review bool) *app.Scheduler {
+func scheduleRunner(f *fixture, store videodomain.ScheduleRepository, review bool) *app.Scheduler {
 	provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{ContentReview: &site.ContentReview{Enable: review}}})
 	return app.NewScheduler(gormx.NewTxManager(f.db), f.videos, store, app.NewVectorSyncService(nil, nil, nil), provider, zap.NewNop())
 }
@@ -38,12 +37,12 @@ func scheduleRunner(f *fixture, store app.ScheduleStore, review bool) *app.Sched
 func requireScheduleStatus(t *testing.T, f *fixture, id uint, want enum.VideoStatus) {
 	t.Helper()
 	video, err := f.videos.FindByID(t.Context(), id)
-	if err != nil || video == nil || video.Status != want {
+	if err != nil || video == nil || video.Status() != want {
 		t.Fatalf("video=%+v, err=%v; want status %v", video, err, want)
 	}
 }
 
-func requirePublishTime(t *testing.T, store app.ScheduleStore, id uint, want *time.Time) {
+func requirePublishTime(t *testing.T, store videodomain.ScheduleRepository, id uint, want *time.Time) {
 	t.Helper()
 	when, err := store.PublishTime(t.Context(), id)
 	if err != nil || (when == nil) != (want == nil) || (when != nil && !when.Equal(*want)) {
@@ -104,7 +103,7 @@ func TestRevisionPublishTimeWriteFailureRollsBackVideo(t *testing.T) {
 		t.Fatal("publish time failure reported success")
 	}
 	video, err := f.videos.FindByID(t.Context(), id)
-	if err != nil || video.Title != "old" || video.Status != enum.VideoStatusPublished || effects.invalidated != 0 {
+	if err != nil || video.Title() != "old" || video.Status() != enum.VideoStatusPublished || effects.invalidated != 0 {
 		t.Fatalf("video=%+v, effects=%+v, err=%v", video, effects, err)
 	}
 	requirePublishTime(t, infra.NewScheduleStore(f.db), id, nil)
@@ -226,8 +225,11 @@ func TestPublishPersistsTimeWithVideo(t *testing.T) {
 				}
 			}
 			future := time.Now().Add(time.Hour)
-			draft := &videoentity.PublishDraft{Video: &videoentity.Video{Title: "scheduled", AuthorUsername: "alice", Status: enum.VideoStatusScheduled}, PublishAt: &future}
-			err := f.videos.Persist(t.Context(), draft)
+			draft := &videodomain.PublishDraft{Video: videodomain.RestoreVideo(videodomain.VideoSnapshot{Title: "scheduled", AuthorUsername: "alice", Status: enum.VideoStatusScheduled}), PublishAt: &future}
+			created, err := f.videos.Persist(t.Context(), draft)
+			if err == nil {
+				draft.Video = created
+			}
 			if (err != nil) != fail {
 				t.Fatalf("error=%v, want fail=%v", err, fail)
 			}
@@ -243,7 +245,7 @@ func TestPublishPersistsTimeWithVideo(t *testing.T) {
 				if videos != 1 {
 					t.Fatalf("publish created %d videos", videos)
 				}
-				requirePublishTime(t, infra.NewScheduleStore(f.db), draft.Video.ID, &future)
+				requirePublishTime(t, infra.NewScheduleStore(f.db), draft.Video.ID(), &future)
 			}
 		})
 	}
@@ -253,7 +255,7 @@ type inactiveRevisionMeta struct{ app.DetailMetaCache }
 
 func (inactiveRevisionMeta) Available() bool { return false }
 
-type failingPublishTimeStore struct{ app.ScheduleStore }
+type failingPublishTimeStore struct{ videodomain.ScheduleRepository }
 
 func (failingPublishTimeStore) PublishTime(context.Context, uint) (*time.Time, error) {
 	return nil, errors.New("publish time read failed")
@@ -275,7 +277,7 @@ func TestReviewUsesVideoPublishTime(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newRevisionFixture(t)
 			id := scheduleVideo(t, f, enum.VideoStatusReview)
-			var store app.ScheduleStore = infra.NewScheduleStore(f.db)
+			var store videodomain.ScheduleRepository = infra.NewScheduleStore(f.db)
 			if tt.when != nil {
 				if err := store.Add(t.Context(), id, *tt.when); err != nil {
 					t.Fatal(err)
@@ -307,15 +309,17 @@ func TestReviewUsesVideoPublishTime(t *testing.T) {
 
 func TestImmediatePublishHasNoScheduledTime(t *testing.T) {
 	f := newRevisionFixture(t)
-	draft := &videoentity.PublishDraft{Video: &videoentity.Video{Title: "immediate", AuthorUsername: "alice", Status: enum.VideoStatusReview}}
-	if err := f.videos.Persist(t.Context(), draft); err != nil {
+	draft := &videodomain.PublishDraft{Video: videodomain.RestoreVideo(videodomain.VideoSnapshot{Title: "immediate", AuthorUsername: "alice", Status: enum.VideoStatusReview})}
+	if created, err := f.videos.Persist(t.Context(), draft); err != nil {
 		t.Fatal(err)
+	} else {
+		draft.Video = created
 	}
-	requirePublishTime(t, infra.NewScheduleStore(f.db), draft.Video.ID, nil)
+	requirePublishTime(t, infra.NewScheduleStore(f.db), draft.Video.ID(), nil)
 }
 
 type deletingVideoRepository struct {
-	videorepo.VideoRepository
+	videodomain.VideoRepository
 	app.VideoFactsQuery
 }
 

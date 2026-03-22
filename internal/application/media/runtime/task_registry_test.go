@@ -5,8 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 func TestTaskRegistryCancelVideosCancelsOnlyMatchingRuns(t *testing.T) {
@@ -14,13 +13,13 @@ func TestTaskRegistryCancelVideosCancelsOnlyMatchingRuns(t *testing.T) {
 
 	registry := NewTaskRegistry()
 
-	videoCtx, unregisterVideo := registry.Register(context.Background(), mediavo.TaskKey{VideoID: 10})
+	videoCtx, unregisterVideo := registry.Register(context.Background(), mediadomain.TaskKey{VideoID: 10})
 	defer unregisterVideo()
 
-	partCtx, unregisterPart := registry.Register(context.Background(), mediavo.TaskKey{VideoID: 10, PartID: 2})
+	partCtx, unregisterPart := registry.Register(context.Background(), mediadomain.TaskKey{VideoID: 10, PartID: 2})
 	defer unregisterPart()
 
-	otherCtx, unregisterOther := registry.Register(context.Background(), mediavo.TaskKey{VideoID: 11})
+	otherCtx, unregisterOther := registry.Register(context.Background(), mediadomain.TaskKey{VideoID: 11})
 	defer unregisterOther()
 
 	if got := registry.ActiveCount(); got != 3 {
@@ -32,7 +31,7 @@ func TestTaskRegistryCancelVideosCancelsOnlyMatchingRuns(t *testing.T) {
 	}
 
 	for name, ctx := range map[string]context.Context{"video": videoCtx, "part": partCtx} {
-		if !errors.Is(context.Cause(ctx), mediaerrors.ErrVideoDeleted) {
+		if !errors.Is(context.Cause(ctx), mediadomain.ErrVideoDeleted) {
 			t.Fatalf("%s cause = %v, want ErrVideoDeleted", name, context.Cause(ctx))
 		}
 	}
@@ -49,7 +48,7 @@ func TestTaskRegistryUnregisterIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	registry := NewTaskRegistry()
-	ctx, unregister := registry.Register(context.Background(), mediavo.TaskKey{VideoID: 5})
+	ctx, unregister := registry.Register(context.Background(), mediadomain.TaskKey{VideoID: 5})
 
 	unregister()
 	unregister()
@@ -69,7 +68,7 @@ func TestTaskRegisterWithoutVideoIDIsNotTracked(t *testing.T) {
 
 	registry := NewTaskRegistry()
 
-	ctx, unregister := registry.Register(context.Background(), mediavo.TaskKey{})
+	ctx, unregister := registry.Register(context.Background(), mediadomain.TaskKey{})
 	defer unregister()
 
 	if got := registry.ActiveCount(); got != 0 {
@@ -112,19 +111,19 @@ func TestNormalizeVideoIDs(t *testing.T) {
 func TestClassifyInterruptReason(t *testing.T) {
 	t.Parallel()
 
-	if got := ClassifyInterruptReason(context.Background(), mediaerrors.ErrTranscodeProgressStalled, false); got != "progress_stalled" {
+	if got := ClassifyInterruptReason(context.Background(), ErrTranscodeProgressStalled, false); got != "progress_stalled" {
 		t.Fatalf("stalled reason = %q", got)
 	}
 
-	if got := ClassifyInterruptReason(context.Background(), mediaerrors.ErrTranscodeEncodeTimeout, false); got != "encode_timeout" {
+	if got := ClassifyInterruptReason(context.Background(), ErrTranscodeEncodeTimeout, false); got != "encode_timeout" {
 		t.Fatalf("encode timeout reason = %q", got)
 	}
 
-	if got := ClassifyInterruptReason(context.Background(), mediaerrors.ErrTranscodeUploadTimeout, false); got != "upload_timeout" {
+	if got := ClassifyInterruptReason(context.Background(), ErrTranscodeUploadTimeout, false); got != "upload_timeout" {
 		t.Fatalf("upload timeout reason = %q", got)
 	}
 
-	if got := ClassifyInterruptReason(context.Background(), mediaerrors.ErrVideoDeleted, false); got != "video_deleted" {
+	if got := ClassifyInterruptReason(context.Background(), mediadomain.ErrVideoDeleted, false); got != "video_deleted" {
 		t.Fatalf("video deleted reason = %q", got)
 	}
 
@@ -149,12 +148,12 @@ func TestClassifyInterruptReason(t *testing.T) {
 func TestTaskWasDeleted(t *testing.T) {
 	t.Parallel()
 
-	if !TaskWasDeleted(context.Background(), mediaerrors.ErrVideoDeleted) {
+	if !TaskWasDeleted(context.Background(), mediadomain.ErrVideoDeleted) {
 		t.Fatal("explicit ErrVideoDeleted must be detected")
 	}
 
 	ctx, cancel := context.WithCancelCause(context.Background())
-	cancel(mediaerrors.ErrVideoDeleted)
+	cancel(mediadomain.ErrVideoDeleted)
 
 	if !TaskWasDeleted(ctx, nil) {
 		t.Fatal("ctx cause ErrVideoDeleted must be detected")

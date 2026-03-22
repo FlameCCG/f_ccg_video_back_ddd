@@ -3,7 +3,7 @@ package video
 import (
 	"errors"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -101,7 +101,7 @@ func (h *Handler) CoinView(c *gin.Context) {
 
 	stats, err := h.interact.Coin(c.Request.Context(), req.VideoID, uid, int64(req.Coins))
 	if err != nil {
-		if errors.Is(err, videoerrors.ErrCoinLimit) {
+		if errors.Is(err, videodomain.ErrCoinLimit) {
 			res.FailWithMsg("对本稿件的投币次数已用完", c)
 
 			return

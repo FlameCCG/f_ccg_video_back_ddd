@@ -2,11 +2,12 @@ package video
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"github.com/gin-gonic/gin"
 	"io"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 type boundedUploadSource struct{ left, read int64 }

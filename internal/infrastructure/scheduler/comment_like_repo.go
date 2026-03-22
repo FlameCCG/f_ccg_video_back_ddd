@@ -2,8 +2,8 @@ package scheduler
 
 import (
 	"context"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -16,7 +16,7 @@ type CommentLikeProjection struct {
 	db *gorm.DB
 }
 
-var _ app.CommentLikeProjection = (*CommentLikeProjection)(nil)
+var _ commentdomain.CommentLikeProjection = (*CommentLikeProjection)(nil)
 
 // NewCommentLikeProjection 构造评论点赞投影仓储。
 func NewCommentLikeProjection(db *gorm.DB) *CommentLikeProjection {

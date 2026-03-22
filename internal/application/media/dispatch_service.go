@@ -2,23 +2,24 @@ package media
 
 import (
 	"context"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	"time"
 
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 // TranscodeDispatchService 投递转码任务并标记已入队进度。
 //
 // video 的投稿流程通过此服务发送 Kafka 任务，topic 与消息结构由 infrastructure/mq 的 TranscodePayload 定义。
 type TranscodeDispatchService struct {
-	publisher mediaport.TaskPublisher
-	progress  mediaport.ProgressStore
+	publisher TaskPublisher
+	progress  mediaruntime.ProgressStore
 }
 
 // NewTranscodeDispatchService 构造转码任务投递服务。
 func NewTranscodeDispatchService(
-	publisher mediaport.TaskPublisher,
-	progress mediaport.ProgressStore,
+	publisher TaskPublisher,
+	progress mediaruntime.ProgressStore,
 ) *TranscodeDispatchService {
 	return &TranscodeDispatchService{publisher: publisher, progress: progress}
 }
@@ -36,7 +37,7 @@ func (s *TranscodeDispatchService) MarkTranscodeQueued(ctx context.Context, vide
 		return
 	}
 
-	snapshot := mediavo.NewQueuedProgress(videoID, partID)
+	snapshot := mediadomain.NewQueuedProgress(videoID, partID, time.Now())
 	// queued 快照使用运行中 TTL（2 小时）。
-	_ = s.progress.Write(ctx, snapshot, mediavo.TranscodeProgressRunningTTL)
+	_ = s.progress.Write(ctx, snapshot, mediadomain.TranscodeProgressRunningTTL)
 }

@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
 )
 
 func TestDASHArgsGenerateNativeTimelines(t *testing.T) {
-	policy := &mediavo.TranscodePolicy{DashSegDuration: 4}
-	targets := []mediavo.TranscodeTarget{{MapLabel: "v0"}, {MapLabel: "v1"}}
+	policy := &mediadomain.TranscodePolicy{DashSegDuration: 4}
+	targets := []mediadomain.TranscodeTarget{{MapLabel: "v0"}, {MapLabel: "v1"}}
 	for _, gpu := range []bool{false, true} {
 		args := buildDASHFFmpegArgs(policy, "source.mp4", "filter", targets, "manifest.mpd", "hash", gpu, 4000, "h264", true)
 		assertNativeDASHArgs(t, args)
@@ -76,8 +76,8 @@ func TestDASHNativePackagingWithFFmpeg(t *testing.T) {
 		"-t", "13.2", "-c:v", "libx264", "-preset", "ultrafast",
 		"-g", "250", "-sc_threshold", "0", "-c:a", "aac", source,
 	})
-	policy := &mediavo.TranscodePolicy{DashSegDuration: 4, CpuPreset: "ultrafast"}
-	targets := []mediavo.TranscodeTarget{{Resolution: 180, KeepSource: true}, {Resolution: 90}}
+	policy := &mediadomain.TranscodePolicy{DashSegDuration: 4, CpuPreset: "ultrafast"}
+	targets := []mediadomain.TranscodeTarget{{Resolution: 180, KeepSource: true}, {Resolution: 90}}
 	filter := buildFilterComplex(targets, false, false)
 	for _, mode := range []string{"direct", "copy"} {
 		t.Run(mode, func(t *testing.T) {
@@ -85,7 +85,7 @@ func TestDASHNativePackagingWithFFmpeg(t *testing.T) {
 			if err := os.Mkdir(outputDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			mpdPath := filepath.Join(outputDir, mediavo.DashManifestName)
+			mpdPath := filepath.Join(outputDir, mediadomain.DashManifestName)
 			var args []string
 			if mode == "direct" {
 				args = buildDASHFFmpegArgs(policy, source, filter, targets, mpdPath, "hash", false, 0, "h264", true)
@@ -144,12 +144,12 @@ const testNativeDASHManifest = `<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type=
 
 func TestInspectNativeDASHIsReadOnlyAndRejectsMissingSegments(t *testing.T) {
 	dir := t.TempDir()
-	writeDASHFixtureFile(t, dir, mediavo.DashManifestName, testNativeDASHManifest)
+	writeDASHFixtureFile(t, dir, mediadomain.DashManifestName, testNativeDASHManifest)
 	for _, file := range []string{"init-0.mp4", "seg-0-00001.m4s", "seg-0-00002.m4s", "seg-0-00003.m4s"} {
 		writeDASHFixtureFile(t, dir, file, "media")
 	}
 	inspection, err := inspectDASHManifest(dir)
-	if err != nil || inspection.videoPath != filepath.Join(dir, mediavo.DashManifestName) {
+	if err != nil || inspection.videoPath != filepath.Join(dir, mediadomain.DashManifestName) {
 		t.Fatalf("native manifest inspection = %+v, error = %v", inspection, err)
 	}
 	if err := os.Remove(filepath.Join(dir, "seg-0-00002.m4s")); err != nil {
@@ -158,7 +158,7 @@ func TestInspectNativeDASHIsReadOnlyAndRejectsMissingSegments(t *testing.T) {
 	if _, err := inspectDASHManifest(dir); err == nil {
 		t.Fatal("missing media segment accepted")
 	}
-	data, _ := os.ReadFile(filepath.Join(dir, mediavo.DashManifestName))
+	data, _ := os.ReadFile(filepath.Join(dir, mediadomain.DashManifestName))
 	if string(data) != testNativeDASHManifest {
 		t.Fatal("validation modified XML")
 	}
@@ -174,7 +174,7 @@ func TestInspectNativeDASHRejectsIncorrectTimingAndUnsafeReferences(t *testing.T
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeDASHFixtureFile(t, dir, mediavo.DashManifestName, strings.Replace(testNativeDASHManifest, test.old, test.replacement, 1))
+			writeDASHFixtureFile(t, dir, mediadomain.DashManifestName, strings.Replace(testNativeDASHManifest, test.old, test.replacement, 1))
 			for _, file := range []string{"init-0.mp4", "seg-0-00001.m4s", "seg-0-00002.m4s", "seg-0-00003.m4s"} {
 				writeDASHFixtureFile(t, dir, file, "media")
 			}

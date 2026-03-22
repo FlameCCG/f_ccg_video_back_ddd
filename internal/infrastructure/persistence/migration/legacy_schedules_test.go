@@ -3,11 +3,12 @@ package migration
 import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestLegacyScheduleBackfillIsConsumedAndDoesNotRestoreCancelledPlans(t *testing.T) {

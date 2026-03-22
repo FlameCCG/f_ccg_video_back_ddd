@@ -2,8 +2,9 @@ package search
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 type capturingFallback struct {

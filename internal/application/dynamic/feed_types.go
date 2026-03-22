@@ -3,7 +3,7 @@ package dynamic
 import (
 	"time"
 
-	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -79,7 +79,7 @@ type AuthorFeedParams struct {
 	AuthorID       uint
 	AuthorUsername string
 	AuthorAvatar   string
-	Sources        dynamicvo.FeedSources
+	Sources        dynamicdomain.FeedSources
 	// IsOwnerView 作者本人查看自己主页时可见未发布视频。
 	IsOwnerView bool
 	Offset      int
@@ -91,14 +91,14 @@ type AuthorFeedParams struct {
 type AuthorFeedCountParams struct {
 	AuthorID       uint
 	AuthorUsername string
-	Sources        dynamicvo.FeedSources
+	Sources        dynamicdomain.FeedSources
 	IsOwnerView    bool
 }
 
 // FollowingFeedParams 当前用户关注聚合流查询参数。
 type FollowingFeedParams struct {
 	ViewerID uint
-	Sources  dynamicvo.FeedSources
+	Sources  dynamicdomain.FeedSources
 	Offset   int
 	Limit    int
 }
@@ -106,5 +106,5 @@ type FollowingFeedParams struct {
 // FollowingFeedCountParams 当前用户关注聚合流计数参数。
 type FollowingFeedCountParams struct {
 	ViewerID uint
-	Sources  dynamicvo.FeedSources
+	Sources  dynamicdomain.FeedSources
 }

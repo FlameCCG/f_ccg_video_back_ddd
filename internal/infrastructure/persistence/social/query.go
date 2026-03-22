@@ -5,8 +5,7 @@ import (
 	"errors"
 
 	app "f_ccg_video_back_ddd/internal/application/social"
-	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
-	socialvo "f_ccg_video_back_ddd/internal/domain/social/valueobject"
+	socialdomain "f_ccg_video_back_ddd/internal/domain/social"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -70,9 +69,9 @@ func (q *RelationQuery) Exists(ctx context.Context, userID, targetUserID uint) b
 }
 
 // Relation 一次查询取回双向关注关系；查询失败按「无关系」处理。
-func (q *RelationQuery) Relation(ctx context.Context, userID, targetUserID uint) socialentity.Relation {
+func (q *RelationQuery) Relation(ctx context.Context, userID, targetUserID uint) socialdomain.Relation {
 	if userID == 0 || targetUserID == 0 {
-		return socialentity.Relation{}
+		return socialdomain.Relation{}
 	}
 
 	type row struct {
@@ -84,16 +83,16 @@ func (q *RelationQuery) Relation(ctx context.Context, userID, targetUserID uint)
 	if err := gormx.DB(ctx, q.db).
 		Raw(focusRelationSQL, userID, targetUserID, targetUserID, userID).
 		Scan(&data).Error; err != nil {
-		return socialentity.Relation{}
+		return socialdomain.Relation{}
 	}
 
-	return socialentity.Relation{IsFocus: data.IsFocus > 0, IsFans: data.IsFans > 0}
+	return socialdomain.Relation{IsFocus: data.IsFocus > 0, IsFans: data.IsFans > 0}
 }
 
 // Counts 统计关注数/粉丝数（withDynamic 为真时附带动态数）；查询失败返回零值。
-func (q *RelationQuery) Counts(ctx context.Context, userID uint, withDynamic bool) socialentity.RelationCounts {
+func (q *RelationQuery) Counts(ctx context.Context, userID uint, withDynamic bool) socialdomain.RelationCounts {
 	if userID == 0 {
-		return socialentity.RelationCounts{}
+		return socialdomain.RelationCounts{}
 	}
 
 	type row struct {
@@ -114,10 +113,10 @@ func (q *RelationQuery) Counts(ctx context.Context, userID uint, withDynamic boo
 	}
 
 	if err := gormx.DB(ctx, q.db).Raw(query, args...).Scan(&data).Error; err != nil {
-		return socialentity.RelationCounts{}
+		return socialdomain.RelationCounts{}
 	}
 
-	return socialentity.RelationCounts{
+	return socialdomain.RelationCounts{
 		FocusCount:   data.FocusCount,
 		FansCount:    data.FansCount,
 		DynamicCount: data.DynamicCount,
@@ -125,7 +124,7 @@ func (q *RelationQuery) Counts(ctx context.Context, userID uint, withDynamic boo
 }
 
 // FollowPrivacy 读取关注/粉丝列表公开性；无 user_confs 行时用 COALESCE 缺省为公开。
-func (q *RelationQuery) FollowPrivacy(ctx context.Context, userID uint) (socialvo.FollowPrivacy, error) {
+func (q *RelationQuery) FollowPrivacy(ctx context.Context, userID uint) (socialdomain.FollowPrivacy, error) {
 	type row struct {
 		ID         uint `gorm:"column:id"`
 		OpenFollow int8 `gorm:"column:open_follow"`
@@ -139,10 +138,10 @@ func (q *RelationQuery) FollowPrivacy(ctx context.Context, userID uint) (socialv
 		Joins("LEFT JOIN user_confs uc ON uc.user_id = users.id").
 		Where("users.id = ?", userID).
 		Take(&data).Error; err != nil {
-		return socialvo.FollowPrivacy{}, err
+		return socialdomain.FollowPrivacy{}, err
 	}
 
-	return socialvo.FollowPrivacy{
+	return socialdomain.FollowPrivacy{
 		Exists:     data.ID > 0,
 		OpenFollow: data.OpenFollow > 0,
 		OpenFans:   data.OpenFans > 0,
@@ -150,7 +149,7 @@ func (q *RelationQuery) FollowPrivacy(ctx context.Context, userID uint) (socialv
 }
 
 // ActionPrivacy 读取最近点赞/投币公开性；无 user_confs 行时用 COALESCE 缺省为公开。
-func (q *RelationQuery) ActionPrivacy(ctx context.Context, userID uint) (socialvo.ActionPrivacy, error) {
+func (q *RelationQuery) ActionPrivacy(ctx context.Context, userID uint) (socialdomain.ActionPrivacy, error) {
 	type row struct {
 		ID            uint `gorm:"column:id"`
 		OpenLikeVideo int8 `gorm:"column:open_like_video"`
@@ -164,10 +163,10 @@ func (q *RelationQuery) ActionPrivacy(ctx context.Context, userID uint) (socialv
 		Joins("LEFT JOIN user_confs uc ON uc.user_id = users.id").
 		Where("users.id = ?", userID).
 		Take(&data).Error; err != nil {
-		return socialvo.ActionPrivacy{}, err
+		return socialdomain.ActionPrivacy{}, err
 	}
 
-	return socialvo.ActionPrivacy{
+	return socialdomain.ActionPrivacy{
 		Exists:        data.ID > 0,
 		OpenLikeVideo: data.OpenLikeVideo > 0,
 		OpenCoinVideo: data.OpenCoinVideo > 0,

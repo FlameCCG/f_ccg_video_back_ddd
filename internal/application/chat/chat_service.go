@@ -4,11 +4,7 @@ import (
 	"context"
 	"time"
 
-	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
-	chatrepo "f_ccg_video_back_ddd/internal/domain/chat/repository"
-	chatservice "f_ccg_video_back_ddd/internal/domain/chat/service"
-	chatvo "f_ccg_video_back_ddd/internal/domain/chat/valueobject"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 
 	"go.uber.org/zap"
 )
@@ -17,27 +13,31 @@ import (
 //
 // 写侧仓储、读侧查询、关注关系查询和通知角标失效能力通过构造函数注入。
 type Service struct {
-	repo    chatrepo.Repository
-	query   Query
-	follows FollowRelationQuery
-	badges  NotificationBadgeInvalidator
-	logger  *zap.Logger
+	repo      chatdomain.Repository
+	query     Query
+	follows   FollowRelationQuery
+	badges    NotificationBadgeInvalidator
+	logger    *zap.Logger
+	sendLimit chatdomain.SendLimit
+	pages     chatdomain.PagePolicy[MessageItem]
 }
 
 // NewService 构造私信用例服务。
 func NewService(
-	repo chatrepo.Repository,
+	repo chatdomain.Repository,
 	query Query,
 	follows FollowRelationQuery,
 	badges NotificationBadgeInvalidator,
 	logger *zap.Logger,
 ) *Service {
 	return &Service{
-		repo:    repo,
-		query:   query,
-		follows: follows,
-		badges:  badges,
-		logger:  logger,
+		repo:      repo,
+		query:     query,
+		follows:   follows,
+		badges:    badges,
+		logger:    logger,
+		sendLimit: chatdomain.SendLimit{},
+		pages:     chatdomain.PagePolicy[MessageItem]{},
 	}
 }
 
@@ -51,26 +51,28 @@ func (s *Service) SendMessage(
 	media *MediaItem,
 ) (*MessageItem, error) {
 	if !s.repo.Available() {
-		return nil, chaterrors.ErrStoreUnavailable
+		return nil, chatdomain.ErrStoreUnavailable
 	}
 
-	now := nowTime()
-	msg, err := chatentity.NewMessage(senderID, receiverID, msgType, text, emoji, toDomainMedia(media), now)
+	now := s.now()
+	msg, err := chatdomain.NewMessage(senderID, receiverID, msgType, text, emoji, s.toDomainMedia(media), now)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.checkDailySendLimit(ctx, senderID, receiverID, msg.ConversationID, now); err != nil {
+
+	if err := s.checkDailySendLimit(ctx, senderID, receiverID, msg.ConversationID(), now); err != nil {
 		return nil, err
 	}
 
-	if err := s.repo.SendMessage(ctx, msg, msg.Preview()); err != nil {
+	stored, err := s.repo.SendMessage(ctx, msg, msg.Preview())
+	if err != nil {
 		return nil, err
 	}
 
 	// 聊天未读变化后失效通知角标缓存（跨上下文经端口，不 import notification 包）。
-	s.invalidateBadge(msg.ReceiverID)
+	s.invalidateBadge(stored.ReceiverID())
 
-	item := toMessageItem(msg)
+	item := s.toMessageItem(stored)
 
 	return &item, nil
 }
@@ -82,14 +84,14 @@ func (s *Service) ListConversations(
 	page, pageSize int,
 ) ([]ConversationItem, int64, error) {
 	if !s.repo.Available() {
-		return nil, 0, chaterrors.ErrStoreUnavailable
+		return nil, 0, chatdomain.ErrStoreUnavailable
 	}
 
-	if userID == 0 {
-		return nil, 0, chaterrors.ErrNotLoggedIn
+	if err := (chatdomain.Conversation{}).RequireLoggedIn(userID); err != nil {
+		return nil, 0, err
 	}
 
-	page, pageSize = chatvo.NormalizeConversationPage(page, pageSize)
+	page, pageSize = s.pages.NormalizeConversationPage(page, pageSize)
 
 	return s.query.ListConversations(ctx, userID, page, pageSize)
 }
@@ -97,23 +99,23 @@ func (s *Service) ListConversations(
 // ListMessages 按 before 游标向前翻页拉取会话消息（固定每页 10 条）。
 func (s *Service) ListMessages(ctx context.Context, userID, peerID uint, before string) (*MessageListResult, error) {
 	if !s.repo.Available() {
-		return nil, chaterrors.ErrStoreUnavailable
+		return nil, chatdomain.ErrStoreUnavailable
 	}
 
-	if err := chatentity.ValidatePeer(userID, peerID, chaterrors.ErrInvalidPeerID); err != nil {
+	if err := (chatdomain.Conversation{}).ValidatePeer(userID, peerID, chatdomain.ErrInvalidPeerID); err != nil {
 		return nil, err
 	}
 
-	if err := chatvo.ValidateMessageCursor(before); err != nil {
+	if err := s.pages.ValidateMessageCursor(before); err != nil {
 		return nil, err
 	}
 
-	rows, err := s.query.ListMessagesBefore(ctx, userID, peerID, before, chatvo.MessageFetchLimit)
+	rows, err := s.query.ListMessagesBefore(ctx, userID, peerID, before, chatdomain.MessageFetchLimit)
 	if err != nil {
 		return nil, err
 	}
 
-	list, hasMore := chatvo.TrimMessagePage(rows)
+	list, hasMore := s.pages.TrimMessagePage(rows)
 
 	res := &MessageListResult{List: list, HasMore: hasMore}
 	if hasMore && len(list) > 0 {
@@ -126,14 +128,14 @@ func (s *Service) ListMessages(ctx context.Context, userID, peerID uint, before 
 // MarkRead 标记与某用户的私信已读（未读清零 + 联动通知角标）。
 func (s *Service) MarkRead(ctx context.Context, userID, peerID uint) error {
 	if !s.repo.Available() {
-		return chaterrors.ErrStoreUnavailable
+		return chatdomain.ErrStoreUnavailable
 	}
 
-	if err := chatentity.ValidatePeer(userID, peerID, chaterrors.ErrInvalidPeerID); err != nil {
+	if err := (chatdomain.Conversation{}).ValidatePeer(userID, peerID, chatdomain.ErrInvalidPeerID); err != nil {
 		return err
 	}
 
-	matched, err := s.repo.MarkRead(ctx, userID, peerID, nowTime())
+	matched, err := s.repo.MarkRead(ctx, userID, peerID, s.now())
 	if err != nil {
 		return err
 	}
@@ -153,11 +155,11 @@ func (s *Service) MarkRead(ctx context.Context, userID, peerID uint) error {
 // 该方法同时满足 notification 上下文声明的 ChatUnreadCounter 端口。
 func (s *Service) TotalUnread(ctx context.Context, userID uint) (int64, error) {
 	if !s.repo.Available() {
-		return 0, chaterrors.ErrStoreUnavailable
+		return 0, chatdomain.ErrStoreUnavailable
 	}
 
-	if userID == 0 {
-		return 0, chaterrors.ErrNotLoggedIn
+	if err := (chatdomain.Conversation{}).RequireLoggedIn(userID); err != nil {
+		return 0, err
 	}
 
 	return s.query.TotalUnread(ctx, userID)
@@ -166,14 +168,14 @@ func (s *Service) TotalUnread(ctx context.Context, userID uint) (int64, error) {
 // CreateConversation 创建会话（幂等）。若会话不存在会创建一个空会话（无 lastMessage）。
 func (s *Service) CreateConversation(ctx context.Context, userID, peerID uint) (*ConversationItem, error) {
 	if !s.repo.Available() {
-		return nil, chaterrors.ErrStoreUnavailable
+		return nil, chatdomain.ErrStoreUnavailable
 	}
 
-	if err := chatentity.ValidatePeer(userID, peerID, chaterrors.ErrSelfConversation); err != nil {
+	if err := (chatdomain.Conversation{}).ValidatePeer(userID, peerID, chatdomain.ErrSelfConversation); err != nil {
 		return nil, err
 	}
 
-	conv, err := s.repo.UpsertConversation(ctx, userID, peerID, nowTime())
+	conv, err := s.repo.UpsertConversation(ctx, userID, peerID, s.now())
 	if err != nil {
 		return nil, err
 	}
@@ -181,10 +183,10 @@ func (s *Service) CreateConversation(ctx context.Context, userID, peerID uint) (
 	peer, unread := conv.PeerAndUnread(userID)
 
 	return &ConversationItem{
-		ID:          conv.ID,
+		ID:          conv.ID(),
 		PeerID:      peer,
 		Unread:      unread,
-		LastMessage: toLastMessageItem(conv.LastMessage),
+		LastMessage: s.toLastMessageItem(conv.LastMessage()),
 		UpdatedAt:   conv.DisplayTime().Unix(),
 	}, nil
 }
@@ -192,14 +194,14 @@ func (s *Service) CreateConversation(ctx context.Context, userID, peerID uint) (
 // DeleteConversation 仅对当前用户隐藏会话，保留对端会话和历史消息。
 func (s *Service) DeleteConversation(ctx context.Context, userID, peerID uint) error {
 	if !s.repo.Available() {
-		return chaterrors.ErrStoreUnavailable
+		return chatdomain.ErrStoreUnavailable
 	}
 
-	if err := chatentity.ValidatePeer(userID, peerID, chaterrors.ErrInvalidPeerID); err != nil {
+	if err := (chatdomain.Conversation{}).ValidatePeer(userID, peerID, chatdomain.ErrInvalidPeerID); err != nil {
 		return err
 	}
 
-	return s.repo.HideConversation(ctx, userID, peerID, nowTime())
+	return s.repo.HideConversation(ctx, userID, peerID, s.now())
 }
 
 // checkDailySendLimit 对端未关注自己时限制每日仅可发送一条，直到对端回复。
@@ -211,7 +213,7 @@ func (s *Service) checkDailySendLimit(
 	conversationID string,
 	now time.Time,
 ) error {
-	if !chatservice.NeedsDailySendLimitCheck(senderID, receiverID) {
+	if !s.sendLimit.NeedsDailySendLimitCheck(senderID, receiverID) {
 		return nil
 	}
 
@@ -234,7 +236,7 @@ func (s *Service) checkDailySendLimit(
 		return nil
 	}
 
-	dayStart, dayEnd := chatservice.DayRange(now)
+	dayStart, dayEnd := s.sendLimit.DayRange(now)
 
 	sentToday, err := s.repo.ExistsMessageBetween(ctx, conversationID, senderID, receiverID, dayStart, dayEnd)
 	if err != nil {
@@ -250,7 +252,7 @@ func (s *Service) checkDailySendLimit(
 		return err
 	}
 
-	return chatservice.EvaluateDailySendLimit(sentToday, repliedToday)
+	return s.sendLimit.EvaluateDailySendLimit(sentToday, repliedToday)
 }
 
 // invalidateBadge 失效接收者的通知角标缓存（端口缺失时静默跳过）。
@@ -262,16 +264,16 @@ func (s *Service) invalidateBadge(userID uint) {
 	s.badges.InvalidateCount(int(userID))
 }
 
-func nowTime() time.Time {
+func (s *Service) now() time.Time {
 	return time.Now()
 }
 
-func toDomainMedia(media *MediaItem) *chatentity.Media {
+func (s *Service) toDomainMedia(media *MediaItem) *chatdomain.Media {
 	if media == nil {
 		return nil
 	}
 
-	return &chatentity.Media{
+	return &chatdomain.Media{
 		URL:    media.URL,
 		Mime:   media.Mime,
 		Width:  media.Width,
@@ -280,7 +282,7 @@ func toDomainMedia(media *MediaItem) *chatentity.Media {
 	}
 }
 
-func toMediaItem(media *chatentity.Media) *MediaItem {
+func (s *Service) toMediaItem(media *chatdomain.Media) *MediaItem {
 	if media == nil {
 		return nil
 	}
@@ -294,25 +296,25 @@ func toMediaItem(media *chatentity.Media) *MediaItem {
 	}
 }
 
-func toMessageItem(msg *chatentity.Message) MessageItem {
+func (s *Service) toMessageItem(msg *chatdomain.Message) MessageItem {
 	if msg == nil {
 		return MessageItem{}
 	}
 
 	return MessageItem{
-		ID:             msg.ID,
-		ConversationID: msg.ConversationID,
-		SenderID:       msg.SenderID,
-		ReceiverID:     msg.ReceiverID,
-		Type:           msg.Type,
-		Text:           msg.Text,
-		Emoji:          msg.Emoji,
-		Media:          toMediaItem(msg.Media),
-		CreatedAt:      msg.CreatedAt,
+		ID:             msg.ID(),
+		ConversationID: msg.ConversationID(),
+		SenderID:       msg.SenderID(),
+		ReceiverID:     msg.ReceiverID(),
+		Type:           msg.Type(),
+		Text:           msg.Text(),
+		Emoji:          msg.Emoji(),
+		Media:          s.toMediaItem(msg.Media()),
+		CreatedAt:      msg.CreatedAt(),
 	}
 }
 
-func toLastMessageItem(last *chatentity.LastMessage) *LastMessageItem {
+func (s *Service) toLastMessageItem(last *chatdomain.LastMessage) *LastMessageItem {
 	if last == nil {
 		return nil
 	}

@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	app "f_ccg_video_back_ddd/internal/application/comment"
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -229,7 +229,7 @@ func (q *Query) CountByVideo(ctx context.Context, videoID uint) (int64, error) {
 func (q *Query) ParentBrief(
 	ctx context.Context,
 	parentID, videoID, dynamicID uint,
-) (*commententity.ParentBrief, error) {
+) (*commentdomain.ParentBrief, error) {
 	var row struct {
 		UserID   uint   `gorm:"column:user_id"`
 		RootID   *uint  `gorm:"column:root_id"`
@@ -249,7 +249,7 @@ func (q *Query) ParentBrief(
 		return nil, err
 	}
 
-	return &commententity.ParentBrief{
+	return &commentdomain.ParentBrief{
 		UserID:   row.UserID,
 		RootID:   row.RootID,
 		Username: row.Username,

@@ -5,7 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
+
 	"go.uber.org/zap"
 )
 
@@ -21,16 +22,16 @@ func (r *deletePlanRepo) transaction(ctx context.Context) {
 		r.t.Fatal("comment write escaped transaction")
 	}
 }
-func (r *deletePlanRepo) BriefByIDs(context.Context, []uint) ([]commententity.Comment, error) {
+func (r *deletePlanRepo) BriefByIDs(context.Context, []uint) ([]commentdomain.Comment, error) {
 	root, otherRoot := uint(1), uint(3)
-	return []commententity.Comment{{ID: 2, VideoID: 10, RootID: &root}, {ID: 1, VideoID: 10}, {ID: 4, DynamicID: 11, RootID: &otherRoot}}, nil
+	return []commentdomain.Comment{*commentdomain.RestoreComment(commentdomain.Snapshot{ID: 2, VideoID: 10, RootID: &root}), *commentdomain.RestoreComment(commentdomain.Snapshot{ID: 1, VideoID: 10}), *commentdomain.RestoreComment(commentdomain.Snapshot{ID: 4, DynamicID: 11, RootID: &otherRoot})}, nil
 }
-func (r *deletePlanRepo) ChildrenBrief(_ context.Context, roots []uint) ([]commententity.Comment, error) {
+func (r *deletePlanRepo) ChildrenBrief(_ context.Context, roots []uint) ([]commentdomain.Comment, error) {
 	if !reflect.DeepEqual(roots, []uint{1}) {
 		r.t.Fatalf("roots=%v", roots)
 	}
 	root := uint(1)
-	return []commententity.Comment{{ID: 2, VideoID: 10, RootID: &root}, {ID: 5, VideoID: 10, RootID: &root}}, nil
+	return []commentdomain.Comment{*commentdomain.RestoreComment(commentdomain.Snapshot{ID: 2, VideoID: 10, RootID: &root}), *commentdomain.RestoreComment(commentdomain.Snapshot{ID: 5, VideoID: 10, RootID: &root})}, nil
 }
 func (r *deletePlanRepo) DecrReplyCountBy(ctx context.Context, root uint, delta int64) error {
 	r.transaction(ctx)
@@ -96,7 +97,7 @@ func TestAdminDeleteDeduplicatesOverlappingRootsAndReplies(t *testing.T) {
 func TestDeleteReplyDecrementsOnlyItsRootAndVideo(t *testing.T) {
 	root := uint(1)
 	txm := &likeTx{}
-	repo := &deletePlanRepo{t: t, serviceRepo: serviceRepo{target: &commententity.Comment{ID: 2, VideoID: 10, UserID: 7, RootID: &root}}}
+	repo := &deletePlanRepo{t: t, serviceRepo: serviceRepo{target: commentdomain.RestoreComment(commentdomain.Snapshot{ID: 2, VideoID: 10, UserID: 7, RootID: &root})}}
 	likes := &serviceLikes{}
 	cache := &serviceCache{}
 	metrics := &deleteMetrics{t: t, tx: txm}

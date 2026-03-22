@@ -5,8 +5,7 @@ import (
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/config"
-	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 )
 
 // GenerateVideo 创建上游视频生成任务.
@@ -32,7 +31,7 @@ func (s *Service) GetVideo(ctx context.Context, requestID string) (any, error) {
 	}
 
 	if strings.TrimSpace(requestID) == "" {
-		return nil, aierrors.ErrEmptyRequestID
+		return nil, aidomain.ErrEmptyRequestID
 	}
 
 	if err = requireDoubaoAPIKey(&snapshot.settings); err != nil {
@@ -53,18 +52,19 @@ func prepareVideoGenerationRequest(
 	hasImage := (req.Image != nil && !req.Image.IsZero()) ||
 		(req.InputReference != nil && !req.InputReference.IsZero())
 
-	if err := aivo.ValidateVideoGeneration(req.Prompt, hasImage, len(req.ReferenceImages)); err != nil {
+	policy := aidomain.GenerationPolicy{}
+	if err := policy.ValidateVideoGeneration(req.Prompt, hasImage, len(req.ReferenceImages)); err != nil {
 		return req, err
 	}
 
 	var err error
-	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.VideoModel, toOptions(cfg.VideoModels), "视频")
+	req.Model, err = aidomain.Options(toOptions(cfg.VideoModels)).NormalizeConfiguredModel(req.Model, cfg.VideoModel, "视频")
 	if err != nil {
 		return req, err
 	}
 
-	if duration, ok := aivo.ResolveDuration(req.Duration, req.Seconds); ok {
-		if err = aivo.ValidateVideoDuration(req.Model, duration); err != nil {
+	if duration, ok := policy.ResolveDuration(req.Duration, req.Seconds); ok {
+		if err = policy.ValidateVideoDuration(req.Model, duration); err != nil {
 			return req, err
 		}
 	}

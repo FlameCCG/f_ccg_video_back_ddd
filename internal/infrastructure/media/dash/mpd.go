@@ -2,7 +2,7 @@ package dash
 
 import (
 	"encoding/xml"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -88,7 +88,7 @@ var xmlnsStripRe = regexp.MustCompile(`\sxmlns(?::[A-Za-z0-9_]+)?="[^"]*"`)
 //
 // DASH MPD 几乎总会声明 xmlns="urn:mpeg:dash:schema:mpd:2011"；
 // Go 的 encoding/xml 要求标签命名空间精确匹配，因此先剥离 xmlns 再按本地名匹配。
-func ParseMPDVariants(data []byte) ([]videovo.DASHVariant, error) {
+func ParseMPDVariants(data []byte) ([]videodomain.DASHVariant, error) {
 	cleaned := xmlnsStripRe.ReplaceAll(data, nil)
 
 	var doc mpdXML
@@ -96,13 +96,13 @@ func ParseMPDVariants(data []byte) ([]videovo.DASHVariant, error) {
 		return nil, fmt.Errorf("xml unmarshal: %w", err)
 	}
 
-	out := make([]videovo.DASHVariant, 0, 8)
+	out := make([]videodomain.DASHVariant, 0, 8)
 
 	for _, period := range doc.Periods {
 		for _, as := range period.AdaptationSets {
 			asType := classifyAdaptationContentType(as)
 			for _, rep := range as.Reps {
-				v := videovo.DASHVariant{
+				v := videodomain.DASHVariant{
 					ID:          strings.TrimSpace(rep.ID),
 					ContentType: asType,
 					Width:       rep.Width,
@@ -128,7 +128,7 @@ func ParseMPDVariants(data []byte) ([]videovo.DASHVariant, error) {
 
 				switch v.ContentType {
 				case "video":
-					v.Resolution = videovo.ResolutionLabelFromSize(v.Width, v.Height)
+					v.Resolution = (videodomain.ResourcePolicy{}).ResolutionLabel(v.Width, v.Height)
 				case "audio":
 					v.Resolution = "音频"
 				default:
@@ -208,7 +208,7 @@ func classifyAdaptationContentType(as mpdAdaptationSet) string {
 	return "unknown"
 }
 
-func classifyRepContentType(v videovo.DASHVariant) string {
+func classifyRepContentType(v videodomain.DASHVariant) string {
 	mime := strings.ToLower(v.MimeType)
 
 	switch {

@@ -4,10 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityport "f_ccg_video_back_ddd/internal/domain/identity/port"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 
@@ -18,8 +15,8 @@ import (
 //
 // 请求合并通过服务实例内的 singleflight.Group 协调。
 type UserStatusService struct {
-	cache identityport.UserStatusCache
-	users identityrepo.UserRepository
+	cache UserStatusCache
+	users identitydomain.UserRepository
 	group singleflight.Group
 }
 
@@ -27,7 +24,7 @@ type UserStatusService struct {
 var _ UserStatusReader = (*UserStatusService)(nil)
 
 // NewUserStatusService 构造用户状态缓存服务。
-func NewUserStatusService(cache identityport.UserStatusCache, users identityrepo.UserRepository) *UserStatusService {
+func NewUserStatusService(cache UserStatusCache, users identitydomain.UserRepository) *UserStatusService {
 	return &UserStatusService{cache: cache, users: users}
 }
 
@@ -58,12 +55,12 @@ func (s *UserStatusService) CachedStatus(ctx context.Context, userID uint) (enum
 		}
 
 		if user == nil {
-			return enum.UserStatus(0), identityerrors.ErrUserRecordNotFound
+			return enum.UserStatus(0), identitydomain.ErrUserRecordNotFound
 		}
 
-		s.cache.StoreIfGenerationMatch(ctx, userID, user.Status, expectedGen)
+		s.cache.StoreIfGenerationMatch(ctx, userID, user.Status(), expectedGen)
 
-		return user.Status, nil
+		return user.Status(), nil
 	})
 	if err != nil {
 		return 0, err
@@ -72,17 +69,6 @@ func (s *UserStatusService) CachedStatus(ctx context.Context, userID uint) (enum
 	status, _ := value.(enum.UserStatus)
 
 	return status, nil
-}
-
-// Write 权威写穿：封禁/解封成功后直接写入最新状态并 bump generation。
-// 比单纯 DEL 更能保证全实例尽快读到 Banned/Active，并作废在途旧回填。
-func (s *UserStatusService) Write(userID uint, status enum.UserStatus) {
-	if userID == 0 {
-		return
-	}
-
-	s.group.Forget(strconv.FormatUint(uint64(userID), 10))
-	s.cache.Write(userID, status)
 }
 
 // Invalidate 删除状态缓存并 bump generation，同时取消本机 singleflight。
@@ -95,29 +81,37 @@ func (s *UserStatusService) Invalidate(userID uint) {
 	s.cache.Invalidate(userID)
 }
 
+// Refresh 在提交后从最新数据库事实回填，避免解封之后的新封禁被无条件 Active 写穿覆盖。
+// Invalidate 作废旧回源，CachedStatus 用读取前的 generation 执行 CAS。
+func (s *UserStatusService) Refresh(ctx context.Context, userID uint) error {
+	s.Invalidate(userID)
+	_, err := s.CachedStatus(ctx, userID)
+	return err
+}
+
 // ValidateAccessToken checks current DB credential state on every authenticated
 // request so password changes revoke tokens across all server instances.
-func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secret string) (*identityentity.User, error) {
+func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secret string) (*identitydomain.User, error) {
 	claims, err := jwts.ParseAccessToken(token, secret)
 	if err != nil {
 		return nil, err
 	}
 	id, err := strconv.ParseUint(claims.UID, 10, strconv.IntSize)
 	if err != nil || id == 0 {
-		return nil, identityerrors.ErrUserNotLogin
+		return nil, identitydomain.ErrUserNotLogin
 	}
 	user, err := s.users.FindByID(ctx, uint(id))
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
-		return nil, identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
-	if err := claims.CheckPasswordVersion(secret, user.Password); err != nil {
+	if err := claims.CheckPasswordVersion(secret, user.Password()); err != nil {
 		return nil, err
 	}
-	if user.IsBanned() {
-		return nil, identityerrors.ErrAccountBanned
+	if err := user.EnsureCanLogin(); err != nil {
+		return nil, err
 	}
 	return user, nil
 }

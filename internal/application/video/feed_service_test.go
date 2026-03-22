@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
 type feedHistoryStub struct {
@@ -15,7 +15,7 @@ type feedHistoryStub struct {
 
 func (feedHistoryStub) Upsert(context.Context, uint, uint, int, int) error { return nil }
 
-func (feedHistoryStub) Find(context.Context, uint, uint) (*videorepo.PlayHistory, error) {
+func (feedHistoryStub) Find(context.Context, uint, uint) (*videodomain.PlayHistory, error) {
 	return nil, nil
 }
 

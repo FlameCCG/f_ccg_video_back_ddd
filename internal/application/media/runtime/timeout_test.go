@@ -5,8 +5,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
 )
 
 func TestCalcPipelineEncodeTimeout(t *testing.T) {
@@ -84,8 +82,8 @@ func TestWithProgressStallGuardCancels(t *testing.T) {
 	for {
 		select {
 		case <-ctx.Done():
-			if !errors.Is(context.Cause(ctx), mediaerrors.ErrTranscodeProgressStalled) {
-				t.Fatalf("cause = %v, want %v", context.Cause(ctx), mediaerrors.ErrTranscodeProgressStalled)
+			if !errors.Is(context.Cause(ctx), ErrTranscodeProgressStalled) {
+				t.Fatalf("cause = %v, want %v", context.Cause(ctx), ErrTranscodeProgressStalled)
 			}
 
 			return
@@ -125,7 +123,7 @@ func TestWithProgressStallGuardKeepsAliveWithProgress(t *testing.T) {
 	// 停止推进后应判定停滞。
 	select {
 	case <-ctx.Done():
-		if !errors.Is(context.Cause(ctx), mediaerrors.ErrTranscodeProgressStalled) {
+		if !errors.Is(context.Cause(ctx), ErrTranscodeProgressStalled) {
 			t.Fatalf("cause = %v", context.Cause(ctx))
 		}
 	case <-time.After(2 * time.Second):
@@ -168,10 +166,10 @@ func TestClassifyFFmpegCtxError(t *testing.T) {
 	}
 
 	stallCtx, cancel := context.WithCancelCause(context.Background())
-	cancel(mediaerrors.ErrTranscodeProgressStalled)
+	cancel(ErrTranscodeProgressStalled)
 
 	err := ClassifyFFmpegCtxError(stallCtx, errors.New("signal: killed"), time.Minute, "stderr")
-	if !errors.Is(err, mediaerrors.ErrTranscodeProgressStalled) {
+	if !errors.Is(err, ErrTranscodeProgressStalled) {
 		t.Fatalf("stall classify: %v", err)
 	}
 
@@ -181,7 +179,7 @@ func TestClassifyFFmpegCtxError(t *testing.T) {
 	<-toCtx.Done()
 
 	err = ClassifyFFmpegCtxError(toCtx, errors.New("signal: killed"), 15*time.Minute, "x")
-	if !errors.Is(err, mediaerrors.ErrTranscodeEncodeTimeout) {
+	if !errors.Is(err, ErrTranscodeEncodeTimeout) {
 		t.Fatalf("timeout classify: %v", err)
 	}
 }

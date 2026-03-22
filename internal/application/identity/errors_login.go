@@ -1,6 +1,9 @@
 package identity
 
-import "errors"
+import (
+	"errors"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+)
 
 // 登录及验证码流程的错误文案属于对外响应契约，接口层使用 err.Error() 返回。
 var (
@@ -16,8 +19,6 @@ var (
 	ErrAdminRoleMissing = errors.New("管理员角色不存在")
 	// ErrRoleCheckFailed 角色校验查询失败。
 	ErrRoleCheckFailed = errors.New("角色校验失败")
-	// ErrNotAdminAccount 非管理员账号尝试登录后台。
-	ErrNotAdminAccount = errors.New("非管理员账号")
 	// ErrRefreshTokenInvalid refreshToken 无效。
 	ErrRefreshTokenInvalid = errors.New("refreshToken无效")
 	// ErrRefreshTokenFailed 刷新令牌签发失败。
@@ -58,17 +59,17 @@ var (
 	// ErrEmailVerifyFailed 邮箱可达性校验调用失败。
 	ErrEmailVerifyFailed = errors.New("邮箱验证失败")
 	// ErrEmailSyntaxInvalid 邮箱语法错误。
-	ErrEmailSyntaxInvalid = errors.New("邮箱格式错误")
+	ErrEmailSyntaxInvalid = identitydomain.ErrEmailSyntaxInvalid
 	// ErrEmailHostNotExists 邮箱服务器不存在。
-	ErrEmailHostNotExists = errors.New("邮箱服务器不存在")
+	ErrEmailHostNotExists = identitydomain.ErrEmailHostNotExists
 	// ErrEmailNoMXRecords 邮箱域名无 MX 记录。
-	ErrEmailNoMXRecords = errors.New("邮箱服务器无MX记录")
+	ErrEmailNoMXRecords = identitydomain.ErrEmailNoMXRecords
 	// ErrEmailAlreadyRegistered 注册验证码：邮箱已注册。
-	ErrEmailAlreadyRegistered = errors.New("该邮箱已注册")
+	ErrEmailAlreadyRegistered = identitydomain.ErrEmailAlreadyRegistered
 	// ErrEmailCaptchaEmailNotRegistered 重置密码验证码：邮箱未注册。
-	ErrEmailCaptchaEmailNotRegistered = errors.New("该邮箱未注册")
+	ErrEmailCaptchaEmailNotRegistered = identitydomain.ErrEmailCaptchaEmailNotRegistered
 	// ErrEmailAlreadyBound 绑定邮箱验证码：邮箱已被绑定。
-	ErrEmailAlreadyBound = errors.New("该邮箱已被绑定")
+	ErrEmailAlreadyBound = identitydomain.ErrEmailAlreadyBound
 	// ErrEmailCaptchaStoreFailed 验证码写入存储失败。
 	ErrEmailCaptchaStoreFailed = errors.New("验证码保存失败")
 )
@@ -76,5 +77,3 @@ var (
 var ErrOAuthAccountBindingRequired = errors.New("existing account requires explicit OAuth binding")
 
 var ErrRefreshTokenReused = errors.New("refresh token has already been used")
-
-var ErrInitialPasswordUnchanged = errors.New("new password must differ from initial password")

@@ -2,39 +2,41 @@ package identity
 
 import (
 	"context"
-	"slices"
-	"strings"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	identityvo "f_ccg_video_back_ddd/internal/domain/identity/valueobject"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 )
 
 // UserConfService 用户配置用例服务。
 type UserConfService struct {
 	cfgProvider shared.ConfigReader
-	confs       identityrepo.UserConfRepository
+	confs       identitydomain.UserConfRepository
 	query       UserConfQuery
 	banners     UserBannerCatalog
+	bannerRules identitydomain.BannerPolicy
 }
 
 // NewUserConfService 构造用户配置服务。
 func NewUserConfService(
 	cfgProvider shared.ConfigReader,
-	confs identityrepo.UserConfRepository,
+	confs identitydomain.UserConfRepository,
 	query UserConfQuery,
 	banners UserBannerCatalog,
 ) *UserConfService {
-	return &UserConfService{cfgProvider: cfgProvider, confs: confs, query: query, banners: banners}
+	return &UserConfService{
+		cfgProvider: cfgProvider,
+		confs:       confs,
+		query:       query,
+		banners:     banners,
+		bannerRules: identitydomain.BannerPolicy{},
+	}
 }
 
 // View 读取用户配置读模型（likeTags 保持数据库原始 JSON）。
 func (s *UserConfService) View(ctx context.Context, userID uint) (*UserConfView, error) {
 	view, err := s.query.View(ctx, userID)
 	if err != nil || view == nil {
-		return nil, identityerrors.ErrUserConfNotFound
+		return nil, identitydomain.ErrUserConfNotFound
 	}
 
 	return view, nil
@@ -46,40 +48,27 @@ func (s *UserConfService) View(ctx context.Context, userID uint) (*UserConfView,
 func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) error {
 	conf, err := s.confs.FindByUserID(ctx, in.UserID)
 	if err != nil || conf == nil {
-		return identityerrors.ErrUserConfNotFound
+		return identitydomain.ErrUserConfNotFound
 	}
 
-	changes := identityentity.UserConfChanges{
+	if in.BannerID != nil {
+		if err = s.ensureSystemDefaultBannerSelectable(ctx, *in.BannerID); err != nil {
+			return identitydomain.ErrSystemDefaultBannerNotFound
+		}
+	}
+
+	changes, err := conf.Plan(identitydomain.UserConfUpdate{
 		OpenCollect:   in.OpenCollect,
 		OpenFans:      in.OpenFans,
 		OpenFollow:    in.OpenFollow,
 		OpenLikeVideo: in.OpenLikeVideo,
 		OpenCoinVideo: in.OpenCoinVideo,
-	}
-
-	if in.LikeTags != nil {
-		normalized := identityvo.NormalizeLikeTags(*in.LikeTags)
-		changes.LikeTags = &normalized
-	}
-
-	bannerURL := strings.TrimSpace(in.BannerURL)
-
-	switch {
-	case in.BannerID != nil:
-		if err = s.ensureSystemDefaultBannerSelectable(ctx, *in.BannerID); err != nil {
-			return identityerrors.ErrSystemDefaultBannerNotFound
-		}
-
-		bannerID := *in.BannerID
-		cleared := ""
-		changes.BannerID = &bannerID
-		changes.BannerURL = &cleared
-	case bannerURL != "":
-		changes.BannerURL = &bannerURL
-	}
-
-	if changes.IsEmpty() {
-		return identityerrors.ErrNoFieldsToUpdate
+		BannerID:      in.BannerID,
+		BannerURL:     in.BannerURL,
+		LikeTags:      in.LikeTags,
+	})
+	if err != nil {
+		return err
 	}
 
 	if err = s.confs.Update(ctx, in.UserID, changes); err != nil {
@@ -91,17 +80,12 @@ func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) er
 
 // ensureSystemDefaultBannerSelectable 校验横幅位于系统默认列表中且可见。
 func (s *UserConfService) ensureSystemDefaultBannerSelectable(ctx context.Context, bannerID uint) error {
-	if bannerID == 0 {
-		return identityerrors.ErrBannerIDRequired
+	if err := s.bannerRules.RequireID(bannerID); err != nil {
+		return err
 	}
-
 	configuredBannerIDs := s.systemDefaultBannerIDs()
-	if len(configuredBannerIDs) == 0 {
-		return identityerrors.ErrSystemDefaultBannerNotFound
-	}
-
-	if !slices.Contains(configuredBannerIDs, bannerID) {
-		return identityerrors.ErrSystemDefaultBannerNotFound
+	if err := s.bannerRules.EnsureSystemDefaultID(bannerID, configuredBannerIDs); err != nil {
+		return err
 	}
 
 	list, err := s.banners.ListVisible(ctx, []uint{bannerID})
@@ -109,11 +93,7 @@ func (s *UserConfService) ensureSystemDefaultBannerSelectable(ctx context.Contex
 		return err
 	}
 
-	if len(list) != 1 {
-		return identityerrors.ErrSystemDefaultBannerNotFound
-	}
-
-	return nil
+	return s.bannerRules.EnsureSystemDefaultVisible(len(list))
 }
 
 // systemDefaultBannerIDs 汇总系统默认横幅集合（配置列表 + 注册默认横幅）。
@@ -123,5 +103,5 @@ func (s *UserConfService) systemDefaultBannerIDs() []uint {
 		return []uint{}
 	}
 
-	return identityvo.SystemDefaultUserBannerIDs(cfg.Site.DefaultUserBannerIDs, cfg.Site.DefaultUserBannerID)
+	return s.bannerRules.SystemDefaults(cfg.Site.DefaultUserBannerIDs, cfg.Site.DefaultUserBannerID)
 }

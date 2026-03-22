@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 
-	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
-	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
-	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
@@ -16,8 +14,8 @@ import (
 // LikeService 动态点赞用例服务。
 type LikeService struct {
 	txm      tx.Manager
-	dynamics dynamicrepo.DynamicRepository
-	likes    dynamicrepo.LikeRepository
+	dynamics dynamicdomain.DynamicRepository
+	likes    dynamicdomain.LikeRepository
 	users    UserProfileQuery
 	notifier DynamicLikeNotifier
 	tasks    *ctxutil.DetachedTaskGroup
@@ -27,8 +25,8 @@ type LikeService struct {
 // NewLikeService 构造动态点赞用例服务。
 func NewLikeService(
 	txm tx.Manager,
-	dynamics dynamicrepo.DynamicRepository,
-	likes dynamicrepo.LikeRepository,
+	dynamics dynamicdomain.DynamicRepository,
+	likes dynamicdomain.LikeRepository,
 	users UserProfileQuery,
 	notifier DynamicLikeNotifier,
 	tasks *ctxutil.DetachedTaskGroup,
@@ -51,11 +49,11 @@ func NewLikeService(
 // 计数用 SQL 表达式原子增减（取消时不低于 0），点赞成功后异步发通知。
 func (s *LikeService) ToggleLike(ctx context.Context, userID, dynamicID uint) (*DynamicLikeResult, error) {
 	if userID == 0 {
-		return nil, dynamicerrors.ErrLoginRequired
+		return nil, dynamicdomain.ErrLoginRequired
 	}
 
 	if dynamicID == 0 {
-		return nil, dynamicerrors.ErrDynamicIDRequired
+		return nil, dynamicdomain.ErrDynamicIDRequired
 	}
 
 	if ctx == nil {
@@ -68,7 +66,7 @@ func (s *LikeService) ToggleLike(ctx context.Context, userID, dynamicID uint) (*
 	}
 
 	if !exists {
-		return nil, dynamicerrors.ErrDynamicNotFound
+		return nil, dynamicdomain.ErrDynamicNotFound
 	}
 
 	liked := false
@@ -81,7 +79,7 @@ func (s *LikeService) ToggleLike(ctx context.Context, userID, dynamicID uint) (*
 			return s.dynamics.IncrLikeCount(txCtx, dynamicID)
 		}
 
-		if errors.Is(createErr, dynamicerrors.ErrLikeDuplicated) {
+		if errors.Is(createErr, dynamicdomain.ErrLikeDuplicated) {
 			affected, delErr := s.likes.Delete(txCtx, dynamicID, userID)
 			if delErr != nil {
 				return delErr
@@ -131,17 +129,17 @@ func (s *LikeService) sendLikeNotification(ctx context.Context, actionUserID, dy
 		return
 	}
 
-	if target.UserID == 0 || target.UserID == actionUserID {
+	if !target.ShouldNotifyLike(actionUserID) {
 		return
 	}
 
 	if err := s.notifier.NotifyDynamicLike(
 		ctx,
-		target.UserID,
-		target.ID,
+		target.UserID(),
+		target.ID(),
 		actionUser.ID,
 		actionUser.Username,
-		actionUser.Avatar, dynamicvo.LikeNoticeTitle, dynamicvo.LikeNoticeContent(target.Content),
+		actionUser.Avatar, dynamicdomain.LikeNoticeTitle, target.LikeNoticeContent(),
 	); err != nil {
 		s.logger.Warn("create dynamic like notification failed", zap.Error(err))
 

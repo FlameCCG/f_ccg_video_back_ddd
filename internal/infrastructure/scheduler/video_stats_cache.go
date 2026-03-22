@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	videoapplication "f_ccg_video_back_ddd/internal/application/video"
 	"strconv"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -62,7 +62,7 @@ type VideoStatsCache struct {
 	logger *zap.Logger
 }
 
-var _ app.VideoStatsCache = (*VideoStatsCache)(nil)
+var _ videoapplication.VideoStatsCache = (*VideoStatsCache)(nil)
 
 // NewVideoStatsCache 构造视频统计缓存适配器。
 func NewVideoStatsCache(redisClient *redis.Client, logger *zap.Logger) *VideoStatsCache {
@@ -92,7 +92,7 @@ func (c *VideoStatsCache) ScanDirty(ctx context.Context, cursor uint64, count in
 //
 // 成员非法或统计值缺失时直接摘除脏标记并跳过；
 // 快照数组不完整或反序列化失败时仅告警跳过，保留脏标记等待下轮。
-func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]app.VideoStatsSnapshot, error) {
+func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]videoapplication.VideoStatsSnapshot, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -110,7 +110,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 	}
 
 	// 期望 2 * len(ids) 个元素；不足时按已有结果解析，避免越界。
-	snapshots := make([]app.VideoStatsSnapshot, 0, len(ids))
+	snapshots := make([]videoapplication.VideoStatsSnapshot, 0, len(ids))
 
 	for i, memberID := range ids {
 		videoID, parseErr := parseDirtyVideoID(memberID)
@@ -144,7 +144,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 			continue
 		}
 
-		stats := app.VideoStats{
+		stats := videoapplication.VideoStats{
 			Views:         payload.Views,
 			Likes:         payload.Likes,
 			CommentCount:  payload.CommentCount,
@@ -153,7 +153,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 			DanmuCount:    payload.DanmuCount,
 		}
 
-		snapshots = append(snapshots, app.VideoStatsSnapshot{
+		snapshots = append(snapshots, videoapplication.VideoStatsSnapshot{
 			VideoID:  videoID,
 			Version:  int64FromRedisValue(rawResult[versionIdx]),
 			Stats:    &stats,

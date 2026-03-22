@@ -29,10 +29,40 @@ const (
 	scanBatchSize = 100
 )
 
+// countPayload 是角标缓存中的计数字段。
+// JSON 字段名、零值与 omitempty 共同构成 NotificationCountSummary 的缓存解码契约。
+type countPayload struct {
+	Reply   int64 `json:"reply"`
+	Like    int64 `json:"like"`
+	At      int64 `json:"at"`
+	System  int64 `json:"system"`
+	Message int64 `json:"message"`
+}
+
+func (countPayload) fromSummary(data app.NotificationCountSummary) countPayload {
+	return countPayload{
+		Reply:   data.Reply,
+		Like:    data.Like,
+		At:      data.At,
+		System:  data.System,
+		Message: data.Message,
+	}
+}
+
+func (p countPayload) summary() app.NotificationCountSummary {
+	return app.NotificationCountSummary{
+		Reply:   p.Reply,
+		Like:    p.Like,
+		At:      p.At,
+		System:  p.System,
+		Message: p.Message,
+	}
+}
+
 // redisValue redis 载荷：用 cachedAt 区分 fresh / stale-while-revalidate。
 type redisValue struct {
-	Data     app.NotificationCountSummary `json:"data"`
-	CachedAt int64                        `json:"cachedAt"` // unix nano
+	Data     countPayload `json:"data"`
+	CachedAt int64        `json:"cachedAt"` // unix nano
 }
 
 // CountCache 角标计数缓存的 Redis 实现。Redis key 前缀与 TTL 属于缓存协议。
@@ -53,7 +83,7 @@ func (c *CountCache) Available() bool {
 	return c.redis != nil
 }
 
-func cacheKey(receiverID int) string {
+func (c *CountCache) cacheKey(receiverID int) string {
 	return constants.NotificationCountCacheKeyPrefix + strconv.Itoa(receiverID)
 }
 
@@ -66,7 +96,7 @@ func (c *CountCache) Load(receiverID int) (*app.NotificationCountSummary, bool, 
 	cacheCtx, cancel := context.WithTimeout(context.Background(), notificationCountRedisTimeout)
 	defer cancel()
 
-	key := cacheKey(receiverID)
+	key := c.cacheKey(receiverID)
 
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
@@ -92,7 +122,7 @@ func (c *CountCache) Load(receiverID int) (*app.NotificationCountSummary, bool, 
 		return nil, false, false
 	}
 
-	data := payload.Data
+	data := payload.Data.summary()
 	fresh := age <= notificationCountCacheTTL
 
 	return &data, fresh, true
@@ -105,7 +135,7 @@ func (c *CountCache) Store(receiverID int, data app.NotificationCountSummary) {
 	}
 
 	payload := redisValue{
-		Data:     data,
+		Data:     (countPayload{}).fromSummary(data),
 		CachedAt: time.Now().UnixNano(),
 	}
 
@@ -119,7 +149,7 @@ func (c *CountCache) Store(receiverID int, data app.NotificationCountSummary) {
 	cacheCtx, cancel := context.WithTimeout(context.Background(), notificationCountRedisTimeout)
 	defer cancel()
 
-	if err := c.redis.Set(cacheCtx, cacheKey(receiverID), raw, notificationCountCacheStaleTTL).Err(); err != nil {
+	if err := c.redis.Set(cacheCtx, c.cacheKey(receiverID), raw, notificationCountCacheStaleTTL).Err(); err != nil {
 		c.logger.Warn("set notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 	}
 }
@@ -133,7 +163,7 @@ func (c *CountCache) Invalidate(receiverID int) {
 	cacheCtx, cancel := context.WithTimeout(context.Background(), notificationCountRedisTimeout)
 	defer cancel()
 
-	if err := c.redis.Del(cacheCtx, cacheKey(receiverID)).Err(); err != nil && !errors.Is(err, redis.Nil) {
+	if err := c.redis.Del(cacheCtx, c.cacheKey(receiverID)).Err(); err != nil && !errors.Is(err, redis.Nil) {
 		c.logger.Warn("invalidate notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 	}
 }

@@ -3,8 +3,14 @@ package ai
 import (
 	"encoding/json"
 	"strings"
+)
 
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+// 上游消息协议中的固定取值（同时是请求/响应 JSON 契约的一部分）。
+const (
+	// contentTypeImageURL 图片内容块类型。
+	contentTypeImageURL = "image_url"
+	// contentTypeText 文本内容块类型。
+	contentTypeText = "text"
 )
 
 // ImageGenerationRequest 表示文生图请求参数.
@@ -56,7 +62,7 @@ func (ref *ImageRef) UnmarshalJSON(data []byte) error {
 	var rawString string
 	if err := json.Unmarshal(data, &rawString); err == nil {
 		ref.URL = strings.TrimSpace(rawString)
-		ref.Type = aivo.ContentTypeImageURL
+		ref.Type = contentTypeImageURL
 
 		return nil
 	}
@@ -72,7 +78,7 @@ func (ref *ImageRef) UnmarshalJSON(data []byte) error {
 
 	ref.Type = strings.TrimSpace(parsed.Type)
 	if ref.URL != "" && ref.Type == "" {
-		ref.Type = aivo.ContentTypeImageURL
+		ref.Type = contentTypeImageURL
 	}
 
 	return nil
@@ -87,7 +93,7 @@ func (ref ImageRef) MarshalJSON() ([]byte, error) {
 		Type: strings.TrimSpace(ref.Type),
 	}
 	if payload.Type == "" {
-		payload.Type = aivo.ContentTypeImageURL
+		payload.Type = contentTypeImageURL
 	}
 
 	return json.Marshal(payload)

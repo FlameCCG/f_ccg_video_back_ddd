@@ -4,11 +4,12 @@ import (
 	"f_ccg_video_back_ddd/internal/config"
 	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"go.uber.org/zap"
 )
 
 func TestGooglePreservesProviderEmailVerificationAssertion(t *testing.T) {

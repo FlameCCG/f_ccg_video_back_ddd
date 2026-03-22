@@ -48,7 +48,7 @@ func (h *Handler) GetRoleListView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(roles, c)
+	res.OkWithData(rbacapp.ToRoleDTOs(roles), c)
 }
 
 // CreateRoleView 创建角色.
@@ -170,7 +170,7 @@ func (h *Handler) GetUserRolesView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(roles, c)
+	res.OkWithData(rbacapp.ToRoleDTOs(roles), c)
 }
 
 // UserPermissionsView 获取用户最终权限列表.

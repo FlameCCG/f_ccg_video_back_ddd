@@ -6,18 +6,18 @@ import (
 	"testing"
 	"time"
 
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 // fakeProgressStore 记录写入的进度快照，供测试验证。
 type fakeProgressStore struct {
 	mu        sync.Mutex
-	snapshots []mediavo.TranscodeProgress
+	snapshots []mediadomain.TranscodeProgress
 	ttls      []time.Duration
 	cleared   [][2]uint
 }
 
-func (s *fakeProgressStore) Write(_ context.Context, snapshot *mediavo.TranscodeProgress, ttl time.Duration) error {
+func (s *fakeProgressStore) Write(_ context.Context, snapshot *mediadomain.TranscodeProgress, ttl time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -35,12 +35,12 @@ func (s *fakeProgressStore) Clear(_ context.Context, videoID, partID uint) {
 }
 
 // last 返回最后一次写入的快照。
-func (s *fakeProgressStore) last() (mediavo.TranscodeProgress, time.Duration, bool) {
+func (s *fakeProgressStore) last() (mediadomain.TranscodeProgress, time.Duration, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if len(s.snapshots) == 0 {
-		return mediavo.TranscodeProgress{}, 0, false
+		return mediadomain.TranscodeProgress{}, 0, false
 	}
 
 	return s.snapshots[len(s.snapshots)-1], s.ttls[len(s.ttls)-1], true
@@ -52,9 +52,9 @@ func TestPipelineProgressUpdatesSharedPercent(t *testing.T) {
 	store := &fakeProgressStore{}
 	tracker := NewTranscodeProgressTracker(1, 0, store, nil)
 	tracker.SetDuration(100)
-	tracker.ConfigurePipeline(context.Background(), mediavo.TranscodePipelineMP4, "queued", []uint16{1080, 720})
-	tracker.StartPipeline(context.Background(), mediavo.TranscodePipelineMP4, "encoding")
-	tracker.UpdatePipelineProgress(context.Background(), mediavo.TranscodePipelineMP4, 42)
+	tracker.ConfigurePipeline(context.Background(), mediadomain.TranscodePipelineMP4, "queued", []uint16{1080, 720})
+	tracker.StartPipeline(context.Background(), mediadomain.TranscodePipelineMP4, "encoding")
+	tracker.UpdatePipelineProgress(context.Background(), mediadomain.TranscodePipelineMP4, 42)
 
 	// UpdatePipelineProgress 采用非强制 flush，受 500ms/1% 节流限制，不立即落库；测试从 tracker 的查询方法读取进度。
 	percent, _, status, outTime := tracker.DiagnosticSnapshot()
@@ -62,7 +62,7 @@ func TestPipelineProgressUpdatesSharedPercent(t *testing.T) {
 		t.Fatalf("pipeline percent = %v, want 42", percent)
 	}
 
-	if status != mediavo.TranscodeStatusRunning {
+	if status != mediadomain.TranscodeStatusRunning {
 		t.Fatalf("status = %q, want running", status)
 	}
 
@@ -93,30 +93,30 @@ func TestTrackerSucceedAndTTL(t *testing.T) {
 	store := &fakeProgressStore{}
 	tracker := NewTranscodeProgressTracker(3, 7, store, nil)
 
-	tracker.EnterStage(context.Background(), mediavo.TranscodeStagePrepare, "准备源文件")
+	tracker.EnterStage(context.Background(), mediadomain.TranscodeStagePrepare, "准备源文件")
 
 	running, ttl, ok := store.last()
 	if !ok {
 		t.Fatal("no running snapshot")
 	}
 
-	if running.Status != mediavo.TranscodeStatusRunning {
+	if running.Status != mediadomain.TranscodeStatusRunning {
 		t.Fatalf("status = %q, want running", running.Status)
 	}
 
-	if ttl != mediavo.TranscodeProgressRunningTTL {
-		t.Fatalf("running ttl = %v, want %v", ttl, mediavo.TranscodeProgressRunningTTL)
+	if ttl != mediadomain.TranscodeProgressRunningTTL {
+		t.Fatalf("running ttl = %v, want %v", ttl, mediadomain.TranscodeProgressRunningTTL)
 	}
 
 	tracker.Succeed(context.Background())
 
 	done, doneTTL, _ := store.last()
-	if done.Status != mediavo.TranscodeStatusSucceeded || done.Percent != 100 {
+	if done.Status != mediadomain.TranscodeStatusSucceeded || done.Percent != 100 {
 		t.Fatalf("succeed snapshot = %+v, want succeeded/100", done)
 	}
 
-	if doneTTL != mediavo.TranscodeProgressFinalTTL {
-		t.Fatalf("final ttl = %v, want %v", doneTTL, mediavo.TranscodeProgressFinalTTL)
+	if doneTTL != mediadomain.TranscodeProgressFinalTTL {
+		t.Fatalf("final ttl = %v, want %v", doneTTL, mediadomain.TranscodeProgressFinalTTL)
 	}
 
 	if done.VideoID != 3 || done.PartID != 7 {
@@ -130,16 +130,16 @@ func TestTrackerFailInvokesObserver(t *testing.T) {
 
 	store := &fakeProgressStore{}
 
-	var observed mediavo.TranscodeProgress
+	var observed mediadomain.TranscodeProgress
 
-	tracker := NewTranscodeProgressTracker(9, 0, store, func(snapshot mediavo.TranscodeProgress) {
+	tracker := NewTranscodeProgressTracker(9, 0, store, func(snapshot mediadomain.TranscodeProgress) {
 		observed = snapshot
 	})
 
-	tracker.EnterStage(context.Background(), mediavo.TranscodeStageMultiRes, "执行并行转码 Pipeline")
+	tracker.EnterStage(context.Background(), mediadomain.TranscodeStageMultiRes, "执行并行转码 Pipeline")
 	tracker.Fail(context.Background(), "ffmpeg pipeline failed: signal: killed")
 
-	if observed.Status != mediavo.TranscodeStatusFailed {
+	if observed.Status != mediadomain.TranscodeStatusFailed {
 		t.Fatalf("observed status = %q, want failed", observed.Status)
 	}
 
@@ -148,12 +148,12 @@ func TestTrackerFailInvokesObserver(t *testing.T) {
 	}
 
 	failed, ttl, _ := store.last()
-	if failed.Status != mediavo.TranscodeStatusFailed || failed.Message != "转码失败" {
+	if failed.Status != mediadomain.TranscodeStatusFailed || failed.Message != "转码失败" {
 		t.Fatalf("failed snapshot = %+v", failed)
 	}
 
-	if ttl != mediavo.TranscodeProgressFinalTTL {
-		t.Fatalf("failed ttl = %v, want final %v", ttl, mediavo.TranscodeProgressFinalTTL)
+	if ttl != mediadomain.TranscodeProgressFinalTTL {
+		t.Fatalf("failed ttl = %v, want final %v", ttl, mediadomain.TranscodeProgressFinalTTL)
 	}
 }
 
@@ -164,10 +164,10 @@ func TestTrackerSkipStageRenormalizesWeights(t *testing.T) {
 	store := &fakeProgressStore{}
 	tracker := NewTranscodeProgressTracker(1, 0, store, nil)
 
-	tracker.SkipStage(mediavo.TranscodeStageDash)
-	tracker.SkipStage(mediavo.TranscodeStageNormalize)
-	tracker.EnterStage(context.Background(), mediavo.TranscodeStagePrepare, "准备源文件")
-	tracker.CompleteStage(context.Background(), mediavo.TranscodeStagePrepare)
+	tracker.SkipStage(mediadomain.TranscodeStageDash)
+	tracker.SkipStage(mediadomain.TranscodeStageNormalize)
+	tracker.EnterStage(context.Background(), mediadomain.TranscodeStagePrepare, "准备源文件")
+	tracker.CompleteStage(context.Background(), mediadomain.TranscodeStagePrepare)
 
 	snapshot, _, ok := store.last()
 	if !ok {
@@ -186,12 +186,12 @@ func TestTrackerSkipStageIfUnusedKeepsRunningStage(t *testing.T) {
 
 	store := &fakeProgressStore{}
 	tracker := NewTranscodeProgressTracker(1, 0, store, nil)
-	tracker.EnterStage(context.Background(), mediavo.TranscodeStageMultiRes, "执行并行转码 Pipeline")
+	tracker.EnterStage(context.Background(), mediadomain.TranscodeStageMultiRes, "执行并行转码 Pipeline")
 
 	before, _, _ := store.last()
 
-	tracker.SkipStageIfUnused(mediavo.TranscodeStageMultiRes)
-	tracker.EnterStage(context.Background(), mediavo.TranscodeStageCleanup, "清理与刷新缓存")
+	tracker.SkipStageIfUnused(mediadomain.TranscodeStageMultiRes)
+	tracker.EnterStage(context.Background(), mediadomain.TranscodeStageCleanup, "清理与刷新缓存")
 
 	after, _, _ := store.last()
 	if after.Percent <= before.Percent {
@@ -205,12 +205,12 @@ func TestTrackerNilStoreIsSafe(t *testing.T) {
 
 	tracker := NewTranscodeProgressTracker(1, 0, nil, nil)
 	tracker.SetDuration(100)
-	tracker.EnterStage(context.Background(), mediavo.TranscodeStagePrepare, "准备源文件")
+	tracker.EnterStage(context.Background(), mediadomain.TranscodeStagePrepare, "准备源文件")
 	tracker.UpdateFFmpegProgress(context.Background(), 50)
 	tracker.Succeed(context.Background())
 
 	percent, stage, status, _ := tracker.DiagnosticSnapshot()
-	if status != mediavo.TranscodeStatusSucceeded || percent != 100 || stage != mediavo.TranscodeStageCleanup {
+	if status != mediadomain.TranscodeStatusSucceeded || percent != 100 || stage != mediadomain.TranscodeStageCleanup {
 		t.Fatalf("diagnostic = (%v,%q,%q)", percent, stage, status)
 	}
 }
@@ -218,21 +218,21 @@ func TestTrackerNilStoreIsSafe(t *testing.T) {
 func TestAggregateProgressPercent(t *testing.T) {
 	t.Parallel()
 
-	pipelines := []mediavo.TranscodePipelineProgress{
-		{Name: mediavo.TranscodePipelineDASH, Percent: 98.958325},
-		{Name: mediavo.TranscodePipelineMP4, Percent: 100},
+	pipelines := []mediadomain.TranscodePipelineProgress{
+		{Name: mediadomain.TranscodePipelineDASH, Percent: 98.958325},
+		{Name: mediadomain.TranscodePipelineMP4, Percent: 100},
 	}
 
-	if got := aggregateProgressPercent(mediavo.TranscodeStatusSucceeded, 100, pipelines); got != 100 {
+	if got := aggregateProgressPercent(mediadomain.TranscodeStatusSucceeded, 100, pipelines); got != 100 {
 		t.Fatalf("succeeded aggregate = %v, want 100", got)
 	}
 
 	wantRunning := (98.958325 + 100) / 2
-	if got := aggregateProgressPercent(mediavo.TranscodeStatusRunning, 80, pipelines); got != wantRunning {
+	if got := aggregateProgressPercent(mediadomain.TranscodeStatusRunning, 80, pipelines); got != wantRunning {
 		t.Fatalf("running aggregate = %v, want %v", got, wantRunning)
 	}
 
-	if got := aggregateProgressPercent(mediavo.TranscodeStatusRunning, 42, nil); got != 42 {
+	if got := aggregateProgressPercent(mediadomain.TranscodeStatusRunning, 42, nil); got != 42 {
 		t.Fatalf("aggregate without pipelines = %v, want 42", got)
 	}
 }
@@ -244,17 +244,17 @@ func TestNilTrackerMethodsAreSafe(t *testing.T) {
 	var tracker *TranscodeProgressTracker
 
 	tracker.SetDuration(10)
-	tracker.EnterStage(context.Background(), mediavo.TranscodeStagePrepare, "x")
-	tracker.CompleteStage(context.Background(), mediavo.TranscodeStagePrepare)
+	tracker.EnterStage(context.Background(), mediadomain.TranscodeStagePrepare, "x")
+	tracker.CompleteStage(context.Background(), mediadomain.TranscodeStagePrepare)
 	tracker.UpdateFFmpegProgress(context.Background(), 1)
-	tracker.ConfigurePipeline(context.Background(), mediavo.TranscodePipelineMP4, "x", nil)
-	tracker.StartPipeline(context.Background(), mediavo.TranscodePipelineMP4, "x")
-	tracker.UpdatePipelineProgress(context.Background(), mediavo.TranscodePipelineMP4, 1)
-	tracker.MarkPipelineUploading(context.Background(), mediavo.TranscodePipelineMP4, "x")
-	tracker.CompletePipeline(context.Background(), mediavo.TranscodePipelineMP4, nil)
-	tracker.SkipPipeline(context.Background(), mediavo.TranscodePipelineMP4, "x")
-	tracker.SkipStage(mediavo.TranscodeStageDash)
-	tracker.SkipStageIfUnused(mediavo.TranscodeStageDash)
+	tracker.ConfigurePipeline(context.Background(), mediadomain.TranscodePipelineMP4, "x", nil)
+	tracker.StartPipeline(context.Background(), mediadomain.TranscodePipelineMP4, "x")
+	tracker.UpdatePipelineProgress(context.Background(), mediadomain.TranscodePipelineMP4, 1)
+	tracker.MarkPipelineUploading(context.Background(), mediadomain.TranscodePipelineMP4, "x")
+	tracker.CompletePipeline(context.Background(), mediadomain.TranscodePipelineMP4, nil)
+	tracker.SkipPipeline(context.Background(), mediadomain.TranscodePipelineMP4, "x")
+	tracker.SkipStage(mediadomain.TranscodeStageDash)
+	tracker.SkipStageIfUnused(mediadomain.TranscodeStageDash)
 	tracker.Succeed(context.Background())
 	tracker.Fail(context.Background(), "x")
 
@@ -294,8 +294,8 @@ func TestContextProgressTracker(t *testing.T) {
 func TestNewQueuedProgress(t *testing.T) {
 	t.Parallel()
 
-	snapshot := mediavo.NewQueuedProgress(11, 2)
-	if snapshot.Status != mediavo.TranscodeStatusQueued || snapshot.Stage != mediavo.TranscodeStageQueued {
+	snapshot := mediadomain.NewQueuedProgress(11, 2, time.Now())
+	if snapshot.Status != mediadomain.TranscodeStatusQueued || snapshot.Stage != mediadomain.TranscodeStageQueued {
 		t.Fatalf("queued snapshot = %+v", snapshot)
 	}
 
@@ -307,7 +307,7 @@ func TestNewQueuedProgress(t *testing.T) {
 		t.Fatalf("queued percent = %v, want 0", snapshot.Percent)
 	}
 
-	if snapshot.TTL() != mediavo.TranscodeProgressRunningTTL {
+	if snapshot.TTL() != mediadomain.TranscodeProgressRunningTTL {
 		t.Fatalf("queued ttl = %v, want running ttl", snapshot.TTL())
 	}
 }
@@ -316,15 +316,15 @@ func TestNewQueuedProgress(t *testing.T) {
 func TestTranscodeProgressNormalizeClampsPercent(t *testing.T) {
 	t.Parallel()
 
-	low := &mediavo.TranscodeProgress{Percent: -5}
-	low.Normalize()
+	low := &mediadomain.TranscodeProgress{Percent: -5}
+	low.Normalize(time.Now())
 
 	if low.Percent != 0 {
 		t.Fatalf("negative percent = %v, want 0", low.Percent)
 	}
 
-	high := &mediavo.TranscodeProgress{Percent: 250}
-	high.Normalize()
+	high := &mediadomain.TranscodeProgress{Percent: 250}
+	high.Normalize(time.Now())
 
 	if high.Percent != 100 {
 		t.Fatalf("overflow percent = %v, want 100", high.Percent)
@@ -332,19 +332,6 @@ func TestTranscodeProgressNormalizeClampsPercent(t *testing.T) {
 
 	if high.UpdatedAt.IsZero() {
 		t.Fatal("Normalize must refresh UpdatedAt")
-	}
-}
-
-// TestTranscodeProgressPartsKey 分P 集合 key 与单条 key 必须区分。
-func TestTranscodeProgressPartsKey(t *testing.T) {
-	t.Parallel()
-
-	if mediavo.TranscodeProgressPartsKey(3) == mediavo.TranscodeProgressKey(3, 0) {
-		t.Fatal("parts hash key must differ from the video-level key")
-	}
-
-	if mediavo.PartFieldKey(7) != "7" {
-		t.Fatalf("PartFieldKey(7) = %q, want 7", mediavo.PartFieldKey(7))
 	}
 }
 

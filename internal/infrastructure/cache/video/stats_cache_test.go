@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/cache/video"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -34,7 +34,7 @@ func TestApplyDeltaMarksDirtyAndAvoidsStaleOverwrite(t *testing.T) {
 	cache, client := newStatsCacheFixture(t)
 	ctx := t.Context()
 
-	base := &videovo.Stats{
+	base := &videodomain.Stats{
 		Views:         10,
 		Likes:         5,
 		CommentCount:  2,
@@ -48,7 +48,7 @@ func TestApplyDeltaMarksDirtyAndAvoidsStaleOverwrite(t *testing.T) {
 		t.Fatalf("marshal base payload failed: %v", err)
 	}
 
-	stats, err := cache.ApplyDelta(ctx, 1, videovo.StatsDelta{
+	stats, err := cache.ApplyDelta(ctx, 1, videodomain.StatsDelta{
 		Views:         2,
 		Likes:         1,
 		FavoriteCount: -1,
@@ -101,7 +101,7 @@ func TestClearRemovesKeysAndDirtyMember(t *testing.T) {
 	cache, client := newStatsCacheFixture(t)
 	ctx := t.Context()
 
-	if _, err := cache.ApplyDelta(ctx, 7, videovo.StatsDelta{Views: 1}, ""); err != nil {
+	if _, err := cache.ApplyDelta(ctx, 7, videodomain.StatsDelta{Views: 1}, ""); err != nil {
 		t.Fatalf("apply stats delta failed: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestApplyDeltaIfExistsSkipsColdCache(t *testing.T) {
 	cache, _ := newStatsCacheFixture(t)
 	ctx := t.Context()
 
-	stats, existed, err := cache.ApplyDeltaIfExists(ctx, 42, videovo.StatsDelta{FavoriteCount: -1})
+	stats, existed, err := cache.ApplyDeltaIfExists(ctx, 42, videodomain.StatsDelta{FavoriteCount: -1})
 	if err != nil {
 		t.Fatalf("apply if-exists failed: %v", err)
 	}
@@ -141,11 +141,11 @@ func TestApplyDeltaIfExistsSkipsColdCache(t *testing.T) {
 		t.Fatalf("expected cold cache miss, got existed=%v stats=%+v", existed, stats)
 	}
 
-	if _, err := cache.ApplyDelta(ctx, 42, videovo.StatsDelta{FavoriteCount: 3}, ""); err != nil {
+	if _, err := cache.ApplyDelta(ctx, 42, videodomain.StatsDelta{FavoriteCount: 3}, ""); err != nil {
 		t.Fatalf("seed via delta failed: %v", err)
 	}
 
-	stats, existed, err = cache.ApplyDeltaIfExists(ctx, 42, videovo.StatsDelta{FavoriteCount: -1})
+	stats, existed, err = cache.ApplyDeltaIfExists(ctx, 42, videodomain.StatsDelta{FavoriteCount: -1})
 	if err != nil {
 		t.Fatalf("apply if-exists failed: %v", err)
 	}

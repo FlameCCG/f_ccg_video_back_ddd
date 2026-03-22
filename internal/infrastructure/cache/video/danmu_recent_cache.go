@@ -8,7 +8,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -56,8 +56,8 @@ func (c *DanmuRecentCache) Push(ctx context.Context, dto *app.DanmuDTO) {
 
 	pipe := c.redis.TxPipeline()
 	pipe.RPush(cacheCtx, key, data)
-	pipe.LTrim(cacheCtx, key, -videoentity.DanmuRecentMax, -1)
-	pipe.Expire(cacheCtx, key, videoentity.DanmuRecentCacheTTL)
+	pipe.LTrim(cacheCtx, key, -videodomain.DanmuRecentMax, -1)
+	pipe.Expire(cacheCtx, key, videodomain.DanmuRecentCacheTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
 		c.logger.Warn("write danmu cache failed", zap.Error(err), zap.Uint("videoId", dto.VideoID))

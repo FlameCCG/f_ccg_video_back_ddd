@@ -7,9 +7,7 @@ import (
 	"reflect"
 	"time"
 
-	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
-	chatrepo "f_ccg_video_back_ddd/internal/domain/chat/repository"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -26,7 +24,7 @@ type Store struct {
 	db *mongo.Database
 }
 
-var _ chatrepo.Repository = (*Store)(nil)
+var _ chatdomain.Repository = (*Store)(nil)
 
 // NewStore 构造私信 Mongo 仓储；db 允许为 nil。
 func NewStore(db *mongo.Database) *Store {
@@ -41,7 +39,7 @@ func (s *Store) Available() bool {
 // EnsureIndexes 创建聊天消息与会话集合索引（幂等）。
 func (s *Store) EnsureIndexes(ctx context.Context) error {
 	if !s.Available() {
-		return chaterrors.ErrStoreUnavailable
+		return chatdomain.ErrStoreUnavailable
 	}
 
 	{
@@ -99,111 +97,123 @@ func (s *Store) EnsureIndexes(ctx context.Context) error {
 
 // SendMessage commits message insertion and conversation state together. WithTransaction
 // retries transient transaction failures and uncertain commits with the same message ID.
-func (s *Store) SendMessage(ctx context.Context, msg *chatentity.Message, preview string) error {
+func (s *Store) SendMessage(ctx context.Context, msg *chatdomain.Message, preview string) (*chatdomain.Message, error) {
 	if !s.Available() {
-		return chaterrors.ErrStoreUnavailable
+		return nil, chatdomain.ErrStoreUnavailable
 	}
 	if msg == nil {
-		return nil
+		return nil, nil
 	}
-	if msg.ID == "" {
-		msg.ID = primitive.NewObjectID().Hex()
+	current := msg
+	if current.ID() == "" {
+		snap := current.Snapshot()
+		snap.ID = primitive.NewObjectID().Hex()
+		current = chatdomain.RestoreMessage(snap)
 	}
 	session, err := s.db.Client().StartSession()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer session.EndSession(ctx)
 
 	_, err = session.WithTransaction(ctx, func(txCtx mongo.SessionContext) (interface{}, error) {
-		oid, err := primitive.ObjectIDFromHex(msg.ID)
+		oid, err := primitive.ObjectIDFromHex(current.ID())
 		if err != nil {
 			return nil, err
 		}
 		var existing mongopo.ChatMessage
 		err = s.db.Collection(chatMessagesCol).FindOne(txCtx, bson.D{{Key: fieldID, Value: oid}}).Decode(&existing)
 		if err == nil {
-			if existing.ConversationID != msg.ConversationID || existing.SenderID != msg.SenderID || existing.ReceiverID != msg.ReceiverID || existing.Type != msg.Type || existing.Text != msg.Text || existing.Emoji != msg.Emoji || !reflect.DeepEqual(existing.Media, toPOMedia(msg.Media)) {
+			if existing.ConversationID != current.ConversationID() || existing.SenderID != current.SenderID() || existing.ReceiverID != current.ReceiverID() || existing.Type != current.Type() || existing.Text != current.Text() || existing.Emoji != current.Emoji() || !reflect.DeepEqual(existing.Media, s.toPOMedia(current.Media())) {
 				return nil, errors.New("message ID already belongs to different content")
 			}
-			msg.CreatedAt = existing.CreatedAt
+			snap := current.Snapshot()
+			snap.CreatedAt = existing.CreatedAt
+			current = chatdomain.RestoreMessage(snap)
 			return nil, nil
 		}
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, err
 		}
-		if err := s.InsertMessage(txCtx, msg); err != nil {
+		stored, err := s.InsertMessage(txCtx, current)
+		if err != nil {
 			return nil, err
 		}
-		if err := s.ApplySend(txCtx, msg, preview); err != nil {
+		current = stored
+		if err := s.ApplySend(txCtx, current, preview); err != nil {
 			return nil, err
 		}
 		return nil, nil
 	})
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return current, nil
 }
 
-// InsertMessage 落库一条消息并回填 ObjectID 的十六进制表示。
-func (s *Store) InsertMessage(ctx context.Context, msg *chatentity.Message) error {
+// InsertMessage 落库一条消息，并返回带 ObjectID 十六进制表示的消息副本。
+func (s *Store) InsertMessage(ctx context.Context, msg *chatdomain.Message) (*chatdomain.Message, error) {
 	if !s.Available() {
-		return chaterrors.ErrStoreUnavailable
+		return nil, chatdomain.ErrStoreUnavailable
 	}
 
 	if msg == nil {
-		return nil
+		return nil, nil
 	}
 
 	oid := primitive.NewObjectID()
-	if msg.ID != "" {
+	if msg.ID() != "" {
 		var err error
-		oid, err = primitive.ObjectIDFromHex(msg.ID)
+		oid, err = primitive.ObjectIDFromHex(msg.ID())
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	row := mongopo.ChatMessage{
 		ID:             oid,
-		ConversationID: msg.ConversationID,
-		SenderID:       msg.SenderID,
-		ReceiverID:     msg.ReceiverID,
-		Type:           msg.Type,
-		Text:           msg.Text,
-		Emoji:          msg.Emoji,
-		Media:          toPOMedia(msg.Media),
-		CreatedAt:      msg.CreatedAt,
+		ConversationID: msg.ConversationID(),
+		SenderID:       msg.SenderID(),
+		ReceiverID:     msg.ReceiverID(),
+		Type:           msg.Type(),
+		Text:           msg.Text(),
+		Emoji:          msg.Emoji(),
+		Media:          s.toPOMedia(msg.Media()),
+		CreatedAt:      msg.CreatedAt(),
 	}
 
 	if _, err := s.db.Collection(chatMessagesCol).InsertOne(ctx, row); err != nil {
-		return err
+		return nil, err
 	}
 
-	msg.ID = oid.Hex()
+	snap := msg.Snapshot()
+	snap.ID = oid.Hex()
 
-	return nil
+	return chatdomain.RestoreMessage(snap), nil
 }
 
 // ApplySend 按消息推进会话：写入 lastMessage、双方可见、接收方未读 +1（upsert）。
 //
 // 单个会话文档内的修改由一次更新完成，但与 InsertMessage 写消息集合是分开的操作。
 // 会话键由排序后的参与者生成，双方从哪个方向发起对话都应落到同一会话。
-func (s *Store) ApplySend(ctx context.Context, msg *chatentity.Message, preview string) error {
+func (s *Store) ApplySend(ctx context.Context, msg *chatdomain.Message, preview string) error {
 	if !s.Available() {
-		return chaterrors.ErrStoreUnavailable
+		return chatdomain.ErrStoreUnavailable
 	}
 
 	if msg == nil {
 		return nil
 	}
 
-	msgID, err := primitive.ObjectIDFromHex(msg.ID)
+	msgID, err := primitive.ObjectIDFromHex(msg.ID())
 	if err != nil {
-		return fmt.Errorf("非法消息 ID %q: %w", msg.ID, err)
+		return fmt.Errorf("非法消息 ID %q: %w", msg.ID(), err)
 	}
 
-	aID, bID := chatentity.SortedPair(msg.SenderID, msg.ReceiverID)
-	conversationID := chatentity.BuildConversationID(aID, bID)
+	var conv chatdomain.Conversation
+	aID, bID := conv.SortedPair(msg.SenderID(), msg.ReceiverID())
+	conversationID := conv.BuildConversationID(aID, bID)
 
-	receiverSlot := chatentity.SlotOf(msg.ReceiverID, msg.SenderID)
+	receiverSlot := conv.SlotOf(msg.ReceiverID(), msg.SenderID())
 	senderSlot := receiverSlot.Other()
 
 	receiverUnreadPath := receiverSlot.String() + suffixUnread
@@ -211,16 +221,16 @@ func (s *Store) ApplySend(ctx context.Context, msg *chatentity.Message, preview 
 	senderUnreadPath := senderSlot.String() + suffixUnread
 	senderVisiblePath := senderSlot.String() + suffixVisible
 
-	now := msg.CreatedAt
+	now := msg.CreatedAt()
 	if now.IsZero() {
 		now = time.Now()
 	}
 
 	last := mongopo.ChatConversationLastMessage{
 		MsgID:     msgID,
-		Type:      msg.Type,
+		Type:      msg.Type(),
 		Preview:   preview,
-		SenderID:  msg.SenderID,
+		SenderID:  msg.SenderID(),
 		CreatedAt: now,
 	}
 
@@ -256,15 +266,16 @@ func (s *Store) UpsertConversation(
 	ctx context.Context,
 	userID, peerID uint,
 	now time.Time,
-) (*chatentity.Conversation, error) {
+) (*chatdomain.Conversation, error) {
 	if !s.Available() {
-		return nil, chaterrors.ErrStoreUnavailable
+		return nil, chatdomain.ErrStoreUnavailable
 	}
 
-	aID, bID := chatentity.SortedPair(userID, peerID)
-	conversationID := chatentity.BuildConversationID(aID, bID)
+	var placement chatdomain.Conversation
+	aID, bID := placement.SortedPair(userID, peerID)
+	conversationID := placement.BuildConversationID(aID, bID)
 
-	mySlot := chatentity.SlotOf(userID, peerID)
+	mySlot := placement.SlotOf(userID, peerID)
 	peerSlot := mySlot.Other()
 
 	update := bson.D{
@@ -307,23 +318,24 @@ func (s *Store) UpsertConversation(
 		Decode(&conv)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, chaterrors.ErrConversationNotFound
+			return nil, chatdomain.ErrConversationNotFound
 		}
 
 		return nil, err
 	}
 
-	return toDomainConversation(&conv), nil
+	return s.toDomainConversation(&conv), nil
 }
 
 // HideConversation 仅对 userID 隐藏会话并清零其未读，保留对端会话与历史消息。
 func (s *Store) HideConversation(ctx context.Context, userID, peerID uint, now time.Time) error {
 	if !s.Available() {
-		return chaterrors.ErrStoreUnavailable
+		return chatdomain.ErrStoreUnavailable
 	}
 
-	conversationID := chatentity.BuildConversationID(userID, peerID)
-	slot := chatentity.SlotOf(userID, peerID).String()
+	var conv chatdomain.Conversation
+	conversationID := conv.BuildConversationID(userID, peerID)
+	slot := conv.SlotOf(userID, peerID).String()
 
 	_, err := s.db.Collection(chatConversationsCol).UpdateOne(
 		ctx,
@@ -343,12 +355,13 @@ func (s *Store) HideConversation(ctx context.Context, userID, peerID uint, now t
 // MarkRead 清零 userID 在该会话中的未读并记录已读时间；返回是否命中会话。
 func (s *Store) MarkRead(ctx context.Context, userID, peerID uint, now time.Time) (bool, error) {
 	if !s.Available() {
-		return false, chaterrors.ErrStoreUnavailable
+		return false, chatdomain.ErrStoreUnavailable
 	}
 
-	conversationID := chatentity.BuildConversationID(userID, peerID)
+	var conv chatdomain.Conversation
+	conversationID := conv.BuildConversationID(userID, peerID)
 	// 根据 deterministic 的 memberA/memberB 更新 unread
-	slot := chatentity.SlotOf(userID, peerID).String()
+	slot := conv.SlotOf(userID, peerID).String()
 
 	update := bson.D{{Key: opSet, Value: bson.D{
 		{Key: slot + suffixUnread, Value: int64(0)},
@@ -403,7 +416,7 @@ func (s *Store) ExistsMessageBetween(
 }
 
 // visibleConversationFilter 可见会话过滤条件：参与者本人，且有历史消息或自己未隐藏。
-func visibleConversationFilter(userID uint) bson.M {
+func (*Store) visibleConversationFilter(userID uint) bson.M {
 	return bson.M{
 		fieldParticipants: userID,
 		"$or": bson.A{

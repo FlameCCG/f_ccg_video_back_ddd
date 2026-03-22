@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
 )
@@ -44,7 +44,7 @@ type ffprobeResult struct {
 }
 
 // ProbeVideo 调用 ffprobe 解析视频元数据（分辨率、码率、编码、容器 brand、时长等）。
-func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (mediavo.VideoMeta, error) {
+func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (mediadomain.VideoMeta, error) {
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "error",
 		"-show_streams",
@@ -55,18 +55,18 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (mediavo.Vide
 
 	out, err := cmd.Output()
 	if err != nil {
-		return mediavo.VideoMeta{}, fmt.Errorf("ffprobe failed: %w", err)
+		return mediadomain.VideoMeta{}, fmt.Errorf("ffprobe failed: %w", err)
 	}
 
 	var result ffprobeResult
 	if err := json.Unmarshal(out, &result); err != nil {
 		logger.Error("unmarshal ffprobe json failed", zap.String("json", string(out)))
 
-		return mediavo.VideoMeta{}, err
+		return mediadomain.VideoMeta{}, err
 	}
 
 	if len(result.Streams) == 0 {
-		return mediavo.VideoMeta{}, errors.New("no video stream found")
+		return mediadomain.VideoMeta{}, errors.New("no video stream found")
 	}
 
 	var videoStream, audioStream *ffprobeStream
@@ -85,7 +85,7 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (mediavo.Vide
 	}
 
 	if videoStream == nil {
-		return mediavo.VideoMeta{}, errors.New("no video stream found")
+		return mediadomain.VideoMeta{}, errors.New("no video stream found")
 	}
 
 	format := result.Format
@@ -100,7 +100,7 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (mediavo.Vide
 		}
 	}
 
-	meta := mediavo.VideoMeta{
+	meta := mediadomain.VideoMeta{
 		Height:           videoStream.Height,
 		Width:            videoStream.Width,
 		Format:           format.FormatName,

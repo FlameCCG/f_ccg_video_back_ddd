@@ -3,9 +3,7 @@ package video
 import (
 	"context"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -16,9 +14,9 @@ import (
 //
 // publish_at 与 is_scheduled 同步写入视频行；事务不回滚已上传对象，也不保证提交后的 Kafka 投递。
 // 源文件名超长等数据库错误经 mapSourceFileNameDBError 转为用户可读文案。
-func (r *VideoRepository) Persist(ctx context.Context, draft *videoentity.PublishDraft) error {
+func (r *VideoRepository) Persist(ctx context.Context, draft *videodomain.PublishDraft) (*videodomain.Video, error) {
 	if draft == nil || draft.Video == nil {
-		return videoerrors.ErrParamInvalid
+		return nil, videodomain.ErrParamInvalid
 	}
 
 	row := toPOVideo(draft.Video)
@@ -27,7 +25,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *videoentity.Publis
 
 	err := gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if createErr := tx.Create(row).Error; createErr != nil {
-			return videoerrors.ErrCreateVideoFailed
+			return videodomain.ErrCreateVideoFailed
 		}
 		if len(draft.TagIDs) > 0 {
 			tags := make([]po.Tag, 0, len(draft.TagIDs))
@@ -41,7 +39,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *videoentity.Publis
 			}
 
 			if assocErr := tx.Model(row).Association("Tags").Replace(values...); assocErr != nil {
-				return videoerrors.ErrCreateVideoTagsFailed
+				return videodomain.ErrCreateVideoTagsFailed
 			}
 		}
 
@@ -52,7 +50,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *videoentity.Publis
 			}
 
 			if createErr := tx.Create(&parts).Error; createErr != nil {
-				return videoerrors.ErrCreatePartsFailed
+				return videodomain.ErrCreatePartsFailed
 			}
 
 			// 回填自增 ID 供调用方派发转码任务
@@ -64,41 +62,44 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *videoentity.Publis
 			}
 
 			if resErr := createInitialPartResources(tx, draft, parts); resErr != nil {
-				if videovo.IsSourceFileNameError(resErr) {
+				if videodomain.IsSourceFileNameError(resErr) {
 					return resErr
 				}
 
-				return videoerrors.ErrCreatePartResourcesFailed
+				return videodomain.ErrCreatePartResourcesFailed
 			}
 
 			return nil
 		}
 
 		if resErr := createInitialVideoResource(tx, draft, row.ID); resErr != nil {
-			if videovo.IsSourceFileNameError(resErr) {
+			if videodomain.IsSourceFileNameError(resErr) {
 				return resErr
 			}
 
-			return videoerrors.ErrCreateVideoResourceFailed
+			return videodomain.ErrCreateVideoResourceFailed
 		}
 
 		return nil
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// 只有数据库事务成功后才向投稿结果回填视频主键与时间。
-	// 分P ID 在事务中回填用于后续派发；调用方必须先检查 Persist 的错误再使用这些结果。
-	draft.Video.ID = row.ID
-	draft.Video.CreatedAt = row.CreatedAt
-	draft.Video.UpdatedAt = row.UpdatedAt
+	// 事务成功后用已落库的主键、时间和定时标记重建实体，不改写调用方传入的旧指针。
+	snap := draft.Video.Snapshot()
+	snap.ID = row.ID
+	snap.CreatedAt = row.CreatedAt
+	snap.UpdatedAt = row.UpdatedAt
+	snap.IsScheduled = row.IsScheduled
+	restored := videodomain.RestoreVideo(snap)
+	draft.Video = restored
 
-	return nil
+	return restored, nil
 }
 
 // createInitialPartResources 逐个分P写入初始（源片）资源行。
-func createInitialPartResources(tx *gorm.DB, draft *videoentity.PublishDraft, parts []po.VideoPart) error {
+func createInitialPartResources(tx *gorm.DB, draft *videodomain.PublishDraft, parts []po.VideoPart) error {
 	for idx := range parts {
 		if idx >= len(draft.PartResources) {
 			continue
@@ -118,7 +119,7 @@ func createInitialPartResources(tx *gorm.DB, draft *videoentity.PublishDraft, pa
 }
 
 // createInitialVideoResource 为单视频作品写入初始（源片）资源行。
-func createInitialVideoResource(tx *gorm.DB, draft *videoentity.PublishDraft, videoID uint) error {
+func createInitialVideoResource(tx *gorm.DB, draft *videodomain.PublishDraft, videoID uint) error {
 	resource := toPOVideoResource(draft.VideoResource, videoID)
 	if resource == nil {
 		return nil

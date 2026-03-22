@@ -1,55 +1,20 @@
 package scheduler
 
 import (
-	"context"
+	commentapplication "f_ccg_video_back_ddd/internal/application/comment"
+	identityapplication "f_ccg_video_back_ddd/internal/application/identity"
+	platformapp "f_ccg_video_back_ddd/internal/application/platform"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
 )
 
-// CommentLikeSyncJob 评论点赞增量落库任务端口。
-//
-// 绑定到 application/platform.CommentLikeSyncService。
-type CommentLikeSyncJob interface {
-	// Run 执行一轮同步。
-	Run(ctx context.Context)
-}
-
-// VideoStatSyncJob 视频统计缓存回写任务端口。
-//
-// 绑定到 application/platform.VideoStatSyncService。
-type VideoStatSyncJob interface {
-	// Run 执行一轮同步。
-	Run(ctx context.Context)
-}
-
-// HotRankDecayJob 热门榜时间衰减任务端口。
-//
-// 绑定到 application/platform.HotRankDecayService。
-type HotRankDecayJob interface {
-	// Run 执行一轮衰减。
-	Run(ctx context.Context)
-}
-
-// AutoUnbanJob 到期用户自动解封任务端口。
-//
-// 绑定到 application/platform.AutoUnbanService。
-type AutoUnbanJob interface {
-	// Run 执行一轮解封检查。
-	Run(ctx context.Context)
-}
-
-type UploadCleanupJob interface {
-	Run(ctx context.Context)
-}
-
-var _ UploadCleanupJob = (*videoapp.UploadCleanupService)(nil)
+var _ platformapp.UploadCleanupJob = (*videoapp.UploadCleanupService)(nil)
 
 // 编译期断言：四个应用层用例服务分别满足对应的任务端口，
 // bootstrap 中可直接 wire.Bind，无需额外适配器。
 var (
-	_ CommentLikeSyncJob = (*app.CommentLikeSyncService)(nil)
-	_ VideoStatSyncJob   = (*app.VideoStatSyncService)(nil)
-	_ HotRankDecayJob    = (*app.HotRankDecayService)(nil)
-	_ AutoUnbanJob       = (*app.AutoUnbanService)(nil)
+	_ platformapp.CommentLikeSyncJob = (*commentapplication.CommentLikeSyncService)(nil)
+	_ platformapp.VideoStatSyncJob   = (*videoapp.VideoStatSyncService)(nil)
+	_ platformapp.HotRankDecayJob    = (*videoapp.HotRankDecayService)(nil)
+	_ platformapp.AutoUnbanJob       = (*identityapplication.AutoUnbanService)(nil)
 )

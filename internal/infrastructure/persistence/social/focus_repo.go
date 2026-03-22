@@ -3,9 +3,7 @@ package social
 import (
 	"context"
 
-	socialerrors "f_ccg_video_back_ddd/internal/domain/social/domainerr"
-	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
-	socialrepo "f_ccg_video_back_ddd/internal/domain/social/repository"
+	socialdomain "f_ccg_video_back_ddd/internal/domain/social"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -17,35 +15,32 @@ type FocusRepository struct {
 	db *gorm.DB
 }
 
-var _ socialrepo.FocusRepository = (*FocusRepository)(nil)
+var _ socialdomain.FocusRepository = (*FocusRepository)(nil)
 
 // NewFocusRepository 构造关注关系仓储。
 func NewFocusRepository(db *gorm.DB) *FocusRepository {
 	return &FocusRepository{db: db}
 }
 
-// Create 写入关注关系，唯一键冲突返回 domain.ErrAlreadyFocused。
+// Create 写入关注关系并返回持久化实体，唯一键冲突返回 domain.ErrAlreadyFocused。
 //
-// 冲突判定使用 gormx.IsDuplicateKeyError，支持 gorm.ErrDuplicatedKey、MySQL 1062 及错误文案匹配。
-func (r *FocusRepository) Create(ctx context.Context, focus *socialentity.Focus) error {
+// 冲突判定使用 gormx.IsDuplicateKeyError，支持 gorm.ErrDuplicatedKey、MySQL 1062 和错误文案匹配。
+// 失败时不修改调用方实体；成功后的主键与时间只写入返回值。
+func (r *FocusRepository) Create(ctx context.Context, focus *socialdomain.Focus) (*socialdomain.Focus, error) {
 	if focus == nil {
-		return nil
+		return nil, nil
 	}
 
 	row := toPOFocus(focus)
 	if err := gormx.DB(ctx, r.db).Create(row).Error; err != nil {
 		if gormx.IsDuplicateKeyError(err) {
-			return socialerrors.ErrAlreadyFocused
+			return nil, socialdomain.ErrAlreadyFocused
 		}
 
-		return err
+		return nil, err
 	}
 
-	if created := toDomainFocus(row); created != nil {
-		*focus = *created
-	}
-
-	return nil
+	return toDomainFocus(row), nil
 }
 
 // Delete 删除关注关系，返回受影响行数。

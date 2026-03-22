@@ -8,23 +8,21 @@ import (
 	"testing"
 	"time"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 )
 
 type userInfoAccountRepository struct {
-	identityrepo.UserAccountRepository
-	user              *identityentity.User
-	conf              *identityentity.UserConf
+	identitydomain.UserAccountRepository
+	user              *identitydomain.User
+	conf              *identitydomain.UserConf
 	err               error
 	findByIDCalls     atomic.Int32
 	findWithConfCalls atomic.Int32
 }
 
-func (r *userInfoAccountRepository) FindByID(context.Context, uint) (*identityentity.User, error) {
+func (r *userInfoAccountRepository) FindByID(context.Context, uint) (*identitydomain.User, error) {
 	r.findByIDCalls.Add(1)
 
 	return r.user, r.err
@@ -33,20 +31,20 @@ func (r *userInfoAccountRepository) FindByID(context.Context, uint) (*identityen
 func (r *userInfoAccountRepository) FindWithConfByID(
 	context.Context,
 	uint,
-) (*identityentity.User, *identityentity.UserConf, error) {
+) (*identitydomain.User, *identitydomain.UserConf, error) {
 	r.findWithConfCalls.Add(1)
 
 	return r.user, r.conf, r.err
 }
 
 type userInfoConfRepository struct {
-	identityrepo.UserConfRepository
+	identitydomain.UserConfRepository
 	findCalls atomic.Int32
-	conf      *identityentity.UserConf
+	conf      *identitydomain.UserConf
 	err       error
 }
 
-func (r *userInfoConfRepository) FindByUserID(context.Context, uint) (*identityentity.UserConf, error) {
+func (r *userInfoConfRepository) FindByUserID(context.Context, uint) (*identitydomain.UserConf, error) {
 	r.findCalls.Add(1)
 
 	return r.conf, r.err
@@ -137,7 +135,7 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 	})
 
 	accounts := &userInfoAccountRepository{
-		user: &identityentity.User{
+		user: identitydomain.RestoreUser(identitydomain.UserSnapshot{
 			ID:             7,
 			Username:       "joined-user",
 			Email:          "joined@example.com",
@@ -151,12 +149,12 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 			RegisterSource: "github",
 			Exp:            120,
 			CoinCount:      4.5,
-		},
-		conf: &identityentity.UserConf{
+		}),
+		conf: identitydomain.RestoreUserConf(identitydomain.UserConfSnapshot{
 			UserID:   7,
 			LikeTags: []string{" Go ", "", "DDD"},
 			BannerID: 3,
-		},
+		}),
 	}
 	confs := &userInfoConfRepository{}
 	banners := &concurrentBannerCatalog{started: started, release: release}
@@ -272,7 +270,7 @@ func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
 	)
 
 	info, err := service.UserInfo(t.Context(), 7)
-	if !errors.Is(err, identityerrors.ErrUserNotFound) {
+	if !errors.Is(err, identitydomain.ErrUserNotFound) {
 		t.Fatalf("error = %v, want ErrUserNotFound", err)
 	}
 	if info != nil {
@@ -287,7 +285,7 @@ func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
 }
 
 func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
-	accounts := &userInfoAccountRepository{user: &identityentity.User{ID: 7, Username: "joined-user"}}
+	accounts := &userInfoAccountRepository{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "joined-user"})}
 	confs := &userInfoConfRepository{err: errors.New("database unavailable")}
 	service := NewProfileService(
 		infraconfig.NewProvider(nil),
@@ -303,7 +301,7 @@ func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
 	)
 
 	detail, err := service.UserDetail(t.Context(), 7)
-	if !errors.Is(err, identityerrors.ErrUserNotFound) {
+	if !errors.Is(err, identitydomain.ErrUserNotFound) {
 		t.Fatalf("error = %v, want ErrUserNotFound", err)
 	}
 	if detail != nil {
@@ -332,7 +330,7 @@ func TestProfileUserInfoAdministratorIdentity(t *testing.T) {
 			roles.items = []UserRoleItem{{Name: constants.AdminUserRole}}
 		}
 		service := NewProfileService(infraconfig.NewProvider(nil), nil,
-			&userInfoAccountRepository{user: &identityentity.User{ID: 7}}, &userInfoConfRepository{},
+			&userInfoAccountRepository{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7})}, &userInfoConfRepository{},
 			&concurrentBannerCatalog{}, &concurrentRelationQuery{}, roles, nil, nil, nil)
 		info, err := service.UserInfo(t.Context(), 7)
 		if err != nil {

@@ -2,12 +2,9 @@ package identity
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
-	"f_ccg_video_back_ddd/pkg/constants"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -16,31 +13,18 @@ import (
 // 邮箱验证码业务类型（与请求体 type 字段取值一致）。
 const (
 	// EmailCaptchaTypeRegister 注册。
-	EmailCaptchaTypeRegister = 1
+	EmailCaptchaTypeRegister = identitydomain.EmailCaptchaRegister
 	// EmailCaptchaTypeResetPassword 重置密码。
-	EmailCaptchaTypeResetPassword = 2
+	EmailCaptchaTypeResetPassword = identitydomain.EmailCaptchaPasswordRecovery
 	// EmailCaptchaTypeBindEmail 绑定邮箱。
-	EmailCaptchaTypeBindEmail = 3
-)
-
-const (
-	// emailCaptchaCodeLength 验证码长度。
-	emailCaptchaCodeLength = 5
-	// emailCaptchaCodeCharset 验证码字符集。
-	emailCaptchaCodeCharset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-	// emailCaptchaSendWindow 发送限流窗口。
-	emailCaptchaSendWindow = 10 * time.Minute
-	// emailCaptchaSendLimitPerEmail 单邮箱窗口内发送上限。
-	emailCaptchaSendLimitPerEmail int64 = 5
-	// emailCaptchaSendLimitPerIP 单 IP 窗口内发送上限。
-	emailCaptchaSendLimitPerIP int64 = 20
+	EmailCaptchaTypeBindEmail = identitydomain.EmailCaptchaBinding
 )
 
 // EmailCaptchaSendService 邮箱验证码发送用例服务。
 //
 // EmailAddressVerifier 与 EmailCaptchaSender 通过端口注入，测试可提供 fake 实现。
 type EmailCaptchaSendService struct {
-	users     identityrepo.UserAccountRepository
+	users     identitydomain.UserAccountRepository
 	captcha   *CaptchaService
 	verifier  EmailAddressVerifier
 	sender    EmailCaptchaSender
@@ -52,7 +36,7 @@ type EmailCaptchaSendService struct {
 
 // NewEmailCaptchaSendService 构造邮箱验证码发送服务。
 func NewEmailCaptchaSendService(
-	users identityrepo.UserAccountRepository,
+	users identitydomain.UserAccountRepository,
 	captcha *CaptchaService,
 	verifier EmailAddressVerifier,
 	sender EmailCaptchaSender,
@@ -94,7 +78,8 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 	}
 
 	// 生成验证码（答案仅存验证码存储，禁止打印到日志/控制台）。
-	id, code := s.generator.Generate(emailCaptchaCodeLength, emailCaptchaCodeCharset)
+	sending := (identitydomain.EmailCaptchaPolicy{}).Sending()
+	id, code := s.generator.Generate(sending.CodeLength, sending.Charset)
 	if id == "" || code == "" {
 		return nil, ErrEmailCaptchaStoreFailed
 	}
@@ -121,23 +106,17 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 
 // allowSend 按「邮箱 + 类型」与「IP + 类型」两个维度做固定窗口限流。
 func (s *EmailCaptchaSendService) allowSend(ctx context.Context, in EmailCaptchaSendInput) (bool, error) {
-	email := strings.ToLower(strings.TrimSpace(in.Email))
-
+	sending := (identitydomain.EmailCaptchaPolicy{}).Sending()
 	checks := []struct {
-		key   string
-		limit int64
+		subject SendLimitSubject
+		limit   int64
 	}{
-		{
-			key:   fmt.Sprintf("%semail:%d:%s", constants.EmailCaptchaSendRateKeyPrefix, in.Type, email),
-			limit: emailCaptchaSendLimitPerEmail,
-		},
-		{
-			key:   fmt.Sprintf("%sip:%d:%s", constants.EmailCaptchaSendRateKeyPrefix, in.Type, strings.TrimSpace(in.ClientIP)),
-			limit: emailCaptchaSendLimitPerIP,
-		},
+		{subject: SendLimitSubject{Type: in.Type, Scope: SendLimitEmail, Value: in.Email}, limit: sending.PerEmail},
+		{subject: SendLimitSubject{Type: in.Type, Scope: SendLimitIP, Value: in.ClientIP}, limit: sending.PerIP},
 	}
+
 	for _, check := range checks {
-		ok, err := s.limiter.Allow(ctx, check.key, check.limit, emailCaptchaSendWindow)
+		ok, err := s.limiter.Allow(ctx, check.subject, check.limit, sending.Window)
 		if err != nil || !ok {
 			return ok, err
 		}
@@ -155,25 +134,11 @@ func (s *EmailCaptchaSendService) verifyEmailAddress(email string) error {
 		return ErrEmailVerifyFailed
 	}
 
-	if !ret.SyntaxValid {
-		s.logger.Error("邮箱格式错误")
-
-		return ErrEmailSyntaxInvalid
+	validationErr := (identitydomain.EmailAddressFacts{SyntaxValid: ret.SyntaxValid, HasSMTPResult: ret.HasSMTPResult, SMTPHostExists: ret.SMTPHostExists, HasMXRecords: ret.HasMXRecords}).EnsureReachable()
+	if validationErr != nil {
+		s.logger.Error(validationErr.Error())
 	}
-
-	if ret.HasSMTPResult && !ret.SMTPHostExists {
-		s.logger.Error("邮箱服务器不存在")
-
-		return ErrEmailHostNotExists
-	}
-
-	if !ret.HasMXRecords {
-		s.logger.Error("邮箱服务器无MX记录")
-
-		return ErrEmailNoMXRecords
-	}
-
-	return nil
+	return validationErr
 }
 
 // checkBusinessPrecondition 按业务类型校验邮箱占用状态。
@@ -183,28 +148,15 @@ func (s *EmailCaptchaSendService) verifyEmailAddress(email string) error {
 func (s *EmailCaptchaSendService) checkBusinessPrecondition(ctx context.Context, in EmailCaptchaSendInput) error {
 	user, err := s.users.FindByEmail(ctx, in.Email)
 
-	switch in.Type {
-	case EmailCaptchaTypeRegister:
-		if err == nil && user != nil {
-			s.logger.Error("该邮箱已注册")
-
-			return ErrEmailAlreadyRegistered
-		}
-	case EmailCaptchaTypeResetPassword:
-		if err != nil || user == nil {
-			s.logger.Error("该邮箱未注册", zap.Error(err))
-
-			return ErrEmailCaptchaEmailNotRegistered
-		}
-	case EmailCaptchaTypeBindEmail:
-		if err == nil && user != nil {
-			s.logger.Error("该邮箱已被绑定")
-
-			return ErrEmailAlreadyBound
+	qualificationErr := (identitydomain.EmailCaptchaPolicy{}).EnsureAccount(in.Type, user != nil, err == nil)
+	if qualificationErr != nil {
+		if qualificationErr == ErrEmailCaptchaEmailNotRegistered {
+			s.logger.Error(qualificationErr.Error(), zap.Error(err))
+		} else {
+			s.logger.Error(qualificationErr.Error())
 		}
 	}
-
-	return nil
+	return qualificationErr
 }
 
 // queueDelivery 把邮件投递放到 detached 任务中，接口立即返回。

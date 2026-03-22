@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
-	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
@@ -83,53 +82,67 @@ func TestRoleAndMenuRepositories(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	admin := rbacentity.NewRole("超级管理员", "全部权限")
-	if err := f.roles.Create(ctx, admin); err != nil {
+	admin := rbacdomain.NewRole("超级管理员", "全部权限")
+	if created, err := f.roles.Create(ctx, admin); err != nil {
 		t.Fatalf("create role: %v", err)
+	} else {
+		*admin = *created
 	}
 
-	if admin.ID == 0 {
+	if admin.ID() == 0 {
 		t.Fatal("expected role id to be populated")
 	}
 
-	parent := rbacentity.NewMenu("系统权限", "System", "", "icon", "/system", "System", "Layout", false, nil, 1)
-	if err := f.menus.Create(ctx, parent); err != nil {
+	parent, err := rbacdomain.NewMenu("系统权限", "System", "", "icon", "/system", "System", "Layout", false, nil, 1)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created, err := f.menus.Create(ctx, parent); err != nil {
 		t.Fatalf("create parent menu: %v", err)
+	} else {
+		*parent = *created
 	}
 
-	child := rbacentity.NewMenu("角色管理", "Roles", "", "icon", "roles", "RoleManagement", "views/roles", true, &parent.ID, 2)
-	if err := f.menus.Create(ctx, child); err != nil {
+	child, err := rbacdomain.NewMenu("角色管理", "Roles", "", "icon", "roles", "RoleManagement", "views/roles", true, menuIDPointer(parent.ID()), 2)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created, err := f.menus.Create(ctx, child); err != nil {
 		t.Fatalf("create child menu: %v", err)
+	} else {
+		*child = *created
 	}
 
 	// 直连 + 继承两类关联，验证 is_inherited 过滤。
-	if err := f.roleMenus.CreateIgnoreConflict(ctx, rbacentity.NewDirectRoleMenus(admin.ID, []*rbacentity.Menu{parent})); err != nil {
+	if err := f.roleMenus.CreateIgnoreConflict(ctx, rbacdomain.NewDirectRoleMenus(admin.ID(), []*rbacdomain.Menu{parent})); err != nil {
 		t.Fatalf("create direct role menu: %v", err)
 	}
 
-	if err := f.roleMenus.CreateIgnoreConflict(ctx, rbacentity.NewInheritedRoleMenus(admin.ID, []uint{child.ID})); err != nil {
+	if err := f.roleMenus.CreateIgnoreConflict(ctx, rbacdomain.NewInheritedRoleMenus(admin.ID(), []uint{child.ID()})); err != nil {
 		t.Fatalf("create inherited role menu: %v", err)
 	}
 
-	direct, err := f.menus.ListByRoleInherited(ctx, admin.ID, false)
+	direct, err := f.menus.ListByRoleInherited(ctx, admin.ID(), false)
 	if err != nil {
 		t.Fatalf("list direct menus: %v", err)
 	}
 
-	if len(direct) != 1 || direct[0].ID != parent.ID {
+	if len(direct) != 1 || direct[0].ID() != parent.ID() {
 		t.Fatalf("unexpected direct menus: %+v", direct)
 	}
 
-	inherited, err := f.menus.ListByRoleInherited(ctx, admin.ID, true)
+	inherited, err := f.menus.ListByRoleInherited(ctx, admin.ID(), true)
 	if err != nil {
 		t.Fatalf("list inherited menus: %v", err)
 	}
 
-	if len(inherited) != 1 || inherited[0].ID != child.ID {
+	if len(inherited) != 1 || inherited[0].ID() != child.ID() {
 		t.Fatalf("unexpected inherited menus: %+v", inherited)
 	}
 
-	all, err := f.menus.ListByRole(ctx, admin.ID)
+	all, err := f.menus.ListByRole(ctx, admin.ID())
 	if err != nil {
 		t.Fatalf("list role menus: %v", err)
 	}
@@ -138,16 +151,16 @@ func TestRoleAndMenuRepositories(t *testing.T) {
 		t.Fatalf("expected 2 menus for role, got %d", len(all))
 	}
 
-	inheritedIDs, err := f.roleMenus.InheritedMenuIDs(ctx, admin.ID)
+	inheritedIDs, err := f.roleMenus.InheritedMenuIDs(ctx, admin.ID())
 	if err != nil {
 		t.Fatalf("inherited menu ids: %v", err)
 	}
 
-	if _, ok := inheritedIDs[child.ID]; !ok || len(inheritedIDs) != 1 {
+	if _, ok := inheritedIDs[child.ID()]; !ok || len(inheritedIDs) != 1 {
 		t.Fatalf("unexpected inherited ids: %+v", inheritedIDs)
 	}
 
-	distinct, err := f.roleMenus.DistinctMenuIDsByRoles(ctx, []uint{admin.ID})
+	distinct, err := f.roleMenus.DistinctMenuIDsByRoles(ctx, []uint{admin.ID()})
 	if err != nil {
 		t.Fatalf("distinct menu ids: %v", err)
 	}
@@ -162,38 +175,38 @@ func TestRoleAndMenuRepositories(t *testing.T) {
 		t.Fatalf("list roles: %v", err)
 	}
 
-	if len(list) != 1 || len(list[0].Menus) != 2 {
+	if len(list) != 1 || len(list[0].Menus()) != 2 {
 		t.Fatalf("unexpected role list: %+v", list)
 	}
 
 	// 菜单更新：清空父菜单 + 改标题。
 	title := "角色与权限"
-	if err := f.menus.UpdateFields(ctx, child.ID, rbacentity.MenuFieldUpdate{
+	if err := f.menus.UpdateFields(ctx, child.ID(), rbacdomain.MenuFieldUpdate{
 		Title:       &title,
 		ClearParent: true,
 	}); err != nil {
 		t.Fatalf("update menu: %v", err)
 	}
 
-	reloaded, err := f.menus.FindByID(ctx, child.ID)
+	reloaded, err := f.menus.FindByID(ctx, child.ID())
 	if err != nil || reloaded == nil {
 		t.Fatalf("reload menu: %v", err)
 	}
 
-	if reloaded.Title != title || reloaded.ParentID != nil {
+	if reloaded.Title() != title || reloaded.ParentID() != nil {
 		t.Fatalf("unexpected menu after update: %+v", reloaded)
 	}
 
 	if err := gormx.NewTxManager(f.db).Do(ctx, func(txCtx context.Context) error {
-		if err := f.roles.DeleteBindings(txCtx, admin.ID); err != nil {
+		if err := f.roles.DeleteBindings(txCtx, admin.ID()); err != nil {
 			return err
 		}
-		return f.roles.DeleteByID(txCtx, admin.ID)
+		return f.roles.DeleteByID(txCtx, admin.ID())
 	}); err != nil {
 		t.Fatalf("delete role: %v", err)
 	}
 
-	remaining, err := f.roleMenus.MenuIDsByRole(ctx, admin.ID)
+	remaining, err := f.roleMenus.MenuIDsByRole(ctx, admin.ID())
 	if err != nil {
 		t.Fatalf("menu ids after delete: %v", err)
 	}
@@ -207,12 +220,14 @@ func TestUserRoleRepository(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	vip := rbacentity.NewRole("大会员", "")
-	common := rbacentity.NewRole("普通用户", "")
+	vip := rbacdomain.NewRole("大会员", "")
+	common := rbacdomain.NewRole("普通用户", "")
 
-	for _, role := range []*rbacentity.Role{vip, common} {
-		if err := f.roles.Create(ctx, role); err != nil {
+	for _, role := range []*rbacdomain.Role{vip, common} {
+		if created, err := f.roles.Create(ctx, role); err != nil {
 			t.Fatalf("create role: %v", err)
+		} else {
+			*role = *created
 		}
 	}
 
@@ -228,20 +243,20 @@ func TestUserRoleRepository(t *testing.T) {
 		t.Fatalf("expected no roles for unbound user, got %+v", roles)
 	}
 
-	if _, err := f.userRoles.RolesByUser(ctx, userID+999); err != rbacerrors.ErrUserNotFound {
+	if _, err := f.userRoles.RolesByUser(ctx, userID+999); err != rbacdomain.ErrUserNotFound {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
 
-	if err := f.userRoles.AppendRoles(ctx, userID, []*rbacentity.Role{vip}); err != nil {
+	if err := f.userRoles.AppendRoles(ctx, userID, []*rbacdomain.Role{vip}); err != nil {
 		t.Fatalf("append roles: %v", err)
 	}
 
 	// 重复 append 走 ON CONFLICT DO NOTHING，不应报错也不应重复插入。
-	if err := f.userRoles.AppendRoles(ctx, userID, []*rbacentity.Role{vip}); err != nil {
+	if err := f.userRoles.AppendRoles(ctx, userID, []*rbacdomain.Role{vip}); err != nil {
 		t.Fatalf("append roles twice: %v", err)
 	}
 
-	count, err := f.roles.UserCount(ctx, vip.ID)
+	count, err := f.roles.UserCount(ctx, vip.ID())
 	if err != nil {
 		t.Fatalf("user count: %v", err)
 	}
@@ -250,7 +265,7 @@ func TestUserRoleRepository(t *testing.T) {
 		t.Fatalf("user count = %d, want 1", count)
 	}
 
-	if err := f.userRoles.ReplaceRoles(ctx, userID, []*rbacentity.Role{common}); err != nil {
+	if err := f.userRoles.ReplaceRoles(ctx, userID, []*rbacdomain.Role{common}); err != nil {
 		t.Fatalf("replace roles: %v", err)
 	}
 
@@ -259,11 +274,11 @@ func TestUserRoleRepository(t *testing.T) {
 		t.Fatalf("roles by user after replace: %v", err)
 	}
 
-	if len(roles) != 1 || roles[0].Name != "普通用户" {
+	if len(roles) != 1 || roles[0].Name() != "普通用户" {
 		t.Fatalf("unexpected roles after replace: %+v", roles)
 	}
 
-	if err := f.userRoles.RemoveRoles(ctx, userID, []*rbacentity.Role{common}); err != nil {
+	if err := f.userRoles.RemoveRoles(ctx, userID, []*rbacdomain.Role{common}); err != nil {
 		t.Fatalf("remove roles: %v", err)
 	}
 
@@ -291,15 +306,20 @@ func TestApiResourceRepository(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	item := &rbacentity.ApiResource{Path: "/v1/admin/rbac/roles", Method: "GET", Summary: "GET /v1/admin/rbac/roles"}
-	if err := f.resources.Create(ctx, item); err != nil {
-		t.Fatalf("create resource: %v", err)
+	item := &rbacdomain.ApiResource{Path: "/v1/admin/rbac/roles", Method: "GET", Summary: "GET /v1/admin/rbac/roles"}
+	saved, err := f.resources.Create(ctx, item)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if item.ID != 0 || saved.ID == 0 {
+		t.Fatal("Create must return persisted identity without changing input")
+	}
+	item = saved
 
 	summary := "角色列表"
-	tags := []byte(`["rbac"]`)
+	tags := []string{"rbac"}
 
-	if err := f.resources.UpdateSummaryAndTags(ctx, item.ID, &summary, &tags); err != nil {
+	if updated, err := f.resources.UpdateMetadata(ctx, item.ID, rbacdomain.ResourceMetadataChange{Summary: &summary, Tags: tags}); err != nil || !updated {
 		t.Fatalf("update resource: %v", err)
 	}
 
@@ -312,7 +332,7 @@ func TestApiResourceRepository(t *testing.T) {
 		t.Fatalf("unexpected resource list: %+v", list)
 	}
 
-	if got := rbacentity.DecodeResourceTags(list[0].Tags); len(got) != 1 || got[0] != "rbac" {
+	if got := list[0].Tags; len(got) != 1 || got[0] != "rbac" {
 		t.Fatalf("unexpected tags: %+v", got)
 	}
 
@@ -334,22 +354,33 @@ func TestMenuServiceAssignAndRead(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	role := rbacentity.NewRole("运营", "")
-	if err := f.roles.Create(ctx, role); err != nil {
+	role := rbacdomain.NewRole("运营", "")
+	if created, err := f.roles.Create(ctx, role); err != nil {
 		t.Fatalf("create role: %v", err)
+	} else {
+		*role = *created
 	}
 
-	first := rbacentity.NewMenu("内容管理", "Content", "", "", "/content", "Content", "Layout", false, nil, 1)
-	second := rbacentity.NewMenu("稿件审核", "Review", "", "", "review", "SubmissionReview", "views/review", false, nil, 2)
+	first, err := rbacdomain.NewMenu("内容管理", "Content", "", "", "/content", "Content", "Layout", false, nil, 1)
 
-	for _, menu := range []*rbacentity.Menu{first, second} {
-		if err := f.menus.Create(ctx, menu); err != nil {
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := rbacdomain.NewMenu("稿件审核", "Review", "", "", "review", "SubmissionReview", "views/review", false, nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, menu := range []*rbacdomain.Menu{first, second} {
+		if created, err := f.menus.Create(ctx, menu); err != nil {
 			t.Fatalf("create menu: %v", err)
+		} else {
+			*menu = *created
 		}
 	}
 
-	second.ParentID = &first.ID
-	if err := f.menus.UpdateFields(ctx, second.ID, rbacentity.MenuFieldUpdate{ParentID: &first.ID}); err != nil {
+	firstID := first.ID()
+	if err := f.menus.UpdateFields(ctx, second.ID(), rbacdomain.MenuFieldUpdate{ParentID: &firstID}); err != nil {
 		t.Fatalf("set parent: %v", err)
 	}
 
@@ -364,24 +395,24 @@ func TestMenuServiceAssignAndRead(t *testing.T) {
 	)
 
 	// 继承菜单先落一条，AssignRoleMenus 必须把它从入参里过滤掉且不删除它。
-	if err := f.roleMenus.CreateIgnoreConflict(ctx, rbacentity.NewInheritedRoleMenus(role.ID, []uint{second.ID})); err != nil {
+	if err := f.roleMenus.CreateIgnoreConflict(ctx, rbacdomain.NewInheritedRoleMenus(role.ID(), []uint{second.ID()})); err != nil {
 		t.Fatalf("seed inherited menu: %v", err)
 	}
 
-	if err := svc.AssignRoleMenus(ctx, role.ID, []uint{first.ID, second.ID, first.ID}); err != nil {
+	if err := svc.AssignRoleMenus(ctx, role.ID(), []uint{first.ID(), second.ID(), first.ID()}); err != nil {
 		t.Fatalf("assign role menus: %v", err)
 	}
 
-	resp, err := svc.RoleMenus(ctx, role.ID)
+	resp, err := svc.RoleMenus(ctx, role.ID())
 	if err != nil {
 		t.Fatalf("role menus: %v", err)
 	}
 
-	if len(resp.DirectMenus) != 1 || resp.DirectMenus[0].ID != first.ID {
+	if len(resp.DirectMenus) != 1 || resp.DirectMenus[0].ID != first.ID() {
 		t.Fatalf("unexpected direct menu tree: %+v", resp.DirectMenus)
 	}
 
-	if len(resp.InheritMenus) != 1 || resp.InheritMenus[0].ID != second.ID {
+	if len(resp.InheritMenus) != 1 || resp.InheritMenus[0].ID != second.ID() {
 		t.Fatalf("unexpected inherit menu tree: %+v", resp.InheritMenus)
 	}
 
@@ -398,22 +429,24 @@ func TestMenuServiceAssignAndRead(t *testing.T) {
 	}
 
 	// 设置当前角色后应拿到菜单树（父子已挂接）。
-	withRoleUser := f.seedUser(t, "with_role", role.ID)
+	withRoleUser := f.seedUser(t, "with_role", role.ID())
 
 	menus, err = svc.UserMenus(ctx, withRoleUser)
 	if err != nil {
 		t.Fatalf("user menus with role: %v", err)
 	}
 
-	if len(menus) != 1 || menus[0].ID != first.ID || len(menus[0].Children) != 1 {
+	if len(menus) != 1 || menus[0].ID() != first.ID() || len(menus[0].Children()) != 1 {
 		t.Fatalf("unexpected user menu tree: %+v", menus)
 	}
 
-	if _, err := svc.RoleMenus(ctx, role.ID+999); err != rbacerrors.ErrRoleNotFound {
+	if _, err := svc.RoleMenus(ctx, role.ID()+999); err != rbacdomain.ErrRoleNotFound {
 		t.Fatalf("expected ErrRoleNotFound, got %v", err)
 	}
 
-	if _, err := svc.UserMenus(ctx, withRoleUser+999); err != rbacerrors.ErrUserNotFound {
+	if _, err := svc.UserMenus(ctx, withRoleUser+999); err != rbacdomain.ErrUserNotFound {
 		t.Fatalf("expected ErrUserNotFound, got %v", err)
 	}
 }
+
+func menuIDPointer(value uint) *uint { return &value }

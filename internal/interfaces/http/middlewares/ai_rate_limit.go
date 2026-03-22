@@ -3,10 +3,11 @@ package middlewares
 import (
 	"f_ccg_video_back_ddd/pkg/res"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"net/http"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // AIGenerationLimit reserves per-user and per-IP budgets before paid work starts.

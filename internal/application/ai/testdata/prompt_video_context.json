@@ -1,0 +1,121 @@
+[
+  {
+    "Name": "empty",
+    "Mode": "",
+    "Keywords": null,
+    "Inputs": null,
+    "Limit": 8,
+    "Want": "【站内作品候选上下文】\n- 这是已经判定为“找视频/找作品”后的第二轮正式回答。\n- 当前候选来源：没有候选作品。\n- 本轮作品候选上限：8（按作品计数，不按分P计数）\n- 找视频时最多返回 5 个链接结果。\n- 当前没有候选作品。如果用户是在找站内视频，请直接说明暂时没找到，不要编造标题、ID、分P序号或路由。"
+  },
+  {
+    "Name": "single-vector",
+    "Mode": "vector_match",
+    "Keywords": [
+      "go",
+      "并发"
+    ],
+    "Inputs": [
+      {
+        "VideoID": 7,
+        "Title": " Go \u003c入门\u003e ",
+        "Description": "  描述  ",
+        "Partition": " 编程 ",
+        "Cover": " cover.png ",
+        "Tags": [
+          " Go ",
+          " ",
+          "Rust"
+        ],
+        "Parts": null
+      }
+    ],
+    "Limit": 4,
+    "Want": "【站内作品候选上下文】\n- 第一轮 AI 提炼出的搜索关键词：go、并发\n- 这是已经判定为“找视频/找作品”后的第二轮正式回答。\n- 当前候选来源：语义向量召回结果，请优先从这些作品中选择最相关的内容。\n- 本轮作品候选上限：4（按作品计数，不按分P计数）\n- 找视频时最多返回 5 个链接结果。\n- 以下 JSON 是本轮唯一允许引用的站内作品、tag 和路由；如果要返回链接，必须原样使用其中的 route：\n[\n  {\n    \"video_id\": 7,\n    \"title\": \"Go \\u003c入门\\u003e\",\n    \"description\": \"描述\",\n    \"partition\": \"编程\",\n    \"cover\": \"cover.png\",\n    \"tags\": [\n      \"Go\",\n      \"Rust\"\n    ],\n    \"route\": \"/video/7\",\n    \"work_type\": \"single\"\n  }\n]"
+  },
+  {
+    "Name": "multipart-image",
+    "Mode": "image_vector_match",
+    "Keywords": null,
+    "Inputs": [
+      {
+        "VideoID": 9,
+        "Title": "多P",
+        "Description": "",
+        "Partition": "",
+        "Cover": "",
+        "Tags": null,
+        "Parts": [
+          {
+            "Title": " P1 "
+          },
+          {
+            "Title": "P2"
+          }
+        ]
+      }
+    ],
+    "Limit": 8,
+    "Want": "【站内作品候选上下文】\n- 这是已经判定为“找视频/找作品”后的第二轮正式回答。\n- 当前候选来源：用户上传图片的多模态向量召回结果（图片与作品封面、标题、标签在同一向量空间比对）。请优先从这些作品中选择与图片最相关的内容，并简要说明为什么像；如果都不像，就直说没找到相似作品。\n- 本轮作品候选上限：8（按作品计数，不按分P计数）\n- 找视频时最多返回 5 个链接结果。\n- 以下 JSON 是本轮唯一允许引用的站内作品、tag 和路由；如果要返回链接，必须原样使用其中的 route：\n[\n  {\n    \"video_id\": 9,\n    \"title\": \"多P\",\n    \"route\": \"/video/9\",\n    \"work_type\": \"multi_part\",\n    \"parts\": [\n      {\n        \"p\": 1,\n        \"title\": \"P1\",\n        \"route\": \"/video/9/1\"\n      },\n      {\n        \"p\": 2,\n        \"title\": \"P2\",\n        \"route\": \"/video/9/2\"\n      }\n    ]\n  }\n]"
+  },
+  {
+    "Name": "keyword",
+    "Mode": "keyword_match",
+    "Keywords": null,
+    "Inputs": [
+      {
+        "VideoID": 1,
+        "Title": "T",
+        "Description": "",
+        "Partition": "",
+        "Cover": "",
+        "Tags": null,
+        "Parts": null
+      }
+    ],
+    "Limit": 8,
+    "Want": "【站内作品候选上下文】\n- 这是已经判定为“找视频/找作品”后的第二轮正式回答。\n- 当前候选来源：关键词命中结果，请优先从这些作品中选择最相关的内容。\n- 本轮作品候选上限：8（按作品计数，不按分P计数）\n- 找视频时最多返回 5 个链接结果。\n- 以下 JSON 是本轮唯一允许引用的站内作品、tag 和路由；如果要返回链接，必须原样使用其中的 route：\n[\n  {\n    \"video_id\": 1,\n    \"title\": \"T\",\n    \"route\": \"/video/1\",\n    \"work_type\": \"single\"\n  }\n]"
+  },
+  {
+    "Name": "latest",
+    "Mode": "latest_fallback",
+    "Keywords": null,
+    "Inputs": [
+      {
+        "VideoID": 2,
+        "Title": "最新",
+        "Description": "",
+        "Partition": "",
+        "Cover": "",
+        "Tags": null,
+        "Parts": null
+      }
+    ],
+    "Limit": 8,
+    "Want": "【站内作品候选上下文】\n- 这是已经判定为“找视频/找作品”后的第二轮正式回答。\n- 当前候选来源：检索未命中任何已发布作品，后端已按最新发布时间回退提供候选作品。你需要自行判断是否值得推荐；如果都不合适，就明确说暂时没有特别匹配的站内结果。\n- 本轮作品候选上限：8（按作品计数，不按分P计数）\n- 找视频时最多返回 5 个链接结果。\n- 以下 JSON 是本轮唯一允许引用的站内作品、tag 和路由；如果要返回链接，必须原样使用其中的 route：\n[\n  {\n    \"video_id\": 2,\n    \"title\": \"最新\",\n    \"route\": \"/video/2\",\n    \"work_type\": \"single\"\n  }\n]"
+  },
+  {
+    "Name": "unknown-and-zero-id",
+    "Mode": "unknown",
+    "Keywords": null,
+    "Inputs": [
+      {
+        "VideoID": 0,
+        "Title": "无路由",
+        "Description": "",
+        "Partition": "",
+        "Cover": "",
+        "Tags": null,
+        "Parts": [
+          {
+            "Title": "一"
+          },
+          {
+            "Title": "二"
+          }
+        ]
+      }
+    ],
+    "Limit": 3,
+    "Want": "【站内作品候选上下文】\n- 这是已经判定为“找视频/找作品”后的第二轮正式回答。\n- 当前候选来源：没有候选作品。\n- 本轮作品候选上限：3（按作品计数，不按分P计数）\n- 找视频时最多返回 5 个链接结果。\n- 以下 JSON 是本轮唯一允许引用的站内作品、tag 和路由；如果要返回链接，必须原样使用其中的 route：\n[\n  {\n    \"video_id\": 0,\n    \"title\": \"无路由\",\n    \"route\": \"\",\n    \"work_type\": \"multi_part\",\n    \"parts\": [\n      {\n        \"p\": 1,\n        \"title\": \"一\",\n        \"route\": \"\"\n      },\n      {\n        \"p\": 2,\n        \"title\": \"二\",\n        \"route\": \"\"\n      }\n    ]\n  }\n]"
+  }
+]

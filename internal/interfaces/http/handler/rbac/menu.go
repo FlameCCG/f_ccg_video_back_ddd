@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	rbacerrors "f_ccg_video_back_ddd/internal/domain/rbac/domainerr"
-	rbacvo "f_ccg_video_back_ddd/internal/domain/rbac/valueobject"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -72,7 +71,7 @@ func (h *Handler) GetMenuListView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(menuTree, c)
+	res.OkWithData(rbacapp.ToMenuDTOs(menuTree), c)
 }
 
 // CreateMenuView 创建菜单.
@@ -108,7 +107,7 @@ func (h *Handler) CreateMenuView(c *gin.Context) {
 		h.respondMenuMutationError(
 			c,
 			"create",
-			err, rbacerrors.ErrCreateFailed, zap.Uint("creatorId", creatorID),
+			err, rbacdomain.ErrCreateFailed, zap.Uint("creatorId", creatorID),
 			optionalMenuIDField("parentMenuId", req.ParentID),
 		)
 
@@ -146,7 +145,7 @@ func (h *Handler) UpdateMenuView(c *gin.Context) {
 		h.respondMenuMutationError(
 			c,
 			"update",
-			err, rbacerrors.ErrUpdateFailed, zap.Uint("menuId", req.ID),
+			err, rbacdomain.ErrUpdateFailed, zap.Uint("menuId", req.ID),
 			optionalMenuIDField("parentMenuId", req.ParentID),
 		)
 
@@ -163,7 +162,7 @@ func (h *Handler) MoveMenuView(c *gin.Context) {
 		h.respondMenuMutationError(
 			c,
 			"move",
-			err, rbacerrors.ErrSortFailed, zap.Uint("menuId", req.ID),
+			err, rbacdomain.ErrSortFailed, zap.Uint("menuId", req.ID),
 			zap.Uint("targetMenuId", req.TargetID),
 		)
 
@@ -272,7 +271,7 @@ func (h *Handler) GetUserMenusView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(menuTree, c)
+	res.OkWithData(rbacapp.ToMenuDTOs(menuTree), c)
 }
 
 func (h *Handler) respondMenuMutationError(
@@ -282,7 +281,7 @@ func (h *Handler) respondMenuMutationError(
 	fallback error,
 	fields ...zap.Field,
 ) {
-	for _, businessErr := range []error{rbacerrors.ErrNoUpdatableFields, rbacerrors.ErrMenuNotFound, rbacerrors.ErrMenuExists, rbacerrors.ErrMenuTitleEmpty, rbacerrors.ErrParentMenuNotFound, rbacerrors.ErrMenuParentCycle, rbacerrors.ErrMenuCreatorRoleMissing, rbacerrors.ErrMenuMoveAcrossLevels, rbacerrors.ErrMenuMovePosition, rbacvo.ErrMenuIconUnsafe, rbacvo.ErrMenuIconTooLong} {
+	for _, businessErr := range []error{rbacdomain.ErrNoUpdatableFields, rbacdomain.ErrMenuNotFound, rbacdomain.ErrMenuExists, rbacdomain.ErrMenuTitleEmpty, rbacdomain.ErrParentMenuNotFound, rbacdomain.ErrMenuParentCycle, rbacdomain.ErrMenuCreatorRoleMissing, rbacdomain.ErrMenuMoveAcrossLevels, rbacdomain.ErrMenuMovePosition, rbacdomain.ErrMenuIconUnsafe, rbacdomain.ErrMenuIconTooLong} {
 		if errors.Is(err, businessErr) {
 			res.FailWithMsg(clienterror.Message(businessErr), c)
 
@@ -299,7 +298,7 @@ func (h *Handler) respondMenuMutationError(
 }
 
 func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID *uint) {
-	for _, businessErr := range []error{rbacerrors.ErrMenuGenerationTitleEmpty, rbacerrors.ErrParentMenuNotFound} {
+	for _, businessErr := range []error{rbacdomain.ErrMenuGenerationTitleEmpty, rbacdomain.ErrParentMenuNotFound} {
 		if errors.Is(err, businessErr) {
 			res.FailWithMsg(clienterror.Message(businessErr), c)
 
@@ -308,7 +307,7 @@ func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID
 	}
 
 	publicErr := err
-	for _, fallback := range []error{rbacerrors.ErrReadParentMenuFailed, rbacerrors.ErrReadMenuDataFailed, rbacerrors.ErrPrepareMenuDataFailed, rbacerrors.ErrMenuGeneratorUnavailable} {
+	for _, fallback := range []error{rbacdomain.ErrReadParentMenuFailed, rbacdomain.ErrReadMenuDataFailed, rbacdomain.ErrPrepareMenuDataFailed, rbacdomain.ErrMenuGeneratorUnavailable} {
 		if errors.Is(err, fallback) {
 			publicErr = fallback
 

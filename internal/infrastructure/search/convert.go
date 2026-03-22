@@ -8,13 +8,13 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 )
 
 // 本文件是 ES `_source` 的弱类型解码工具：同一字段在 dump / binlog / 手工写入下
 // 可能是 string、json.Number、float64 等不同类型，逐类型兜底转换而不是直接断言。
 
-func toHighlightMap(source map[string][]string) app.SearchHighlight {
+func (Adapter) toHighlightMap(source map[string][]string) app.SearchHighlight {
 	if len(source) == 0 {
 		return nil
 	}
@@ -25,7 +25,7 @@ func toHighlightMap(source map[string][]string) app.SearchHighlight {
 	return out
 }
 
-func toString(val any) string {
+func (Adapter) toString(val any) string {
 	switch v := val.(type) {
 	case string:
 		return v
@@ -38,14 +38,14 @@ func toString(val any) string {
 	}
 }
 
-func toTime(val any) time.Time {
+func (a Adapter) toTime(val any) time.Time {
 	switch v := val.(type) {
 	case time.Time:
 		return v
 	case string:
-		return parseTimeString(v)
+		return a.parseTimeString(v)
 	case []byte:
-		return parseTimeString(string(v))
+		return a.parseTimeString(string(v))
 	case json.Number:
 		if unix, err := v.Int64(); err == nil {
 			return time.Unix(unix, 0)
@@ -61,7 +61,7 @@ func toTime(val any) time.Time {
 	return time.Time{}
 }
 
-func parseTimeString(raw string) time.Time {
+func (Adapter) parseTimeString(raw string) time.Time {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return time.Time{}
@@ -82,7 +82,7 @@ func parseTimeString(raw string) time.Time {
 	return time.Time{}
 }
 
-func toUint(val any) uint {
+func (Adapter) toUint(val any) uint {
 	switch v := val.(type) {
 	case json.Number:
 		i, _ := v.Int64()
@@ -105,7 +105,7 @@ func toUint(val any) uint {
 	}
 }
 
-func toInt64(val any) int64 {
+func (Adapter) toInt64(val any) int64 {
 	switch v := val.(type) {
 	case json.Number:
 		i, _ := v.Int64()
@@ -128,7 +128,7 @@ func toInt64(val any) int64 {
 	}
 }
 
-func toInt(val any) int {
+func (Adapter) toInt(val any) int {
 	switch v := val.(type) {
 	case json.Number:
 		i, _ := v.Int64()
@@ -151,13 +151,13 @@ func toInt(val any) int {
 	}
 }
 
-func toStringSlice(val any) []string {
+func (a Adapter) toStringSlice(val any) []string {
 	switch v := val.(type) {
 	case []any:
 		out := make([]string, 0, len(v))
 
 		for _, item := range v {
-			if s := toString(item); s != "" {
+			if s := a.toString(item); s != "" {
 				out = append(out, s)
 			}
 		}
@@ -170,7 +170,7 @@ func toStringSlice(val any) []string {
 			return []string{}
 		}
 
-		return searchvo.SplitTags(v)
+		return (searchdomain.KeywordPolicy{}).SplitTags(v)
 	default:
 		return []string{}
 	}

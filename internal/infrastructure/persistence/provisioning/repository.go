@@ -1,153 +1,18 @@
-// Package provisioning 实现超级管理员、角色绑定和默认横幅初始化。
-//
-// repository.go 实现 provisioning 用例要求的端口，复用账户默认配置初始化。
-// 只负责一次性任务的存取细节，任务选择、步骤顺序与资源清理由 CLI 和 bootstrap 组织。
-//
-// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
+// Package provisioning implements technical CLI migration and Casbin adapters.
 package provisioning
 
 import (
 	"context"
 	"errors"
-	"fmt"
-
 	app "f_ccg_video_back_ddd/internal/application/provisioning"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/casbins"
-	"f_ccg_video_back_ddd/pkg/constants"
-
+	"fmt"
 	"github.com/casbin/casbin/v2"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
-
-// 超级管理员账号的固定属性。
-const (
-	superUserLevel = 6
-	// superUserExp 确保经验值匹配 6 级，避免做任务/每日登录加经验时降为 1 级。
-	superUserExp             = 20000
-	superUserRegisterSource  = "system_flag"
-	superUserEmailSuffix     = "@example.com"
-	adminRoleDescription     = "管理员，拥有所有权限"
-	adminRoleMissingWarnText = "超级管理员角色不存在，正在自动创建..."
-)
-
-// SuperUserRepository 超级管理员初始化的 GORM 实现。
-type SuperUserRepository struct {
-	db       *gorm.DB
-	defaults UserDefaultsInitializer
-	logger   *zap.Logger
-}
-
-// UserDefaultsInitializer 在创建用户的事务内初始化默认配置与收藏夹。
-//
-// 由 identity 的用户仓储实现，避免 CLI 建号路径与注册路径行为分叉。
-type UserDefaultsInitializer interface {
-	InitializeDefaults(ctx context.Context, userID uint) error
-}
-
-var _ app.SuperUserRepository = (*SuperUserRepository)(nil)
-
-// NewSuperUserRepository 构造超级管理员初始化仓储。
-//
-// defaults 传入 identity 的用户仓储，用于复用默认配置初始化逻辑，
-// 保证 CLI 创建的用户与注册流程一样会得到默认用户配置与默认收藏夹。
-func NewSuperUserRepository(
-	db *gorm.DB,
-	defaults UserDefaultsInitializer,
-	logger *zap.Logger,
-) *SuperUserRepository {
-	return &SuperUserRepository{db: db, defaults: defaults, logger: logger}
-}
-
-// EnsureAdminRole 读取或创建管理员角色。
-func (r *SuperUserRepository) EnsureAdminRole(ctx context.Context) (uint, string, bool, error) {
-	db := gormx.DB(ctx, r.db)
-
-	var adminRole po.Role
-	if err := db.Where("name = ?", constants.AdminUserRole).First(&adminRole).Error; err == nil {
-		return adminRole.ID, adminRole.Name, false, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, "", false, fmt.Errorf("查询管理员角色失败: %w", err)
-	}
-
-	r.logger.Warn(adminRoleMissingWarnText, zap.String("role", constants.AdminUserRole))
-
-	adminRole = po.Role{
-		Name: constants.AdminUserRole,
-		Desc: adminRoleDescription,
-	}
-	if err := db.Create(&adminRole).Error; err != nil {
-		return 0, "", false, fmt.Errorf("创建管理员角色失败: %w", err)
-	}
-
-	return adminRole.ID, adminRole.Name, true, nil
-}
-
-// UpsertSuperUser 创建或更新超级管理员账号。
-func (r *SuperUserRepository) UpsertSuperUser(
-	ctx context.Context,
-	username, passwordHash string,
-	roleID uint,
-) (uint, bool, error) {
-	db := gormx.DB(ctx, r.db)
-
-	var user po.User
-
-	err := db.Where("username = ?", username).First(&user).Error
-	if err == nil {
-		// Update existing user
-		user.Password = passwordHash
-		user.MustChangePassword = true
-		user.RefreshTokenHash = ""
-		user.Level = superUserLevel
-		user.Exp = superUserExp
-		user.CurrentRoleID = roleID
-
-		if saveErr := db.Save(&user).Error; saveErr != nil {
-			return 0, false, fmt.Errorf("更新超级管理员用户密码失败: %w", saveErr)
-		}
-
-		return user.ID, false, nil
-	}
-
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return 0, false, fmt.Errorf("查询超级管理员用户失败: %w", err)
-	}
-
-	user = po.User{
-		Username:           username,
-		Email:              username + superUserEmailSuffix,
-		Password:           passwordHash,
-		MustChangePassword: true,
-		Level:              superUserLevel,
-		Exp:                superUserExp,
-		CurrentRoleID:      roleID,
-		RegisterSource:     superUserRegisterSource,
-	}
-	if createErr := db.Create(&user).Error; createErr != nil {
-		return 0, false, fmt.Errorf("创建超级管理员用户失败: %w", createErr)
-	}
-
-	if r.defaults != nil {
-		if err := r.defaults.InitializeDefaults(ctx, user.ID); err != nil {
-			return 0, false, err
-		}
-	}
-	return user.ID, true, nil
-}
-
-// ReplaceUserRoles 用给定角色覆盖用户的角色关联。
-func (r *SuperUserRepository) ReplaceUserRoles(ctx context.Context, userID, roleID uint) error {
-	db := gormx.DB(ctx, r.db)
-
-	user := po.User{Model: po.Model{ID: userID}}
-	role := po.Role{Model: po.Model{ID: roleID}}
-
-	return db.Model(&user).Association("Roles").Replace([]*po.Role{&role})
-}
 
 // CasbinRoleBinder Casbin 角色绑定的实现。
 type CasbinRoleBinder struct {
@@ -185,55 +50,12 @@ func (b *CasbinRoleBinder) BindUserRole(userID uint, roleName string) error {
 	return nil
 }
 
-// BannerRepository Banner 初始化的 GORM 实现。
-type BannerRepository struct {
-	db *gorm.DB
-}
+// BannerSchema only migrates the existing table; state writes belong to contentops.
+type BannerSchema struct{ db *gorm.DB }
 
-var _ app.BannerRepository = (*BannerRepository)(nil)
+var _ app.BannerTableMigrator = (*BannerSchema)(nil)
 
-// NewBannerRepository 构造 Banner 初始化仓储。
-func NewBannerRepository(db *gorm.DB) *BannerRepository {
-	return &BannerRepository{db: db}
-}
-
-// MigrateBannerTable 确保 banner 表已存在。
-func (r *BannerRepository) MigrateBannerTable(ctx context.Context) error {
+func NewBannerSchema(db *gorm.DB) *BannerSchema { return &BannerSchema{db: db} }
+func (r *BannerSchema) MigrateBannerTable(ctx context.Context) error {
 	return gormx.DB(ctx, r.db).AutoMigrate(&po.Banner{})
-}
-
-// UpsertBannerByCover 按封面 URL 幂等写入横幅。
-func (r *BannerRepository) UpsertBannerByCover(
-	ctx context.Context,
-	coverURL string,
-	bannerType enum.BannerType,
-) (bool, error) {
-	db := gormx.DB(ctx, r.db)
-
-	var banner po.Banner
-	if err := db.Where("cover = ?", coverURL).First(&banner).Error; err != nil {
-		// 查询失败时按账号不存在处理并创建新账号。
-		banner = po.Banner{
-			Cover:       coverURL,
-			Href:        "",
-			Show:        true,
-			Type:        bannerType,
-			PartitionID: 0,
-		}
-		if createErr := db.Create(&banner).Error; createErr != nil {
-			return false, createErr
-		}
-
-		return true, nil
-	}
-
-	// Update existing one
-	banner.Type = bannerType
-	banner.Show = true
-
-	if err := db.Save(&banner).Error; err != nil {
-		return false, err
-	}
-
-	return false, nil
 }

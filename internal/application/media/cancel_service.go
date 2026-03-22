@@ -4,7 +4,6 @@ import (
 	"context"
 
 	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 
 	"go.uber.org/zap"
 )
@@ -15,14 +14,14 @@ import (
 // Redis 不可用时只做本地取消并记日志。
 type CancelService struct {
 	registry    *mediaruntime.TaskRegistry
-	broadcaster mediaport.CancelBroadcaster
+	broadcaster CancelBroadcaster
 	logger      *zap.Logger
 }
 
 // NewCancelService 构造转码取消协调服务。
 func NewCancelService(
 	registry *mediaruntime.TaskRegistry,
-	broadcaster mediaport.CancelBroadcaster,
+	broadcaster CancelBroadcaster,
 	logger *zap.Logger,
 ) *CancelService {
 	return &CancelService{registry: registry, broadcaster: broadcaster, logger: logger}

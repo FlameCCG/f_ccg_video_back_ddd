@@ -7,9 +7,7 @@ import (
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -17,14 +15,14 @@ import (
 // AdminVideoService 管理端视频用例服务。
 type AdminVideoService struct {
 	txm       tx.Manager
-	videos    videorepo.VideoRepository
-	cleanup   videorepo.CleanupRepository
+	videos    videodomain.VideoRepository
+	cleanup   videodomain.CleanupRepository
 	query     AdminVideoQuery
 	stats     *StatsService
 	authors   *AuthorService
 	metaCache DetailMetaCache
 	hotRank   HotRankCache
-	schedule  ScheduleStore
+	schedule  videodomain.ScheduleRepository
 	vectors   *VectorSyncService
 	comments  CommentPurger
 	canceller TranscodeCanceller
@@ -35,14 +33,14 @@ type AdminVideoService struct {
 // NewAdminVideoService 构造管理端视频用例服务。
 func NewAdminVideoService(
 	txm tx.Manager,
-	videos videorepo.VideoRepository,
-	cleanup videorepo.CleanupRepository,
+	videos videodomain.VideoRepository,
+	cleanup videodomain.CleanupRepository,
 	query AdminVideoQuery,
 	stats *StatsService,
 	authors *AuthorService,
 	metaCache DetailMetaCache,
 	hotRank HotRankCache,
-	schedule ScheduleStore,
+	schedule videodomain.ScheduleRepository,
 	vectors *VectorSyncService,
 	comments CommentPurger,
 	canceller TranscodeCanceller,
@@ -72,15 +70,8 @@ func (s *AdminVideoService) List(
 	ctx context.Context,
 	params AdminVideoListParams,
 ) ([]AdminVideoItem, int64, error) {
-	if params.Page <= 0 {
-		params.Page = 1
-	}
-
-	if params.PageSize <= 0 || params.PageSize > 100 {
-		params.PageSize = 20
-	}
-
-	params.Keyword = videoentity.TrimKeyword(params.Keyword)
+	params.Page, params.PageSize = (videodomain.ListingPolicy{}).AdminPage(params.Page, params.PageSize)
+	params.Keyword = (videodomain.ListingPolicy{}).Keyword(params.Keyword)
 
 	if params.UserID > 0 {
 		username := s.authors.UsernameByID(ctx, params.UserID)
@@ -129,10 +120,10 @@ func (s *AdminVideoService) List(
 // 驳回（Private/Deleted）时取消定时任务。
 func (s *AdminVideoService) Review(ctx context.Context, params AdminVideoReviewParams) (int64, error) {
 	if len(params.VideoIDs) == 0 {
-		return 0, videoerrors.ErrVideoIDsRequired
+		return 0, videodomain.ErrVideoIDsRequired
 	}
 
-	if err := videoentity.ValidateReviewTargetStatus(params.Status); err != nil {
+	if err := (videodomain.Video{}).ValidateReviewTarget(params.Status); err != nil {
 		return 0, err
 	}
 
@@ -233,7 +224,7 @@ func (s *AdminVideoService) applyReviewTarget(ctx context.Context, id uint, targ
 	approval := *target == enum.VideoStatusPublished
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		video, err := s.videos.FindByIDForUpdate(txCtx, id)
-		if err != nil || video == nil || video.Status != enum.VideoStatusReview {
+		if err != nil || video == nil || video.Status() != enum.VideoStatusReview {
 			return err
 		}
 		var publishAt *time.Time
@@ -247,11 +238,11 @@ func (s *AdminVideoService) applyReviewTarget(ctx context.Context, id uint, targ
 		if err != nil || !changed {
 			return err
 		}
-		*target = video.Status
+		*target = video.Status()
 		if approval {
-			rows, err = s.videos.Approve(txCtx, id, video.Status, *video.ApprovedAt)
+			rows, err = s.videos.Approve(txCtx, id, video.Status(), *video.ApprovedAt())
 		} else {
-			rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, video.Status)
+			rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, video.Status())
 		}
 		if err != nil || rows == 0 {
 			return err
@@ -278,7 +269,7 @@ func (s *AdminVideoService) invalidateReviewCaches(ctx context.Context, videoID 
 // Restore 管理员批量恢复上架视频。
 func (s *AdminVideoService) Restore(ctx context.Context, videoIDs []uint) (int64, error) {
 	if len(videoIDs) == 0 {
-		return 0, videoerrors.ErrVideoIDsRequired
+		return 0, videodomain.ErrVideoIDsRequired
 	}
 
 	ids := slices.Clone(videoIDs)
@@ -296,8 +287,8 @@ func (s *AdminVideoService) Restore(ctx context.Context, videoIDs []uint) (int64
 			if !video.Restore() {
 				continue
 			}
-			target = video.Status
-			restoredIDs = append(restoredIDs, video.ID)
+			target = video.Status()
+			restoredIDs = append(restoredIDs, video.ID())
 		}
 		if len(restoredIDs) == 0 {
 			return nil

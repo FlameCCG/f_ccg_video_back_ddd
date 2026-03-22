@@ -2,8 +2,9 @@ package ai
 
 import (
 	"encoding/json"
-	"github.com/cloudwego/eino/schema"
 	"testing"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestClientCannotInjectSystemInstruction(t *testing.T) {

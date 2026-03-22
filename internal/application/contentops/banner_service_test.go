@@ -2,24 +2,24 @@ package contentops
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
-	contentopserrors "f_ccg_video_back_ddd/internal/domain/contentops/domainerr"
-	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // fakeBannerRepo 记录调用参数的轮播图仓储替身（测试不走 wire）。
 type fakeBannerRepo struct {
-	visible          []contentopsentity.Banner
+	visible          []contentopsdomain.Banner
 	visibleType      enum.BannerType
 	visiblePartition *uint
-	adminQuery       contentopsentity.BannerAdminQuery
-	byID             map[uint]*contentopsentity.Banner
-	created          *contentopsentity.Banner
+	adminQuery       contentopsdomain.BannerAdminQuery
+	byID             map[uint]*contentopsdomain.Banner
+	created          *contentopsdomain.Banner
 	updatedID        uint
-	updatedChanges   contentopsentity.BannerChanges
+	updatedChanges   contentopsdomain.BannerChanges
 	deletedIDs       []uint
 	err              error
 }
@@ -28,7 +28,7 @@ func (r *fakeBannerRepo) ListVisible(
 	_ context.Context,
 	bannerType enum.BannerType,
 	partitionID *uint,
-) ([]contentopsentity.Banner, error) {
+) ([]contentopsdomain.Banner, error) {
 	r.visibleType = bannerType
 	r.visiblePartition = partitionID
 
@@ -37,8 +37,8 @@ func (r *fakeBannerRepo) ListVisible(
 
 func (r *fakeBannerRepo) ListAdmin(
 	_ context.Context,
-	query contentopsentity.BannerAdminQuery,
-) ([]contentopsentity.Banner, int64, error) {
+	query contentopsdomain.BannerAdminQuery,
+) ([]contentopsdomain.Banner, int64, error) {
 	r.adminQuery = query
 
 	return r.visible, int64(len(r.visible)), r.err
@@ -48,8 +48,8 @@ func (r *fakeBannerRepo) ListVisibleByIDs(
 	_ context.Context,
 	_ enum.BannerType,
 	ids []uint,
-) ([]contentopsentity.Banner, error) {
-	out := make([]contentopsentity.Banner, 0, len(ids))
+) ([]contentopsdomain.Banner, error) {
+	out := make([]contentopsdomain.Banner, 0, len(ids))
 	for _, id := range ids {
 		if banner, ok := r.byID[id]; ok {
 			out = append(out, *banner)
@@ -59,7 +59,7 @@ func (r *fakeBannerRepo) ListVisibleByIDs(
 	return out, r.err
 }
 
-func (r *fakeBannerRepo) FindByID(_ context.Context, bannerID uint) (*contentopsentity.Banner, error) {
+func (r *fakeBannerRepo) FindByID(_ context.Context, bannerID uint) (*contentopsdomain.Banner, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -67,18 +67,34 @@ func (r *fakeBannerRepo) FindByID(_ context.Context, bannerID uint) (*contentops
 	return r.byID[bannerID], nil
 }
 
-func (r *fakeBannerRepo) Create(_ context.Context, banner *contentopsentity.Banner) error {
-	if r.err != nil {
-		return r.err
+func (r *fakeBannerRepo) FindByIDForUpdate(ctx context.Context, bannerID uint) (*contentopsdomain.Banner, error) {
+	banner, err := r.FindByID(ctx, bannerID)
+	if err != nil || banner == nil {
+		return banner, err
 	}
-
-	banner.ID = 100
-	r.created = banner
-
-	return nil
+	return contentopsdomain.RestoreBanner(banner.Snapshot()), nil
 }
 
-func (r *fakeBannerRepo) Update(_ context.Context, bannerID uint, changes contentopsentity.BannerChanges) error {
+type bannerTestTx struct{}
+
+func (bannerTestTx) Do(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (r *fakeBannerRepo) Create(_ context.Context, banner *contentopsdomain.Banner) (*contentopsdomain.Banner, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+
+	snapshot := banner.Snapshot()
+	snapshot.ID = 100
+	saved := contentopsdomain.RestoreBanner(snapshot)
+	r.created = saved
+
+	return saved, nil
+}
+
+func (r *fakeBannerRepo) Update(_ context.Context, bannerID uint, changes contentopsdomain.BannerChanges) error {
 	r.updatedID = bannerID
 	r.updatedChanges = changes
 
@@ -93,18 +109,18 @@ func (r *fakeBannerRepo) Delete(_ context.Context, ids []uint) error {
 
 // fakeBannerCache 记录缓存命中与失效次数。
 type fakeBannerCache struct {
-	hit          []contentopsentity.Banner
+	hit          []contentopsdomain.Banner
 	hitOK        bool
 	storedType   enum.BannerType
-	stored       []contentopsentity.Banner
+	stored       []contentopsdomain.Banner
 	invalidCount int
 }
 
-func (c *fakeBannerCache) LoadVisible(_ enum.BannerType, _ *uint) ([]contentopsentity.Banner, bool) {
+func (c *fakeBannerCache) LoadVisible(_ enum.BannerType, _ *uint) ([]contentopsdomain.Banner, bool) {
 	return c.hit, c.hitOK
 }
 
-func (c *fakeBannerCache) StoreVisible(bannerType enum.BannerType, _ *uint, items []contentopsentity.Banner) {
+func (c *fakeBannerCache) StoreVisible(bannerType enum.BannerType, _ *uint, items []contentopsdomain.Banner) {
 	c.storedType = bannerType
 	c.stored = items
 }
@@ -127,11 +143,11 @@ func (q *fakePartitionQuery) Exists(_ context.Context, partitionID uint) (bool, 
 }
 
 func newBannerServiceFixture() (*BannerService, *fakeBannerRepo, *fakeBannerCache, *fakePartitionQuery) {
-	repo := &fakeBannerRepo{byID: map[uint]*contentopsentity.Banner{}}
+	repo := &fakeBannerRepo{byID: map[uint]*contentopsdomain.Banner{}}
 	cache := &fakeBannerCache{}
 	partitions := &fakePartitionQuery{exists: true}
 
-	return NewBannerService(repo, cache, partitions), repo, cache, partitions
+	return NewBannerService(bannerTestTx{}, repo, cache, partitions), repo, cache, partitions
 }
 
 func TestBannerServiceListVisibleNormalizesFilters(t *testing.T) {
@@ -195,7 +211,9 @@ func TestBannerServiceListVisibleNormalizesFilters(t *testing.T) {
 
 func TestBannerServiceListVisibleUsesCache(t *testing.T) {
 	svc, repo, cache, _ := newBannerServiceFixture()
-	cache.hit = []contentopsentity.Banner{{ID: 9}}
+	cache.hit = []contentopsdomain.Banner{
+		*contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{ID: 9}),
+	}
 	cache.hitOK = true
 
 	list, err := svc.ListVisible(context.Background(), VisibleBannerParams{Type: 1})
@@ -203,7 +221,7 @@ func TestBannerServiceListVisibleUsesCache(t *testing.T) {
 		t.Fatalf("unexpected err: %v", err)
 	}
 
-	if len(list) != 1 || list[0].ID != 9 {
+	if len(list) != 1 || list[0].ID() != 9 {
 		t.Fatalf("cache hit should short-circuit repo, got %+v", list)
 	}
 
@@ -213,7 +231,9 @@ func TestBannerServiceListVisibleUsesCache(t *testing.T) {
 
 	// 未命中时回填缓存
 	cache.hitOK = false
-	repo.visible = []contentopsentity.Banner{{ID: 1}}
+	repo.visible = []contentopsdomain.Banner{
+		*contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{ID: 1}),
+	}
 
 	if _, err := svc.ListVisible(context.Background(), VisibleBannerParams{Type: 1}); err != nil {
 		t.Fatalf("unexpected err: %v", err)
@@ -264,11 +284,11 @@ func TestBannerServiceCreateResolvesPartition(t *testing.T) {
 			t.Fatalf("unexpected err: %v", err)
 		}
 
-		if !banner.Show || banner.Type != enum.BannerTypeHome || banner.PartitionID != 0 {
+		if !banner.Show() || banner.Type() != enum.BannerTypeHome || banner.PartitionID() != 0 {
 			t.Fatalf("unexpected banner: %+v", banner)
 		}
 
-		if banner.ID != 100 || repo.created == nil {
+		if banner.ID() != 100 || repo.created == nil || repo.created.ID() != 100 {
 			t.Fatalf("create should persist and backfill id, got %+v", banner)
 		}
 
@@ -287,7 +307,7 @@ func TestBannerServiceUpdate(t *testing.T) {
 		svc, _, _, _ := newBannerServiceFixture()
 
 		err := svc.Update(context.Background(), UpdateBannerParams{ID: 1})
-		if !errors.Is(err, contentopserrors.ErrBannerNoUpdatableField) {
+		if !errors.Is(err, contentopsdomain.ErrBannerNoUpdatableField) {
 			t.Fatalf("unexpected err: %v", err)
 		}
 	})
@@ -305,7 +325,9 @@ func TestBannerServiceUpdate(t *testing.T) {
 
 	t.Run("改为非首页类型时分区归零", func(t *testing.T) {
 		svc, repo, cache, _ := newBannerServiceFixture()
-		repo.byID[1] = &contentopsentity.Banner{ID: 1, Type: enum.BannerTypeHome, PartitionID: 6}
+		repo.byID[1] = contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{
+			ID: 1, Type: enum.BannerTypeHome, PartitionID: 6,
+		})
 
 		bannerType := 2
 		if err := svc.Update(context.Background(), UpdateBannerParams{ID: 1, Type: &bannerType}); err != nil {
@@ -331,7 +353,9 @@ func TestBannerServiceUpdate(t *testing.T) {
 
 	t.Run("仅改封面时不触碰分区", func(t *testing.T) {
 		svc, repo, _, _ := newBannerServiceFixture()
-		repo.byID[1] = &contentopsentity.Banner{ID: 1, Type: enum.BannerTypeHome, PartitionID: 6}
+		repo.byID[1] = contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{
+			ID: 1, Type: enum.BannerTypeHome, PartitionID: 6,
+		})
 
 		cover := "new"
 		if err := svc.Update(context.Background(), UpdateBannerParams{ID: 1, Cover: &cover}); err != nil {
@@ -388,5 +412,45 @@ func TestBannerServiceListAdminNormalizesPaging(t *testing.T) {
 	// 只带分区时按首页类型过滤（与前台一致）
 	if repo.adminQuery.Type != enum.BannerTypeHome {
 		t.Fatalf("unexpected banner type: %d", repo.adminQuery.Type)
+	}
+}
+
+func TestBannerDTOPreservesLegacyJSON(t *testing.T) {
+	dto := (BannerDTO{}).FromBanner(*contentopsdomain.RestoreBanner(contentopsdomain.BannerSnapshot{
+		ID:          8,
+		Cover:       "",
+		Href:        "h",
+		Show:        false,
+		Type:        enum.BannerTypeUser,
+		PartitionID: 0,
+	}))
+
+	raw, err := json.Marshal(dto)
+	if err != nil {
+		t.Fatalf("marshal dto: %v", err)
+	}
+
+	const want = `{"id":8,"cover":"","href":"h","show":false,"type":3,"partitionId":0}`
+	if string(raw) != want {
+		t.Fatalf("dto json = %s, want %s", raw, want)
+	}
+
+	var decoded BannerDTO
+	legacy := `{"id":8,"cover":"","href":"h","show":false,"type":3,"partitionId":0,"createdAt":"2020-01-01T00:00:00Z"}`
+	if err := json.Unmarshal([]byte(legacy), &decoded); err != nil {
+		t.Fatalf("unmarshal legacy dto: %v", err)
+	}
+
+	if decoded != dto {
+		t.Fatalf("legacy dto = %+v, want %+v", decoded, dto)
+	}
+
+	if (BannerDTO{}).FromBanners(nil) != nil {
+		t.Fatal("nil banner list must stay nil")
+	}
+
+	empty := (BannerDTO{}).FromBanners([]contentopsdomain.Banner{})
+	if empty == nil || len(empty) != 0 {
+		t.Fatalf("empty banner list must stay empty non-nil, got %#v", empty)
 	}
 }

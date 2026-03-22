@@ -17,7 +17,7 @@ func TestApplyVideoMeta(t *testing.T) {
 	}
 	createdAt := time.Date(2026, 3, 24, 10, 20, 30, 0, time.UTC)
 
-	applyVideoMeta(hits, map[uint]VideoSearchMeta{
+	new(SearchService).applyVideoMeta(hits, map[uint]VideoSearchMeta{
 		1: {ID: 1, AuthorUsername: "alice", CreatedAt: createdAt},
 		2: {ID: 2, AuthorUsername: "bob", CreatedAt: createdAt},
 	})
@@ -45,7 +45,7 @@ func TestBuildRelatedTagsDeduplicatesAndCaps(t *testing.T) {
 		{Tags: []string{"vlog"}},
 	}
 
-	tags := buildRelatedTags(videos)
+	tags := new(SearchService).buildRelatedTags(videos)
 	if len(tags) != 2 || tags[0].Name != "教程" || tags[1].Name != "vlog" {
 		t.Fatalf("related tags = %+v", tags)
 	}
@@ -55,7 +55,7 @@ func TestBuildRelatedTagsDeduplicatesAndCaps(t *testing.T) {
 		many = append(many, SearchVideoHit{Tags: []string{string(rune('a' + i))}})
 	}
 
-	if got := buildRelatedTags(many); len(got) != relatedTagLimit {
+	if got := new(SearchService).buildRelatedTags(many); len(got) != relatedTagLimit {
 		t.Fatalf("related tags length = %d, want %d", len(got), relatedTagLimit)
 	}
 }

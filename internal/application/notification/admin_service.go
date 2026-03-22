@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	notificationentity "f_ccg_video_back_ddd/internal/domain/notification/entity"
-	notificationrepo "f_ccg_video_back_ddd/internal/domain/notification/repository"
+	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -41,25 +40,58 @@ func (s *AdminService) AdminDelete(ctx context.Context, ids []uint) error {
 }
 
 // AdminList 管理员查看系统通知。
-func (s *AdminService) AdminList(ctx context.Context, page, pageSize int) ([]notificationentity.Notification, int64, error) {
-	page, pageSize = normalizePaging(page, pageSize)
+func (s *AdminService) AdminList(ctx context.Context, page, pageSize int) ([]AdminNotification, int64, error) {
+	page, pageSize = (notificationdomain.PagePolicy{}).Normalize(page, pageSize)
 
-	return s.repo.ListSystem(ctx, page, pageSize)
+	list, total, err := s.repo.ListSystem(ctx, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return s.adminNotifications(list), total, nil
+}
+
+func (s *AdminService) adminNotifications(list []notificationdomain.Notification) []AdminNotification {
+	if list == nil {
+		return nil
+	}
+
+	out := make([]AdminNotification, len(list))
+	for i := range list {
+		snap := list[i].Snapshot()
+		out[i] = AdminNotification{
+			ID:               snap.ID,
+			Type:             snap.Type,
+			ReceiverID:       snap.ReceiverID,
+			ActionUserID:     snap.ActionUserID,
+			ActionUserAvatar: snap.ActionUserAvatar,
+			ActionUserName:   snap.ActionUserName,
+			Title:            snap.Title,
+			Content:          snap.Content,
+			Link:             snap.Link,
+			VideoID:          snap.VideoID,
+			VideoTitle:       snap.VideoTitle,
+			DynamicID:        snap.DynamicID,
+			CommentID:        snap.CommentID,
+		}
+	}
+
+	return out
 }
 
 // GetAdmin 按 ID 读取通知；不存在时返回 (nil, nil)。
-func (s *AdminService) GetAdmin(ctx context.Context, id uint) (*notificationentity.Notification, error) {
+func (s *AdminService) GetAdmin(ctx context.Context, id uint) (*notificationdomain.Notification, error) {
 	return s.repo.FindByID(ctx, id)
 }
 
 // AdminUpdate 管理员更新系统通知。
-func (s *AdminService) AdminUpdate(ctx context.Context, notice *notificationentity.Notification) error {
+func (s *AdminService) AdminUpdate(ctx context.Context, notice *notificationdomain.Notification) error {
 	previousReceiverID, err := s.repo.UpdateSystemContent(ctx, notice)
 	if err != nil {
 		return err
 	}
 
-	s.counts.invalidateCountForReceivers([]int{previousReceiverID, notice.ReceiverID})
+	s.counts.invalidateCountForReceivers([]int{previousReceiverID, notice.ReceiverID()})
 
 	return nil
 }
@@ -73,7 +105,7 @@ func (s *AdminService) CreateSystemNotice(ctx context.Context, cmd CreateSystemN
 		actionName, actionAvatar = s.actors.Profile(ctx, cmd.ActorID)
 	}
 
-	notice := &notificationentity.Notification{
+	notice := notificationdomain.NewNotification(notificationdomain.Draft{
 		// 管理员发布的系统消息固定为系统类型
 		Type:             enum.NotificationSystemType,
 		ReceiverID:       cmd.ReceiverID,
@@ -85,12 +117,13 @@ func (s *AdminService) CreateSystemNotice(ctx context.Context, cmd CreateSystemN
 		ActionUserID:     cmd.ActorID,
 		ActionUserName:   actionName,
 		ActionUserAvatar: actionAvatar,
-	}
+	})
 
-	if err := s.repo.Create(ctx, notice); err != nil {
+	saved, err := s.repo.Create(ctx, notice)
+	if err != nil {
 		return err
 	}
-	s.counts.InvalidateCount(notice.ReceiverID)
+	s.counts.InvalidateCount(saved.ReceiverID())
 	return nil
 }
 
@@ -107,7 +140,7 @@ func (s *AdminService) UpdateSystemNotice(ctx context.Context, cmd UpdateSystemN
 		return ErrNoticeNotFound
 	}
 
-	old.ReviseAsSystem(notificationentity.SystemContent{
+	old.ReviseAsSystem(notificationdomain.SystemContent{
 		Title: cmd.Title, Content: cmd.Content, ReceiverID: cmd.ReceiverID,
 		VideoID: cmd.VideoID, VideoTitle: cmd.VideoTitle, Link: cmd.Link,
 	})
@@ -121,11 +154,11 @@ func (s *AdminService) UpdateSystemNotice(ctx context.Context, cmd UpdateSystemN
 
 // AdminService 负责系统通知管理。
 type AdminService struct {
-	repo   notificationrepo.Repository
+	repo   notificationdomain.Repository
 	actors ActorProfileProvider
 	counts *CountService
 }
 
-func NewAdminService(repo notificationrepo.Repository, actors ActorProfileProvider, counts *CountService) *AdminService {
+func NewAdminService(repo notificationdomain.Repository, actors ActorProfileProvider, counts *CountService) *AdminService {
 	return &AdminService{repo: repo, actors: actors, counts: counts}
 }

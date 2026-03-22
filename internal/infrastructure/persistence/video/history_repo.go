@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -21,7 +21,7 @@ type HistoryRepository struct {
 	db *gorm.DB
 }
 
-var _ videorepo.HistoryRepository = (*HistoryRepository)(nil)
+var _ videodomain.HistoryRepository = (*HistoryRepository)(nil)
 
 // NewHistoryRepository 构造播放历史仓储。
 func NewHistoryRepository(db *gorm.DB) *HistoryRepository {
@@ -54,7 +54,7 @@ func (r *HistoryRepository) Upsert(ctx context.Context, userID, videoID uint, pr
 }
 
 // Find 读取播放进度；不存在时返回 ErrRecordNotFound。
-func (r *HistoryRepository) Find(ctx context.Context, userID, videoID uint) (*videorepo.PlayHistory, error) {
+func (r *HistoryRepository) Find(ctx context.Context, userID, videoID uint) (*videodomain.PlayHistory, error) {
 	var row po.VideoPlayHistory
 	if err := gormx.DB(ctx, r.db).
 		Where("user_id = ? AND video_id = ?", userID, videoID).

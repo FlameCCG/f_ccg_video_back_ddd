@@ -12,15 +12,15 @@ import (
 func TestUniqueUserIDsDropsZeroAndSorts(t *testing.T) {
 	t.Parallel()
 
-	if got := uniqueUserIDs([]uint{9, 0, 3, 9, 1, 0}); !reflect.DeepEqual(got, []uint{1, 3, 9}) {
+	if got := new(UserIndexService).uniqueUserIDs([]uint{9, 0, 3, 9, 1, 0}); !reflect.DeepEqual(got, []uint{1, 3, 9}) {
 		t.Fatalf("uniqueUserIDs = %v, want [1 3 9]", got)
 	}
 
-	if got := uniqueUserIDs(nil); got != nil {
+	if got := new(UserIndexService).uniqueUserIDs(nil); got != nil {
 		t.Fatalf("nil input should yield nil, got %v", got)
 	}
 
-	if got := uniqueUserIDs([]uint{0, 0}); got != nil && len(got) != 0 {
+	if got := new(UserIndexService).uniqueUserIDs([]uint{0, 0}); got != nil && len(got) != 0 {
 		t.Fatalf("all-zero input = %v", got)
 	}
 }

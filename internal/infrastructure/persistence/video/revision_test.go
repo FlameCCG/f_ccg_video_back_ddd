@@ -13,9 +13,7 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -54,17 +52,17 @@ func newRevisionFixture(t *testing.T) *fixture {
 }
 
 type revisionEffects struct {
-	app.ScheduleStore
+	videodomain.ScheduleRepository
 	added, removed, invalidated int
 }
 
 func (s *revisionEffects) Add(ctx context.Context, id uint, when time.Time) error {
 	s.added++
-	return s.ScheduleStore.Add(ctx, id, when)
+	return s.ScheduleRepository.Add(ctx, id, when)
 }
 func (s *revisionEffects) Remove(ctx context.Context, id uint) error {
 	s.removed++
-	return s.ScheduleStore.Remove(ctx, id)
+	return s.ScheduleRepository.Remove(ctx, id)
 }
 
 type revisionMeta struct {
@@ -80,26 +78,26 @@ func (revisionAuthorIDs) Invalidate(context.Context, uint) {}
 
 // 除失败注入外，使用真实仓储；锁定读取和保存必须拿到同一个事务句柄。
 type revisionRepository struct {
-	videorepo.VideoRepository
-	videorepo.TagRepository
+	videodomain.VideoRepository
+	videodomain.TagRepository
 	readCtx  context.Context
 	failTags error
 }
 
-func (r *revisionRepository) FindByIDAndAuthorForUpdate(ctx context.Context, id uint, author string) (*videoentity.Video, error) {
+func (r *revisionRepository) FindByIDAndAuthorForUpdate(ctx context.Context, id uint, author string) (*videodomain.Video, error) {
 	if gormx.TxFrom(ctx) == nil {
 		return nil, errors.New("revision read outside transaction")
 	}
 	r.readCtx = ctx
 	return r.VideoRepository.FindByIDAndAuthorForUpdate(ctx, id, author)
 }
-func (r *revisionRepository) SaveRevision(ctx context.Context, v *videoentity.Video) error {
+func (r *revisionRepository) SaveRevision(ctx context.Context, v *videodomain.Video) error {
 	if r.readCtx != ctx || gormx.TxFrom(ctx) == nil {
 		return errors.New("revision write outside read transaction")
 	}
 	return r.VideoRepository.SaveRevision(ctx, v)
 }
-func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []videoentity.Tag) error {
+func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []videodomain.Tag) error {
 	if r.failTags != nil {
 		return r.failTags
 	}
@@ -107,12 +105,12 @@ func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []vi
 }
 
 type revisionStore interface {
-	videorepo.VideoRepository
-	videorepo.TagRepository
+	videodomain.VideoRepository
+	videodomain.TagRepository
 }
 
 func (f *fixture) revisionService(repo revisionStore, effects *revisionEffects) *app.UpdateService {
-	effects.ScheduleStore = infra.NewScheduleStore(f.db)
+	effects.ScheduleRepository = infra.NewScheduleStore(f.db)
 	authors := app.NewAuthorService(f.videos, revisionAuthorIDs{}, revisionMeta{effects: effects}, nil, zap.NewNop())
 	return app.NewUpdateService(gormx.NewTxManager(f.db), repo, repo, f.partitions, effects, authors,
 		app.NewVectorSyncService(nil, nil, nil), infraconfig.NewProvider(&config.Config{}))
@@ -128,7 +126,7 @@ func TestUpdateRevisionPersistsZeroValuesAndClearsTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := f.videos.ReplaceTags(t.Context(), row.ID, []videoentity.Tag{*tag}); err != nil {
+	if err := f.videos.ReplaceTags(t.Context(), row.ID, []videodomain.Tag{*tag}); err != nil {
 		t.Fatal(err)
 	}
 	effects := &revisionEffects{}
@@ -176,11 +174,11 @@ func TestUpdateRevisionRollsBackBeforeSideEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Title != "old" || stored.Status != enum.VideoStatusPublished {
+	if stored.Title() != "old" || stored.Status() != enum.VideoStatusPublished {
 		t.Fatalf("rollback failed: %+v", stored)
 	}
 	var persistedRow po.Video
-	if err := f.db.First(&persistedRow, stored.ID).Error; err != nil {
+	if err := f.db.First(&persistedRow, stored.ID()).Error; err != nil {
 		t.Fatal(err)
 	}
 	if effects.invalidated != 0 || persistedRow.PublishAt != nil {
@@ -212,7 +210,7 @@ func TestUpdateRevisionVisibilityAndOwnership(t *testing.T) {
 			future := time.Now().Add(time.Hour)
 			_, err := f.revisionService(&revisionRepository{VideoRepository: f.videos, TagRepository: f.videos}, effects).UpdateVideo(t.Context(), tt.author,
 				app.UpdateVideoOpts{VideoID: row.ID, PublishTime: &future})
-			if tt.wantErr && !errors.Is(err, videoerrors.ErrRecordNotFound) {
+			if tt.wantErr && !errors.Is(err, videodomain.ErrRecordNotFound) {
 				t.Fatalf("error=%v", err)
 			}
 			if !tt.wantErr && err != nil {
@@ -222,8 +220,8 @@ func TestUpdateRevisionVisibilityAndOwnership(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stored.Status != tt.want || effects.added != tt.added || effects.removed != tt.removed {
-				t.Fatalf("status=%v, effects=%+v", stored.Status, effects)
+			if stored.Status() != tt.want || effects.added != tt.added || effects.removed != tt.removed {
+				t.Fatalf("status=%v, effects=%+v", stored.Status(), effects)
 			}
 		})
 	}
@@ -240,7 +238,9 @@ func TestSaveRevisionPreservesIndependentStatistics(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		v.Title, v.Views, v.Likes, v.Duration = "new", 0, 0, 0
+		snapshot := v.Snapshot()
+		snapshot.Title, snapshot.Views, snapshot.Likes, snapshot.Duration = "new", 0, 0, 0
+		v = videodomain.RestoreVideo(snapshot)
 		return f.videos.SaveRevision(ctx, v)
 	}); err != nil {
 		t.Fatal(err)
@@ -249,7 +249,7 @@ func TestSaveRevisionPreservesIndependentStatistics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Title != "new" || stored.Views != 80 || stored.Likes != 8 || stored.Duration != 60 {
+	if stored.Title() != "new" || stored.Views() != 80 || stored.Likes() != 8 || stored.Duration() != 60 {
 		t.Fatalf("unrelated fields overwritten: %+v", stored)
 	}
 }

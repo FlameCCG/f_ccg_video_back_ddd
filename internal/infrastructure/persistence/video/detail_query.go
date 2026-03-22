@@ -2,11 +2,11 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/media/mediaurl"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -44,7 +44,7 @@ func preloadAssociations(db *gorm.DB) *gorm.DB {
 func (q *DetailQuery) LoadPublished(
 	ctx context.Context,
 	videoID uint,
-) (*app.DetailMeta, *videovo.Stats, error) {
+) (*app.DetailMeta, *videodomain.Stats, error) {
 	var row po.Video
 	if err := preloadAssociations(gormx.DB(ctx, q.db)).
 		First(&row, "id = ? AND status = ?", videoID, enum.VideoStatusPublished).Error; err != nil {
@@ -61,14 +61,14 @@ func (q *DetailQuery) LoadPublished(
 func (q *DetailQuery) LoadOwnerPreview(
 	ctx context.Context,
 	videoID, viewerID uint,
-) (*app.DetailMeta, *videovo.Stats, error) {
+) (*app.DetailMeta, *videodomain.Stats, error) {
 	var row po.Video
 	if err := preloadAssociations(gormx.DB(ctx, q.db)).
 		Select("videos.*").
 		Joins("JOIN users owner ON owner.username = videos.author_username").
 		Where(
 			"videos.id = ? AND videos.status IN ? AND owner.id = ?",
-			videoID, videoentity.OwnerPreviewStatuses(), viewerID,
+			videoID, (*videodomain.RestoreVideo(videodomain.VideoSnapshot{})).OwnerPreviewStatuses(), viewerID,
 		).
 		First(&row).Error; err != nil {
 		return nil, nil, mapNotFound(err)
@@ -83,7 +83,7 @@ func (q *DetailQuery) LoadOwnerPreview(
 func (q *DetailQuery) LoadAny(
 	ctx context.Context,
 	videoID uint,
-) (*app.DetailMeta, *videovo.Stats, error) {
+) (*app.DetailMeta, *videodomain.Stats, error) {
 	var row po.Video
 	if err := preloadAssociations(gormx.DB(ctx, q.db)).
 		First(&row, "id = ?", videoID).Error; err != nil {
@@ -98,9 +98,9 @@ func (q *DetailQuery) LoadAny(
 // UserFlags 读取当前用户对视频的点赞、收藏与投币标记。
 //
 // 单条 Raw SQL 执行三个 EXISTS 查询，失败时返回零值。
-func (q *DetailQuery) UserFlags(ctx context.Context, videoID, userID uint) videovo.UserFlags {
+func (q *DetailQuery) UserFlags(ctx context.Context, videoID, userID uint) videodomain.UserFlags {
 	if videoID == 0 || userID == 0 {
-		return videovo.UserFlags{}
+		return videodomain.UserFlags{}
 	}
 
 	type dbRow struct {
@@ -121,10 +121,10 @@ SELECT
   ) AS is_favorited,
   EXISTS(SELECT 1 FROM video_coins WHERE video_id = ? AND user_id = ?) AS is_coined
 `, videoID, userID, userID, videoID, videoID, userID).Scan(&row).Error; err != nil {
-		return videovo.UserFlags{}
+		return videodomain.UserFlags{}
 	}
 
-	return videovo.UserFlags{
+	return videodomain.UserFlags{
 		IsLiked:     row.IsLiked > 0,
 		IsFavorited: row.IsFavorited > 0,
 		IsCoined:    row.IsCoined > 0,
@@ -132,9 +132,9 @@ SELECT
 }
 
 // buildMetaAndStats 从视频 PO 组装详情 meta 与统计。
-func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *videovo.Stats) {
+func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *videodomain.Stats) {
 	if row == nil {
-		return &app.DetailMeta{}, &videovo.Stats{}
+		return &app.DetailMeta{}, &videodomain.Stats{}
 	}
 
 	meta := &app.DetailMeta{
@@ -181,7 +181,7 @@ func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *videovo.Stats) {
 	}
 
 	if len(row.VideoResources) > 0 {
-		meta.Resources = make([]videovo.ResourceBrief, 0, len(row.VideoResources))
+		meta.Resources = make([]videodomain.ResourceBrief, 0, len(row.VideoResources))
 		for _, res := range row.VideoResources {
 			meta.Resources = append(meta.Resources, toResourceBrief(
 				res.ID, res.Resolution, res.SourceFileName, res.FileURL,
@@ -190,8 +190,8 @@ func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *videovo.Stats) {
 			))
 		}
 
-		meta.Resources = videovo.DedupeResourceBriefs(meta.Resources)
-		videovo.SortResourceBriefs(meta.Resources)
+		meta.Resources = (videodomain.ResourcePolicy{}).Dedupe(meta.Resources)
+		(videodomain.ResourcePolicy{}).Sort(meta.Resources)
 	}
 
 	if len(row.VideoParts) > 0 {
@@ -207,7 +207,7 @@ func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *videovo.Stats) {
 			}
 
 			if len(part.Resources) > 0 {
-				partBrief.Resources = make([]videovo.ResourceBrief, 0, len(part.Resources))
+				partBrief.Resources = make([]videodomain.ResourceBrief, 0, len(part.Resources))
 				for _, res := range part.Resources {
 					partBrief.Resources = append(partBrief.Resources, toResourceBrief(
 						res.ID, res.Resolution, res.SourceFileName, res.FileURL,
@@ -216,8 +216,8 @@ func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *videovo.Stats) {
 					))
 				}
 
-				partBrief.Resources = videovo.DedupeResourceBriefs(partBrief.Resources)
-				videovo.SortResourceBriefs(partBrief.Resources)
+				partBrief.Resources = (videodomain.ResourcePolicy{}).Dedupe(partBrief.Resources)
+				(videodomain.ResourcePolicy{}).Sort(partBrief.Resources)
 			}
 
 			meta.Parts = append(meta.Parts, partBrief)
@@ -231,7 +231,7 @@ func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *videovo.Stats) {
 
 	NormalizeSinglePartDetailMeta(meta)
 
-	return meta, &videovo.Stats{
+	return meta, &videodomain.Stats{
 		Views:         row.Views,
 		Likes:         row.Likes,
 		CommentCount:  row.CommentCount,
@@ -250,13 +250,13 @@ func toResourceBrief(
 	bitrate int,
 	format, codec string,
 	isVip, isSource, needContentTypeOverride bool,
-) videovo.ResourceBrief {
+) videodomain.ResourceBrief {
 	url := fileURL
 	if needContentTypeOverride {
-		url = videovo.EnsurePlayableContentTypeURL(url)
+		url = (mediaurl.Formatter{}).PlayableContentTypeURL(url)
 	}
 
-	return videovo.ResourceBrief{
+	return videodomain.ResourceBrief{
 		ID:             id,
 		Resolution:     resolution,
 		SourceFileName: sourceFileName,

@@ -3,12 +3,7 @@ package video
 import (
 	"context"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-)
-
-const (
-	defaultRelatedSize = 12
-	maxRelatedSize     = 50
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
 // RecommendService 视频详情页周边推荐用例服务。
@@ -25,16 +20,10 @@ func NewRecommendService(query RecommendQuery, stats *StatsService) *RecommendSe
 // RelatedVideos 依次按「共同标签 → 同分区热度 → 全局热度」补齐候选并返回列表。
 func (s *RecommendService) RelatedVideos(ctx context.Context, videoID uint, size int) ([]FeedItem, error) {
 	if videoID == 0 {
-		return nil, videoerrors.ErrVideoIDRequired
+		return nil, videodomain.ErrVideoIDRequired
 	}
 
-	if size <= 0 {
-		size = defaultRelatedSize
-	}
-
-	if size > maxRelatedSize {
-		size = maxRelatedSize
-	}
+	selection := videodomain.NewRelatedSelection(videoID, size)
 
 	partitionID, err := s.query.BaseVideo(ctx, videoID)
 	if err != nil {
@@ -43,25 +32,7 @@ func (s *RecommendService) RelatedVideos(ctx context.Context, videoID uint, size
 
 	tagIDs := s.query.TagIDs(ctx, videoID)
 
-	ids := make([]uint, 0, size)
-	seen := map[uint]struct{}{videoID: {}}
-
-	appendUnique := func(list []uint) {
-		for _, id := range list {
-			if len(ids) >= size {
-				return
-			}
-
-			if _, ok := seen[id]; ok {
-				continue
-			}
-
-			seen[id] = struct{}{}
-			ids = append(ids, id)
-		}
-	}
-
-	fetchLimit := size * 2
+	fetchLimit := selection.FetchLimit()
 
 	if len(tagIDs) > 0 {
 		tagRelated, tagErr := s.query.TagRelatedIDs(ctx, videoID, tagIDs, fetchLimit)
@@ -69,27 +40,28 @@ func (s *RecommendService) RelatedVideos(ctx context.Context, videoID uint, size
 			return nil, tagErr
 		}
 
-		appendUnique(tagRelated)
+		selection.Add(tagRelated)
 	}
 
-	if len(ids) < size && partitionID > 0 {
-		partitionRelated, pErr := s.query.PartitionRelatedIDs(ctx, partitionID, fetchLimit, collectExcludeIDs(seen))
+	if selection.NeedsMore() && partitionID > 0 {
+		partitionRelated, pErr := s.query.PartitionRelatedIDs(ctx, partitionID, fetchLimit, selection.ExcludedIDs())
 		if pErr != nil {
 			return nil, pErr
 		}
 
-		appendUnique(partitionRelated)
+		selection.Add(partitionRelated)
 	}
 
-	if len(ids) < size {
-		hotRelated, hErr := s.query.HotRelatedIDs(ctx, fetchLimit, collectExcludeIDs(seen))
+	if selection.NeedsMore() {
+		hotRelated, hErr := s.query.HotRelatedIDs(ctx, fetchLimit, selection.ExcludedIDs())
 		if hErr != nil {
 			return nil, hErr
 		}
 
-		appendUnique(hotRelated)
+		selection.Add(hotRelated)
 	}
 
+	ids := selection.IDs()
 	if len(ids) == 0 {
 		return []FeedItem{}, nil
 	}
@@ -110,20 +82,4 @@ func (s *RecommendService) RelatedVideos(ctx context.Context, videoID uint, size
 	}
 
 	return items, nil
-}
-
-// collectExcludeIDs 把去重集合转成排除列表。
-func collectExcludeIDs(exclude map[uint]struct{}) []uint {
-	if len(exclude) == 0 {
-		return nil
-	}
-
-	ids := make([]uint, 0, len(exclude))
-	for id := range exclude {
-		if id > 0 {
-			ids = append(ids, id)
-		}
-	}
-
-	return ids
 }

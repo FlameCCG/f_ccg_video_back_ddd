@@ -1,6 +1,6 @@
 // Package storage 实现本地磁盘与 MinIO 存储驱动。
 //
-// StorageDriver 端口位于 domain/media，Resolver 按当前配置或显式存储类型选择实现。
+// StorageDriver 端口位于 application/media，Resolver 按当前配置或显式存储类型选择实现。
 // local_storage.go/minio_storage.go 对齐分片、合并、探测、流式写入和删除能力；safety.go 约束路径与上传标识。
 // 数据库中的相对路径/对象 key、浏览器访问 URL 和 FFmpeg 可读源路径是不同表示，转换要经过驱动。
 // upload_garbage.go 只扫描和删除存储候选，是否仍被数据库引用及并发协调由上传清理用例决定。
@@ -11,6 +11,7 @@ package storage
 import (
 	"context"
 	"errors"
+	mediaapplication "f_ccg_video_back_ddd/internal/application/media"
 	"fmt"
 	"io"
 	"net/url"
@@ -21,7 +22,6 @@ import (
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/config/site"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
 	"f_ccg_video_back_ddd/pkg/uploadscope"
 
 	"go.uber.org/zap"
@@ -34,7 +34,7 @@ type LocalStorage struct {
 }
 
 // 编译期断言：满足领域侧存储驱动端口。
-var _ mediaport.StorageDriver = (*LocalStorage)(nil)
+var _ mediaapplication.StorageDriver = (*LocalStorage)(nil)
 
 // NewLocalStorage 创建本地存储驱动实例。
 func NewLocalStorage(cfg *site.Storage, logger *zap.Logger) *LocalStorage {
@@ -50,7 +50,7 @@ func (l *LocalStorage) SaveChunk(
 	ctx context.Context,
 	fileHash, index string,
 	size int64,
-	reader mediaport.ChunkReader,
+	reader mediaapplication.ChunkReader,
 ) error {
 	if l.cfg == nil || l.cfg.ChunkDir == "" {
 		return errors.New("未设置本地分块目录")

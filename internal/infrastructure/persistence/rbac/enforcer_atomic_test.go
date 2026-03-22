@@ -1,13 +1,14 @@
 package rbac
 
 import (
-	"github.com/casbin/casbin/v2"
-	"github.com/casbin/casbin/v2/model"
-	"github.com/casbin/casbin/v2/persist/file-adapter"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/casbin/casbin/v2"
+	"github.com/casbin/casbin/v2/model"
+	fileadapter "github.com/casbin/casbin/v2/persist/file-adapter"
 )
 
 func TestPolicyMutationHidesIntermediateState(t *testing.T) {

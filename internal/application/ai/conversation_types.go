@@ -3,7 +3,7 @@ package ai
 import (
 	"encoding/json"
 
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 )
 
 // ResponsesRequest 表示聊天/文本生成请求，也是路由层泛型参数绑定的目标。
@@ -21,13 +21,13 @@ type ResponsesRequest struct {
 //
 // 选项列表元素为 domain.Option，以 label/value 字段返回选项。
 type PublicOptions struct {
-	ChatModel       string        `json:"chatModel"`
-	ChatModels      []aivo.Option `json:"chatModels"`
-	ThinkingEnabled bool          `json:"thinkingEnabled"`
-	ThinkingEffort  string        `json:"thinkingEffort"`
-	ThinkingEfforts []aivo.Option `json:"thinkingEfforts"`
-	ImageModel      string        `json:"imageModel"`
-	ImageModels     []aivo.Option `json:"imageModels"`
-	VideoModel      string        `json:"videoModel"`
-	VideoModels     []aivo.Option `json:"videoModels"`
+	ChatModel       string            `json:"chatModel"`
+	ChatModels      []aidomain.Option `json:"chatModels"`
+	ThinkingEnabled bool              `json:"thinkingEnabled"`
+	ThinkingEffort  string            `json:"thinkingEffort"`
+	ThinkingEfforts []aidomain.Option `json:"thinkingEfforts"`
+	ImageModel      string            `json:"imageModel"`
+	ImageModels     []aidomain.Option `json:"imageModels"`
+	VideoModel      string            `json:"videoModel"`
+	VideoModels     []aidomain.Option `json:"videoModels"`
 }

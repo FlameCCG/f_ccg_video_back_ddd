@@ -4,30 +4,35 @@ import (
 	"context"
 	"errors"
 
-	socialerrors "f_ccg_video_back_ddd/internal/domain/social/domainerr"
-	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
-	socialrepo "f_ccg_video_back_ddd/internal/domain/social/repository"
+	socialdomain "f_ccg_video_back_ddd/internal/domain/social"
 
 	"go.uber.org/zap"
 )
 
 // FocusService 关注/取消关注用例服务。
 type FocusService struct {
-	repo    socialrepo.FocusRepository
+	repo    socialdomain.FocusRepository
 	users   UserExistsQuery
 	metrics CreatorFansMetric
 	logger  *zap.Logger
+	privacy socialdomain.PrivacyPolicy
 }
 
 // NewFocusService 构造关注用例服务。
 func NewFocusService(
-	repo socialrepo.FocusRepository,
+	repo socialdomain.FocusRepository,
 	users UserExistsQuery,
 	metrics CreatorFansMetric,
 	_ UserSearchSyncer,
 	logger *zap.Logger,
 ) *FocusService {
-	return &FocusService{repo: repo, users: users, metrics: metrics, logger: logger}
+	return &FocusService{
+		repo:    repo,
+		users:   users,
+		metrics: metrics,
+		logger:  logger,
+		privacy: socialdomain.PrivacyPolicy{},
+	}
 }
 
 // Focus 关注目标用户。
@@ -35,25 +40,29 @@ func NewFocusService(
 // 先拒绝关注自己，再校验目标用户并写入关注关系；唯一键冲突视为已关注，成功后粉丝数指标 +1。
 // user_focus 的搜索索引由 River CDC 异步更新，写请求不依赖搜索上下文。
 func (s *FocusService) Focus(ctx context.Context, userID, focusUserID uint) error {
-	focus, err := socialentity.NewFocus(userID, focusUserID)
+	focus, err := socialdomain.NewFocus(userID, focusUserID)
 	if err != nil {
 		return err
 	}
 
 	// 存在性查询报错也按「目标用户不存在」对外呈现。
 	exists, err := s.users.Exists(ctx, focusUserID)
-	if err != nil || !exists {
-		return socialerrors.ErrTargetUserNotFound
+	if err != nil {
+		return socialdomain.ErrTargetUserNotFound
 	}
 
-	if err := s.repo.Create(ctx, focus); err != nil {
-		if errors.Is(err, socialerrors.ErrAlreadyFocused) {
-			return socialerrors.ErrAlreadyFocused
+	if err := s.privacy.EnsureTargetExists(exists); err != nil {
+		return err
+	}
+
+	if _, err := s.repo.Create(ctx, focus); err != nil {
+		if errors.Is(err, socialdomain.ErrAlreadyFocused) {
+			return socialdomain.ErrAlreadyFocused
 		}
 
 		s.logger.Error("关注用户失败", zap.Error(err))
 
-		return socialerrors.ErrFocusFailed
+		return socialdomain.ErrFocusFailed
 	}
 
 	s.updateFansMetric(ctx, focusUserID, 1)
@@ -70,11 +79,11 @@ func (s *FocusService) Unfocus(ctx context.Context, userID, focusUserID uint) er
 	if err != nil {
 		s.logger.Error("取消关注失败", zap.Error(err))
 
-		return socialerrors.ErrUnfocusFailed
+		return socialdomain.ErrUnfocusFailed
 	}
 
-	if affected == 0 {
-		return socialerrors.ErrNotFocused
+	if err := s.privacy.EnsureFocusRemoved(affected); err != nil {
+		return err
 	}
 
 	s.updateFansMetric(ctx, focusUserID, -1)

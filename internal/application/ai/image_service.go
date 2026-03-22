@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/config"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 )
 
 // GenerateImage 调用上游文生图接口.
@@ -67,12 +67,13 @@ func prepareImageGenerationRequest(
 		return req, err
 	}
 
-	if err := aivo.ValidateImageGeneration(req.Prompt, req.N); err != nil {
+	policy := aidomain.GenerationPolicy{}
+	if err := policy.ValidateImageGeneration(req.Prompt, req.N); err != nil {
 		return req, err
 	}
 
 	var err error
-	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
+	req.Model, err = aidomain.Options(toOptions(cfg.ImageModels)).NormalizeConfiguredModel(req.Model, cfg.ImageModel, "图片")
 	if err != nil {
 		return req, err
 	}
@@ -86,12 +87,12 @@ func prepareImageEditRequest(cfg *config.AI, req ImageEditRequest) (ImageEditReq
 	}
 
 	hasImage := req.Image != nil && !req.Image.IsZero()
-	if err := aivo.ValidateImageEdit(req.Prompt, hasImage, len(req.Images), req.N); err != nil {
+	if err := (aidomain.GenerationPolicy{}).ValidateImageEdit(req.Prompt, hasImage, len(req.Images), req.N); err != nil {
 		return req, err
 	}
 
 	var err error
-	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
+	req.Model, err = aidomain.Options(toOptions(cfg.ImageModels)).NormalizeConfiguredModel(req.Model, cfg.ImageModel, "图片")
 	if err != nil {
 		return req, err
 	}
@@ -107,12 +108,13 @@ func (s *Service) ensureImageResultCount(
 	refs []string,
 	result any,
 ) (any, error) {
-	want := aivo.RequestedImageCount(req.N)
+	want := (aidomain.GenerationPolicy{}).RequestedImageCount(req.N)
 	if want <= 1 {
 		return result, nil
 	}
 
-	for attempts := 0; aivo.ImageResultCount(result) < want && attempts < want; attempts++ {
+	current := imageGenerationPayload{raw: result}
+	for attempts := 0; current.count() < want && attempts < want; attempts++ {
 		singleReq := req
 		one := 1
 		singleReq.N = &one
@@ -122,12 +124,13 @@ func (s *Service) ensureImageResultCount(
 			return nil, err
 		}
 
-		merged, grew := aivo.MergeImageGenerationResponses(result, next, want)
+		merged, grew := current.merge(imageGenerationPayload{raw: next}, want)
 		if !grew {
 			break
 		}
 
 		result = merged
+		current = imageGenerationPayload{raw: result}
 	}
 
 	return result, nil

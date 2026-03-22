@@ -3,8 +3,6 @@ package search
 import (
 	"context"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
-
 	"go.uber.org/zap"
 )
 
@@ -26,7 +24,7 @@ func (s *SearchService) fallbackSearch(ctx context.Context, opts SearchOptions) 
 		Videos:     videoResult.Videos,
 		Users:      userResult.Users,
 	}
-	result.Tags = buildRelatedTags(result.Videos)
+	result.Tags = s.buildRelatedTags(result.Videos)
 	result.TagTotal = int64(len(result.Tags))
 	result.Total = result.VideoTotal + result.UserTotal + result.TagTotal
 
@@ -38,9 +36,9 @@ func (s *SearchService) fallbackSearchVideos(ctx context.Context, opts SearchOpt
 		return &VideoSearchResult{Videos: []SearchVideoHit{}}, nil
 	}
 
-	ctx = ensureContext(ctx)
+	ctx = (callContext{}).ensure(ctx)
 
-	if searchvo.NormalizeKeyword(opts.Keyword) == "" {
+	if s.keywords.NormalizeKeyword(opts.Keyword) == "" {
 		return &VideoSearchResult{Videos: []SearchVideoHit{}}, nil
 	}
 
@@ -70,9 +68,9 @@ func (s *SearchService) fallbackSearchUsers(ctx context.Context, opts SearchOpti
 		return &UserSearchResult{Users: []SearchUserHit{}}, nil
 	}
 
-	ctx = ensureContext(ctx)
+	ctx = (callContext{}).ensure(ctx)
 
-	if searchvo.NormalizeKeyword(opts.Keyword) == "" {
+	if s.keywords.NormalizeKeyword(opts.Keyword) == "" {
 		return &UserSearchResult{Users: []SearchUserHit{}}, nil
 	}
 
@@ -90,12 +88,12 @@ func (s *SearchService) fallbackSearchUsers(ctx context.Context, opts SearchOpti
 
 // userTotalBestEffort 尽力取用户命中总量：优先 ES，失败退 MySQL COUNT，再失败记 0。
 func (s *SearchService) userTotalBestEffort(ctx context.Context, keyword string) int64 {
-	keyword = searchvo.NormalizeKeyword(keyword)
+	keyword = s.keywords.NormalizeKeyword(keyword)
 	if keyword == "" {
 		return 0
 	}
 
-	ctx = ensureContext(ctx)
+	ctx = (callContext{}).ensure(ctx)
 
 	if s.index.Available() {
 		esCtx, cancel := context.WithTimeout(ctx, videoUserCountTimeout)

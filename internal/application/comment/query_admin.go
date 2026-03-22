@@ -3,15 +3,13 @@ package comment
 import (
 	"context"
 	"strings"
-
-	commentvo "f_ccg_video_back_ddd/internal/domain/comment/valueobject"
 )
 
 // AdminList 管理端评论列表。
 //
 // 管理端不需要 isLiked（视作未登录），但点赞数仍以 Redis 缓存为主。
 func (s *QueryService) AdminList(ctx context.Context, params AdminListParams) ([]CommentItem, int64, error) {
-	page, pageSize := commentvo.NormalizeAdminPaging(params.Page, params.PageSize)
+	page, pageSize := s.pages.NormalizeAdmin(params.Page, params.PageSize)
 
 	rows, total, err := s.query.AdminList(ctx, AdminListQuery{
 		UserID:   params.UserID,

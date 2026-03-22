@@ -7,34 +7,33 @@ import (
 	"testing"
 	"time"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
-	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
 
 type serviceRepo struct {
-	commentrepo.Repository
-	target   *commententity.Comment
-	created  *commententity.Comment
+	commentdomain.Repository
+	target   *commentdomain.Comment
+	created  *commentdomain.Comment
 	replies  uint
 	deleted  []uint
 	pinned   bool
 	unpinned uint
 }
 
-func (r *serviceRepo) Create(_ context.Context, c *commententity.Comment) error {
-	c.ID = 50
-	r.created = c
-	return nil
+func (r *serviceRepo) Create(_ context.Context, c *commentdomain.Comment) (*commentdomain.Comment, error) {
+	snapshot := c.Snapshot()
+	snapshot.ID = 50
+	r.created = commentdomain.RestoreComment(snapshot)
+	return r.created, nil
 }
 func (r *serviceRepo) IncrReplyCount(_ context.Context, id uint) error { r.replies = id; return nil }
-func (r *serviceRepo) FindByID(context.Context, uint) (*commententity.Comment, error) {
+func (r *serviceRepo) FindByID(context.Context, uint) (*commentdomain.Comment, error) {
 	return r.target, nil
 }
-func (r *serviceRepo) FindPinTarget(context.Context, uint) (*commententity.Comment, error) {
+func (r *serviceRepo) FindPinTargetForUpdate(context.Context, uint) (*commentdomain.Comment, error) {
 	return r.target, nil
 }
 func (r *serviceRepo) ChildIDs(context.Context, uint) ([]uint, error) { return []uint{2, 3}, nil }
@@ -50,7 +49,7 @@ func (r *serviceRepo) SetPinned(_ context.Context, _ uint, pinned bool, at *time
 }
 
 type serviceLikes struct {
-	commentrepo.LikeRepository
+	commentdomain.LikeRepository
 	deleted []uint
 	users   []uint
 }
@@ -84,10 +83,10 @@ func (serviceFacts) VideoAuthorRef(context.Context, uint) (*VideoAuthorRef, erro
 
 type serviceQuery struct {
 	Query
-	parent *commententity.ParentBrief
+	parent *commentdomain.ParentBrief
 }
 
-func (q serviceQuery) ParentBrief(context.Context, uint, uint, uint) (*commententity.ParentBrief, error) {
+func (q serviceQuery) ParentBrief(context.Context, uint, uint, uint) (*commentdomain.ParentBrief, error) {
 	return q.parent, nil
 }
 
@@ -142,10 +141,10 @@ func TestCreateServicesPreserveTargetsAndReplyRoots(t *testing.T) {
 			if reply {
 				cmd.ParentID = &parentID
 			}
-			q := serviceQuery{parent: &commententity.ParentBrief{UserID: 9, RootID: &rootID}}
+			q := serviceQuery{parent: &commentdomain.ParentBrief{UserID: 9, RootID: &rootID}}
 			s := NewCreateService(&likeTx{}, r, q, serviceFacts{}, counter, nil, nil, NewNotificationDispatcher(r, serviceFacts{}, nil, nil, zap.NewNop()))
 			item, err := s.Create(t.Context(), cmd)
-			if err != nil || item.ID != 50 || r.created.VideoID != cmd.VideoID || r.created.DynamicID != cmd.DynamicID {
+			if err != nil || item.ID != 50 || r.created.VideoID() != cmd.VideoID || r.created.DynamicID() != cmd.DynamicID {
 				t.Fatalf("target/reply %v/%v: item=%+v err=%v", dynamic, reply, item, err)
 			}
 			if reply && (r.replies != rootID || *item.RootID != rootID || item.ReplyTo.UserID != 9) {
@@ -162,11 +161,11 @@ func TestCreateServicesPreserveTargetsAndReplyRoots(t *testing.T) {
 }
 
 func TestDeleteServiceAuthorizationAndRootCascade(t *testing.T) {
-	r := &serviceRepo{target: &commententity.Comment{ID: 1, UserID: 7, DynamicID: 11}}
+	r := &serviceRepo{target: commentdomain.RestoreComment(commentdomain.Snapshot{ID: 1, UserID: 7, DynamicID: 11})}
 	likes := &serviceLikes{}
 	cache := &serviceCache{}
 	s := NewDeleteService(&likeTx{}, r, likes, serviceFacts{}, cache, nil, nil, zap.NewNop())
-	if err := s.Delete(t.Context(), 8, 1); !errors.Is(err, commenterrors.ErrDeleteForbidden) {
+	if err := s.Delete(t.Context(), 8, 1); !errors.Is(err, commentdomain.ErrDeleteForbidden) {
 		t.Fatalf("unauthorized delete: %v", err)
 	}
 	if err := s.Delete(t.Context(), 9, 1); err != nil {
@@ -178,9 +177,9 @@ func TestDeleteServiceAuthorizationAndRootCascade(t *testing.T) {
 }
 
 func TestPinServiceAuthorAndReplacement(t *testing.T) {
-	r := &serviceRepo{target: &commententity.Comment{ID: 1, VideoID: 10}}
+	r := &serviceRepo{target: commentdomain.RestoreComment(commentdomain.Snapshot{ID: 1, VideoID: 10})}
 	s := NewPinService(&likeTx{}, r, serviceFacts{})
-	if err := s.Pin(t.Context(), 8, 1, true); !errors.Is(err, commenterrors.ErrPinForbidden) {
+	if err := s.Pin(t.Context(), 8, 1, true); !errors.Is(err, commentdomain.ErrPinForbidden) {
 		t.Fatal(err)
 	}
 	if err := s.Pin(t.Context(), 9, 1, true); err != nil {
@@ -223,7 +222,7 @@ func TestNotificationDispatcherDedupAndDetachedLifetime(t *testing.T) {
 	s := NewNotificationDispatcher(nil, serviceFacts{}, n, tasks, zap.NewNop())
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	s.scheduleCreateNotifications(ctx, UserProfile{ID: 7}, &VideoBrief{ID: 10, AuthorUsername: "owner"}, nil, &commententity.Comment{ID: 1}, &ReplyInfo{UserID: 9})
+	s.scheduleCreateNotifications(ctx, UserProfile{ID: 7}, &VideoBrief{ID: 10, AuthorUsername: "owner"}, nil, commentdomain.RestoreComment(commentdomain.Snapshot{ID: 1}), &ReplyInfo{UserID: 9})
 	if err := tasks.Wait(t.Context()); err != nil {
 		t.Fatal(err)
 	}

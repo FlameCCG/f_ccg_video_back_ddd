@@ -8,6 +8,7 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/config"
+	identitycache "f_ccg_video_back_ddd/internal/infrastructure/cache/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
 	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
@@ -75,7 +76,7 @@ func newEmailCaptchaFixture(t *testing.T, sender app.EmailCaptchaSender) *emailC
 		sender,
 		captcha.NewEmailGenerator(),
 		// 用真实限流器 + miniredis：与生产路径一致（限流端口不可为 nil）。
-		ratelimit.New(redisClient),
+		identitycache.NewEmailSendLimiter(ratelimit.New(redisClient)),
 		tasks,
 		zap.NewNop(),
 	)

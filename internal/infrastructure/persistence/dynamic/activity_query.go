@@ -5,7 +5,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/dynamic"
-	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
@@ -128,7 +128,7 @@ type simpleWorkRow struct {
 }
 
 // LatestVideoWork 读取作者最新一条已发布视频；不存在时返回零值 WorkRef。
-func (q *ActivityQuery) LatestVideoWork(ctx context.Context, authorUsername string) (dynamicvo.WorkRef, error) {
+func (q *ActivityQuery) LatestVideoWork(ctx context.Context, authorUsername string) (dynamicdomain.WorkRef, error) {
 	var row simpleWorkRow
 	if err := gormx.DB(ctx, q.db).
 		Model(&po.Video{}).
@@ -137,14 +137,14 @@ func (q *ActivityQuery) LatestVideoWork(ctx context.Context, authorUsername stri
 		Order("created_at DESC, id DESC").
 		Limit(1).
 		Scan(&row).Error; err != nil {
-		return dynamicvo.WorkRef{}, err
+		return dynamicdomain.WorkRef{}, err
 	}
 
-	return dynamicvo.WorkRef{ID: row.ID, CreatedAt: row.CreatedAt}, nil
+	return dynamicdomain.WorkRef{ID: row.ID, CreatedAt: row.CreatedAt}, nil
 }
 
 // LatestDynamicWork 读取作者最新一条动态；不存在时返回零值 WorkRef。
-func (q *ActivityQuery) LatestDynamicWork(ctx context.Context, authorID uint) (dynamicvo.WorkRef, error) {
+func (q *ActivityQuery) LatestDynamicWork(ctx context.Context, authorID uint) (dynamicdomain.WorkRef, error) {
 	var row simpleWorkRow
 	if err := gormx.DB(ctx, q.db).
 		Model(&po.Dynamic{}).
@@ -153,10 +153,10 @@ func (q *ActivityQuery) LatestDynamicWork(ctx context.Context, authorID uint) (d
 		Order("created_at DESC, id DESC").
 		Limit(1).
 		Scan(&row).Error; err != nil {
-		return dynamicvo.WorkRef{}, err
+		return dynamicdomain.WorkRef{}, err
 	}
 
-	return dynamicvo.WorkRef{ID: row.ID, CreatedAt: row.CreatedAt}, nil
+	return dynamicdomain.WorkRef{ID: row.ID, CreatedAt: row.CreatedAt}, nil
 }
 
 // PublishedVideoAuthor 读取已发布视频及其作者引用；视频不存在或未发布时返回零值。

@@ -3,26 +3,23 @@ package dynamic
 import (
 	"context"
 
-	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
-	dynamicentity "f_ccg_video_back_ddd/internal/domain/dynamic/entity"
-	dynamicrepo "f_ccg_video_back_ddd/internal/domain/dynamic/repository"
-	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 )
 
 // ReadService 「最新作品已读」用例服务。
 type ReadService struct {
-	reads    dynamicrepo.ReadRepository
+	reads    dynamicdomain.ReadRepository
 	follows  FollowRelationQuery
 	activity ActivityQuery
 	users    UserProfileQuery
 	feed     *FeedService
 	unread   *FollowService
+	feeds    dynamicdomain.FeedPolicy
 }
 
 // NewReadService 构造已读用例服务。
 func NewReadService(
-	reads dynamicrepo.ReadRepository,
+	reads dynamicdomain.ReadRepository,
 	follows FollowRelationQuery,
 	activity ActivityQuery,
 	users UserProfileQuery,
@@ -36,6 +33,7 @@ func NewReadService(
 		users:    users,
 		feed:     feed,
 		unread:   unread,
+		feeds:    dynamicdomain.FeedPolicy{},
 	}
 }
 
@@ -56,18 +54,15 @@ func (s *ReadService) ReadLatestAndList(
 //
 // 仅当浏览者是作者本人、或已关注该作者时才写入已读位点（未关注直接返回 nil）。
 func (s *ReadService) MarkLatestRead(ctx context.Context, userID, authorID uint) error {
-	if userID == 0 {
-		return dynamicerrors.ErrUserNotLogin
+	eligibility := dynamicdomain.ReadEligibility{ReaderID: userID, AuthorID: authorID}
+	if err := eligibility.ValidateLatest(); err != nil {
+		return err
 	}
-
-	if authorID == 0 {
-		return dynamicerrors.ErrAuthorIDRequired
+	if eligibility.NeedsFollowing() {
+		eligibility.Following = s.follows.IsFollowing(ctx, userID, authorID)
 	}
-
-	if userID != authorID {
-		if !s.follows.IsFollowing(ctx, userID, authorID) {
-			return nil
-		}
+	if !eligibility.AllowsLatest() {
+		return nil
 	}
 
 	latest, ok, err := s.latestWork(ctx, authorID)
@@ -98,7 +93,8 @@ func (s *ReadService) MaybeMarkReadByVideo(ctx context.Context, userID, videoID 
 		return nil
 	}
 
-	if !s.follows.IsFollowing(ctx, userID, ref.AuthorID) {
+	eligibility := dynamicdomain.ReadEligibility{ReaderID: userID, AuthorID: ref.AuthorID, Following: s.follows.IsFollowing(ctx, userID, ref.AuthorID)}
+	if !eligibility.AllowsVideo() {
 		return nil
 	}
 
@@ -107,7 +103,7 @@ func (s *ReadService) MaybeMarkReadByVideo(ctx context.Context, userID, videoID 
 		return err
 	}
 
-	if latest.WorkType != enum.WorkTypeVideo || latest.WorkID != videoID {
+	if !latest.IsCurrentVideo(videoID) {
 		return nil
 	}
 
@@ -118,24 +114,24 @@ func (s *ReadService) MaybeMarkReadByVideo(ctx context.Context, userID, videoID 
 //
 // 两条明细查询的错误被忽略（按「无作品」处理），
 // 只有用户名查询失败或用户不存在才返回错误。
-func (s *ReadService) latestWork(ctx context.Context, authorID uint) (dynamicvo.LatestWork, bool, error) {
+func (s *ReadService) latestWork(ctx context.Context, authorID uint) (dynamicdomain.LatestWork, bool, error) {
 	if authorID == 0 {
-		return dynamicvo.LatestWork{}, false, dynamicerrors.ErrAuthorIDRequired
+		return dynamicdomain.LatestWork{}, false, dynamicdomain.ErrAuthorIDRequired
 	}
 
 	username, err := s.users.UsernameByID(ctx, authorID)
 	if err != nil {
-		return dynamicvo.LatestWork{}, false, err
+		return dynamicdomain.LatestWork{}, false, err
 	}
 
 	if username == "" {
-		return dynamicvo.LatestWork{}, false, dynamicerrors.ErrUserNotFound
+		return dynamicdomain.LatestWork{}, false, dynamicdomain.ErrUserNotFound
 	}
 
 	video, _ := s.activity.LatestVideoWork(ctx, username)
 	dynamic, _ := s.activity.LatestDynamicWork(ctx, authorID)
 
-	latest, ok := dynamicvo.PickLatestWork(video, dynamic)
+	latest, ok := s.feeds.PickLatestWork(video, dynamic)
 
 	return latest, ok, nil
 }
@@ -144,9 +140,9 @@ func (s *ReadService) latestWork(ctx context.Context, authorID uint) (dynamicvo.
 func (s *ReadService) upsertRead(
 	ctx context.Context,
 	userID, authorID uint,
-	latest dynamicvo.LatestWork,
+	latest dynamicdomain.LatestWork,
 ) error {
-	if userID == 0 || authorID == 0 || latest.WorkID == 0 || latest.CreatedAt.IsZero() {
+	if !latest.CanMarkRead(userID, authorID) {
 		return nil
 	}
 
@@ -156,13 +152,9 @@ func (s *ReadService) upsertRead(
 	}
 
 	if record == nil {
-		if err := s.reads.Create(ctx, &dynamicentity.ReadRecord{
-			UserID:           userID,
-			AuthorID:         authorID,
-			LastReadWorkType: latest.WorkType,
-			LastReadWorkID:   latest.WorkID,
-			LastReadWorkAt:   latest.CreatedAt,
-		}); err != nil {
+		if _, err := s.reads.Create(ctx, dynamicdomain.NewReadRecord(
+			userID, authorID, latest.WorkType, latest.WorkID, latest.CreatedAt,
+		)); err != nil {
 			return err
 		}
 
@@ -171,15 +163,17 @@ func (s *ReadService) upsertRead(
 		return nil
 	}
 
-	if !record.ShouldAdvance(latest.CreatedAt) {
+	if !record.Advance(latest.WorkType, latest.WorkID, latest.CreatedAt) {
 		return nil
 	}
 
-	if err := s.reads.Advance(ctx, record.ID, latest.WorkType, latest.WorkID, latest.CreatedAt); err != nil {
+	advanced, err := s.reads.Advance(ctx, record.ID(), record.LastReadWorkType(), record.LastReadWorkID(), record.LastReadWorkAt())
+	if err != nil {
 		return err
 	}
-
-	s.unread.InvalidateUnreadCount(userID)
+	if advanced {
+		s.unread.InvalidateUnreadCount(userID)
+	}
 
 	return nil
 }

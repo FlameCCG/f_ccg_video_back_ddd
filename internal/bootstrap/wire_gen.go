@@ -15,7 +15,6 @@ import (
 	identity3 "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/application/media"
 	notification3 "f_ccg_video_back_ddd/internal/application/notification"
-	"f_ccg_video_back_ddd/internal/application/platform"
 	provisioning2 "f_ccg_video_back_ddd/internal/application/provisioning"
 	rbac2 "f_ccg_video_back_ddd/internal/application/rbac"
 	search3 "f_ccg_video_back_ddd/internal/application/search"
@@ -42,6 +41,7 @@ import (
 	video4 "f_ccg_video_back_ddd/internal/infrastructure/external/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
+	"f_ccg_video_back_ddd/internal/infrastructure/media/artifactpath"
 	"f_ccg_video_back_ddd/internal/infrastructure/mq"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/ai"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/chat"
@@ -196,12 +196,13 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
 	identityBannerStorage := adapters.NewIdentityBannerStorage(resolver)
 	userBannerService := identity3.NewUserBannerService(provider, userConfRepository, userBannerQuery, configFileWriter, identityBannerStorage, zapLogger)
-	accountService := identity3.NewAccountService(userRepository, userRoleQuery)
+	accountService := identity3.NewAccountService(txManager, userRepository, userRoleQuery)
 	casbinEnforcer := rbac.NewCasbinEnforcer(syncedEnforcer)
 	identityUserRoleBinder := adapters.NewIdentityUserRoleBinder(casbinEnforcer)
-	registrationService := identity3.NewRegistrationService(txManager, userRepository, userRoleQuery, identityUserRoleBinder, zapLogger)
-	tokenService := identity3.NewTokenService(provider)
 	folderRepository := video.NewFolderRepository(gormDB)
+	defaultFolderService := video3.NewDefaultFolderService(folderRepository)
+	registrationService := identity3.NewRegistrationService(txManager, userRepository, userRoleQuery, identityUserRoleBinder, defaultFolderService, zapLogger)
+	tokenService := identity3.NewTokenService(provider)
 	folderQuery := video.NewFolderQuery(gormDB)
 	folderListCache := video2.NewFolderListCache(client, zapLogger)
 	folderService := video3.NewFolderService(txManager, folderRepository, folderQuery, folderListCache, statsService, authorService, creatorAnalyticsService)
@@ -216,7 +217,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	gitHubClient := oauth.NewGitHubClient(provider)
 	linuxDoClient := oauth.NewLinuxDoClient(provider)
 	xClient := oauth.NewXClient(provider)
-	oAuthLoginService := identity3.NewOAuthLoginService(provider, txManager, userRepository, userRoleQuery, identityUserRoleBinder, stateStore, tokenService, loginRecordService, detachedTaskGroup, qqClient, googleClient, gitHubClient, linuxDoClient, xClient, zapLogger)
+	oAuthLoginService := identity3.NewOAuthLoginService(provider, txManager, userRepository, userRoleQuery, identityUserRoleBinder, stateStore, tokenService, loginRecordService, detachedTaskGroup, qqClient, googleClient, gitHubClient, linuxDoClient, xClient, defaultFolderService, zapLogger)
 	expRecordQuery := identity2.NewExpRecordQuery(gormDB)
 	expRecordService := identity3.NewExpRecordService(expRecordQuery)
 	coinRecordRepository := identity2.NewCoinRecordRepository(gormDB)
@@ -231,12 +232,13 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	addressVerifier := email.NewAddressVerifier()
 	sender := email.NewSender(provider, zapLogger)
 	emailGenerator := captcha.NewEmailGenerator()
-	emailCaptchaSendService := identity3.NewEmailCaptchaSendService(userRepository, captchaService, addressVerifier, sender, emailGenerator, limiter, detachedTaskGroup, zapLogger)
+	emailSendLimiter := identity.NewEmailSendLimiter(limiter)
+	emailCaptchaSendService := identity3.NewEmailCaptchaSendService(userRepository, captchaService, addressVerifier, sender, emailGenerator, emailSendLimiter, detachedTaskGroup, zapLogger)
 	captchaHandler := identity4.NewCaptchaHandler(captchaService, emailCaptchaSendService, zapLogger)
 	bannerRepository := contentops.NewBannerRepository(gormDB)
 	bannerCache := contentops2.NewBannerCache(client, zapLogger)
 	videoPartitionQuery := contentops.NewVideoPartitionQuery(gormDB)
-	bannerService := contentops3.NewBannerService(bannerRepository, bannerCache, videoPartitionQuery)
+	bannerService := contentops3.NewBannerService(txManager, bannerRepository, bannerCache, videoPartitionQuery)
 	siteStatStore := contentops2.NewSiteStatStore(client)
 	adminStatsQuery := contentops.NewAdminStatsQuery(gormDB)
 	expRecordRepository := identity2.NewExpRecordRepository(gormDB)
@@ -384,23 +386,24 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	configRiver := config.ProvideRiverConf(provider)
 	riverComponent := river.NewRiverComponent(configRiver, configMysql, es, gormDB, zapLogger)
 	videoScheduler := video3.NewScheduler(txManager, videoRepository, scheduleStore, vectorSyncService, provider, zapLogger)
+	policy := artifactpath.NewPolicy()
 	transcodeResourceRepository := media3.NewTranscodeResourceRepository(gormDB, txManager)
 	videoDetailCache := media2.NewVideoDetailCache(client, zapLogger)
 	transcodeEngine := mq.NewTranscodeEngine(provider, transcodeResourceRepository, zapLogger)
 	gpuCooldown := media.ProvideGPUCooldown()
-	transcodeService := media.NewTranscodeService(transcodeResourceRepository, resolver, progressCache, videoDetailCache, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, gpuCooldown, provider, zapLogger)
+	transcodeService := media.NewTranscodeService(policy, transcodeResourceRepository, resolver, progressCache, videoDetailCache, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, gpuCooldown, provider, zapLogger)
 	cancelSubscriber := media2.NewCancelSubscriber(client, taskRegistry, zapLogger)
 	transcodeConsumerComponent := mq.NewTranscodeConsumerComponent(provider, kafka, transcodeService, taskRegistry, cancelSubscriber, producerPool, zapLogger)
 	commentLikeQueue := scheduler.NewCommentLikeQueue(client)
 	commentLikeProjection := scheduler.NewCommentLikeProjection(gormDB)
-	commentLikeSyncService := platform.NewCommentLikeSyncService(txManager, commentLikeQueue, commentLikeProjection, zapLogger)
+	commentLikeSyncService := comment2.NewCommentLikeSyncService(txManager, commentLikeQueue, commentLikeProjection, zapLogger)
 	videoStatsCache := scheduler.NewVideoStatsCache(client, zapLogger)
 	videoStatsProjection := scheduler.NewVideoStatsProjection(gormDB)
-	videoStatSyncService := platform.NewVideoStatSyncService(videoStatsCache, videoStatsProjection, zapLogger)
+	videoStatSyncService := video3.NewVideoStatSyncService(videoStatsCache, videoStatsProjection, zapLogger)
 	hotRankStore := scheduler.NewHotRankStore(client)
-	hotRankDecayService := platform.NewHotRankDecayService(hotRankStore, zapLogger)
+	hotRankDecayService := video3.NewHotRankDecayService(hotRankStore, zapLogger)
 	banMaintenanceRepository := scheduler.NewBanMaintenanceRepository(gormDB)
-	autoUnbanService := platform.NewAutoUnbanService(txManager, banMaintenanceRepository, userStatusService, zapLogger)
+	autoUnbanService := identity3.NewAutoUnbanService(txManager, banMaintenanceRepository, userStatusService, zapLogger)
 	uploadGarbageScanner := storage.NewUploadGarbageScanner(provider, minIOClientPool, zapLogger)
 	uploadCleanupService := video3.NewUploadCleanupService(uploadGarbageScanner, videoRepository, uploadHashGuard, provider, zapLogger)
 	cronComponent := scheduler.NewCronComponent(commentLikeSyncService, videoStatSyncService, hotRankDecayService, autoUnbanService, uploadCleanupService, zapLogger)
@@ -424,6 +427,7 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 		return nil, nil, err
 	}
 	kafka := config.ProvideKafkaConf(provider)
+	policy := artifactpath.NewPolicy()
 	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
 	loggerLogger, cleanup := logger.Provide(configLogger, provider)
@@ -442,7 +446,7 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 	videoDetailCache := media2.NewVideoDetailCache(client, zapLogger)
 	transcodeEngine := mq.NewTranscodeEngine(provider, transcodeResourceRepository, zapLogger)
 	gpuCooldown := media.ProvideGPUCooldown()
-	transcodeService := media.NewTranscodeService(transcodeResourceRepository, resolver, progressCache, videoDetailCache, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, gpuCooldown, provider, zapLogger)
+	transcodeService := media.NewTranscodeService(policy, transcodeResourceRepository, resolver, progressCache, videoDetailCache, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, gpuCooldown, provider, zapLogger)
 	taskRegistry := media.ProvideTaskRegistry()
 	cancelSubscriber := media2.NewCancelSubscriber(client, taskRegistry, zapLogger)
 	producerPool := mq.NewProducerPool(zapLogger)
@@ -520,8 +524,12 @@ func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	configMysql := config.ProvideMysqlConf(provider)
 	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
-	bannerRepository := provisioning.NewBannerRepository(gormDB)
-	executor := cli.NewBannerExecutor(bannerStorageResolverAdapter, bannerRepository, zapLogger)
+	txManager := gormx.NewTxManager(gormDB)
+	bannerRepository := contentops.NewBannerRepository(gormDB)
+	defaultBannerService := contentops3.NewDefaultBannerService(txManager, bannerRepository)
+	bannerSchema := provisioning.NewBannerSchema(gormDB)
+	defaultBanners := adapters.NewDefaultBanners(defaultBannerService, bannerSchema)
+	executor := cli.NewBannerExecutor(bannerStorageResolverAdapter, defaultBanners, zapLogger)
 	return executor, func() {
 		cleanup2()
 		cleanup()
@@ -542,7 +550,13 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	userRepository := identity2.NewUserRepository(gormDB, provider)
-	superUserRepository := provisioning.NewSuperUserRepository(gormDB, userRepository, zapLogger)
+	folderRepository := video.NewFolderRepository(gormDB)
+	defaultFolderService := video3.NewDefaultFolderService(folderRepository)
+	systemAccountService := identity3.NewSystemAccountService(userRepository, defaultFolderService)
+	roleRepository := rbac.NewRoleRepository(gormDB)
+	userRoleRepository := rbac.NewUserRoleRepository(gormDB)
+	systemRoleService := rbac2.NewSystemRoleService(roleRepository, userRoleRepository, zapLogger)
+	systemAccounts := adapters.NewSystemAccounts(systemAccountService, systemRoleService)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB)
 	if err != nil {
 		cleanup2()
@@ -551,7 +565,7 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	}
 	casbinRoleBinder := provisioning.NewCasbinRoleBinder(syncedEnforcer, zapLogger)
 	txManager := gormx.NewTxManager(gormDB)
-	superUserService := provisioning2.NewSuperUserService(superUserRepository, casbinRoleBinder, txManager)
+	superUserService := provisioning2.NewSuperUserService(systemAccounts, casbinRoleBinder, txManager)
 	executor := cli.NewSuperUserExecutor(superUserService, zapLogger)
 	return executor, func() {
 		cleanup2()

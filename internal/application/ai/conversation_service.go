@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"f_ccg_video_back_ddd/internal/config"
-	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -82,12 +81,12 @@ func (s *Service) prepareResponsesRequest(
 		return req, conv, err
 	}
 
-	if !aivo.HasRawJSON(req.Input) {
-		return req, conv, aierrors.ErrEmptyInput
+	if !conv.hasInput(req.Input) {
+		return req, conv, aidomain.ErrEmptyInput
 	}
 
 	var err error
-	req.Model, err = aivo.NormalizeConfiguredModel(req.Model, cfg.ChatModel, toOptions(cfg.ChatModels), "聊天")
+	req.Model, err = aidomain.Options(toOptions(cfg.ChatModels)).NormalizeConfiguredModel(req.Model, cfg.ChatModel, "聊天")
 	if err != nil {
 		return req, conv, err
 	}
@@ -103,7 +102,7 @@ func (s *Service) prepareResponsesRequest(
 	}
 	conv = conv.trimHistory(cfg)
 	if !conv.HasMessages() {
-		return req, conv, aierrors.ErrNoUserMessage
+		return req, conv, aidomain.ErrNoUserMessage
 	}
 
 	prompt, promptErr := s.buildResponsesSystemPrompt(ctx, cfg, runtime, conv, req.Model)
@@ -111,7 +110,7 @@ func (s *Service) prepareResponsesRequest(
 		s.logger.Warn("build AI responses system prompt failed", zap.Error(promptErr))
 	}
 
-	conv = conv.prependSystem(aivo.FirstNonEmpty(prompt, cfg.SystemPrompt))
+	conv = conv.prependSystem((aidomain.PromptVideoCandidate{}).FirstNonEmpty(prompt, cfg.SystemPrompt))
 
 	return req, conv, nil
 }
@@ -138,10 +137,9 @@ func normalizeThinkingOptions(cfg *config.AI, req ResponsesRequest) (ResponsesRe
 		return req, nil
 	}
 
-	effort, err := aivo.NormalizeConfiguredOption(
+	effort, err := aidomain.Options(toOptions(cfg.ThinkingEfforts)).NormalizeConfiguredOption(
 		req.ThinkingEffort,
 		cfg.ThinkingEffort,
-		toOptions(cfg.ThinkingEfforts),
 		"思考强度",
 		"high",
 	)

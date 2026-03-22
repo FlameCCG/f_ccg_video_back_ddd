@@ -10,12 +10,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	mediaapplication "f_ccg_video_back_ddd/internal/application/media"
+	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
+	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -32,8 +35,8 @@ type ProgressCache struct {
 }
 
 var (
-	_ mediaport.ProgressStore  = (*ProgressCache)(nil)
-	_ mediaport.ProgressReader = (*ProgressCache)(nil)
+	_ mediaruntime.ProgressStore      = (*ProgressCache)(nil)
+	_ mediaapplication.ProgressReader = (*ProgressCache)(nil)
 )
 
 // NewProgressCache 构造转码进度缓存适配器。
@@ -42,19 +45,19 @@ func NewProgressCache(redisClient *redis.Client, logger *zap.Logger) *ProgressCa
 }
 
 // Write 写入进度快照，维护分P 集合并广播变更（最佳努力）。
-func (c *ProgressCache) Write(ctx context.Context, snapshot *mediavo.TranscodeProgress, ttl time.Duration) error {
+func (c *ProgressCache) Write(ctx context.Context, snapshot *mediadomain.TranscodeProgress, ttl time.Duration) error {
 	if c == nil || c.redis == nil || snapshot == nil || snapshot.VideoID == 0 {
 		return nil
 	}
 
-	snapshot.Normalize()
+	snapshot.Normalize(time.Now())
 
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
 		return err
 	}
 
-	if err := c.redis.Set(ctx, mediavo.TranscodeProgressKey(snapshot.VideoID, snapshot.PartID), raw, ttl).Err(); err != nil {
+	if err := c.redis.Set(ctx, c.progressKey(snapshot.VideoID, snapshot.PartID), raw, ttl).Err(); err != nil {
 		c.logger.Warn("write transcode progress failed",
 			zap.Uint("videoId", snapshot.VideoID),
 			zap.Uint("partId", snapshot.PartID),
@@ -66,10 +69,10 @@ func (c *ProgressCache) Write(ctx context.Context, snapshot *mediavo.TranscodePr
 
 	// 显式维护每个视频的分P 集合，避免某个分P 的进度覆盖另一个分P。
 	if snapshot.PartID > 0 {
-		partsKey := mediavo.TranscodeProgressPartsKey(snapshot.VideoID)
+		partsKey := c.progressPartsKey(snapshot.VideoID)
 
 		pipe := c.redis.Pipeline()
-		pipe.HSet(ctx, partsKey, mediavo.PartFieldKey(snapshot.PartID), raw)
+		pipe.HSet(ctx, partsKey, c.partFieldKey(snapshot.PartID), raw)
 		pipe.Expire(ctx, partsKey, ttl)
 		_, _ = pipe.Exec(ctx)
 	}
@@ -94,12 +97,12 @@ func (c *ProgressCache) Clear(ctx context.Context, videoID, partID uint) {
 	defer cancel()
 
 	pipe := c.redis.Pipeline()
-	pipe.Del(cleanupCtx, mediavo.TranscodeProgressKey(videoID, partID))
+	pipe.Del(cleanupCtx, c.progressKey(videoID, partID))
 
 	if partID > 0 {
-		pipe.HDel(cleanupCtx, mediavo.TranscodeProgressPartsKey(videoID), mediavo.PartFieldKey(partID))
+		pipe.HDel(cleanupCtx, c.progressPartsKey(videoID), c.partFieldKey(partID))
 	} else {
-		pipe.Del(cleanupCtx, mediavo.TranscodeProgressPartsKey(videoID))
+		pipe.Del(cleanupCtx, c.progressPartsKey(videoID))
 	}
 
 	if _, err := pipe.Exec(cleanupCtx); err != nil && !errors.Is(err, redis.Nil) {
@@ -112,12 +115,12 @@ func (c *ProgressCache) Clear(ctx context.Context, videoID, partID uint) {
 }
 
 // Get 读取单条进度；未命中时返回 (nil, nil)。
-func (c *ProgressCache) Get(ctx context.Context, videoID, partID uint) (*mediavo.TranscodeProgress, error) {
+func (c *ProgressCache) Get(ctx context.Context, videoID, partID uint) (*mediadomain.TranscodeProgress, error) {
 	if c == nil || c.redis == nil || videoID == 0 {
 		return nil, nil
 	}
 
-	raw, err := c.redis.Get(ctx, mediavo.TranscodeProgressKey(videoID, partID)).Result()
+	raw, err := c.redis.Get(ctx, c.progressKey(videoID, partID)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return nil, nil
@@ -126,7 +129,7 @@ func (c *ProgressCache) Get(ctx context.Context, videoID, partID uint) (*mediavo
 		return nil, err
 	}
 
-	var p mediavo.TranscodeProgress
+	var p mediadomain.TranscodeProgress
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
 		return nil, err
 	}
@@ -135,9 +138,9 @@ func (c *ProgressCache) Get(ctx context.Context, videoID, partID uint) (*mediavo
 }
 
 // ByVideoIDs 批量读取视频维度进度：存在分P 进度时展开为各分P，否则取视频级 key。
-func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]mediavo.TranscodeProgress, error) {
+func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]mediadomain.TranscodeProgress, error) {
 	if c == nil || c.redis == nil || len(videoIDs) == 0 {
-		return []mediavo.TranscodeProgress{}, nil
+		return []mediadomain.TranscodeProgress{}, nil
 	}
 
 	seen := make(map[uint]struct{}, len(videoIDs))
@@ -157,7 +160,7 @@ func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]medi
 	}
 
 	if len(ids) == 0 {
-		return []mediavo.TranscodeProgress{}, nil
+		return []mediadomain.TranscodeProgress{}, nil
 	}
 
 	pipe := c.redis.Pipeline()
@@ -165,15 +168,15 @@ func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]medi
 	partCmds := make(map[uint]*redis.StringSliceCmd, len(ids))
 
 	for _, id := range ids {
-		videoCmds[id] = pipe.Get(ctx, mediavo.TranscodeProgressKey(id, 0))
-		partCmds[id] = pipe.HVals(ctx, mediavo.TranscodeProgressPartsKey(id))
+		videoCmds[id] = pipe.Get(ctx, c.progressKey(id, 0))
+		partCmds[id] = pipe.HVals(ctx, c.progressPartsKey(id))
 	}
 
 	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
 
-	out := make([]mediavo.TranscodeProgress, 0, len(ids))
+	out := make([]mediadomain.TranscodeProgress, 0, len(ids))
 
 	for _, id := range ids {
 		partValues := partCmds[id].Val()
@@ -196,9 +199,9 @@ func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]medi
 }
 
 // ByPairs 按显式 (videoId, partId) 组合批量读取进度。
-func (c *ProgressCache) ByPairs(ctx context.Context, pairs [][2]uint) ([]mediavo.TranscodeProgress, error) {
+func (c *ProgressCache) ByPairs(ctx context.Context, pairs [][2]uint) ([]mediadomain.TranscodeProgress, error) {
 	if c == nil || c.redis == nil || len(pairs) == 0 {
-		return []mediavo.TranscodeProgress{}, nil
+		return []mediadomain.TranscodeProgress{}, nil
 	}
 
 	keys := make([]string, 0, len(pairs))
@@ -208,11 +211,11 @@ func (c *ProgressCache) ByPairs(ctx context.Context, pairs [][2]uint) ([]mediavo
 			continue
 		}
 
-		keys = append(keys, mediavo.TranscodeProgressKey(pair[0], pair[1]))
+		keys = append(keys, c.progressKey(pair[0], pair[1]))
 	}
 
 	if len(keys) == 0 {
-		return []mediavo.TranscodeProgress{}, nil
+		return []mediadomain.TranscodeProgress{}, nil
 	}
 
 	vals, err := c.redis.MGet(ctx, keys...).Result()
@@ -220,7 +223,7 @@ func (c *ProgressCache) ByPairs(ctx context.Context, pairs [][2]uint) ([]mediavo
 		return nil, err
 	}
 
-	out := make([]mediavo.TranscodeProgress, 0, len(vals))
+	out := make([]mediadomain.TranscodeProgress, 0, len(vals))
 
 	for _, v := range vals {
 		s, ok := v.(string)
@@ -228,7 +231,7 @@ func (c *ProgressCache) ByPairs(ctx context.Context, pairs [][2]uint) ([]mediavo
 			continue
 		}
 
-		var p mediavo.TranscodeProgress
+		var p mediadomain.TranscodeProgress
 		if err := json.Unmarshal([]byte(s), &p); err != nil {
 			continue
 		}
@@ -240,7 +243,7 @@ func (c *ProgressCache) ByPairs(ctx context.Context, pairs [][2]uint) ([]mediavo
 }
 
 // Subscribe 订阅进度变更；返回的句柄由调用方负责 Close。
-func (c *ProgressCache) Subscribe(ctx context.Context) (mediaport.ProgressSubscription, error) {
+func (c *ProgressCache) Subscribe(ctx context.Context) (mediaapplication.ProgressSubscriptionPort, error) {
 	if c == nil || c.redis == nil {
 		return nil, errors.New("redis client unavailable")
 	}
@@ -262,18 +265,18 @@ type progressSubscription struct {
 	closeOnce sync.Once
 	closeErr  error
 	pubsub    *redis.PubSub
-	events    chan mediavo.TranscodeProgress
+	events    chan mediadomain.TranscodeProgress
 	logger    *zap.Logger
 }
 
-var _ mediaport.ProgressSubscription = (*progressSubscription)(nil)
+var _ mediaapplication.ProgressSubscriptionPort = (*progressSubscription)(nil)
 
 func newProgressSubscription(ctx context.Context, pubsub *redis.PubSub, logger *zap.Logger) *progressSubscription {
 	s := &progressSubscription{
 		ctx:    ctx,
 		done:   make(chan struct{}),
 		pubsub: pubsub,
-		events: make(chan mediavo.TranscodeProgress, 32),
+		events: make(chan mediadomain.TranscodeProgress, 32),
 		logger: logger,
 	}
 
@@ -312,7 +315,7 @@ func (s *progressSubscription) pump() {
 }
 
 // Events 返回解码后的进度快照通道。
-func (s *progressSubscription) Events() <-chan mediavo.TranscodeProgress {
+func (s *progressSubscription) Events() <-chan mediadomain.TranscodeProgress {
 	return s.events
 }
 
@@ -322,16 +325,35 @@ func (s *progressSubscription) Close() error {
 	return s.closeErr
 }
 
-func decodeTranscodeProgress(raw string, logger *zap.Logger) (mediavo.TranscodeProgress, bool) {
-	if strings.TrimSpace(raw) == "" {
-		return mediavo.TranscodeProgress{}, false
+// progressKey 构造视频/分P 进度的 Redis key。格式是既有缓存契约。
+func (c *ProgressCache) progressKey(videoID, partID uint) string {
+	if partID > 0 {
+		return fmt.Sprintf("%s%d:%d", constants.TranscodeProgressKeyPrefix, videoID, partID)
 	}
 
-	var p mediavo.TranscodeProgress
+	return fmt.Sprintf("%s%d", constants.TranscodeProgressKeyPrefix, videoID)
+}
+
+// progressPartsKey 构造某视频下各分P 进度的哈希 key。
+func (c *ProgressCache) progressPartsKey(videoID uint) string {
+	return fmt.Sprintf("%s%d:parts", constants.TranscodeProgressKeyPrefix, videoID)
+}
+
+// partFieldKey 返回分P 进度在哈希中的字段名。
+func (c *ProgressCache) partFieldKey(partID uint) string {
+	return strconv.FormatUint(uint64(partID), 10)
+}
+
+func decodeTranscodeProgress(raw string, logger *zap.Logger) (mediadomain.TranscodeProgress, bool) {
+	if strings.TrimSpace(raw) == "" {
+		return mediadomain.TranscodeProgress{}, false
+	}
+
+	var p mediadomain.TranscodeProgress
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
 		logger.Debug("skip invalid transcode progress json", zap.Error(err))
 
-		return mediavo.TranscodeProgress{}, false
+		return mediadomain.TranscodeProgress{}, false
 	}
 
 	return p, true

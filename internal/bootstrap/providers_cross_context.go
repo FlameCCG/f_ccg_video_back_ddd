@@ -15,11 +15,9 @@ import (
 	socialapp "f_ccg_video_back_ddd/internal/application/social"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/bootstrap/adapters"
-	ratelimitinfra "f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
 	ipregioninfra "f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	commentrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/comment"
 	videorepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
-	schedulerinfra "f_ccg_video_back_ddd/internal/infrastructure/scheduler"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 
 	"github.com/google/wire"
@@ -51,9 +49,8 @@ var CrossContextProviderSet = wire.NewSet(
 	VideoProviderSet,
 	PlatformProviderSet,
 	WebSocketProviderSet,
-	wire.Bind(new(schedulerinfra.UploadCleanupJob), new(*videoapp.UploadCleanupService)),
+	wire.Bind(new(platformapp.UploadCleanupJob), new(*videoapp.UploadCleanupService)),
 
-	wire.Bind(new(identityapp.RateLimiter), new(*ratelimitinfra.Limiter)),
 	wire.Bind(new(chatapp.NotificationBadgeInvalidator), new(*notificationapp.CountService)),
 	adapters.NewNotifier,
 	wire.Bind(new(commentapp.Notifier), new(*adapters.Notifier)),
@@ -79,6 +76,7 @@ var CrossContextProviderSet = wire.NewSet(
 	wire.Bind(new(identityapp.UserRoleBinder), new(*adapters.IdentityUserRoleBinder)),
 	adapters.NewIdentityDefaultFolderEnsurer,
 	wire.Bind(new(identityapp.DefaultFolderEnsurer), new(*adapters.IdentityDefaultFolderEnsurer)),
+	wire.Bind(new(identityapp.DefaultFolderInitializer), new(*videoapp.DefaultFolderService)),
 	wire.Bind(new(ipUtils.RegionResolver), new(*ipregioninfra.Resolver)),
 
 	wire.Bind(new(contentopsapp.LoginExpGranter), new(*identityapp.ExpService)),
@@ -90,7 +88,7 @@ var CrossContextProviderSet = wire.NewSet(
 	wire.Bind(new(rbacapp.MenuSuggestionGenerator), new(*aiapp.Service)),
 	wire.Bind(new(socialapp.CreatorFansMetric), new(*identityapp.CreatorAnalyticsService)),
 	wire.Bind(new(socialapp.UserSearchSyncer), new(*searchapp.UserIndexService)),
-	wire.Bind(new(platformapp.UserStatusWriter), new(*identityapp.UserStatusService)),
+	wire.Bind(new(identityapp.UserStatusRefresher), new(*identityapp.UserStatusService)),
 
 	wire.Bind(new(videoapp.CreatorAnalytics), new(*identityapp.CreatorAnalyticsService)),
 	adapters.NewUploadQuotaExemption,

@@ -10,24 +10,20 @@ import (
 	"strings"
 
 	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
-	mediaentity "f_ccg_video_back_ddd/internal/domain/media/entity"
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	mediaservice "f_ccg_video_back_ddd/internal/domain/media/service"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
 )
 
 // dashPipelineRequest 是 DASH 管线的一次运行请求。
 type dashPipelineRequest struct {
-	task       mediaentity.TranscodeTask
-	policy     *mediavo.TranscodePolicy
+	task       mediadomain.TranscodeTask
+	policy     *mediadomain.TranscodePolicy
 	checkpoint Checkpoint
 	srcPath    string
-	driver     mediaport.StorageDriver
-	meta       mediavo.VideoMeta
-	plan       mediaservice.PipelinePlan
+	driver     StorageDriver
+	meta       mediadomain.VideoMeta
+	plan       mediadomain.PipelinePlan
 	tracker    *mediaruntime.TranscodeProgressTracker
 }
 
@@ -76,7 +72,7 @@ func (s *TranscodeService) runDASHAttempt(
 	req dashPipelineRequest,
 	useGPU bool,
 ) (string, int64, error) {
-	targets := mediaservice.BuildDashTargets(
+	targets := (mediadomain.OutputPlanner{}).BuildDashTargets(
 		req.plan.DashResolutions,
 		req.plan.PixelHeight,
 		req.plan.ClassHeight,
@@ -102,7 +98,7 @@ func (s *TranscodeService) runDASHAttempt(
 		return "", 0, err
 	}
 
-	req.tracker.MarkPipelineUploading(ctx, mediavo.TranscodePipelineDASH, "上传 DASH 资源")
+	req.tracker.MarkPipelineUploading(ctx, mediadomain.TranscodePipelineDASH, "上传 DASH 资源")
 
 	return s.uploadDASHDir(ctx, req.task, req.driver, committedDir)
 }
@@ -113,8 +109,8 @@ func (s *TranscodeService) runDASHAttempt(
 // 保证 manifest 可达时其引用的 representation 均已存在。
 func (s *TranscodeService) uploadDASHDir(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
-	driver mediaport.StorageDriver,
+	task mediadomain.TranscodeTask,
+	driver StorageDriver,
 	dir string,
 ) (string, int64, error) {
 	entries, err := os.ReadDir(dir)
@@ -127,8 +123,8 @@ func (s *TranscodeService) uploadDASHDir(
 	hasManifest := false
 
 	for _, entry := range entries {
-		if entry.IsDir() || entry.Name() == mediavo.DashManifestName {
-			if entry.Name() == mediavo.DashManifestName {
+		if entry.IsDir() || entry.Name() == mediadomain.DashManifestName {
+			if entry.Name() == mediadomain.DashManifestName {
 				hasManifest = true
 			}
 
@@ -147,7 +143,7 @@ func (s *TranscodeService) uploadDASHDir(
 		return "", 0, errors.New("dash manifest not produced")
 	}
 
-	mpdURL, size, err := s.uploadOneDASHFile(ctx, task, driver, dir, mediavo.DashManifestName)
+	mpdURL, size, err := s.uploadOneDASHFile(ctx, task, driver, dir, mediadomain.DashManifestName)
 	if err != nil {
 		return "", 0, fmt.Errorf("upload dash manifest failed: %w", err)
 	}
@@ -160,8 +156,8 @@ func (s *TranscodeService) uploadDASHDir(
 // uploadOneDASHFile 上传 DASH 目录中的单个文件（按体积估算超时）。
 func (s *TranscodeService) uploadOneDASHFile(
 	ctx context.Context,
-	task mediaentity.TranscodeTask,
-	driver mediaport.StorageDriver,
+	task mediadomain.TranscodeTask,
+	driver StorageDriver,
 	dir, name string,
 ) (string, int64, error) {
 	f, err := os.Open(filepath.Join(dir, name)) //nolint:gosec // 路径来自本进程生成的断点目录产物
@@ -187,7 +183,7 @@ func (s *TranscodeService) uploadOneDASHFile(
 	url, size, err := driver.SaveTranscodeVideo(uploadCtx, rel, fi.Size(), f, DashContentType(name), label)
 	if err != nil {
 		if errors.Is(uploadCtx.Err(), context.DeadlineExceeded) {
-			return "", 0, fmt.Errorf("%w after %s for %s (%d bytes): %w", mediaerrors.ErrTranscodeUploadTimeout, uploadTimeout, name, fi.Size(), err)
+			return "", 0, fmt.Errorf("%w after %s for %s (%d bytes): %w", mediaruntime.ErrTranscodeUploadTimeout, uploadTimeout, name, fi.Size(), err)
 		}
 
 		return "", 0, err

@@ -29,6 +29,5 @@ func (h *CaptchaHandler) log() *zap.Logger {
 	if h == nil {
 		return zap.NewNop()
 	}
-
 	return loggerOrNop(h.logger)
 }

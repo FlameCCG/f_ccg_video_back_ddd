@@ -3,9 +3,7 @@ package comment
 import (
 	"context"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
-	commententity "f_ccg_video_back_ddd/internal/domain/comment/entity"
-	commentrepo "f_ccg_video_back_ddd/internal/domain/comment/repository"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
@@ -21,7 +19,7 @@ func (s *DeleteService) Delete(ctx context.Context, userID, commentID uint) erro
 	}
 
 	if target == nil {
-		return commenterrors.ErrCommentNotFound
+		return commentdomain.ErrCommentNotFound
 	}
 
 	if err := s.authorizeDelete(ctx, target, userID); err != nil {
@@ -50,7 +48,7 @@ func (s *DeleteService) Delete(ctx context.Context, userID, commentID uint) erro
 			if err := s.comments.DeleteByRootID(txCtx, commentID); err != nil {
 				return err
 			}
-		} else if err := s.comments.DecrReplyCount(txCtx, *target.RootID); err != nil {
+		} else if err := s.comments.DecrReplyCount(txCtx, *target.RootID()); err != nil {
 			// 是子评论，更新根评论的回复数
 			return err
 		}
@@ -67,9 +65,9 @@ func (s *DeleteService) Delete(ctx context.Context, userID, commentID uint) erro
 	}
 
 	// 更新视频统计缓存
-	if target.VideoID > 0 {
-		s.videos.UpdateCommentCount(ctx, target.VideoID, -deleteCount)
-		s.hotScore.RecordHotScoreForComment(ctx, target.VideoID, -deleteCount)
+	if target.VideoID() > 0 {
+		s.videos.UpdateCommentCount(ctx, target.VideoID(), -deleteCount)
+		s.hotScore.RecordHotScoreForComment(ctx, target.VideoID(), -deleteCount)
 	}
 
 	for _, id := range relatedIDs {
@@ -80,49 +78,45 @@ func (s *DeleteService) Delete(ctx context.Context, userID, commentID uint) erro
 }
 
 // authorizeDelete 删除鉴权：评论作者直接放行，否则要求是作品作者。
-func (s *DeleteService) authorizeDelete(ctx context.Context, target *commententity.Comment, userID uint) error {
+func (s *DeleteService) authorizeDelete(ctx context.Context, target *commentdomain.Comment, userID uint) error {
 	switch target.DeletionDecision(userID) {
-	case commententity.DeleteAllowed:
-		return nil
-	case commententity.DeleteNeedsVideoAuthorCheck:
-		isAuthor, err := isVideoAuthor(ctx, s.related, userID, target.VideoID)
+	case commentdomain.DeleteAllowed:
+		return target.EnsureDeletionAuthorized(userID, false)
+	case commentdomain.DeleteNeedsVideoAuthorCheck:
+		isAuthor, err := (authorGate{related: s.related}).video(ctx, userID, target.VideoID())
 		if err != nil {
 			return err
 		}
 
-		if !isAuthor {
-			return commenterrors.ErrDeleteForbidden
-		}
-
-		return nil
-	case commententity.DeleteNeedsDynamicAuthorCheck:
-		isAuthor, err := isDynamicAuthor(ctx, s.related, userID, target.DynamicID)
+		return target.EnsureDeletionAuthorized(userID, isAuthor)
+	case commentdomain.DeleteNeedsDynamicAuthorCheck:
+		isAuthor, err := (authorGate{related: s.related}).dynamic(ctx, userID, target.DynamicID())
 		if err != nil {
 			return err
 		}
 
-		if !isAuthor {
-			return commenterrors.ErrDeleteForbidden
-		}
-
-		return nil
+		return target.EnsureDeletionAuthorized(userID, isAuthor)
 	default:
-		return commenterrors.ErrDeleteForbidden
+		return target.EnsureDeletionAuthorized(userID, false)
 	}
 }
 
 // DeleteService 负责删除与计数清理。
 type DeleteService struct {
 	txm       tx.Manager
-	comments  commentrepo.Repository
-	likes     commentrepo.LikeRepository
+	comments  commentdomain.Repository
+	likes     commentdomain.LikeRepository
 	related   RelatedQuery
 	likeCache LikeCache
 	videos    VideoCommentCounter
 	hotScore  VideoHotScoreRecorder
 	logger    *zap.Logger
+	deletes   commentdomain.DeletePolicy
 }
 
-func NewDeleteService(txm tx.Manager, comments commentrepo.Repository, likes commentrepo.LikeRepository, related RelatedQuery, likeCache LikeCache, videos VideoCommentCounter, hotScore VideoHotScoreRecorder, logger *zap.Logger) *DeleteService {
-	return &DeleteService{txm: txm, comments: comments, likes: likes, related: related, likeCache: likeCache, videos: videos, hotScore: hotScore, logger: logger}
+func NewDeleteService(txm tx.Manager, comments commentdomain.Repository, likes commentdomain.LikeRepository, related RelatedQuery, likeCache LikeCache, videos VideoCommentCounter, hotScore VideoHotScoreRecorder, logger *zap.Logger) *DeleteService {
+	return &DeleteService{
+		txm: txm, comments: comments, likes: likes, related: related, likeCache: likeCache,
+		videos: videos, hotScore: hotScore, logger: logger, deletes: commentdomain.DeletePolicy{},
+	}
 }

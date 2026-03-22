@@ -5,14 +5,13 @@ import (
 	"errors"
 	"time"
 
-	identityerrors "f_ccg_video_back_ddd/internal/domain/identity/domainerr"
-	identityrepo "f_ccg_video_back_ddd/internal/domain/identity/repository"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 )
 
 // CreatorAnalyticsService 创作中心数据分析用例服务。
 type CreatorAnalyticsService struct {
 	metrics CreatorMetricStore
-	users   identityrepo.UserRepository
+	users   identitydomain.UserRepository
 	videos  CreatorVideoStatsQuery
 	fans    FansCounter
 }
@@ -20,7 +19,7 @@ type CreatorAnalyticsService struct {
 // NewCreatorAnalyticsService 构造创作中心分析服务。
 func NewCreatorAnalyticsService(
 	metrics CreatorMetricStore,
-	users identityrepo.UserRepository,
+	users identitydomain.UserRepository,
 	videos CreatorVideoStatsQuery,
 	fans FansCounter,
 ) *CreatorAnalyticsService {
@@ -78,19 +77,19 @@ func (s *CreatorAnalyticsService) Analytics(
 	}
 
 	if creatorID == 0 {
-		return nil, identityerrors.ErrUserNotLogin
+		return nil, identitydomain.ErrUserNotLogin
 	}
 
 	if ctx == nil {
 		ctx = context.TODO()
 	}
 
-	days, normalized, err := buildRangeDays(rangeKey)
+	days, normalized, err := s.buildRangeDays(rangeKey)
 	if err != nil {
 		return nil, err
 	}
 
-	metricType, err = normalizeCreatorMetricType(metricType)
+	metricType, err = s.normalizeCreatorMetricType(metricType)
 	if err != nil {
 		return nil, err
 	}
@@ -114,14 +113,14 @@ func (s *CreatorAnalyticsService) Analytics(
 		Type:   metricType,
 		X:      labels,
 		Values: values,
-		Total:  sumInt64(values),
+		Total:  s.sumInt64(values),
 	}, nil
 }
 
 // Overview 创作中心六项总览。
 func (s *CreatorAnalyticsService) Overview(ctx context.Context, creatorID uint) (*CreatorOverview, error) {
 	if creatorID == 0 {
-		return nil, identityerrors.ErrUserNotLogin
+		return nil, identitydomain.ErrUserNotLogin
 	}
 
 	if ctx == nil {
@@ -134,7 +133,7 @@ func (s *CreatorAnalyticsService) Overview(ctx context.Context, creatorID uint) 
 	}
 
 	if username == "" {
-		return nil, identityerrors.ErrUserNotFound
+		return nil, identitydomain.ErrUserNotFound
 	}
 
 	overview := &CreatorOverview{
@@ -156,7 +155,7 @@ func (s *CreatorAnalyticsService) Overview(ctx context.Context, creatorID uint) 
 }
 
 // buildRangeDays 按 rangeKey 展开日期序列，并返回规范化后的 range 名。
-func buildRangeDays(rangeKey string) ([]time.Time, string, error) {
+func (s *CreatorAnalyticsService) buildRangeDays(rangeKey string) ([]time.Time, string, error) {
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 
@@ -164,21 +163,21 @@ func buildRangeDays(rangeKey string) ([]time.Time, string, error) {
 	case "", "7d", "7", "week":
 		start := todayStart.AddDate(0, 0, -6)
 
-		return buildDaySeries(start, todayStart), "7d", nil
+		return s.buildDaySeries(start, todayStart), "7d", nil
 	case "30d", "30":
 		start := todayStart.AddDate(0, 0, -29)
 
-		return buildDaySeries(start, todayStart), "30d", nil
+		return s.buildDaySeries(start, todayStart), "30d", nil
 	case "month", "1m":
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
 
-		return buildDaySeries(start, todayStart), "month", nil
+		return s.buildDaySeries(start, todayStart), "month", nil
 	default:
 		return nil, "", ErrCreatorRangeInvalid
 	}
 }
 
-func buildDaySeries(start, end time.Time) []time.Time {
+func (s *CreatorAnalyticsService) buildDaySeries(start, end time.Time) []time.Time {
 	if end.Before(start) {
 		start, end = end, start
 	}
@@ -193,7 +192,7 @@ func buildDaySeries(start, end time.Time) []time.Time {
 	return out
 }
 
-func normalizeCreatorMetricType(metricType string) (string, error) {
+func (s *CreatorAnalyticsService) normalizeCreatorMetricType(metricType string) (string, error) {
 	switch metricType {
 	case "", CreatorAnalyticsTypeViews:
 		return CreatorAnalyticsTypeViews, nil
@@ -212,7 +211,7 @@ func normalizeCreatorMetricType(metricType string) (string, error) {
 	}
 }
 
-func sumInt64(values []int64) int64 {
+func (s *CreatorAnalyticsService) sumInt64(values []int64) int64 {
 	var total int64
 	for _, v := range values {
 		total += v

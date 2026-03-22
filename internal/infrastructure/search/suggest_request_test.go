@@ -7,7 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
+
 	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
 )
@@ -19,9 +20,9 @@ func TestFieldSuggestFiltersPublishedDocuments(t *testing.T) {
 		docType       string
 		publishedOnly bool
 	}{
-		{searchvo.DocTypeVideo, true},
-		{searchvo.DocTypeTag, true},
-		{searchvo.DocTypeUser, false},
+		{searchdomain.DocTypeVideo, true},
+		{searchdomain.DocTypeTag, true},
+		{searchdomain.DocTypeUser, false},
 	} {
 		t.Run(test.docType, func(t *testing.T) {
 			t.Parallel()

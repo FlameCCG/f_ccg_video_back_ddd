@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
-
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
 )
 
 const (
@@ -245,7 +243,7 @@ func WithProgressStallGuard(
 						onStall(idle.Round(time.Second), stallLimit)
 					}
 
-					cancelCause(fmt.Errorf("%w: no out_time for %s (limit %s)", mediaerrors.ErrTranscodeProgressStalled, idle.Round(time.Second), stallLimit))
+					cancelCause(fmt.Errorf("%w: no out_time for %s (limit %s)", ErrTranscodeProgressStalled, idle.Round(time.Second), stallLimit))
 
 					return
 				}
@@ -263,12 +261,12 @@ func ClassifyFFmpegCtxError(runCtx context.Context, waitErr error, encodeTimeout
 	}
 
 	cause := context.Cause(runCtx)
-	if errors.Is(cause, mediaerrors.ErrTranscodeProgressStalled) {
+	if errors.Is(cause, ErrTranscodeProgressStalled) {
 		return fmt.Errorf("ffmpeg pipeline failed: %w, stderr: %s", cause, stderr)
 	}
 
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) || errors.Is(cause, context.DeadlineExceeded) {
-		return fmt.Errorf("ffmpeg pipeline failed: %w after %s: %v, stderr: %s", mediaerrors.ErrTranscodeEncodeTimeout, encodeTimeout, waitErr, stderr)
+		return fmt.Errorf("ffmpeg pipeline failed: %w after %s: %v, stderr: %s", ErrTranscodeEncodeTimeout, encodeTimeout, waitErr, stderr)
 	}
 
 	if cause != nil && !errors.Is(cause, context.Canceled) {

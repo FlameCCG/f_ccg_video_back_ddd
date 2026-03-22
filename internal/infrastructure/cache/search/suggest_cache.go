@@ -7,10 +7,12 @@
 package search
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 )
 
 // suggestCacheTTL 联想结果的进程内缓存有效期.
@@ -36,8 +38,9 @@ func NewSuggestionCache() *SuggestionCache {
 	return &SuggestionCache{items: make(map[string]suggestCacheEntry)}
 }
 
-// Load 读取缓存；未命中或已过期返回 false，并顺手清掉过期条目。
-func (c *SuggestionCache) Load(key string) ([]app.SuggestionItem, bool) {
+// Load 按前缀和候选数读取缓存；未命中或已过期返回 false，并顺手清掉过期条目。
+func (c *SuggestionCache) Load(prefix string, size int) ([]app.SuggestionItem, bool) {
+	key := c.cacheKey(prefix, size)
 	c.mu.RLock()
 	entry, ok := c.items[key]
 	c.mu.RUnlock()
@@ -52,21 +55,26 @@ func (c *SuggestionCache) Load(key string) ([]app.SuggestionItem, bool) {
 		return nil, false
 	}
 
-	return cloneSuggestionItems(entry.items), true
+	return c.cloneItems(entry.items), true
 }
 
-// Store 写入缓存并刷新过期时间。
-func (c *SuggestionCache) Store(key string, items []app.SuggestionItem) {
+// Store 按前缀和候选数写入缓存并刷新过期时间。
+func (c *SuggestionCache) Store(prefix string, size int, items []app.SuggestionItem) {
 	c.mu.Lock()
-	c.items[key] = suggestCacheEntry{
-		items:     cloneSuggestionItems(items),
+	c.items[c.cacheKey(prefix, size)] = suggestCacheEntry{
+		items:     c.cloneItems(items),
 		expiresAt: time.Now().Add(suggestCacheTTL),
 	}
 	c.mu.Unlock()
 }
 
-// cloneSuggestionItems 拷贝候选列表，避免缓存内容被调用方就地修改。
-func cloneSuggestionItems(items []app.SuggestionItem) []app.SuggestionItem {
+// cacheKey 生成联想缓存键（小写前缀 + 候选数）。
+func (c *SuggestionCache) cacheKey(prefix string, size int) string {
+	return (searchdomain.KeywordPolicy{}).LowerKeyword(prefix) + "|" + strconv.Itoa(size)
+}
+
+// cloneItems 拷贝候选列表，避免缓存内容被调用方就地修改。
+func (c *SuggestionCache) cloneItems(items []app.SuggestionItem) []app.SuggestionItem {
 	if len(items) == 0 {
 		return []app.SuggestionItem{}
 	}

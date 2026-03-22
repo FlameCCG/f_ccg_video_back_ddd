@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	rbacentity "f_ccg_video_back_ddd/internal/domain/rbac/entity"
+	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
 )
 
@@ -21,11 +21,11 @@ func TestOpenAPIMetadataCoversRegisteredAPIRoutes(t *testing.T) {
 	}
 	for _, line := range strings.Split(string(raw), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 2 || !strings.HasPrefix(fields[1], "/v1/") || !rbacentity.IsResourceMethod(fields[0]) {
+		if len(fields) != 2 || !strings.HasPrefix(fields[1], "/v1/") || !(rbacdomain.ApiResource{}).IsResourceMethod(fields[0]) {
 			continue
 		}
 		t.Run(fields[0]+" "+fields[1], func(t *testing.T) {
-			item := rbacentity.LookupResourceMeta(meta, fields[0], fields[1])
+			item := (rbacdomain.ApiResource{}).LookupMeta(meta, fields[0], fields[1])
 			if strings.TrimSpace(item.Summary) == "" || len(item.Tags) == 0 {
 				t.Errorf("API resource must have an OpenAPI summary and tags: %+v", item)
 			}

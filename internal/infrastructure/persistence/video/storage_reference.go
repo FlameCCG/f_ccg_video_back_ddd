@@ -2,10 +2,9 @@ package video
 
 import (
 	"database/sql"
+	"f_ccg_video_back_ddd/internal/infrastructure/media/artifactpath"
 	"path"
 	"strings"
-
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
 
 	"gorm.io/gorm"
 )
@@ -13,7 +12,7 @@ import (
 // legacyStoragePathReferenced 兼容旧资源行中的完整 URL 和 bucket 前缀。
 // 不能直接用 LIKE 的结果决定保留：查询参数和同名不同目录的文件不构成引用。
 func legacyStoragePathReferenced(db *gorm.DB, storedPath string) (bool, error) {
-	normalized := mediavo.NormalizeStoredPath(storedPath)
+	normalized := (artifactpath.Policy{}).NormalizeStoredPath(storedPath)
 	if normalized == "" || normalized == "/" {
 		return false, nil
 	}
@@ -47,7 +46,7 @@ func legacyStorageReferenceInTable(db *gorm.DB, table, column, pattern, normaliz
 		if err := rows.Scan(&stored); err != nil {
 			return false, err
 		}
-		if stored.Valid && mediavo.StoredPathMatchesRelative(stored.String, normalized) {
+		if stored.Valid && (artifactpath.Policy{}).StoredPathMatchesRelative(stored.String, normalized) {
 			return true, nil
 		}
 	}

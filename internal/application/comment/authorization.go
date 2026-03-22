@@ -3,33 +3,36 @@ package comment
 import (
 	"context"
 
-	commenterrors "f_ccg_video_back_ddd/internal/domain/comment/domainerr"
+	commentdomain "f_ccg_video_back_ddd/internal/domain/comment"
 )
 
-// isVideoAuthor 判断用户是否为视频作者（用于删除/置顶评论的授权）。
-func isVideoAuthor(ctx context.Context, related RelatedQuery, userID, videoID uint) (bool, error) {
-	ref, err := related.VideoAuthorRef(ctx, videoID)
+// authorGate 用已读到的作品归属判断操作者是不是作者。
+type authorGate struct {
+	related RelatedQuery
+}
+
+func (g authorGate) video(ctx context.Context, userID, videoID uint) (bool, error) {
+	ref, err := g.related.VideoAuthorRef(ctx, videoID)
 	if err != nil {
 		return false, err
 	}
 
 	if ref == nil {
-		return false, commenterrors.ErrRecordNotFound
+		return false, commentdomain.ErrRecordNotFound
 	}
 
-	return ref.AuthorUserID == userID, nil
+	return (commentdomain.WorkAuthorship{AuthorID: ref.AuthorUserID}).OwnedBy(userID), nil
 }
 
-// isDynamicAuthor 判断用户是否为动态作者。
-func isDynamicAuthor(ctx context.Context, related RelatedQuery, userID, dynamicID uint) (bool, error) {
-	brief, err := related.DynamicBrief(ctx, dynamicID)
+func (g authorGate) dynamic(ctx context.Context, userID, dynamicID uint) (bool, error) {
+	brief, err := g.related.DynamicBrief(ctx, dynamicID)
 	if err != nil {
 		return false, err
 	}
 
 	if brief == nil {
-		return false, commenterrors.ErrRecordNotFound
+		return false, commentdomain.ErrRecordNotFound
 	}
 
-	return brief.UserID == userID, nil
+	return (commentdomain.WorkAuthorship{AuthorID: brief.UserID}).OwnedBy(userID), nil
 }

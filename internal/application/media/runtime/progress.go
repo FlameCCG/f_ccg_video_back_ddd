@@ -7,8 +7,7 @@ import (
 	"sync"
 	"time"
 
-	mediaport "f_ccg_video_back_ddd/internal/domain/media/port"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 )
 
 const (
@@ -26,24 +25,24 @@ type progressStageWeight struct {
 // progressStageOrder 定义展示顺序与默认权重（总和 = 100）。
 func progressStageOrder() [7]progressStageWeight {
 	return [7]progressStageWeight{
-		{mediavo.TranscodeStagePrepare, 5},
-		{mediavo.TranscodeStageProbe, 5},
-		{mediavo.TranscodeStageSaveOriginal, 5},
-		{mediavo.TranscodeStageNormalize, 20},
-		{mediavo.TranscodeStageMultiRes, 45},
-		{mediavo.TranscodeStageDash, 15},
-		{mediavo.TranscodeStageCleanup, 5},
+		{mediadomain.TranscodeStagePrepare, 5},
+		{mediadomain.TranscodeStageProbe, 5},
+		{mediadomain.TranscodeStageSaveOriginal, 5},
+		{mediadomain.TranscodeStageNormalize, 20},
+		{mediadomain.TranscodeStageMultiRes, 45},
+		{mediadomain.TranscodeStageDash, 15},
+		{mediadomain.TranscodeStageCleanup, 5},
 	}
 }
 
 // ProgressFailObserver 在任务被标记失败时回调，供基础设施层记录日志。
-type ProgressFailObserver func(snapshot mediavo.TranscodeProgress)
+type ProgressFailObserver func(snapshot mediadomain.TranscodeProgress)
 
 // TranscodeProgressTracker 按阶段权重跟踪单个任务的进度，通过注入的 ProgressStore 持久化快照。
 type TranscodeProgressTracker struct {
 	mu sync.Mutex
 
-	store  mediaport.ProgressStore
+	store  ProgressStore
 	onFail ProgressFailObserver
 
 	videoID uint
@@ -65,7 +64,7 @@ type TranscodeProgressTracker struct {
 
 	lastWrite   time.Time
 	lastPercent float64
-	pipelines   map[string]*mediavo.TranscodePipelineProgress
+	pipelines   map[string]*mediadomain.TranscodePipelineProgress
 }
 
 // NewTranscodeProgressTracker 为视频或分 P 任务创建进度跟踪器。
@@ -73,7 +72,7 @@ type TranscodeProgressTracker struct {
 // store 为 nil 时仅在内存累计进度，不写 Redis。
 func NewTranscodeProgressTracker(
 	videoID, partID uint,
-	store mediaport.ProgressStore,
+	store ProgressStore,
 	onFail ProgressFailObserver,
 ) *TranscodeProgressTracker {
 	return &TranscodeProgressTracker{
@@ -81,12 +80,12 @@ func NewTranscodeProgressTracker(
 		onFail:    onFail,
 		videoID:   videoID,
 		partID:    partID,
-		status:    mediavo.TranscodeStatusRunning,
-		stage:     mediavo.TranscodeStagePrepare,
+		status:    mediadomain.TranscodeStatusRunning,
+		stage:     mediadomain.TranscodeStagePrepare,
 		completed: make(map[string]bool),
 		skipped:   make(map[string]bool),
 		startedAt: time.Now(),
-		pipelines: make(map[string]*mediavo.TranscodePipelineProgress),
+		pipelines: make(map[string]*mediadomain.TranscodePipelineProgress),
 	}
 }
 
@@ -139,9 +138,9 @@ func (t *TranscodeProgressTracker) ConfigurePipeline(ctx context.Context, name, 
 	res := append([]uint16(nil), resolutions...)
 
 	t.mu.Lock()
-	t.pipelines[name] = &mediavo.TranscodePipelineProgress{
+	t.pipelines[name] = &mediadomain.TranscodePipelineProgress{
 		Name:        name,
-		Status:      mediavo.TranscodeStatusQueued,
+		Status:      mediadomain.TranscodeStatusQueued,
 		Message:     message,
 		Resolutions: res,
 		UpdatedAt:   time.Now(),
@@ -153,8 +152,8 @@ func (t *TranscodeProgressTracker) ConfigurePipeline(ctx context.Context, name, 
 
 // StartPipeline 把一条已登记的管线标记为编码中。
 func (t *TranscodeProgressTracker) StartPipeline(ctx context.Context, name, message string) {
-	t.updatePipeline(ctx, name, func(p *mediavo.TranscodePipelineProgress) {
-		p.Status = mediavo.TranscodeStatusRunning
+	t.updatePipeline(ctx, name, func(p *mediadomain.TranscodePipelineProgress) {
+		p.Status = mediadomain.TranscodeStatusRunning
 		p.Message = message
 		p.Error = ""
 	}, true)
@@ -188,7 +187,7 @@ func (t *TranscodeProgressTracker) UpdatePipelineProgress(ctx context.Context, n
 		percent = 99.5
 	}
 
-	p.Status = mediavo.TranscodeStatusRunning
+	p.Status = mediadomain.TranscodeStatusRunning
 	p.Percent = percent
 	p.UpdatedAt = time.Now()
 	t.outTimeSec = outTimeSec
@@ -199,8 +198,8 @@ func (t *TranscodeProgressTracker) UpdatePipelineProgress(ctx context.Context, n
 
 // MarkPipelineUploading 编码完成、外部存储尚未落定前，把管线固定在 99.5%。
 func (t *TranscodeProgressTracker) MarkPipelineUploading(ctx context.Context, name, message string) {
-	t.updatePipeline(ctx, name, func(p *mediavo.TranscodePipelineProgress) {
-		p.Status = mediavo.TranscodeStatusRunning
+	t.updatePipeline(ctx, name, func(p *mediadomain.TranscodePipelineProgress) {
+		p.Status = mediadomain.TranscodeStatusRunning
 		p.Percent = 99.5
 		p.Message = message
 	}, true)
@@ -208,9 +207,9 @@ func (t *TranscodeProgressTracker) MarkPipelineUploading(ctx context.Context, na
 
 // CompletePipeline 把一条管线标记为整体成功或整体失败。
 func (t *TranscodeProgressTracker) CompletePipeline(ctx context.Context, name string, pipelineErr error) {
-	t.updatePipeline(ctx, name, func(p *mediavo.TranscodePipelineProgress) {
+	t.updatePipeline(ctx, name, func(p *mediadomain.TranscodePipelineProgress) {
 		if pipelineErr == nil {
-			p.Status = mediavo.TranscodeStatusSucceeded
+			p.Status = mediadomain.TranscodeStatusSucceeded
 			p.Percent = 100
 			p.Message = "Pipeline 完成"
 			p.Error = ""
@@ -218,7 +217,7 @@ func (t *TranscodeProgressTracker) CompletePipeline(ctx context.Context, name st
 			return
 		}
 
-		p.Status = mediavo.TranscodeStatusFailed
+		p.Status = mediadomain.TranscodeStatusFailed
 		p.Error = errorString(pipelineErr)
 		p.Message = "Pipeline 失败"
 	}, true)
@@ -226,8 +225,8 @@ func (t *TranscodeProgressTracker) CompletePipeline(ctx context.Context, name st
 
 // SkipPipeline 把一条已登记的管线标记为有意不执行。
 func (t *TranscodeProgressTracker) SkipPipeline(ctx context.Context, name, message string) {
-	t.updatePipeline(ctx, name, func(p *mediavo.TranscodePipelineProgress) {
-		p.Status = mediavo.TranscodePipelineSkipped
+	t.updatePipeline(ctx, name, func(p *mediadomain.TranscodePipelineProgress) {
+		p.Status = mediadomain.TranscodePipelineSkipped
 		p.Message = message
 	}, true)
 }
@@ -235,7 +234,7 @@ func (t *TranscodeProgressTracker) SkipPipeline(ctx context.Context, name, messa
 func (t *TranscodeProgressTracker) updatePipeline(
 	ctx context.Context,
 	name string,
-	update func(*mediavo.TranscodePipelineProgress),
+	update func(*mediadomain.TranscodePipelineProgress),
 	force bool,
 ) {
 	if t == nil || update == nil {
@@ -306,11 +305,11 @@ func (t *TranscodeProgressTracker) EnterStage(ctx context.Context, stage, messag
 
 	t.mu.Lock()
 	// 推进时把上一个阶段标记为完成。
-	if t.stage != "" && t.stage != stage && t.stage != mediavo.TranscodeStageQueued {
+	if t.stage != "" && t.stage != stage && t.stage != mediadomain.TranscodeStageQueued {
 		t.completed[t.stage] = true
 	}
 
-	t.status = mediavo.TranscodeStatusRunning
+	t.status = mediadomain.TranscodeStatusRunning
 	t.stage = stage
 	t.stagePercent = 0
 	t.outTimeSec = 0
@@ -380,8 +379,8 @@ func (t *TranscodeProgressTracker) Succeed(ctx context.Context) {
 		t.completed[s.name] = true
 	}
 
-	t.status = mediavo.TranscodeStatusSucceeded
-	t.stage = mediavo.TranscodeStageCleanup
+	t.status = mediadomain.TranscodeStatusSucceeded
+	t.stage = mediadomain.TranscodeStageCleanup
 	t.stagePercent = 1
 	t.message = "转码完成"
 	t.errMsg = ""
@@ -397,7 +396,7 @@ func (t *TranscodeProgressTracker) Fail(ctx context.Context, errMsg string) {
 	}
 
 	t.mu.Lock()
-	t.status = mediavo.TranscodeStatusFailed
+	t.status = mediadomain.TranscodeStatusFailed
 	t.message = "转码失败"
 	t.errMsg = TruncateErr(errMsg, 500)
 
@@ -407,7 +406,7 @@ func (t *TranscodeProgressTracker) Fail(ctx context.Context, errMsg string) {
 		clonePipelineProgress(t.pipelines),
 	)
 
-	snapshot := mediavo.TranscodeProgress{
+	snapshot := mediadomain.TranscodeProgress{
 		VideoID:    t.videoID,
 		PartID:     t.partID,
 		Status:     t.status,
@@ -452,7 +451,7 @@ func (t *TranscodeProgressTracker) flush(ctx context.Context, force bool) {
 
 	pipelines := clonePipelineProgress(t.pipelines)
 	percent := aggregateProgressPercent(t.status, t.calcPercentLocked(), pipelines)
-	snapshot := mediavo.TranscodeProgress{
+	snapshot := mediadomain.TranscodeProgress{
 		VideoID:      t.videoID,
 		PartID:       t.partID,
 		Status:       t.status,
@@ -497,8 +496,8 @@ func (t *TranscodeProgressTracker) flush(ctx context.Context, force bool) {
 	_ = t.store.Write(wctx, &snapshot, snapshot.TTL())
 }
 
-func clonePipelineProgress(src map[string]*mediavo.TranscodePipelineProgress) []mediavo.TranscodePipelineProgress {
-	out := make([]mediavo.TranscodePipelineProgress, 0, len(src))
+func clonePipelineProgress(src map[string]*mediadomain.TranscodePipelineProgress) []mediadomain.TranscodePipelineProgress {
+	out := make([]mediadomain.TranscodePipelineProgress, 0, len(src))
 
 	for _, p := range src {
 		if p == nil {
@@ -510,14 +509,14 @@ func clonePipelineProgress(src map[string]*mediavo.TranscodePipelineProgress) []
 		out = append(out, item)
 	}
 
-	slices.SortFunc(out, func(a, b mediavo.TranscodePipelineProgress) int {
+	slices.SortFunc(out, func(a, b mediadomain.TranscodePipelineProgress) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 
 	return out
 }
 
-func legacyPipelinePercent(pipelines []mediavo.TranscodePipelineProgress) float64 {
+func legacyPipelinePercent(pipelines []mediadomain.TranscodePipelineProgress) float64 {
 	if len(pipelines) == 0 {
 		return 0
 	}
@@ -533,9 +532,9 @@ func legacyPipelinePercent(pipelines []mediavo.TranscodePipelineProgress) float6
 func aggregateProgressPercent(
 	status string,
 	fallback float64,
-	pipelines []mediavo.TranscodePipelineProgress,
+	pipelines []mediadomain.TranscodePipelineProgress,
 ) float64 {
-	if status == mediavo.TranscodeStatusSucceeded {
+	if status == mediadomain.TranscodeStatusSucceeded {
 		return 100
 	}
 
@@ -547,11 +546,11 @@ func aggregateProgressPercent(
 }
 
 func (t *TranscodeProgressTracker) calcPercentLocked() float64 {
-	if t.status == mediavo.TranscodeStatusSucceeded {
+	if t.status == mediadomain.TranscodeStatusSucceeded {
 		return 100
 	}
 
-	if t.status == mediavo.TranscodeStatusQueued {
+	if t.status == mediadomain.TranscodeStatusQueued {
 		return 0
 	}
 
@@ -597,7 +596,7 @@ func (t *TranscodeProgressTracker) calcPercentLocked() float64 {
 
 	pct := (doneWeight + currentWeight*t.stagePercent) / totalWeight * 100
 
-	if pct > 99.5 && t.status == mediavo.TranscodeStatusRunning {
+	if pct > 99.5 && t.status == mediadomain.TranscodeStatusRunning {
 		pct = 99.5
 	}
 

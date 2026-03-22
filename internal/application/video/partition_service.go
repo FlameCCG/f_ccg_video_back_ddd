@@ -3,16 +3,14 @@ package video
 import (
 	"context"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videoentity "f_ccg_video_back_ddd/internal/domain/video/entity"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
 
 // PartitionService 视频分区用例服务。
 type PartitionService struct {
-	partitions videorepo.PartitionRepository
+	partitions videodomain.PartitionRepository
 	videos     VideoFactsQuery
 	cache      PartitionCache
 	authors    *AuthorService
@@ -21,7 +19,7 @@ type PartitionService struct {
 
 // NewPartitionService 构造分区用例服务。
 func NewPartitionService(
-	partitions videorepo.PartitionRepository,
+	partitions videodomain.PartitionRepository,
 	videos VideoFactsQuery,
 	cache PartitionCache,
 	authors *AuthorService,
@@ -31,24 +29,25 @@ func NewPartitionService(
 }
 
 // Create 创建分区。
-func (s *PartitionService) Create(ctx context.Context, p *videoentity.Partition) error {
+func (s *PartitionService) Create(ctx context.Context, p *videodomain.Partition) (*videodomain.Partition, error) {
 	if p == nil {
-		return videoerrors.ErrParamInvalid
+		return nil, videodomain.ErrParamInvalid
 	}
 
-	if err := s.partitions.Create(ctx, p); err != nil {
-		return err
+	created, err := s.partitions.Create(ctx, p)
+	if err != nil {
+		return nil, err
 	}
 
 	s.cache.Invalidate()
 
-	return nil
+	return created, nil
 }
 
 // Update 更新分区，并批量失效该分区下作品的详情 meta。
-func (s *PartitionService) Update(ctx context.Context, p *videoentity.Partition) error {
+func (s *PartitionService) Update(ctx context.Context, p *videodomain.Partition) error {
 	if p == nil || p.ID == 0 {
-		return videoerrors.ErrParamInvalid
+		return videodomain.ErrParamInvalid
 	}
 
 	if err := s.partitions.Update(ctx, p); err != nil {
@@ -65,7 +64,7 @@ func (s *PartitionService) Update(ctx context.Context, p *videoentity.Partition)
 // Delete 删除分区（分区下有作品时拒绝）。
 func (s *PartitionService) Delete(ctx context.Context, id uint) error {
 	if id == 0 {
-		return videoerrors.ErrParamInvalid
+		return videodomain.ErrParamInvalid
 	}
 
 	count, err := s.videos.CountByPartition(ctx, id)
@@ -73,8 +72,8 @@ func (s *PartitionService) Delete(ctx context.Context, id uint) error {
 		return err
 	}
 
-	if count > 0 {
-		return videoerrors.ErrPartitionHasVideos
+	if err := (videodomain.Partition{}).EnsureDeletable(count); err != nil {
+		return err
 	}
 
 	rows, err := s.partitions.Delete(ctx, id)
@@ -90,13 +89,7 @@ func (s *PartitionService) Delete(ctx context.Context, id uint) error {
 
 // List 分页列出分区。
 func (s *PartitionService) List(ctx context.Context, page, pageSize int) ([]PartitionItem, int64, error) {
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 20
-	}
+	page, pageSize = (videodomain.ListingPolicy{}).AdminPage(page, pageSize)
 
 	partitions, total, err := s.partitions.List(ctx, page, pageSize)
 	if err != nil {
@@ -127,7 +120,7 @@ func (s *PartitionService) ListSubmittable(ctx context.Context) ([]PartitionItem
 	return items, nil
 }
 
-func toPartitionItems(partitions []videoentity.Partition) []PartitionItem {
+func toPartitionItems(partitions []videodomain.Partition) []PartitionItem {
 	items := make([]PartitionItem, 0, len(partitions))
 	for _, p := range partitions {
 		items = append(items, PartitionItem{

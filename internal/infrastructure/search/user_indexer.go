@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	searchvo "f_ccg_video_back_ddd/internal/domain/search/valueobject"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/olivere/elastic/v7"
@@ -46,8 +46,8 @@ func (i *UserIndexer) BulkIndexUsers(ctx context.Context, docs []app.UserSearchD
 
 		bulk = bulk.Add(
 			elastic.NewBulkIndexRequest().
-				Id(searchvo.UserDocumentID(doc.ID)).
-				Doc(buildUserSearchPayload(doc)),
+				Id((esContract{}).UserDocumentID(doc.ID)).
+				Doc(i.buildUserSearchPayload(doc)),
 		)
 	}
 
@@ -74,7 +74,7 @@ func (i *UserIndexer) BulkIndexUsers(ctx context.Context, docs []app.UserSearchD
 }
 
 // buildUserSearchPayload 生成 search_users 文档体（字段名逐字对应索引 mapping）。
-func buildUserSearchPayload(doc app.UserSearchDocument) map[string]any {
+func (i UserIndexer) buildUserSearchPayload(doc app.UserSearchDocument) map[string]any {
 	payload := map[string]any{
 		"id":               doc.ID,
 		"username":         doc.Username,
@@ -88,7 +88,7 @@ func buildUserSearchPayload(doc app.UserSearchDocument) map[string]any {
 		"friend_usernames": doc.FriendUsernames,
 	}
 
-	if sugg := buildCompletionPayload([]string{doc.Username}); sugg != nil {
+	if sugg := i.buildCompletionPayload([]string{doc.Username}); sugg != nil {
 		payload["username_suggest"] = sugg
 	}
 
@@ -96,8 +96,8 @@ func buildUserSearchPayload(doc app.UserSearchDocument) map[string]any {
 }
 
 // buildCompletionPayload 生成 ES completion 字段的输入格式 {"input": [...]}；全空时返回 nil。
-func buildCompletionPayload(values []string) map[string]any {
-	inputs := searchvo.TrimNonEmpty(values)
+func (UserIndexer) buildCompletionPayload(values []string) map[string]any {
+	inputs := (searchdomain.VectorPolicy{}).TrimNonEmpty(values)
 	if len(inputs) == 0 {
 		return nil
 	}

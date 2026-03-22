@@ -3,8 +3,8 @@ package scheduler
 import (
 	"context"
 	"errors"
+	commentapplication "f_ccg_video_back_ddd/internal/application/comment"
 
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
@@ -39,7 +39,7 @@ type CommentLikeQueue struct {
 	redis *redis.Client
 }
 
-var _ app.CommentLikeQueue = (*CommentLikeQueue)(nil)
+var _ commentapplication.CommentLikeQueue = (*CommentLikeQueue)(nil)
 
 // NewCommentLikeQueue 构造评论点赞队列适配器。
 func NewCommentLikeQueue(redisClient *redis.Client) *CommentLikeQueue {

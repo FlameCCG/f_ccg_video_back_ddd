@@ -4,8 +4,7 @@ import (
 	"context"
 	"time"
 
-	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
-	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"go.uber.org/zap"
@@ -22,11 +21,12 @@ type FeedService struct {
 	users  UserProfileQuery
 	feed   FeedQuery
 	logger *zap.Logger
+	feeds  dynamicdomain.FeedPolicy
 }
 
 // NewFeedService 构造作品流查询用例服务。
 func NewFeedService(users UserProfileQuery, feed FeedQuery, logger *zap.Logger) *FeedService {
-	return &FeedService{users: users, feed: feed, logger: logger}
+	return &FeedService{users: users, feed: feed, logger: logger, feeds: dynamicdomain.FeedPolicy{}}
 }
 
 // ListFeed 分页查询作品流（视频 + 动态）。
@@ -37,7 +37,7 @@ func (s *FeedService) ListFeed(
 	userID, authorID uint,
 	workType, page, pageSize int,
 ) ([]WorkFeedItem, int64, error) {
-	page, pageSize = dynamicvo.NormalizeFeedPaging(page, pageSize)
+	page, pageSize = s.feeds.NormalizeFeedPaging(page, pageSize)
 	offset := max((page-1)*pageSize, 0)
 
 	if authorID > 0 {
@@ -45,7 +45,7 @@ func (s *FeedService) ListFeed(
 	}
 
 	if userID == 0 {
-		return nil, 0, dynamicerrors.ErrUserNotLogin
+		return nil, 0, dynamicdomain.ErrUserNotLogin
 	}
 
 	return s.listFollowingFeed(ctx, userID, workType, offset, pageSize)
@@ -56,7 +56,7 @@ func (s *FeedService) listFollowingFeed(
 	viewerID uint,
 	workType, offset, limit int,
 ) ([]WorkFeedItem, int64, error) {
-	sources := dynamicvo.BuildFeedSources(workType)
+	sources := s.feeds.BuildFeedSources(workType)
 	if !sources.Any() {
 		return []WorkFeedItem{}, 0, nil
 	}
@@ -109,12 +109,12 @@ func (s *FeedService) listAuthorFeed(
 	}
 
 	if author == nil {
-		return nil, 0, dynamicerrors.ErrRecordNotFound
+		return nil, 0, dynamicdomain.ErrRecordNotFound
 	}
 
 	isOwnerView := viewerID > 0 && viewerID == authorID
 
-	sources := dynamicvo.BuildFeedSources(workType)
+	sources := s.feeds.BuildFeedSources(workType)
 	if !sources.Any() {
 		return []WorkFeedItem{}, 0, nil
 	}

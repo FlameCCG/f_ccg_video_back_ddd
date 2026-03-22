@@ -9,8 +9,7 @@ import (
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
 	mediaruntime "f_ccg_video_back_ddd/internal/application/media/runtime"
 	"f_ccg_video_back_ddd/internal/config"
-	mediaerrors "f_ccg_video_back_ddd/internal/domain/media/domainerr"
-	mediavo "f_ccg_video_back_ddd/internal/domain/media/valueobject"
+	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -176,7 +175,7 @@ func (tc *TranscodeConsumer) handleMessage(session sarama.ConsumerGroupSession, 
 func (tc *TranscodeConsumer) processMessage(ctx context.Context, payloadBytes []byte) error {
 	payload, err := decodeTranscodePayload(payloadBytes)
 	if err != nil {
-		return mediaerrors.PermanentMessage(fmt.Errorf("unmarshal payload failed: %w", err))
+		return mediaruntime.PermanentMessage(fmt.Errorf("unmarshal payload failed: %w", err))
 	}
 
 	return tc.service.ProcessTask(ctx, payload.Task())
@@ -239,7 +238,7 @@ func (tc *TranscodeConsumer) finishMessage(
 func (tc *TranscodeConsumer) logTranscodeSkipCommit(
 	session sarama.ConsumerGroupSession,
 	msg *sarama.ConsumerMessage,
-	key mediavo.TaskKey,
+	key mediadomain.TaskKey,
 	taskCtx context.Context,
 	pt *mediaruntime.TranscodeProgressTracker,
 	err error,

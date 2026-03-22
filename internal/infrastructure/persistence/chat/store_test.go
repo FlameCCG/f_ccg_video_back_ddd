@@ -6,9 +6,7 @@ import (
 	"testing"
 	"time"
 
-	chaterrors "f_ccg_video_back_ddd/internal/domain/chat/domainerr"
-	chatentity "f_ccg_video_back_ddd/internal/domain/chat/entity"
-	chatrepo "f_ccg_video_back_ddd/internal/domain/chat/repository"
+	chatdomain "f_ccg_video_back_ddd/internal/domain/chat"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.uber.org/zap"
@@ -41,7 +39,7 @@ func TestStoreWriteMethodsReturnStoreUnavailable(t *testing.T) {
 	t.Run("EnsureIndexes", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.EnsureIndexes(ctx); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+		if err := store.EnsureIndexes(ctx); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
 		}
 	})
@@ -49,7 +47,15 @@ func TestStoreWriteMethodsReturnStoreUnavailable(t *testing.T) {
 	t.Run("InsertMessage", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.InsertMessage(ctx, &chatentity.Message{}); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+		if _, err := store.InsertMessage(ctx, chatdomain.RestoreMessage(chatdomain.MessageSnapshot{})); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
+			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
+		}
+	})
+
+	t.Run("SendMessage", func(t *testing.T) {
+		t.Parallel()
+
+		if _, err := store.SendMessage(ctx, chatdomain.RestoreMessage(chatdomain.MessageSnapshot{}), "预览"); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
 		}
 	})
@@ -57,7 +63,7 @@ func TestStoreWriteMethodsReturnStoreUnavailable(t *testing.T) {
 	t.Run("ApplySend", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.ApplySend(ctx, &chatentity.Message{}, "预览"); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+		if err := store.ApplySend(ctx, chatdomain.RestoreMessage(chatdomain.MessageSnapshot{}), "预览"); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
 		}
 	})
@@ -65,7 +71,7 @@ func TestStoreWriteMethodsReturnStoreUnavailable(t *testing.T) {
 	t.Run("UpsertConversation", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := store.UpsertConversation(ctx, 1, 2, now); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+		if _, err := store.UpsertConversation(ctx, 1, 2, now); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
 		}
 	})
@@ -73,7 +79,7 @@ func TestStoreWriteMethodsReturnStoreUnavailable(t *testing.T) {
 	t.Run("HideConversation", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.HideConversation(ctx, 1, 2, now); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+		if err := store.HideConversation(ctx, 1, 2, now); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
 		}
 	})
@@ -81,7 +87,7 @@ func TestStoreWriteMethodsReturnStoreUnavailable(t *testing.T) {
 	t.Run("MarkRead", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := store.MarkRead(ctx, 1, 2, now); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+		if _, err := store.MarkRead(ctx, 1, 2, now); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
 		}
 	})
@@ -95,15 +101,15 @@ func TestStoreReadMethodsReturnStoreUnavailable(t *testing.T) {
 	store := NewStore(nil)
 	ctx := context.Background()
 
-	if _, _, err := store.ListConversations(ctx, 1, 1, 20); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, _, err := store.ListConversations(ctx, 1, 1, 20); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("ListConversations err = %v, want ErrStoreUnavailable", err)
 	}
 
-	if _, err := store.TotalUnread(ctx, 1); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, err := store.TotalUnread(ctx, 1); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("TotalUnread err = %v, want ErrStoreUnavailable", err)
 	}
 
-	if _, err := store.ListMessagesBefore(ctx, 1, 2, "", 11); !errors.Is(err, chaterrors.ErrStoreUnavailable) {
+	if _, err := store.ListMessagesBefore(ctx, 1, 2, "", 11); !errors.Is(err, chatdomain.ErrStoreUnavailable) {
 		t.Fatalf("ListMessagesBefore err = %v, want ErrStoreUnavailable", err)
 	}
 }
@@ -153,7 +159,7 @@ func TestExistsMessageBetweenDegradesToFalse(t *testing.T) {
 func TestVisibleConversationFilterShape(t *testing.T) {
 	t.Parallel()
 
-	filter := visibleConversationFilter(7)
+	filter := NewStore(nil).visibleConversationFilter(7)
 
 	if got := filter[fieldParticipants]; got != uint(7) {
 		t.Fatalf("participants = %v, want 7", got)
@@ -211,15 +217,15 @@ func TestFieldConstantsMatchStorageContract(t *testing.T) {
 	}
 
 	// 成员字段前缀 + 后缀拼出的路径必须与常量一致。
-	if got := chatentity.MemberA.String() + suffixUnread; got != fieldMemberAUnread {
+	if got := chatdomain.MemberA.String() + suffixUnread; got != fieldMemberAUnread {
 		t.Fatalf("memberA unread path = %q, want %q", got, fieldMemberAUnread)
 	}
 
-	if got := chatentity.MemberB.String() + suffixVisible; got != "memberB.visible" {
+	if got := chatdomain.MemberB.String() + suffixVisible; got != "memberB.visible" {
 		t.Fatalf("memberB visible path = %q", got)
 	}
 
-	if got := chatentity.MemberA.String() + suffixLastReadAt; got != "memberA.lastReadAt" {
+	if got := chatdomain.MemberA.String() + suffixLastReadAt; got != "memberA.lastReadAt" {
 		t.Fatalf("memberA lastReadAt path = %q", got)
 	}
 }
@@ -285,7 +291,7 @@ func TestIndexInitializerSwallowsEnsureIndexesFailure(t *testing.T) {
 
 // failingRepository 是一个「可用但建索引总失败」的仓储桩。
 type failingRepository struct {
-	chatrepo.Repository
+	chatdomain.Repository
 
 	called bool
 }

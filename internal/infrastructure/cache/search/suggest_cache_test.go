@@ -14,14 +14,14 @@ func TestSuggestionCacheStoreAndLoad(t *testing.T) {
 
 	cache := NewSuggestionCache()
 
-	if _, ok := cache.Load("missing"); ok {
+	if _, ok := cache.Load("missing", 1); ok {
 		t.Fatal("empty cache must miss")
 	}
 
 	items := []app.SuggestionItem{{Value: "教程", Highlight: "<em>教</em>程", DocType: app.DocTypeVideo}}
-	cache.Store("k", items)
+	cache.Store("k", 1, items)
 
-	got, ok := cache.Load("k")
+	got, ok := cache.Load("k", 1)
 	if !ok {
 		t.Fatal("expected cache hit")
 	}
@@ -37,12 +37,12 @@ func TestSuggestionCacheCopiesOnStoreAndLoad(t *testing.T) {
 
 	cache := NewSuggestionCache()
 	items := []app.SuggestionItem{{Value: "原值", DocType: app.DocTypeVideo}}
-	cache.Store("k", items)
+	cache.Store("k", 1, items)
 
 	// 改写调用方持有的切片，不应影响缓存。
 	items[0].Value = "被改写"
 
-	got, ok := cache.Load("k")
+	got, ok := cache.Load("k", 1)
 	if !ok {
 		t.Fatal("expected cache hit")
 	}
@@ -54,7 +54,7 @@ func TestSuggestionCacheCopiesOnStoreAndLoad(t *testing.T) {
 	// 改写取出的切片，也不应影响缓存。
 	got[0].Value = "又被改写"
 
-	again, _ := cache.Load("k")
+	again, _ := cache.Load("k", 1)
 	if again[0].Value != "原值" {
 		t.Fatalf("load must copy, got %q", again[0].Value)
 	}
@@ -66,9 +66,9 @@ func TestSuggestionCacheEmptyListRoundTrips(t *testing.T) {
 	t.Parallel()
 
 	cache := NewSuggestionCache()
-	cache.Store("k", nil)
+	cache.Store("k", 1, nil)
 
-	got, ok := cache.Load("k")
+	got, ok := cache.Load("k", 1)
 	if !ok {
 		t.Fatal("empty result must still be cached")
 	}
@@ -83,16 +83,17 @@ func TestSuggestionCacheExpiresAndEvicts(t *testing.T) {
 	t.Parallel()
 
 	cache := NewSuggestionCache()
-	cache.items["k"] = suggestCacheEntry{
+	key := cache.cacheKey("k", 1)
+	cache.items[key] = suggestCacheEntry{
 		items:     []app.SuggestionItem{{Value: "stale"}},
 		expiresAt: time.Now().Add(-time.Second),
 	}
 
-	if _, ok := cache.Load("k"); ok {
+	if _, ok := cache.Load("k", 1); ok {
 		t.Fatal("expired entry must miss")
 	}
 
-	if _, exists := cache.items["k"]; exists {
+	if _, exists := cache.items[key]; exists {
 		t.Fatal("expired entry must be evicted on load")
 	}
 }
@@ -102,11 +103,11 @@ func TestSuggestionCacheStoreRefreshesTTL(t *testing.T) {
 	t.Parallel()
 
 	cache := NewSuggestionCache()
-	cache.items["k"] = suggestCacheEntry{expiresAt: time.Now().Add(-time.Second)}
+	cache.items[cache.cacheKey("k", 1)] = suggestCacheEntry{expiresAt: time.Now().Add(-time.Second)}
 
-	cache.Store("k", []app.SuggestionItem{{Value: "fresh"}})
+	cache.Store("k", 1, []app.SuggestionItem{{Value: "fresh"}})
 
-	got, ok := cache.Load("k")
+	got, ok := cache.Load("k", 1)
 	if !ok {
 		t.Fatal("re-store must refresh the entry")
 	}
@@ -128,11 +129,11 @@ func TestSuggestionCacheConcurrentAccess(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 
 			for i := range 200 {
-				cache.Store("k", []app.SuggestionItem{{Value: "v", DocType: app.DocTypeVideo}})
-				_, _ = cache.Load("k")
+				cache.Store("k", 1, []app.SuggestionItem{{Value: "v", DocType: app.DocTypeVideo}})
+				_, _ = cache.Load("k", 1)
 
 				if i%50 == 0 {
-					_, _ = cache.Load("other")
+					_, _ = cache.Load("other", 1)
 				}
 			}
 		}()
@@ -149,5 +150,13 @@ func TestSuggestCacheTTLMatchesBaseline(t *testing.T) {
 
 	if suggestCacheTTL != 30*time.Second {
 		t.Fatalf("suggestCacheTTL = %v, want 30s", suggestCacheTTL)
+	}
+}
+
+func TestSuggestCacheKeyIgnoresCaseAndSurroundingSpace(t *testing.T) {
+	t.Parallel()
+
+	if got, want := NewSuggestionCache().cacheKey("  GoLang ", 10), "golang|10"; got != want {
+		t.Fatalf("cacheKey = %q, want %q", got, want)
 	}
 }

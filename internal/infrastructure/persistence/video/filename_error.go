@@ -1,7 +1,7 @@
 package video
 
 import (
-	videovo "f_ccg_video_back_ddd/internal/domain/video/valueobject"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"fmt"
 	"strings"
 )
@@ -15,13 +15,13 @@ func mapSourceFileNameDBError(err error, sourceFileName string) error {
 	msg := err.Error()
 	if strings.Contains(msg, "source_file_name") &&
 		(strings.Contains(msg, "Data too long") || strings.Contains(msg, "1406")) {
-		if vErr := videovo.ValidateSourceFileName(sourceFileName); vErr != nil {
+		if vErr := (videodomain.UploadPolicy{}).SourceFileName(sourceFileName); vErr != nil {
 			return vErr
 		}
 
 		return fmt.Errorf(
 			"源文件名过长（最多 %d 个字符）：请缩短文件名后重新选择并上传",
-			videovo.MaxSourceFileNameLen,
+			videodomain.MaxSourceFileNameLen,
 		)
 	}
 

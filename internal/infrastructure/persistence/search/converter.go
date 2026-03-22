@@ -21,8 +21,11 @@ type userFallbackRow struct {
 	FollowerCount int64  `gorm:"column:follower_count"`
 }
 
+// hitMapping 把持久化行投影成搜索 DTO。零值即可使用。
+type hitMapping struct{}
+
 // toSearchVideoHit 把视频 PO 转成搜索结果项（回退路径无高亮）。
-func toSearchVideoHit(video po.Video) app.SearchVideoHit {
+func (m hitMapping) toSearchVideoHit(video po.Video) app.SearchVideoHit {
 	return app.SearchVideoHit{
 		ID:             video.ID,
 		Title:          video.Title,
@@ -32,12 +35,12 @@ func toSearchVideoHit(video po.Video) app.SearchVideoHit {
 		Views:          video.Views,
 		DanmuCount:     video.DanmuCount,
 		Duration:       video.Duration,
-		Tags:           extractTagNames(video.Tags),
+		Tags:           m.extractTagNames(video.Tags),
 	}
 }
 
 // toSearchUserHit 把用户行转成搜索结果项（回退路径无高亮）。
-func toSearchUserHit(row userFallbackRow) app.SearchUserHit {
+func (hitMapping) toSearchUserHit(row userFallbackRow) app.SearchUserHit {
 	return app.SearchUserHit{
 		ID:            row.ID,
 		Username:      row.Username,
@@ -48,7 +51,7 @@ func toSearchUserHit(row userFallbackRow) app.SearchUserHit {
 }
 
 // extractTagNames 取标签名列表；无标签时返回空切片（保证响应里是 [] 而非 null）。
-func extractTagNames(tags []po.Tag) []string {
+func (hitMapping) extractTagNames(tags []po.Tag) []string {
 	if len(tags) == 0 {
 		return []string{}
 	}
@@ -67,7 +70,7 @@ func extractTagNames(tags []po.Tag) []string {
 }
 
 // extractPartTitles 取分P标题列表（用于向量文本构造）。
-func extractPartTitles(parts []po.VideoPart) []string {
+func (hitMapping) extractPartTitles(parts []po.VideoPart) []string {
 	if len(parts) == 0 {
 		return nil
 	}

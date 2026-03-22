@@ -5,7 +5,8 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	identityentity "f_ccg_video_back_ddd/internal/domain/identity/entity"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/encrypt"
@@ -22,7 +23,7 @@ func newChangePasswordHandler(t *testing.T) (*Handler, *gorm.DB) {
 
 	db := openTestDB(t, &po.User{}, &po.UserConf{}, &po.FavoriteFolder{})
 	users := persistence.NewUserRepository(db, nil)
-	accounts := app.NewAccountService(users, nil)
+	accounts := app.NewAccountService(gormx.NewTxManager(db), users, nil)
 
 	return NewHandler(nil, nil, nil, nil, accounts, nil, nil, nil, nil, nil, nil, nil, nil, zap.NewNop()), db
 }
@@ -183,19 +184,19 @@ func TestChangePasswordViewRequiresOldPasswordAfterOAuthUserSetsPassword(t *test
 
 // TestUserPasswordFlags 验证 domain.User.HasPassword 与 IsThirdParty 的账号属性判定。
 func TestUserPasswordFlags(t *testing.T) {
-	if (&identityentity.User{Password: ""}).HasPassword() {
+	if (identitydomain.RestoreUser(identitydomain.UserSnapshot{Password: ""})).HasPassword() {
 		t.Fatal("empty password should be hasPassword=false")
 	}
 
-	if !(&identityentity.User{Password: "hash"}).HasPassword() {
+	if !(identitydomain.RestoreUser(identitydomain.UserSnapshot{Password: "hash"})).HasPassword() {
 		t.Fatal("non-empty password should be hasPassword=true")
 	}
 
-	if (&identityentity.User{OpenID: ""}).IsThirdParty() {
+	if (identitydomain.RestoreUser(identitydomain.UserSnapshot{OpenID: ""})).IsThirdParty() {
 		t.Fatal("empty open id should be isThirdParty=false")
 	}
 
-	if !(&identityentity.User{OpenID: "abc"}).IsThirdParty() {
+	if !(identitydomain.RestoreUser(identitydomain.UserSnapshot{OpenID: "abc"})).IsThirdParty() {
 		t.Fatal("non-empty open id should be isThirdParty=true")
 	}
 }

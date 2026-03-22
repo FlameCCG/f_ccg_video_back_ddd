@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
-	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 )
 
 func TestAssetProxyRejectsRedirectOutsideAllowlist(t *testing.T) {
@@ -27,7 +27,7 @@ func TestAssetProxyRejectsRedirectOutsideAllowlist(t *testing.T) {
 	if response != nil {
 		response.Body.Close()
 	}
-	if !errors.Is(err, aierrors.ErrAssetHostNotAllowed) {
+	if !errors.Is(err, aidomain.ErrAssetHostNotAllowed) {
 		t.Fatalf("Open() error = %v, want rejected redirect", err)
 	}
 	if reached.Load() {

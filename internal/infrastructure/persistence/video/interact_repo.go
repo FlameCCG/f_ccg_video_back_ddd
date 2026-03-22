@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 
-	videoerrors "f_ccg_video_back_ddd/internal/domain/video/domainerr"
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
@@ -18,7 +17,7 @@ type LikeRepository struct {
 	db *gorm.DB
 }
 
-var _ videorepo.LikeRepository = (*LikeRepository)(nil)
+var _ videodomain.LikeRepository = (*LikeRepository)(nil)
 
 // NewLikeRepository 构造视频点赞仓储。
 func NewLikeRepository(db *gorm.DB) *LikeRepository {
@@ -68,7 +67,7 @@ func (r *LikeRepository) Create(ctx context.Context, videoID, userID uint) error
 	if err := gormx.DB(ctx, r.db).
 		Create(&po.VideoLike{VideoID: videoID, UserID: userID}).Error; err != nil {
 		if gormx.IsDuplicateKeyError(err) {
-			return videoerrors.ErrDuplicateLike
+			return videodomain.ErrDuplicateLike
 		}
 
 		return err
@@ -104,7 +103,7 @@ type CoinRepository struct {
 	db *gorm.DB
 }
 
-var _ videorepo.CoinRepository = (*CoinRepository)(nil)
+var _ videodomain.CoinRepository = (*CoinRepository)(nil)
 
 // NewCoinRepository 构造视频投币仓储。
 func NewCoinRepository(db *gorm.DB) *CoinRepository {
@@ -128,7 +127,7 @@ func (r *CoinRepository) Create(ctx context.Context, videoID, userID uint, coins
 	record := po.VideoCoin{VideoID: videoID, UserID: userID, Coins: int(coins)}
 	if err := gormx.DB(ctx, r.db).Create(&record).Error; err != nil {
 		if gormx.IsDuplicateKeyError(err) {
-			return videoerrors.ErrDuplicateCoin
+			return videodomain.ErrDuplicateCoin
 		}
 
 		return err

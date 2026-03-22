@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 
 	"f_ccg_video_back_ddd/pkg/constants"
 )
@@ -16,10 +17,9 @@ func IsAdminUser(ctx context.Context, roles UserRoleQuery, userID uint) (bool, e
 	if err != nil {
 		return false, err
 	}
-	for _, role := range items {
-		if role.Name == constants.AdminUserRole {
-			return true, nil
-		}
+	names := make([]string, len(items))
+	for i, role := range items {
+		names[i] = role.Name
 	}
-	return false, nil
+	return (identitydomain.RoleAccess{}).HasRole(names, constants.AdminUserRole), nil
 }

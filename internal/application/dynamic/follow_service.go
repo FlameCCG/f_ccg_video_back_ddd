@@ -6,10 +6,8 @@ import (
 	"strconv"
 	"time"
 
-	dynamicerrors "f_ccg_video_back_ddd/internal/domain/dynamic/domainerr"
-	dynamicvo "f_ccg_video_back_ddd/internal/domain/dynamic/valueobject"
+	dynamicdomain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -27,6 +25,7 @@ type FollowService struct {
 	tasks    *ctxutil.DetachedTaskGroup
 	countSFG singleflight.Group
 	logger   *zap.Logger
+	feeds    dynamicdomain.FeedPolicy
 }
 
 // NewFollowService 构造关注流用例服务。
@@ -43,12 +42,13 @@ func NewFollowService(
 		cache:    cache,
 		tasks:    tasks,
 		logger:   logger,
+		feeds:    dynamicdomain.FeedPolicy{},
 	}
 }
 
-// unreadCountKey 未读数的缓存/并发合并键。
+// unreadCountKey 当前应用实例的并发合并键；Redis 键由缓存适配器维护。
 func unreadCountKey(userID uint) string {
-	return constants.DynamicUnreadFollowCacheKeyPrefix + strconv.FormatUint(uint64(userID), 10)
+	return strconv.FormatUint(uint64(userID), 10)
 }
 
 // ListFollowUsers 分页列出当前用户的关注对象，并标注各自最新作品与未读状态。
@@ -61,10 +61,10 @@ func (s *FollowService) ListFollowUsers(
 	page, pageSize int,
 ) ([]FollowUserItem, int64, error) {
 	if userID == 0 {
-		return nil, 0, dynamicerrors.ErrUserNotLogin
+		return nil, 0, dynamicdomain.ErrUserNotLogin
 	}
 
-	page, pageSize = dynamicvo.NormalizeFeedPaging(page, pageSize)
+	page, pageSize = s.feeds.NormalizeFeedPaging(page, pageSize)
 
 	follows, err := s.follows.ListFollowing(ctx, userID)
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *FollowService) ListFollowUsers(
 	items := make([]FollowUserItem, 0, len(follows))
 
 	for _, f := range follows {
-		activity := dynamicvo.FollowActivity{
+		activity := dynamicdomain.FollowActivity{
 			LatestVideoAt:   videoLatest[f.Username],
 			LatestDynamicAt: dynamicLatest[f.FocusUserID],
 			LastReadAt:      readLatest[f.FocusUserID],
@@ -133,25 +133,9 @@ func (s *FollowService) ListFollowUsers(
 
 // sortFollowUsers 关注列表内存排序。
 func sortFollowUsers(items []FollowUserItem) {
+	order := dynamicdomain.FollowOrder{}
 	sort.SliceStable(items, func(i, j int) bool {
-		aHas := items[i].LatestWorkAt != nil
-
-		bHas := items[j].LatestWorkAt != nil
-		if aHas != bHas {
-			return aHas
-		}
-
-		if aHas {
-			if !items[i].LatestWorkAt.Equal(*items[j].LatestWorkAt) {
-				return items[i].LatestWorkAt.After(*items[j].LatestWorkAt)
-			}
-		} else {
-			if !items[i].FollowedAt.Equal(items[j].FollowedAt) {
-				return items[i].FollowedAt.After(items[j].FollowedAt)
-			}
-		}
-
-		return items[i].UserID > items[j].UserID
+		return order.Less(dynamicdomain.FollowOrderFacts{UserID: items[i].UserID, LatestWorkAt: items[i].LatestWorkAt, FollowedAt: items[i].FollowedAt}, dynamicdomain.FollowOrderFacts{UserID: items[j].UserID, LatestWorkAt: items[j].LatestWorkAt, FollowedAt: items[j].FollowedAt})
 	})
 }
 
@@ -160,7 +144,7 @@ func sortFollowUsers(items []FollowUserItem) {
 // 缓存命中且新鲜时直接返回；过期时先返回缓存再异步刷新；未命中时同步刷新，同一用户的并发刷新由 singleflight 合并。
 func (s *FollowService) UnreadFollowCount(ctx context.Context, userID uint) (int64, error) {
 	if userID == 0 {
-		return 0, dynamicerrors.ErrUserNotLogin
+		return 0, dynamicdomain.ErrUserNotLogin
 	}
 
 	if cached, fresh, ok := s.cache.Load(userID); ok {
@@ -188,7 +172,7 @@ func (s *FollowService) InvalidateUnreadCount(userID uint) {
 
 func (s *FollowService) refreshUnreadCount(ctx context.Context, userID uint) (int64, error) {
 	if userID == 0 {
-		return 0, dynamicerrors.ErrUserNotLogin
+		return 0, dynamicdomain.ErrUserNotLogin
 	}
 
 	value, err, _ := s.countSFG.Do(unreadCountKey(userID), func() (any, error) {
@@ -224,7 +208,7 @@ func (s *FollowService) refreshUnreadCountAsync(userID uint) {
 
 func (s *FollowService) unreadCountUncached(ctx context.Context, userID uint) (int64, error) {
 	if userID == 0 {
-		return 0, dynamicerrors.ErrUserNotLogin
+		return 0, dynamicdomain.ErrUserNotLogin
 	}
 
 	follows, err := s.follows.ListFollowing(ctx, userID)
@@ -252,7 +236,7 @@ func (s *FollowService) unreadCountUncached(ctx context.Context, userID uint) (i
 	var count int64
 
 	for _, f := range follows {
-		activity := dynamicvo.FollowActivity{
+		activity := dynamicdomain.FollowActivity{
 			LatestVideoAt:   videoLatest[f.Username],
 			LatestDynamicAt: dynamicLatest[f.FocusUserID],
 			LastReadAt:      readLatest[f.FocusUserID],

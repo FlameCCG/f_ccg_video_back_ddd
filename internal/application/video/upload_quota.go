@@ -4,17 +4,15 @@ import (
 	"context"
 	"errors"
 	"f_ccg_video_back_ddd/internal/config"
-	"fmt"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 	"sort"
 	"strings"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
 )
 
-const defaultDailyUploadLimit = 10
-
 var (
-	ErrDailyUploadLimit       = errors.New("今日上传源视频文件数量已达上限，请明天再试")
+	ErrDailyUploadLimit       = videodomain.ErrDailyUploadLimit
 	ErrUploadQuotaUnavailable = errors.New("上传额度服务暂不可用，请稍后重试")
 )
 
@@ -71,18 +69,17 @@ func (s *UploadQuotaService) claim(ctx context.Context, userID uint, fileHash st
 	if admin {
 		return nil
 	}
-	limit := defaultDailyUploadLimit
-	if cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.DailyUploadLimit > 0 {
-		limit = cfg.Site.Storage.DailyUploadLimit
+	configured := 0
+	if cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil {
+		configured = cfg.Site.Storage.DailyUploadLimit
 	}
+	policy := videodomain.UploadPolicy{}
+	limit := policy.DailyLimit(configured)
 	allowed, err := s.store.Claim(ctx, userID, fileHash, limit)
 	if err != nil {
 		return ErrUploadQuotaUnavailable
 	}
-	if !allowed {
-		return fmt.Errorf("%w（每日最多 %d 个不同文件）", ErrDailyUploadLimit, limit)
-	}
-	return nil
+	return policy.EnsureDailyClaim(allowed, limit)
 }
 
 func uniqueUploadHashes(hashes []string) []string {

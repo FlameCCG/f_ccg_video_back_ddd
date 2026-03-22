@@ -15,6 +15,7 @@ var ProviderSet = wire.NewSet(
 	NewDetailService,
 	NewFeedService,
 	NewFolderService,
+	NewDefaultFolderService,
 	NewHistoryService,
 	NewInteractionService,
 	NewPartitionService,

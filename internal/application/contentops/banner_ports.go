@@ -3,7 +3,7 @@ package contentops
 import (
 	"context"
 
-	contentopsentity "f_ccg_video_back_ddd/internal/domain/contentops/entity"
+	contentopsdomain "f_ccg_video_back_ddd/internal/domain/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
@@ -12,9 +12,9 @@ import (
 // 端口使用固定 300ms 独立超时，避免请求取消中断缓存回填。Redis key 前缀与 TTL 属于外部契约。
 type BannerCache interface {
 	// LoadVisible 读取可见轮播图缓存；未命中或反序列化失败返回 (nil, false)。
-	LoadVisible(bannerType enum.BannerType, partitionID *uint) ([]contentopsentity.Banner, bool)
+	LoadVisible(bannerType enum.BannerType, partitionID *uint) ([]contentopsdomain.Banner, bool)
 	// StoreVisible 回填可见轮播图缓存（失败仅记录日志）。
-	StoreVisible(bannerType enum.BannerType, partitionID *uint, items []contentopsentity.Banner)
+	StoreVisible(bannerType enum.BannerType, partitionID *uint, items []contentopsdomain.Banner)
 	// InvalidateVisible 按前缀清空全部可见轮播图缓存。
 	InvalidateVisible()
 }

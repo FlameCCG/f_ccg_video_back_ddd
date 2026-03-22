@@ -8,6 +8,7 @@ import (
 
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
+	searchdomain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
@@ -46,15 +47,15 @@ func TestVectorConfigAppliesDefaults(t *testing.T) {
 		t.Fatalf("index = %q, want %q", cfg.Index, defaultVideoVectorIndex)
 	}
 
-	if cfg.TopK != defaultVideoVectorTopK {
-		t.Fatalf("topK = %d, want %d", cfg.TopK, defaultVideoVectorTopK)
+	if cfg.TopK != 8 {
+		t.Fatalf("topK = %d, want 8", cfg.TopK)
 	}
 
 	if cfg.EmbeddingDimensions != defaultVideoEmbeddingDims {
 		t.Fatalf("dims = %d, want %d", cfg.EmbeddingDimensions, defaultVideoEmbeddingDims)
 	}
 
-	if cfg.ImageMode != embeddingImageModeAuto || cfg.RRFRankConstant != defaultVectorRRFRankConstant {
+	if cfg.ImageMode != searchdomain.EmbeddingImageModeAuto || cfg.RRFRankConstant != defaultVectorRRFRankConstant {
 		t.Fatalf("defaults = image:%q rrf:%d", cfg.ImageMode, cfg.RRFRankConstant)
 	}
 }
@@ -94,7 +95,7 @@ func TestVectorConfigKeepsConfiguredValues(t *testing.T) {
 		EmbeddingAPIKey:     "ak-test",
 		EmbeddingDimensions: 1024,
 		TimeoutSec:          7,
-		ImageMode:           embeddingImageModeOn,
+		ImageMode:           searchdomain.EmbeddingImageModeOn,
 		AssetBaseURL:        "https://cdn.example.com/",
 		LocalStorageRoot:    "uploads",
 		RRFRankConstant:     42,
@@ -236,15 +237,16 @@ func TestNormalizeEmbeddingImageMode(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]string{
-		"":        embeddingImageModeAuto,
-		"AUTO":    embeddingImageModeAuto,
-		" on ":    embeddingImageModeOn,
-		"off":     embeddingImageModeOff,
-		"unknown": embeddingImageModeAuto,
+		"":        searchdomain.EmbeddingImageModeAuto,
+		"AUTO":    searchdomain.EmbeddingImageModeAuto,
+		" on ":    searchdomain.EmbeddingImageModeOn,
+		"off":     searchdomain.EmbeddingImageModeOff,
+		"unknown": searchdomain.EmbeddingImageModeAuto,
 	}
+	policy := searchdomain.VectorPolicy{}
 	for input, want := range tests {
-		if got := normalizeEmbeddingImageMode(input); got != want {
-			t.Fatalf("normalizeEmbeddingImageMode(%q) = %q, want %q", input, got, want)
+		if got := policy.NormalizeImageMode(input); got != want {
+			t.Fatalf("NormalizeImageMode(%q) = %q, want %q", input, got, want)
 		}
 	}
 }

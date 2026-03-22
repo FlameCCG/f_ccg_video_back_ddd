@@ -3,18 +3,21 @@ package identity_test
 import (
 	"context"
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	videorepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
+	"path/filepath"
+	"testing"
+
 	"github.com/glebarez/sqlite"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"path/filepath"
-	"testing"
 )
 
 type registrationRoles struct{ app.UserRoleQuery }
@@ -51,7 +54,7 @@ func TestRegistrationCreatesDefaultsInSameTransaction(t *testing.T) {
 			provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{DefaultUserBannerID: 29}})
 			repo := persistence.NewUserRepository(db, provider)
 			binder := &registrationBinder{}
-			service := app.NewRegistrationService(gormx.NewTxManager(db), repo, registrationRoles{}, binder, zap.NewNop())
+			service := app.NewRegistrationService(gormx.NewTxManager(db), repo, registrationRoles{}, binder, videoapp.NewDefaultFolderService(videorepo.NewFolderRepository(db)), zap.NewNop())
 			err = service.EmailRegister(t.Context(), app.EmailRegisterInput{Username: "new-user", Email: "new@example.com", Password: "initial-password"})
 			if failure {
 				if err == nil {

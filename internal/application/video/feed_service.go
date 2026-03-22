@@ -2,15 +2,12 @@ package video
 
 import (
 	"context"
-
-	videorepo "f_ccg_video_back_ddd/internal/domain/video/repository"
+	videodomain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	defaultFeedPageSize = 11
-	maxFeedPageSize     = 50
 	// maxHistoryCount 首页去重历史窗口；过大 NOT IN 会拖垮 MySQL，控制在近期观看即可。
 	maxHistoryCount = 100
 )
@@ -18,7 +15,7 @@ const (
 // FeedService 首页流 / 综合热门 / 排行榜用例服务。
 type FeedService struct {
 	query   FeedQuery
-	history videorepo.HistoryRepository
+	history videodomain.HistoryRepository
 	hotRank HotRankCache
 	stats   *StatsService
 }
@@ -26,7 +23,7 @@ type FeedService struct {
 // NewFeedService 构造首页流用例服务。
 func NewFeedService(
 	query FeedQuery,
-	history videorepo.HistoryRepository,
+	history videodomain.HistoryRepository,
 	hotRank HotRankCache,
 	stats *StatsService,
 ) *FeedService {
@@ -43,17 +40,7 @@ func (s *FeedService) HomepageFeed(
 		ctx = context.TODO()
 	}
 
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 {
-		pageSize = defaultFeedPageSize
-	}
-
-	if pageSize > maxFeedPageSize {
-		pageSize = maxFeedPageSize
-	}
+	page, pageSize = (videodomain.ListingPolicy{}).FeedPage(page, pageSize)
 
 	var (
 		historyVideoIDs     []uint

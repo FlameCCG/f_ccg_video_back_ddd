@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/social"
-	socialerrors "f_ccg_video_back_ddd/internal/domain/social/domainerr"
-	socialentity "f_ccg_video_back_ddd/internal/domain/social/entity"
+	socialdomain "f_ccg_video_back_ddd/internal/domain/social"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/social"
 
@@ -96,7 +95,7 @@ func TestRelationQueryExistsAndRelation(t *testing.T) {
 		t.Errorf("relation(2,1) = %+v, want fans only", relation)
 	}
 
-	if got := query.Relation(ctx, 0, 2); got != (socialentity.Relation{}) {
+	if got := query.Relation(ctx, 0, 2); got != (socialdomain.Relation{}) {
 		t.Errorf("relation(0,2) = %+v, want zero", got)
 	}
 }
@@ -120,7 +119,7 @@ func TestRelationQueryCounts(t *testing.T) {
 		t.Errorf("counts(2,false).FansCount = %d, want 1", counts.FansCount)
 	}
 
-	if got := query.Counts(ctx, 0, false); got != (socialentity.RelationCounts{}) {
+	if got := query.Counts(ctx, 0, false); got != (socialdomain.RelationCounts{}) {
 		t.Errorf("counts(0) = %+v, want zero", got)
 	}
 }
@@ -207,22 +206,36 @@ func TestFocusRepositoryCreateAndDelete(t *testing.T) {
 	repo, _, _, _ := newFixture(t)
 	ctx := t.Context()
 
-	focus, err := socialentity.NewFocus(2, 3)
+	focus, err := socialdomain.NewFocus(2, 3)
 	if err != nil {
 		t.Fatalf("NewFocus: %v", err)
 	}
 
-	if err := repo.Create(ctx, focus); err != nil {
+	created, err := repo.Create(ctx, focus)
+	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if focus.ID == 0 {
-		t.Error("Create 应回填自增 ID")
+	if created == nil || created.ID() == 0 || created.CreatedAt().IsZero() || created.UpdatedAt().IsZero() {
+		t.Fatalf("Create 应返回带主键和时间的实体，got %+v", created.Snapshot())
 	}
 
-	again, _ := socialentity.NewFocus(2, 3)
-	if err := repo.Create(ctx, again); !errors.Is(err, socialerrors.ErrAlreadyFocused) {
-		t.Fatalf("重复关注 err = %v, want %v", err, socialerrors.ErrAlreadyFocused)
+	if created.UserID() != 2 || created.FocusUserID() != 3 {
+		t.Fatalf("persisted relation = %d -> %d, want 2 -> 3", created.UserID(), created.FocusUserID())
+	}
+
+	if focus.ID() != 0 || !focus.CreatedAt().IsZero() || !focus.UpdatedAt().IsZero() {
+		t.Fatal("Create 成功时也不应回写调用方持有的实体")
+	}
+
+	again, _ := socialdomain.NewFocus(2, 3)
+	duplicated, err := repo.Create(ctx, again)
+	if !errors.Is(err, socialdomain.ErrAlreadyFocused) {
+		t.Fatalf("重复关注 err = %v, want %v", err, socialdomain.ErrAlreadyFocused)
+	}
+
+	if duplicated != nil || again.ID() != 0 {
+		t.Fatal("重复关注失败时不应返回实体或改写入参")
 	}
 
 	affected, err := repo.Delete(ctx, 2, 3)

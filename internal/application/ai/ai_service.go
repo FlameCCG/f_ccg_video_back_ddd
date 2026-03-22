@@ -5,8 +5,7 @@ import (
 
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config"
-	aierrors "f_ccg_video_back_ddd/internal/domain/ai/domainerr"
-	aivo "f_ccg_video_back_ddd/internal/domain/ai/valueobject"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"go.uber.org/zap"
 )
@@ -57,12 +56,12 @@ func NewService(
 func (s *Service) snapshot() (configSnapshot, error) {
 	root := s.cfgProvider.Get()
 	if root == nil {
-		return configSnapshot{}, aierrors.ErrConfigMissing
+		return configSnapshot{}, aidomain.ErrConfigMissing
 	}
 
 	source := root.AI
 	if source == nil {
-		return configSnapshot{}, aierrors.ErrConfigMissing
+		return configSnapshot{}, aidomain.ErrConfigMissing
 	}
 
 	cfg := *source
@@ -70,7 +69,7 @@ func (s *Service) snapshot() (configSnapshot, error) {
 	cfg.ThinkingEfforts = append([]config.AIModel{}, source.ThinkingEfforts...)
 	cfg.ImageModels = append([]config.AIModel{}, source.ImageModels...)
 	cfg.VideoModels = append([]config.AIModel{}, source.VideoModels...)
-	cfg.ChatModelBaseURL = aivo.NormalizeBaseURL(cfg.ChatModelBaseURL)
+	cfg.ChatModelBaseURL = strings.TrimRight(strings.TrimSpace(cfg.ChatModelBaseURL), "/")
 
 	return configSnapshot{
 		settings: cfg,
@@ -85,7 +84,7 @@ func (s *Service) snapshot() (configSnapshot, error) {
 
 func requireChatAPIKey(cfg *config.AI) error {
 	if cfg == nil || strings.TrimSpace(cfg.ChatModelAPIKey) == "" {
-		return aierrors.ErrChatAPIKeyMissing
+		return aidomain.ErrChatAPIKeyMissing
 	}
 
 	return nil
@@ -93,7 +92,7 @@ func requireChatAPIKey(cfg *config.AI) error {
 
 func requireDoubaoAPIKey(cfg *config.AI) error {
 	if cfg == nil || strings.TrimSpace(cfg.DoubaoModelAPIKey) == "" {
-		return aierrors.ErrDoubaoAPIKeyMissing
+		return aidomain.ErrDoubaoAPIKeyMissing
 	}
 
 	return nil
