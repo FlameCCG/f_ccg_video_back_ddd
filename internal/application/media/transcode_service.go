@@ -15,13 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// TranscodeService 是转码任务的应用编排服务。
-//
-// 分工：
-//   - 纯业务规则（管线选择、码率/分辨率决策、分片计划、超时预算、进度权重）在 internal/domain/media；
-//   - ffmpeg/ffprobe 执行、断点目录、Kafka、Redis、对象存储在 infrastructure；
-//   - 本服务负责编排：阶段推进、断点续传三层判定、GPU→CPU 回退、产物上传与落库、
-//     取消与失败清理、缓存刷新。
+// TranscodeService 编排转码任务的准备、编码、存储与资源持久化。
 type TranscodeService struct {
 	paths       ArtifactPaths
 	resources   mediadomain.TranscodeResourceRepository

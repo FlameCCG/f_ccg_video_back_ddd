@@ -104,8 +104,8 @@ func TestTrackerSucceedAndTTL(t *testing.T) {
 		t.Fatalf("status = %q, want running", running.Status)
 	}
 
-	if ttl != mediadomain.TranscodeProgressRunningTTL {
-		t.Fatalf("running ttl = %v, want %v", ttl, mediadomain.TranscodeProgressRunningTTL)
+	if ttl != ProgressRunningTTL {
+		t.Fatalf("running ttl = %v, want %v", ttl, ProgressRunningTTL)
 	}
 
 	tracker.Succeed(context.Background())
@@ -115,8 +115,8 @@ func TestTrackerSucceedAndTTL(t *testing.T) {
 		t.Fatalf("succeed snapshot = %+v, want succeeded/100", done)
 	}
 
-	if doneTTL != mediadomain.TranscodeProgressFinalTTL {
-		t.Fatalf("final ttl = %v, want %v", doneTTL, mediadomain.TranscodeProgressFinalTTL)
+	if doneTTL != ProgressFinalTTL {
+		t.Fatalf("final ttl = %v, want %v", doneTTL, ProgressFinalTTL)
 	}
 
 	if done.VideoID != 3 || done.PartID != 7 {
@@ -152,8 +152,8 @@ func TestTrackerFailInvokesObserver(t *testing.T) {
 		t.Fatalf("failed snapshot = %+v", failed)
 	}
 
-	if ttl != mediadomain.TranscodeProgressFinalTTL {
-		t.Fatalf("failed ttl = %v, want final %v", ttl, mediadomain.TranscodeProgressFinalTTL)
+	if ttl != ProgressFinalTTL {
+		t.Fatalf("failed ttl = %v, want final %v", ttl, ProgressFinalTTL)
 	}
 }
 
@@ -307,8 +307,8 @@ func TestNewQueuedProgress(t *testing.T) {
 		t.Fatalf("queued percent = %v, want 0", snapshot.Percent)
 	}
 
-	if snapshot.TTL() != mediadomain.TranscodeProgressRunningTTL {
-		t.Fatalf("queued ttl = %v, want running ttl", snapshot.TTL())
+	if ProgressTTL(*snapshot) != ProgressRunningTTL {
+		t.Fatalf("queued ttl = %v, want running ttl", ProgressTTL(*snapshot))
 	}
 }
 

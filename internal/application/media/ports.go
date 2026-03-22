@@ -19,7 +19,7 @@ import (
 // 基础设施端口（实现位于 internal/infrastructure/mq）
 // -----------------------------------------------------------------------------
 
-// 端口阅读：本文件描述探测、编码、源文件暂存与检查点等应用编排能力；存储、资源和进度的领域端口位于 domain/media/port/ports.go。
+// 端口阅读：本文件描述探测、编码、源文件暂存与检查点等编排能力；存储等技术端口见 technical_ports.go，进度写入见 runtime/ports.go，资源持久化见 domain/media/resource_repository.go。
 // 引擎可同时实现多个窄接口，应用只持有自己所需能力，具体选择由组合根完成。
 
 // MediaProber 媒体元信息探测端口（ffprobe + 源文件体积探测）。

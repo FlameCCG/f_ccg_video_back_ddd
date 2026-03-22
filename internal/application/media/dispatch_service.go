@@ -39,5 +39,5 @@ func (s *TranscodeDispatchService) MarkTranscodeQueued(ctx context.Context, vide
 
 	snapshot := mediadomain.NewQueuedProgress(videoID, partID, time.Now())
 	// queued 快照使用运行中 TTL（2 小时）。
-	_ = s.progress.Write(ctx, snapshot, mediadomain.TranscodeProgressRunningTTL)
+	_ = s.progress.Write(ctx, snapshot, mediaruntime.ProgressRunningTTL)
 }

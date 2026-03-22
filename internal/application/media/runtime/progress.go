@@ -493,7 +493,7 @@ func (t *TranscodeProgressTracker) flush(ctx context.Context, force bool) {
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(writeCtx), progressFlushTimeout)
 	defer cancel()
 
-	_ = t.store.Write(wctx, &snapshot, snapshot.TTL())
+	_ = t.store.Write(wctx, &snapshot, ProgressTTL(snapshot))
 }
 
 func clonePipelineProgress(src map[string]*mediadomain.TranscodePipelineProgress) []mediadomain.TranscodePipelineProgress {

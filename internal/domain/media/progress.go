@@ -36,14 +36,6 @@ const (
 	TranscodeStageCleanup = "cleanup"
 )
 
-// 进度写入节流与 TTL（外部契约，逐字保持）。
-const (
-	// TranscodeProgressRunningTTL 运行中进度快照 TTL。
-	TranscodeProgressRunningTTL = 2 * time.Hour
-	// TranscodeProgressFinalTTL 终态进度快照 TTL。
-	TranscodeProgressFinalTTL = 24 * time.Hour
-)
-
 // TranscodeProgress 是单个视频/分P 任务的进度快照（Redis 中存储的结构）。
 type TranscodeProgress struct {
 	VideoID      uint                        `json:"videoId"`
@@ -75,15 +67,6 @@ type TranscodePipelineProgress struct {
 // Terminal 报告进度是否已进入终态。
 func (p TranscodeProgress) Terminal() bool {
 	return p.Status == TranscodeStatusSucceeded || p.Status == TranscodeStatusFailed
-}
-
-// TTL 返回该快照应使用的 Redis TTL：终态 24 小时，其余 2 小时。
-func (p TranscodeProgress) TTL() time.Duration {
-	if p.Terminal() {
-		return TranscodeProgressFinalTTL
-	}
-
-	return TranscodeProgressRunningTTL
 }
 
 // Normalize 在写入前夹紧百分比区间并刷新更新时间。
