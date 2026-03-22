@@ -41,7 +41,7 @@ f_ccg_video_back_ddd/
 │   ├── bootstrap/                  # 组合根：wire.go(wireinject) + wire_gen.go + App 生命周期
 │   ├── domain/
 │   │   ├── shared/enum/            # 共享内核：跨上下文枚举
-│   │   └── <ctx>/                  # 按 entity/valueobject/repository/service 等职责分包
+│   │   └── <ctx>/                  # 上下文单包，按业务能力分文件
 │   ├── application/<ctx>/          # 应用服务/用例、DTO（含读模型）、查询端口、事务编排、ProviderSet
 │   ├── infrastructure/
 │   │   ├── config/                 # Viper 加载/热更新与 Provider；数据结构在 internal/config
@@ -75,7 +75,7 @@ f_ccg_video_back_ddd/
 
 `internal/config` 是配置**数据契约**，`internal/infrastructure/config` 是读取、监听和发布配置的**机制**；应用层经 `shared.ConfigReader/ConfigStore` 端口访问。`config_dev.yaml` 是可按示例创建的本地文件，不是仓库要求存在的固定资产。`gin.Context` 停在 HTTP 适配层，向用例传 `context.Context` 与显式参数。
 
-业务模块内部统一遵循以下约定：`entity` 承载实体及其行为，`valueobject` 承载值与独立策略，`repository` 只声明领域状态仓储，`service` 承载不自然属于单个对象的领域操作。事件放 `event`，非仓储能力接口放 `port`，共享业务错误放 `domainerr`。目录按实际职责建立，实体不能反向依赖领域服务、仓储或能力端口。
+业务模块内部统一遵循以下约定：每个业务上下文一个领域包，实体、值对象、具体政策、业务错误及领域仓储契约按业务能力分文件。关键状态通过业务动作修改，通过读取方法和快照暴露。查询、缓存、消息及跨上下文能力端口由应用层声明。
 
 主要写路径通过模型行为表达，例如 `Comment.SetPinned`、`Video.Review` / `PublishWhenDue`、`CoinAccount.ApplyChange` / `RevokeFavoriteReward`、`User.ApplyExperience`、`Banner.ChangePlacement` 和 `Menu.Revise`。应用层负责取得事实、事务与提交后的协作；对象自身的约束不会因拆目录而转移到领域服务中。
 
@@ -90,20 +90,20 @@ f_ccg_video_back_ddd/
 | `chat`、`notification` | 聊天会话/消息、站内通知；聊天和弹幕的 WebSocket Hub 位于接口层。 |
 | `search` | 搜索查询、索引和向量用例；River 是单独的基础设施组件。 |
 | `contentops`、`ai` | 站点配置/统计/Banner；AI 对话、图片和视频生成。 |
-| `platform`、`provisioning` | 定时维护用例；初始化和运维用例。Cron 调度器本身在 `infrastructure/scheduler`。 |
+| `platform`、`provisioning` | 调度与初始化编排。维护业务归 identity/comment/video；CLI 建号、角色与横幅写入经 bootstrap 进入所属应用用例，基础设施只保留迁移和外部引擎适配。Cron 生命周期在 `infrastructure/scheduler`。 |
 
 边界不等于“一个业务动作只进一个包”。例如投稿在 `video.PublishService` 中完成 DB 写入，然后经跨上下文端口派发到 `media.TranscodeDispatchService`；分片上传的 HTTP 用例在 `video.UploadService`，底层存储驱动在 `infrastructure/storage`。可顺着[投稿用例](../internal/application/video/publish_service.go)、[上传用例](../internal/application/video/upload_service.go)、[转码投递](../internal/application/media/dispatch_service.go)追踪。
 
 ### 用例与领域的当前阅读入口
 
-应用层仍在 `internal/application/<context>` 同包内按业务能力组织文件，输入输出与端口就近放在 `*_types.go`、`*_ports.go`；单一用例的类型也可以直接放在用例文件中。领域仍保留现有职责分包。
+应用层仍在 `internal/application/<context>` 同包内按业务能力组织文件，输入输出与端口就近放在 `*_types.go`、`*_ports.go`；单一用例的类型也可以直接放在用例文件中。领域同样采用上下文单包，规则使用结构体方法，关键实体状态为私有字段。
 
 | 上下文 | 用例与领域入口 |
 |---|---|
 | comment | [CreateService](../internal/application/comment/create_service.go)、[DeleteService](../internal/application/comment/delete_service.go)、[PinService](../internal/application/comment/pin_service.go)、[QueryService](../internal/application/comment/query_service.go)、[LikeService](../internal/application/comment/like_service.go)；缓存重建与通知派发各有包内组件 |
 | video | 投稿使用 `PublicationRepository` 和 `TagRepository`，改稿使用 `VideoRepository` 和 `TagRepository`，统计使用 `StatsRepository`，物理清理使用 `CleanupRepository`；[VideoFactsQuery](../internal/application/video/facts_query.go) 提供辅助事实。同一持久化实现满足这些接口 |
-| identity | [CoinService](../internal/application/identity/coin_service.go) 协调事务内账户加载、领域行为、流水和余额保存；[CoinAccount](../internal/domain/identity/entity/coin_account.go) 是硬币规则的唯一实现，`User.CoinCount` 仍供资料和登录读取 |
-| rbac | [菜单排序策略](../internal/domain/rbac/service/menu_order.go) 从菜单快照与同级顺序计算计划；[MenuService](../internal/application/rbac/menu_service.go) 负责锁定、父链校验、事务内保存，权限校验与 Casbin 协作由应用层协调 |
+| identity | [CoinService](../internal/application/identity/coin_service.go) 协调事务内账户加载、领域行为、流水和余额保存；[CoinAccount](../internal/domain/identity/coin_account.go) 是硬币规则的唯一实现，`User.CoinCount` 仍供资料和登录读取 |
+| rbac | [菜单排序策略](../internal/domain/rbac/menu_order.go) 从菜单快照与同级顺序计算计划；[MenuService](../internal/application/rbac/menu_service.go) 负责锁定、父链校验、事务内保存，权限校验与 Casbin 协作由应用层协调 |
 | notification | [DeliveryService](../internal/application/notification/delivery_service.go) 写入通知，[InboxService](../internal/application/notification/inbox_service.go) 维护收件箱，[AdminService](../internal/application/notification/admin_service.go) 管理系统通知；[CountService](../internal/application/notification/count_service.go) 集中角标缓存、singleflight、聊天未读组合及后台刷新 |
 | contentops | 配置读取、[快照复制](../internal/application/contentops/config_snapshot.go)、[敏感值保留](../internal/application/contentops/config_secrets.go) 和[原子写入](../internal/application/contentops/config_write.go) 按职责阅读 |
 | ai、search | AI 按对话、图像、视频、资源访问组织；搜索保留查询服务，降级和结果补全各自就近维护 |
@@ -114,7 +114,7 @@ f_ccg_video_back_ddd/
 
 MPD XML、分片模板和存储目录解析位于 [infrastructure/media/dash](../internal/infrastructure/media/dash/mpd.go)，HTTP 获取由外部适配器负责；资源描述、`DASHVariant` 与业务计算留在领域。源文件名的约束属于领域，[数据库异常翻译](../internal/infrastructure/persistence/video/filename_error.go) 属于持久化适配器。
 
-各上下文入口见 `internal/application/<context>`。评论置顶使用事务协调写入，进程内提交后任务仍没有持久化投递保证。
+各上下文用例与领域入口见上表。评论置顶使用事务协调写入，进程内提交后任务仍没有持久化投递保证。
 
 ## 3. 依赖方向与能验证的约束
 
@@ -156,7 +156,7 @@ interfaces ──▶ application ──▶ domain（规则与写侧仓储端口�
 ## 5. PO ↔ domain 转换约定
 
 - PO 位于 `internal/infrastructure/persistence/po`（MySQL）与 `mongopo`（Mongo）；它们描述落库形状，不是领域对象，也不应被当成所有 API 的响应类型。
-- 需要从写侧进入领域层时，由仓储显式转换。例如[视频转换器](../internal/infrastructure/persistence/video/converter.go)的 `toDomainVideo` / `toPOVideo`；读侧可直接从查询结果组装[应用读模型](../internal/application/video/detail_types.go)。转换是按具体用例做的，并非每个 PO 都有完全对称的双向映射。
+- 需要从写侧进入领域层时，由仓储经 `RestoreX(Snapshot)` 重建；写出使用读取方法或快照，创建返回持久化模型，保存保留部分字段及条件更新。例如[视频转换器](../internal/infrastructure/persistence/video/converter.go)的 `toDomainVideo` / `toPOVideo`；读侧可直接从查询结果组装[应用读模型](../internal/application/video/detail_types.go)。转换是按具体用例做的，并非每个 PO 都有完全对称的双向映射。
 - 持久化与序列化契约应分别验证表名、列名、索引和 JSON 字段，结构相似不能替代行为验证。
 
 ## 6. wire 装配图
