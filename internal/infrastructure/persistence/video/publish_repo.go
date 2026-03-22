@@ -14,7 +14,7 @@ import (
 //
 // publish_at 与 is_scheduled 同步写入视频行；事务不回滚已上传对象，也不保证提交后的 Kafka 投递。
 // 源文件名超长等数据库错误经 mapSourceFileNameDBError 转为用户可读文案。
-func (r *VideoRepository) Persist(ctx context.Context, draft *videodomain.PublishDraft) (*videodomain.Video, error) {
+func (r *VideoRepository) Persist(ctx context.Context, draft *videodomain.PublishDraft) (*videodomain.PublicationResult, error) {
 	if draft == nil || draft.Video == nil {
 		return nil, videodomain.ErrParamInvalid
 	}
@@ -22,6 +22,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *videodomain.Publis
 	row := toPOVideo(draft.Video)
 	row.PublishAt = draft.PublishAt
 	row.IsScheduled = draft.PublishAt != nil
+	var parts []po.VideoPart
 
 	err := gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if createErr := tx.Create(row).Error; createErr != nil {
@@ -37,38 +38,25 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *videodomain.Publis
 			for i := range tags {
 				values = append(values, &tags[i])
 			}
-
 			if assocErr := tx.Model(row).Association("Tags").Replace(values...); assocErr != nil {
 				return videodomain.ErrCreateVideoTagsFailed
 			}
 		}
 
 		if len(draft.Parts) > 0 {
-			parts := make([]po.VideoPart, 0, len(draft.Parts))
+			parts = make([]po.VideoPart, 0, len(draft.Parts))
 			for _, part := range draft.Parts {
 				parts = append(parts, toPOVideoPart(part, row.ID))
 			}
-
 			if createErr := tx.Create(&parts).Error; createErr != nil {
 				return videodomain.ErrCreatePartsFailed
 			}
-
-			// 回填自增 ID 供调用方派发转码任务
-			for i := range parts {
-				if i < len(draft.Parts) {
-					draft.Parts[i].ID = parts[i].ID
-					draft.Parts[i].VideoID = row.ID
-				}
-			}
-
 			if resErr := createInitialPartResources(tx, draft, parts); resErr != nil {
 				if videodomain.IsSourceFileNameError(resErr) {
 					return resErr
 				}
-
 				return videodomain.ErrCreatePartResourcesFailed
 			}
-
 			return nil
 		}
 
@@ -76,26 +64,31 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *videodomain.Publis
 			if videodomain.IsSourceFileNameError(resErr) {
 				return resErr
 			}
-
 			return videodomain.ErrCreateVideoResourceFailed
 		}
-
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// 事务成功后用已落库的主键、时间和定时标记重建实体，不改写调用方传入的旧指针。
+	// 身份与时间只出现在返回结果中，输入草稿及其分 P 切片始终不变。
 	snap := draft.Video.Snapshot()
 	snap.ID = row.ID
 	snap.CreatedAt = row.CreatedAt
 	snap.UpdatedAt = row.UpdatedAt
 	snap.IsScheduled = row.IsScheduled
-	restored := videodomain.RestoreVideo(snap)
-	draft.Video = restored
-
-	return restored, nil
+	result := &videodomain.PublicationResult{Video: videodomain.RestoreVideo(snap)}
+	if parts != nil {
+		result.Parts = make([]videodomain.VideoPart, len(parts))
+		for i, part := range parts {
+			result.Parts[i] = videodomain.VideoPart{
+				ID: part.ID, VideoID: part.VideoID, Title: part.Title, SortOrder: part.SortOrder,
+				Duration: part.Duration, DanmuCount: part.DanmuCount, StorageType: part.StorageType,
+			}
+		}
+	}
+	return result, nil
 }
 
 // createInitialPartResources 逐个分P写入初始（源片）资源行。

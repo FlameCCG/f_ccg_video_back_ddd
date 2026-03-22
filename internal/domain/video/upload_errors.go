@@ -4,6 +4,11 @@ import "errors"
 
 var ErrDailyUploadLimit = errors.New("今日上传源视频文件数量已达上限，请明天再试")
 
+var (
+	ErrUploadVideoFirst    = errors.New("请先上传视频文件")
+	ErrUploadAllPartsFirst = errors.New("请先上传所有分P视频文件")
+)
+
 // 上传相关错误。
 var errSourceFileNameEmpty = errors.New("源文件名不能为空")
 var errFileNameEmpty = errors.New("fileName 不能为空")

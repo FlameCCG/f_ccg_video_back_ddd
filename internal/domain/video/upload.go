@@ -17,6 +17,37 @@ const maxTotalChunks = 100000
 // UploadPolicy 校验投稿上传的文件名、分片集合与分 P 数量。
 type UploadPolicy struct{}
 
+// PublishUpload 是投稿资格判断所需的上传标识，不包含存储访问能力。
+type PublishUpload struct {
+	FileName string
+	FileHash string
+}
+
+func (upload PublishUpload) EnsureReady(multiPart bool) error {
+	if strings.TrimSpace(upload.FileName) == "" || strings.TrimSpace(upload.FileHash) == "" {
+		if multiPart {
+			return ErrUploadAllPartsFirst
+		}
+		return ErrUploadVideoFirst
+	}
+	return nil
+}
+
+// EnsurePublishReady 先校验多分 P 数量，再校验全部来源，保持错误优先级。
+func (p UploadPolicy) EnsurePublishReady(uploads []PublishUpload, multiPart bool, maximum int) error {
+	if multiPart {
+		if err := p.PartLimit(len(uploads), maximum); err != nil {
+			return err
+		}
+	}
+	for _, upload := range uploads {
+		if err := upload.EnsureReady(multiPart); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // DailyLimit 使用当次配置中的不同源文件额度，缺省或非正数沿用每日十个。
 func (UploadPolicy) DailyLimit(configured int) int {
 	if configured > 0 {
@@ -138,6 +169,9 @@ func (UploadPolicy) DefaultPartTitle(fileName string) string {
 
 // PartLimit 拒绝超过单作品分P上限的投稿。
 func (UploadPolicy) PartLimit(count, maxParts int) error {
+	if maxParts <= 0 {
+		maxParts = 10
+	}
 	if count > maxParts {
 		return fmt.Errorf("单个作品最多上传 %d 个分P", maxParts)
 	}

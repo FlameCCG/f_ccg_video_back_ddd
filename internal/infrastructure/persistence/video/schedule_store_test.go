@@ -228,7 +228,7 @@ func TestPublishPersistsTimeWithVideo(t *testing.T) {
 			draft := &videodomain.PublishDraft{Video: videodomain.RestoreVideo(videodomain.VideoSnapshot{Title: "scheduled", AuthorUsername: "alice", Status: enum.VideoStatusScheduled}), PublishAt: &future}
 			created, err := f.videos.Persist(t.Context(), draft)
 			if err == nil {
-				draft.Video = created
+				draft.Video = created.Video
 			}
 			if (err != nil) != fail {
 				t.Fatalf("error=%v, want fail=%v", err, fail)
@@ -313,7 +313,7 @@ func TestImmediatePublishHasNoScheduledTime(t *testing.T) {
 	if created, err := f.videos.Persist(t.Context(), draft); err != nil {
 		t.Fatal(err)
 	} else {
-		draft.Video = created
+		draft.Video = created.Video
 	}
 	requirePublishTime(t, infra.NewScheduleStore(f.db), draft.Video.ID(), nil)
 }

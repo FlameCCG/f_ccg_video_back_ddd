@@ -17,10 +17,6 @@ var (
 	errPartitionMissing = errors.New("分区不存在")
 	// errStorageUnavailable 存储服务不可用.
 	errStorageUnavailable = errors.New("存储服务不可用")
-	// errUploadVideoFirst 请先上传视频文件.
-	errUploadVideoFirst = errors.New("请先上传视频文件")
-	// errUploadAllPartsFirst 请先上传所有分P视频文件.
-	errUploadAllPartsFirst = errors.New("请先上传所有分P视频文件")
 	// errCheckUploadFailed 检查上传文件失败.
 	errCheckUploadFailed = errors.New("检查上传文件失败")
 	// errUploadIncomplete 请先完成视频上传（文件可能已被删除，请重新上传）.

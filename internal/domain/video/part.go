@@ -54,13 +54,13 @@ func (ResourcePolicy) InitialDraft(fileName, filePath string) *ResourceDraft {
 
 // PublishDraft 一次投稿需要落库的全部内容（由仓储在单事务内写入）。
 type PublishDraft struct {
-	// Video 视频主体；仓储写入后回填自增 ID。
+	// Video 待写入的视频主体，仓储不修改此指针或其状态。
 	Video *Video
 	// PublishAt 与视频主体同时提交；nil 表示无需定时发布。
 	PublishAt *time.Time
 	// TagIDs 标签关联（为空表示不建立关联）。
 	TagIDs []uint
-	// Parts 分P列表；仓储写入后逐项回填自增 ID。
+	// Parts 待写入的分 P 列表，持久化身份通过 PublicationResult 返回。
 	Parts []VideoPart
 	// PartResources 与 Parts 同序的初始资源；元素为 nil 表示该分P不写资源行。
 	PartResources []*ResourceDraft

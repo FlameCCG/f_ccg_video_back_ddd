@@ -67,21 +67,19 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	storageType := storageType(cfg)
 
 	isMultiPart := len(cmd.Parts) > 0
+	var maximum int
+	if cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil {
+		maximum = cfg.Site.Storage.MaxUploadNum
+	}
+	checkedUploads := []videodomain.PublishUpload{{FileName: cmd.FileName, FileHash: cmd.FileHash}}
 	if isMultiPart {
-		maxParts := 10
-		if cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.MaxUploadNum > 0 {
-			maxParts = cfg.Site.Storage.MaxUploadNum
-		}
-		if err := (videodomain.UploadPolicy{}).PartLimit(len(cmd.Parts), maxParts); err != nil {
-			return nil, err
-		}
+		checkedUploads = make([]videodomain.PublishUpload, 0, len(cmd.Parts))
 		for _, part := range cmd.Parts {
-			if trimSpace(part.FileName) == "" || trimSpace(part.FileHash) == "" {
-				return nil, errUploadAllPartsFirst
-			}
+			checkedUploads = append(checkedUploads, videodomain.PublishUpload{FileName: part.FileName, FileHash: part.FileHash})
 		}
-	} else if trimSpace(cmd.FileName) == "" || trimSpace(cmd.FileHash) == "" {
-		return nil, errUploadVideoFirst
+	}
+	if err := (videodomain.UploadPolicy{}).EnsurePublishReady(checkedUploads, isMultiPart, maximum); err != nil {
+		return nil, err
 	}
 	var parts []videodomain.VideoPart
 	var video *videodomain.Video
@@ -119,7 +117,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 			if err != nil {
 				return err
 			}
-			video = saved
+			video, parts = saved.Video, saved.Parts
 			return nil
 		}); err != nil {
 		return nil, err
@@ -174,8 +172,8 @@ func (s *PublishService) preparePublishUploads(ctx context.Context, cmd *Publish
 
 	if len(cmd.Parts) > 0 {
 		for i := range cmd.Parts {
-			if trimSpace(cmd.Parts[i].FileName) == "" || trimSpace(cmd.Parts[i].FileHash) == "" {
-				return errUploadAllPartsFirst
+			if err := (videodomain.PublishUpload{FileName: cmd.Parts[i].FileName, FileHash: cmd.Parts[i].FileHash}).EnsureReady(true); err != nil {
+				return err
 			}
 
 			if err := (videodomain.UploadPolicy{}).SourceFileName(cmd.Parts[i].FileName); err != nil {
@@ -193,8 +191,8 @@ func (s *PublishService) preparePublishUploads(ctx context.Context, cmd *Publish
 		return nil
 	}
 
-	if trimSpace(cmd.FileName) == "" || trimSpace(cmd.FileHash) == "" {
-		return errUploadVideoFirst
+	if err := (videodomain.PublishUpload{FileName: cmd.FileName, FileHash: cmd.FileHash}).EnsureReady(false); err != nil {
+		return err
 	}
 
 	if err := (videodomain.UploadPolicy{}).SourceFileName(cmd.FileName); err != nil {
@@ -218,7 +216,7 @@ func (s *PublishService) persistVideo(
 	cmd PublishVideoCommand,
 	parts []videodomain.VideoPart,
 	scheduledAt *time.Time,
-) (*videodomain.Video, error) {
+) (*videodomain.PublicationResult, error) {
 	var tags []videodomain.Tag
 
 	if len(cmd.TagIDs) > 0 {
