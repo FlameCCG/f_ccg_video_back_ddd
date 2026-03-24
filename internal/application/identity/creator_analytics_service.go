@@ -27,10 +27,10 @@ func NewCreatorAnalyticsService(
 }
 
 // ErrCreatorMetricTypeInvalid 指标类型非法。
-var ErrCreatorMetricTypeInvalid = errors.New("type 仅支持 fans/views/comments/coins/danmu/favorites")
+var ErrCreatorMetricTypeInvalid = identitydomain.ErrCreatorMetricTypeInvalid
 
 // ErrCreatorRangeInvalid 时间范围非法。
-var ErrCreatorRangeInvalid = errors.New("range 仅支持 7d/30d/month")
+var ErrCreatorRangeInvalid = identitydomain.ErrCreatorRangeInvalid
 
 // ErrCreatorIDRequired creatorId 缺失。
 var ErrCreatorIDRequired = errors.New("creatorId 不能为空")
@@ -84,12 +84,13 @@ func (s *CreatorAnalyticsService) Analytics(
 		ctx = context.TODO()
 	}
 
-	days, normalized, err := s.buildRangeDays(rangeKey)
+	policy := identitydomain.CreatorAnalyticsPolicy{}
+	days, normalized, err := policy.RangeDays(rangeKey, time.Now())
 	if err != nil {
 		return nil, err
 	}
 
-	metricType, err = s.normalizeCreatorMetricType(metricType)
+	metricType, err = policy.NormalizeMetric(metricType)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +114,7 @@ func (s *CreatorAnalyticsService) Analytics(
 		Type:   metricType,
 		X:      labels,
 		Values: values,
-		Total:  s.sumInt64(values),
+		Total:  policy.Total(values),
 	}, nil
 }
 
@@ -152,70 +153,4 @@ func (s *CreatorAnalyticsService) Overview(ctx context.Context, creatorID uint) 
 	overview.Favorites = aggregate.Favorites
 
 	return overview, nil
-}
-
-// buildRangeDays 按 rangeKey 展开日期序列，并返回规范化后的 range 名。
-func (s *CreatorAnalyticsService) buildRangeDays(rangeKey string) ([]time.Time, string, error) {
-	now := time.Now()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-
-	switch rangeKey {
-	case "", "7d", "7", "week":
-		start := todayStart.AddDate(0, 0, -6)
-
-		return s.buildDaySeries(start, todayStart), "7d", nil
-	case "30d", "30":
-		start := todayStart.AddDate(0, 0, -29)
-
-		return s.buildDaySeries(start, todayStart), "30d", nil
-	case "month", "1m":
-		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
-
-		return s.buildDaySeries(start, todayStart), "month", nil
-	default:
-		return nil, "", ErrCreatorRangeInvalid
-	}
-}
-
-func (s *CreatorAnalyticsService) buildDaySeries(start, end time.Time) []time.Time {
-	if end.Before(start) {
-		start, end = end, start
-	}
-
-	days := int(end.Sub(start).Hours()/24) + 1
-
-	out := make([]time.Time, 0, days)
-	for i := range days {
-		out = append(out, start.AddDate(0, 0, i))
-	}
-
-	return out
-}
-
-func (s *CreatorAnalyticsService) normalizeCreatorMetricType(metricType string) (string, error) {
-	switch metricType {
-	case "", CreatorAnalyticsTypeViews:
-		return CreatorAnalyticsTypeViews, nil
-	case CreatorAnalyticsTypeFans:
-		return CreatorAnalyticsTypeFans, nil
-	case CreatorAnalyticsTypeComments:
-		return CreatorAnalyticsTypeComments, nil
-	case CreatorAnalyticsTypeCoins:
-		return CreatorAnalyticsTypeCoins, nil
-	case CreatorAnalyticsTypeDanmu:
-		return CreatorAnalyticsTypeDanmu, nil
-	case CreatorAnalyticsTypeFavorites:
-		return CreatorAnalyticsTypeFavorites, nil
-	default:
-		return "", ErrCreatorMetricTypeInvalid
-	}
-}
-
-func (s *CreatorAnalyticsService) sumInt64(values []int64) int64 {
-	var total int64
-	for _, v := range values {
-		total += v
-	}
-
-	return total
 }

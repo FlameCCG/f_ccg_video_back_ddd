@@ -1,5 +1,7 @@
 package identity
 
+import identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
+
 // CreatorOverview 创作中心六项总览（读模型）.
 type CreatorOverview struct {
 	Fans      int64 `json:"fans"`
@@ -31,15 +33,15 @@ type CreatorVideoAggregate struct {
 // 创作中心指标类型。
 const (
 	// CreatorAnalyticsTypeFans 粉丝数指标.
-	CreatorAnalyticsTypeFans = "fans"
+	CreatorAnalyticsTypeFans = identitydomain.CreatorMetricFans
 	// CreatorAnalyticsTypeViews 播放量指标.
-	CreatorAnalyticsTypeViews = "views"
+	CreatorAnalyticsTypeViews = identitydomain.CreatorMetricViews
 	// CreatorAnalyticsTypeComments 评论量指标.
-	CreatorAnalyticsTypeComments = "comments"
+	CreatorAnalyticsTypeComments = identitydomain.CreatorMetricComments
 	// CreatorAnalyticsTypeCoins 投币量指标.
-	CreatorAnalyticsTypeCoins = "coins"
+	CreatorAnalyticsTypeCoins = identitydomain.CreatorMetricCoins
 	// CreatorAnalyticsTypeDanmu 弹幕量指标.
-	CreatorAnalyticsTypeDanmu = "danmu"
+	CreatorAnalyticsTypeDanmu = identitydomain.CreatorMetricDanmu
 	// CreatorAnalyticsTypeFavorites 收藏量指标.
-	CreatorAnalyticsTypeFavorites = "favorites"
+	CreatorAnalyticsTypeFavorites = identitydomain.CreatorMetricFavorites
 )
