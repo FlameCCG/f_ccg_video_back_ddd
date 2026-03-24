@@ -5,22 +5,12 @@ import (
 	"time"
 )
 
-// 管理端统计窗口。
-const (
-	// adminStatsDailyDays 日维度窗口：最近一周（含今天）。
-	adminStatsDailyDays = 7
-	// adminStatsMonthlyMonths 月维度窗口：最近一年（含本月）。
-	adminStatsMonthlyMonths = 12
-)
-
 // AdminStats 管理端站点统计（总览 + 日维度趋势 + 月维度趋势）。
 //
 // 错误处理：四项总量统计失败直接返回错误；在线人数、以及日/月循环内的逐项统计
 // 失败一律忽略并记 0（含当日登录去重数），保证接口整体可用。
 func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
-	now := time.Now()
-	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	tomorrowStart := todayStart.AddDate(0, 0, 1)
+	windows := s.rates.Windows(time.Now())
 
 	totalUsers, err := s.query.CountUsers(ctx)
 	if err != nil {
@@ -37,7 +27,7 @@ func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 		return nil, err
 	}
 
-	todayRegisters, err := s.query.CountUsersCreatedBetween(ctx, todayStart, tomorrowStart)
+	todayRegisters, err := s.query.CountUsersCreatedBetween(ctx, windows.Today.Start, windows.Today.End)
 	if err != nil {
 		return nil, err
 	}
@@ -48,15 +38,14 @@ func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 	}
 
 	// daily (最近一周，含今天，共 7 天)
-	dailyLabels := make([]string, 0, adminStatsDailyDays)
-	visitValues := make([]int64, 0, adminStatsDailyDays)
-	loginValues := make([]int64, 0, adminStatsDailyDays)
-	videoValues := make([]int64, 0, adminStatsDailyDays)
-	userValues := make([]int64, 0, adminStatsDailyDays)
+	dailyLabels := make([]string, 0, len(windows.Daily))
+	visitValues := make([]int64, 0, len(windows.Daily))
+	loginValues := make([]int64, 0, len(windows.Daily))
+	videoValues := make([]int64, 0, len(windows.Daily))
+	userValues := make([]int64, 0, len(windows.Daily))
 
-	for i := adminStatsDailyDays - 1; i >= 0; i-- {
-		dayStart := todayStart.AddDate(0, 0, -i)
-		dayEnd := dayStart.AddDate(0, 0, 1)
+	for _, period := range windows.Daily {
+		dayStart, dayEnd := period.Start, period.End
 		dailyLabels = append(dailyLabels, dayStart.Format("2006-01-02"))
 
 		uv := int64(0)
@@ -81,14 +70,11 @@ func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 	todayLoginUsers := loginValues[len(loginValues)-1]
 
 	// monthly (最近一年，含本月，共 12 月)
-	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
-	yearStart := monthStart.AddDate(0, -(adminStatsMonthlyMonths - 1), 0)
-	monthlyLabels := make([]string, 0, adminStatsMonthlyMonths)
-	monthlyVideoValues := make([]int64, 0, adminStatsMonthlyMonths)
+	monthlyLabels := make([]string, 0, len(windows.Monthly))
+	monthlyVideoValues := make([]int64, 0, len(windows.Monthly))
 
-	for i := range adminStatsMonthlyMonths {
-		start := yearStart.AddDate(0, i, 0)
-		end := start.AddDate(0, 1, 0)
+	for _, period := range windows.Monthly {
+		start, end := period.Start, period.End
 		monthlyLabels = append(monthlyLabels, start.Format("2006-01"))
 
 		newVideos, _ := s.query.CountPublishedVideosCreatedBetween(ctx, start, end)
