@@ -17,6 +17,15 @@ type MenuSuggestion struct {
 	SortOrder uint   `json:"sortOrder"`
 }
 
+// GenerationTitle 校验并规范化生成菜单所需的中文标题。
+func (MenuSuggestion) GenerationTitle(title string) (string, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "", ErrMenuGenerationTitleEmpty
+	}
+	return title, nil
+}
+
 // Normalize validates generated menu fields without modifying the input.
 func (suggestion MenuSuggestion) Normalize() (MenuSuggestion, error) {
 	normalized := suggestion

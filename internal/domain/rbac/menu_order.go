@@ -1,5 +1,7 @@
 package rbac
 
+import "slices"
+
 const (
 	MenuMoveBefore = "before"
 	MenuMoveAfter  = "after"
@@ -7,6 +9,9 @@ const (
 
 // MenuOrder 规划同层插入、拖拽和父子挂接。它没有依赖，调用方用零值即可。
 type MenuOrder struct{}
+
+// MoveIsNoop 自移动保持幂等成功，先于位置和目标存在性检查。
+func (MenuOrder) MoveIsNoop(menuID, targetID uint) bool { return menuID == targetID }
 
 // MenuInsertionPlan 给出插入后的同级顺序及新菜单位置；零 ID 留给应用在创建后回填。
 type MenuInsertionPlan struct {
@@ -35,6 +40,9 @@ func (order MenuOrder) EnsureMoveAllowed(moving, target *Menu, position string) 
 	if moving == nil || target == nil {
 		return ErrMenuNotFound
 	}
+	if order.MoveIsNoop(moving.ID(), target.ID()) {
+		return nil
+	}
 	if err := order.ValidPosition(position); err != nil {
 		return err
 	}
@@ -48,6 +56,9 @@ func (order MenuOrder) EnsureMoveAllowed(moving, target *Menu, position string) 
 func (MenuOrder) PlanMove(moving, target *Menu, siblings []uint, position string) ([]uint, error) {
 	if err := (MenuOrder{}).EnsureMoveAllowed(moving, target, position); err != nil {
 		return nil, err
+	}
+	if (MenuOrder{}).MoveIsNoop(moving.ID(), target.ID()) {
+		return slices.Clone(siblings), nil
 	}
 
 	sequence := (MenuOrder{}).removeID(siblings, moving.ID())

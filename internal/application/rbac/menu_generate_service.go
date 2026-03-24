@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
@@ -16,9 +15,9 @@ func (s *MenuService) Generate(
 	title string,
 	parentID *uint,
 ) (*rbacdomain.MenuSuggestion, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return nil, rbacdomain.ErrMenuGenerationTitleEmpty
+	title, err := (rbacdomain.MenuSuggestion{}).GenerationTitle(title)
+	if err != nil {
+		return nil, err
 	}
 
 	parentID = s.order.NormalizeParent(parentID)

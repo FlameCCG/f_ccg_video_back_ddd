@@ -26,6 +26,7 @@ type MenuService struct {
 	userRoles rbacdomain.UserRoleRepository
 	generator MenuSuggestionGenerator
 	order     rbacdomain.MenuOrder
+	grants    rbacdomain.MenuGrantPolicy
 	inherit   rbacdomain.Inherit
 	logger    *zap.Logger
 }
@@ -48,6 +49,7 @@ func NewMenuService(
 		userRoles: userRoles,
 		generator: generator,
 		order:     rbacdomain.MenuOrder{},
+		grants:    rbacdomain.MenuGrantPolicy{},
 		inherit:   rbacdomain.Inherit{},
 		logger:    logger,
 	}
@@ -166,7 +168,7 @@ func (s *MenuService) Update(ctx context.Context, params UpdateMenuParams) error
 
 // Move 把菜单移动到同层目标菜单的前面或后面，并重建该层连续排序。
 func (s *MenuService) Move(ctx context.Context, menuID, targetID uint, position string) error {
-	if menuID == targetID {
+	if s.order.MoveIsNoop(menuID, targetID) {
 		return nil
 	}
 
@@ -286,30 +288,29 @@ func (s *MenuService) applyMenuSequence(ctx context.Context, menuIDs []uint) err
 }
 
 func (s *MenuService) grantMenuToCreatorRole(ctx context.Context, creatorID, menuID uint) error {
-	if creatorID == 0 {
-		return rbacdomain.ErrMenuCreatorRoleMissing
+	if err := s.grants.EnsureCreator(creatorID); err != nil {
+		return err
 	}
 
 	roleID, found, err := s.userRoles.CurrentRoleID(ctx, creatorID)
 	if err != nil {
 		return fmt.Errorf("读取创建者角色失败: %w", err)
 	}
-	if !found || roleID == 0 {
-		return rbacdomain.ErrMenuCreatorRoleMissing
+	if err := s.grants.EnsureCurrentRole(found, roleID); err != nil {
+		return err
 	}
 
 	role, err := s.roles.FindIDByID(ctx, roleID)
 	if err != nil {
 		return fmt.Errorf("读取创建者当前角色失败: %w", err)
 	}
-	if role == nil {
-		return rbacdomain.ErrMenuCreatorRoleMissing
+	if err := s.grants.EnsureCurrentRole(role != nil, roleID); err != nil {
+		return err
 	}
 
 	if err := s.roleMenus.GrantDirect(ctx, role.ID(), menuID); err != nil {
 		return fmt.Errorf("授予创建者菜单权限失败: %w", err)
 	}
-
 	return nil
 }
 
