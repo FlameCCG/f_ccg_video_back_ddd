@@ -14,7 +14,6 @@ import (
 
 const (
 	maxInlineImageURLChars = 512
-	maxQueryImages         = 3
 	imagePlaceholderText   = "[用户上传的图片]"
 )
 
@@ -163,13 +162,7 @@ func (c conversation) trimHistory(cfg *config.AI) conversation {
 	if cfg != nil {
 		turns, chars = cfg.HistoryMaxTurns, cfg.HistoryMaxChars
 	}
-	facts := make([]aidomain.HistoryMessage, len(c.Messages))
-	for i, message := range c.Messages {
-		if message != nil {
-			facts[i] = aidomain.HistoryMessage{Present: true, System: message.Role == schema.System, User: message.Role == schema.User, TextRunes: len([]rune(messageText(message)))}
-		}
-	}
-	positions := (aidomain.HistoryPolicy{}).Select(facts, turns, chars)
+	positions := (aidomain.HistoryPolicy{}).Select(c.historyFacts(), turns, chars)
 	selected := make([]*schema.Message, 0, len(positions))
 	for _, i := range positions {
 		selected = append(selected, c.Messages[i])
@@ -255,24 +248,14 @@ func (c conversation) modelMessages() []*schema.Message {
 }
 
 func (c conversation) queryImages() []string {
-	if len(c.LatestUserImages) <= maxQueryImages {
-		return c.LatestUserImages
-	}
-
-	return c.LatestUserImages[:maxQueryImages]
+	return (aidomain.HistoryPolicy{}).QueryImages(c.LatestUserImages)
 }
 
 func (c conversation) transcript(maxMessages, maxCharsPerMessage int) string {
-	messages := c.Messages
-	if maxMessages > 0 && len(messages) > maxMessages {
-		messages = messages[len(messages)-maxMessages:]
-	}
-
-	lines := make([]string, 0, len(messages))
-	for _, message := range messages {
-		if message == nil || message.Role == schema.System {
-			continue
-		}
+	positions := (aidomain.HistoryPolicy{}).AnalysisPositions(c.historyFacts(), maxMessages)
+	lines := make([]string, 0, len(positions))
+	for _, position := range positions {
+		message := c.Messages[position]
 		speaker := "用户"
 		if message.Role == schema.Assistant {
 			speaker = "助手"
@@ -281,6 +264,17 @@ func (c conversation) transcript(maxMessages, maxCharsPerMessage int) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+// historyFacts 只把模型 SDK 消息转换成领域选择所需的事实。
+func (c conversation) historyFacts() []aidomain.HistoryMessage {
+	facts := make([]aidomain.HistoryMessage, len(c.Messages))
+	for i, message := range c.Messages {
+		if message != nil {
+			facts[i] = aidomain.HistoryMessage{Present: true, System: message.Role == schema.System, User: message.Role == schema.User, TextRunes: len([]rune(messageText(message)))}
+		}
+	}
+	return facts
 }
 
 func conversationString(value any) string {

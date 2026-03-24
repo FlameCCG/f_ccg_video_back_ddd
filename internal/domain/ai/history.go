@@ -1,11 +1,35 @@
 package ai
 
+import "slices"
+
 // HistoryMessage 只表达历史选择所需的角色与文本成本，不包含模型 SDK 或协议类型。
 type HistoryMessage struct {
 	Present, System, User bool
 	TextRunes             int
 }
 type HistoryPolicy struct{}
+
+// QueryImages 选择本轮用于检索的图片，沿用最多三张的政策。
+func (HistoryPolicy) QueryImages(images []string) []string {
+	count := min(len(images), 3)
+	return slices.Clone(images[:count])
+}
+
+// AnalysisPositions 先取最后若干条原始消息，再排除缺失与系统消息。
+// 截取顺序不能改成过滤后截取，否则会改变意图分析使用的历史范围。
+func (HistoryPolicy) AnalysisPositions(facts []HistoryMessage, maximum int) []int {
+	start := 0
+	if maximum > 0 && len(facts) > maximum {
+		start = len(facts) - maximum
+	}
+	positions := make([]int, 0, len(facts)-start)
+	for i := start; i < len(facts); i++ {
+		if facts[i].Present && !facts[i].System {
+			positions = append(positions, i)
+		}
+	}
+	return positions
+}
 
 func (HistoryPolicy) Limits(turns, chars int) (int, int) {
 	if turns <= 0 {

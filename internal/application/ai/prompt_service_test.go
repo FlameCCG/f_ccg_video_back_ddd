@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -20,6 +21,26 @@ type promptTextFake struct {
 	err   error
 	last  TextInvocation
 	calls int
+}
+
+func TestPromptCandidateLimitKeepsRecallAndPromptInAgreement(t *testing.T) {
+	for _, tc := range []struct{ configured, want int }{{0, 8}, {-1, 8}, {3, 3}, {25, 25}} {
+		t.Run(strconv.Itoa(tc.configured), func(t *testing.T) {
+			vectors := &promptVectorFake{ids: []uint{7}}
+			s := &Service{
+				text:    &promptTextFake{text: `{"intent":"find_video","keywords":["Go"]}`},
+				vectors: vectors,
+				prompts: &promptQueryFake{available: true, inputs: []aidomain.VideoCandidateInput{{VideoID: 7, Title: "Go"}}},
+				logger:  zap.NewNop(),
+			}
+			prompt, err := s.buildResponsesSystemPrompt(t.Context(), &config.AI{VectorTopK: tc.configured}, RuntimeConfig{}, conversation{
+				Messages: []*schema.Message{schema.UserMessage("找 Go 视频")}, LatestUserText: "找 Go 视频",
+			}, "model")
+			if err != nil || vectors.limit != tc.want || !strings.Contains(prompt, "本轮作品候选上限："+strconv.Itoa(tc.want)+"（") {
+				t.Fatalf("recall/prompt limit changed: recall=%d want=%d prompt=%q err=%v", vectors.limit, tc.want, prompt, err)
+			}
+		})
+	}
 }
 
 func TestAnalyzeVideoQueryPreservesResponseTypeErrorText(t *testing.T) {

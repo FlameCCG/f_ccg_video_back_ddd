@@ -126,8 +126,8 @@ func TestQueryImagesRespectsCap(t *testing.T) {
 
 	conv := conversation{LatestUserImages: []string{"a", "b", "c", "d", "e"}}
 	images := conv.queryImages()
-	if len(images) != maxQueryImages {
-		t.Fatalf("queryImages() returned %d images, want %d", len(images), maxQueryImages)
+	if len(images) != 3 {
+		t.Fatalf("queryImages() returned %d images, want %d", len(images), 3)
 	}
 	if strings.Join(images, ",") != "a,b,c" {
 		t.Fatalf("queryImages() = %#v, want the first three images", images)

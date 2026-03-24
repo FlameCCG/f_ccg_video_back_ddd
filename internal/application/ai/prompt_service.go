@@ -64,7 +64,7 @@ func (s *Service) buildResponsesSystemPrompt(
 		return basePrompt, nil
 	}
 
-	limit := resolvePromptCandidateLimit(cfg)
+	limit := (aidomain.PromptVideoCandidateSet{}).EnsurePositiveLimit(cfg.VectorTopK)
 	candidateSet, err := s.loadPromptVideoCandidates(promptCtx, conv, analysis.Keywords, limit)
 	if err != nil {
 		return basePrompt, err
@@ -256,14 +256,6 @@ func (s *Service) searchPromptVideoIDs(
 	}
 
 	return ids, aidomain.RetrievalModeKeyword
-}
-
-func resolvePromptCandidateLimit(cfg *config.AI) int {
-	if cfg != nil && cfg.VectorTopK > 0 {
-		return cfg.VectorTopK
-	}
-
-	return aidomain.DefaultCandidateLimit
 }
 
 func resolveAnalysisTimeout(cfg *config.AI) time.Duration {

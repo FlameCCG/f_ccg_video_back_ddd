@@ -16,6 +16,24 @@ type Option struct {
 // Options 是一组模型或思考强度选项。
 type Options []Option
 
+// ThinkingSelection 是思考开关和强度一起裁定的结果。
+type ThinkingSelection struct {
+	Enabled bool
+	Effort  string
+}
+
+// ResolveThinking 保持后台关闭优先、请求缺省开启和关闭时清空强度的既有规则。
+func (options Options) ResolveThinking(enabled bool, requested *bool, effort, configured string) (ThinkingSelection, error) {
+	if !enabled || requested != nil && !*requested {
+		return ThinkingSelection{}, nil
+	}
+	resolved, err := options.NormalizeConfiguredOption(effort, configured, "思考强度", "high")
+	if err != nil {
+		return ThinkingSelection{}, err
+	}
+	return ThinkingSelection{Enabled: true, Effort: resolved}, nil
+}
+
 // Clone 复制并规范化选项列表：丢弃空 value，label 缺省回落 value。
 //
 // 返回值恒为非 nil 切片，保证序列化为 [] 而不是 null。

@@ -86,7 +86,6 @@ func requireChatAPIKey(cfg *config.AI) error {
 	if cfg == nil || strings.TrimSpace(cfg.ChatModelAPIKey) == "" {
 		return aidomain.ErrChatAPIKeyMissing
 	}
-
 	return nil
 }
 
@@ -94,6 +93,5 @@ func requireDoubaoAPIKey(cfg *config.AI) error {
 	if cfg == nil || strings.TrimSpace(cfg.DoubaoModelAPIKey) == "" {
 		return aidomain.ErrDoubaoAPIKeyMissing
 	}
-
 	return nil
 }

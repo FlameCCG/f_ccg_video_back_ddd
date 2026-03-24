@@ -117,38 +117,18 @@ func (s *Service) prepareResponsesRequest(
 
 // normalizeThinkingOptions 按后台开关规范化本次请求的思考选项。
 func normalizeThinkingOptions(cfg *config.AI, req ResponsesRequest) (ResponsesRequest, error) {
-	if cfg == nil || !cfg.ThinkingEnabled {
-		disabled := false
-		req.Thinking = &disabled
-		req.ThinkingEffort = ""
-
-		return req, nil
+	var enabled bool
+	var configured string
+	var options aidomain.Options
+	if cfg != nil {
+		enabled, configured = cfg.ThinkingEnabled, cfg.ThinkingEffort
+		options = toOptions(cfg.ThinkingEfforts)
 	}
-
-	// 未传 thinking 时默认开启（与后台开关一致）
-	if req.Thinking == nil {
-		enabled := true
-		req.Thinking = &enabled
-	}
-
-	if req.Thinking != nil && !*req.Thinking {
-		req.ThinkingEffort = ""
-
-		return req, nil
-	}
-
-	effort, err := aidomain.Options(toOptions(cfg.ThinkingEfforts)).NormalizeConfiguredOption(
-		req.ThinkingEffort,
-		cfg.ThinkingEffort,
-		"思考强度",
-		"high",
-	)
+	selection, err := options.ResolveThinking(enabled, req.Thinking, req.ThinkingEffort, configured)
 	if err != nil {
 		return req, err
 	}
-
-	req.ThinkingEffort = effort
-
+	req.Thinking, req.ThinkingEffort = &selection.Enabled, selection.Effort
 	return req, nil
 }
 
