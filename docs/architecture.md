@@ -98,6 +98,10 @@ f_ccg_video_back_ddd/
 
 应用层仍在 `internal/application/<context>` 同包内按业务能力组织文件，输入输出与端口就近放在 `*_types.go`、`*_ports.go`；单一用例的类型也可以直接放在用例文件中。领域同样采用上下文单包，规则使用结构体方法，关键实体状态为私有字段。
 
+应用服务的入口和私有辅助方法采用同一职责边界：可以获取事实、处理 IO 结果、协调事务、调用领域行为和提交后副作用；即使辅助方法只有一个调用方，也可以留在应用层。具体业务资格、业务值约束、业务计算和状态转换都属于领域。领域服务不是每个用例必经的一层，也不由实体、聚合或数据库数量决定是否建立；优先由实体和值对象维护自然归属的规则，独立业务政策才使用领域服务或政策结构体。
+
+各上下文的用例、端口及关键写路径位于 `internal/application/<context>`。
+
 | 上下文 | 用例与领域入口 |
 |---|---|
 | comment | [CreateService](../internal/application/comment/create_service.go)、[DeleteService](../internal/application/comment/delete_service.go)、[PinService](../internal/application/comment/pin_service.go)、[QueryService](../internal/application/comment/query_service.go)、[LikeService](../internal/application/comment/like_service.go)；缓存重建与通知派发各有包内组件 |
@@ -131,7 +135,7 @@ interfaces ──▶ application ──▶ domain（规则与写侧仓储端口�
 - 跨上下文通过应用端口协调，必要的 DTO 转换放在 `internal/bootstrap/adapters`；具体绑定见[跨上下文 ProviderSet](../internal/bootstrap/providers_cross_context.go)。
 - `gin.Context` 止步 interfaces 层：向 application/domain 只传 `context.Context` 与 DTO；
   用户身份、客户端 IP 等在 interfaces 层提取后显式传参。
-- 接口所有权归消费方：写侧仓储接口定义在 domain；读侧查询端口定义在 application。
+- 接口所有权归消费方：领域状态仓储接口定义在 domain；页面投影等读侧查询端口定义在 application。聚合及其集合读取可以保留在领域仓储，不为所有读取强制拆分查询接口。缓存接口由 application 声明并持有，infrastructure 提供实现。
 - 构造与运行状态尽量显式注入，避免用包级可变单例隐藏生命周期；例如上传合并锁和完成标记是 `UploadService` 实例字段。
 - 每个 `application/<ctx>.ProviderSet` 只列应用构造器；应用层不得为了 `wire.Bind`
   反向 import infrastructure。具体适配器选择与 interface binding 只出现在 bootstrap 组合根。
