@@ -106,24 +106,16 @@ func (s *HotKeywordService) fallbackHotKeywords(
 		return nil, 0, err
 	}
 
-	items := make([]HotKeywordItem, 0, len(rows))
-
-	seen := make(map[string]struct{}, len(rows))
-
+	candidates := make([]string, 0, len(rows))
 	for _, row := range rows {
-		keyword := s.keywords.NormalizeHotKeyword(row.Title)
-		if keyword == "" {
-			continue
-		}
-
-		if _, ok := seen[keyword]; ok {
-			continue
-		}
-
-		seen[keyword] = struct{}{}
+		candidates = append(candidates, row.Title)
+	}
+	selected := s.keywords.SelectHotKeywords(candidates)
+	items := make([]HotKeywordItem, 0, len(selected))
+	for _, selection := range selected {
 		items = append(items, HotKeywordItem{
-			Keyword: keyword,
-			Score:   row.Views,
+			Keyword: selection.Keyword,
+			Score:   rows[selection.Index].Views,
 		})
 	}
 

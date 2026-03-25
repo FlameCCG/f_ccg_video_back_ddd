@@ -13,6 +13,29 @@ const maxHotKeywordLength = 50
 // 零值即可使用。通配转义、文档 _id、缓存键和索引名不属于本策略。
 type KeywordPolicy struct{}
 
+type HotKeywordSelection struct {
+	Index   int
+	Keyword string
+}
+
+// SelectHotKeywords 规范化后按首次命中去重，保留原候选索引供外层映射热度。
+func (p KeywordPolicy) SelectHotKeywords(candidates []string) []HotKeywordSelection {
+	selected := make([]HotKeywordSelection, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for index, candidate := range candidates {
+		keyword := p.NormalizeHotKeyword(candidate)
+		if keyword == "" {
+			continue
+		}
+		if _, exists := seen[keyword]; exists {
+			continue
+		}
+		seen[keyword] = struct{}{}
+		selected = append(selected, HotKeywordSelection{Index: index, Keyword: keyword})
+	}
+	return selected
+}
+
 // NormalizeKeyword 去掉关键词首尾空白（搜索入口统一入参形态）.
 func (KeywordPolicy) NormalizeKeyword(keyword string) string {
 	return strings.TrimSpace(keyword)
