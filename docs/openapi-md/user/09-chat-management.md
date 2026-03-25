@@ -10,8 +10,8 @@ Base URL：/v1
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
 - 接口说明: 私信实时推送WebSocket连接（需登录；支持 `Authorization: Bearer <token>` 或 `?token=<token>` 传递登录态）
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
-- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+- HTTP 状态码: 成功升级返回 101；升级前失败可返回业务 JSON 或握手错误状态
+- 响应结构: 升级后使用 WebSocket 帧，不能继续按普通 HTTP JSON 响应解析
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
@@ -23,6 +23,8 @@ Base URL：/v1
 
 响应示例:
 - 无
+
+发送消息与会话摘要在同一 MongoDB 事务提交，部署需要支持事务的副本集；Redis 推送在提交后执行。重复客户端请求会产生新消息 ID。
 
 ### WebSocket 消息协议
 
@@ -39,7 +41,7 @@ Base URL：/v1
 | text | string | 按类型 | 文本内容；`msgType=text` 时必填，`msgType=emoji` 时可作为兼容回退字段 |
 | emoji | string | `msgType=emoji` 时推荐 | emoji 字符，如 `😀` |
 | media | ChatMessageMedia | `msgType=image/sticker` 时是 | 媒体信息，至少需要 `media.url` |
-| clientMsgId | string | 否 | 客户端消息ID，用于收到 `ack` 时匹配本地 pending 消息 |
+| clientMsgId | string | 否 | 客户端消息ID，用于收到 `ack` 时匹配本地 pending 消息，不是持久化去重键 |
 | peerId | integer(uint) | `type=read` 时是 | 需要标记已读的对方用户ID |
 
 **服务端推送事件（ChatWSEvent）**

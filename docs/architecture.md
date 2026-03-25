@@ -27,7 +27,7 @@ Gin 路由与中间件 → handler → application 用例 → domain 规则/端�
                    └─ binlog → River → ES       └→ 转码消费者（同进程或独立进程）→ FFmpeg
 ```
 
-`bootstrap` 是构造时的连接点，不是每个请求经过的网络服务。MySQL 承载主要业务记录，Redis 支持缓存、计数、调度、转码进度和上传协调，MongoDB 保存聊天会话与消息；Kafka 承载转码任务，River 从 MySQL binlog 同步部分数据到 Elasticsearch。搜索是异步读侧，可能落后于 MySQL。证据入口：[进程入口](../cmd/server/main.go)、[组合根](../internal/bootstrap/app.go)、[River](../internal/infrastructure/river/river.go)。
+`bootstrap` 是构造时的连接点，不是每个请求经过的网络服务。MySQL 承载主要业务记录及 `videos.publish_at` 定时发布计划；Redis 支持缓存、计数、转码进度和上传协调。MongoDB 保存聊天会话与消息，发送时通过同一 MongoDB 事务提交；Kafka 承载转码任务，River 从 MySQL binlog 同步部分数据到 Elasticsearch。搜索是异步读侧，可能落后于 MySQL。证据入口：[进程入口](../cmd/server/main.go)、[组合根](../internal/bootstrap/app.go)、[River](../internal/infrastructure/river/river.go)。
 
 当前 [路由金丝雀](../internal/interfaces/http/router/testdata/routes_golden.txt) 有 **193 条** `method + path`，包含 `POST /v1/common/image/upload` 与 `/uploads` GET/HEAD。联调应以现行路由代码和金丝雀为准。[路由测试](../internal/interfaces/http/router/routes_test.go)校验注册清单，不能代替请求和响应的端到端验证。
 
@@ -139,7 +139,7 @@ interfaces ──▶ application ──▶ domain（规则与写侧仓储端口�
 - 构造与运行状态尽量显式注入，避免用包级可变单例隐藏生命周期；例如上传合并锁和完成标记是 `UploadService` 实例字段。
 - 每个 `application/<ctx>.ProviderSet` 只列应用构造器；应用层不得为了 `wire.Bind`
   反向 import infrastructure。具体适配器选择与 interface binding 只出现在 bootstrap 组合根。
-- 日志器经构造函数注入，HTTP 监听错误返回 `cmd/server` 决定退出码。**配置加载是例外**：当前 `infrastructure/config.Load` 对启动时读取、解析和必填项校验失败使用 `panic`；不能宣称所有启动错误都经 `error` 返回。
+- 日志器经构造函数注入，HTTP 监听错误返回 `cmd/server` 决定退出码。配置 `Load`、`LoadOnce`、`LoadTranscodeWorker` 的读取、解析及校验失败也返回 `error`，经 Wire 注入器传到入口；运行中热更新失败则保留上一份有效快照。
 - `validate.New()` 生成注入式 Translator；Router middleware 把它传入请求上下文，
   handler 的统一错误响应从当前请求读取，不存在包级 translator 或校验器 `init()` 装配。
 
@@ -255,7 +255,7 @@ go run ./cmd/transcode-consumer -f config_dev.yaml
 
 它通过 `InitializeTranscodeWorker` 只构造转码需要的 MySQL、Redis、Kafka、本地/MinIO 存储和附属资源，不启动 HTTP、WebSocket、River、视频调度或 Cron，也不运行初始化任务。此入口始终承担转码角色，不受 `localConsumerDisabled` 影响。消费启动失败返回非零退出码；Ctrl+C / SIGTERM 触发停止消费、关闭生产者池并等待 detached 任务，再执行基础设施 cleanup。详见[组合根](../internal/bootstrap/providers_transcode.go)和[生命周期](../internal/bootstrap/transcode_worker.go)。
 
-独立节点复用完整配置文件及其必填项，需启用 Kafka、安装 FFmpeg/ffprobe，并能访问 MySQL、Redis 和源文件存储。同一 `kafka.groupID` 内按 topic 分区分摊任务，并行度还受分区数与各实例 worker 数限制。跨机器时优先使用双方可访问的 MinIO；若用本地存储，必须让任务中的路径在消费节点也指向同一份文件。
+独立节点复用配置文件结构，通过 `LoadTranscodeWorker` 校验，不要求 HTTP 的 JWT 签名密钥；仍需启用 Kafka、安装 FFmpeg/ffprobe，并能访问 MySQL、Redis 和源文件存储。同一 `kafka.groupID` 内按 topic 分区分摊任务，并行度还受分区数与各实例 worker 数限制。跨机器时可使用双方可访问的 MinIO；若用本地存储，必须让任务中的路径在消费节点也指向同一份文件。
 
 Kafka 的 bootstrap 地址和 broker 宣告的对外地址都必须能从消费节点访问。当前 Compose 的对外 listener 示例为 `192.168.1.3:9094`，部署时替换为实际宿主机地址并重建 Kafka 容器；远程节点的 `kafka.brokers` 也应填写可达地址，不能直接照搬配置示例的 `localhost:9094`。
 
@@ -280,6 +280,13 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件启动失�
 - 路由契约测试从 Gin `engine.Routes()` 取得全部 method+path，与
   `testdata/routes_golden.txt` 逐条比较；金丝雀同时覆盖 RBAC `generate`/`move`、
   视频向量 `status`/`rebuild` 与 `/uploads` GET/HEAD。
+- 真实 MongoDB 事务回归通过 `CHAT_TEST_MONGO_URI` 接入副本集测试实例，未设置时跳过；具体命令见 [README](../README.md#开发与验证)。
+
+### 8.1 定时发布与私信的持久化边界
+
+定时发布使用领域 [ScheduleRepository](../internal/domain/video/schedule_repository.go)，由 [MySQL ScheduleStore](../internal/infrastructure/persistence/video/schedule_store.go) 读写 `videos.publish_at` / `is_scheduled`。投稿与改稿在保存状态的同一事务内保存计划；调度器每 5 秒按时间与 ID 扫描最多 100 个候选，再在每个目标的事务中锁定最新视频、重读计划并调用 `Video.PublishWhenDue`。待审且审核开启时保留计划等待人工审核；成功发布保留原计划时间用于展示，后续扫描按状态过滤。定时发布不依赖 Redis ZSET。见 [Scheduler](../internal/application/video/scheduler.go)。
+
+私信发送经领域仓储的 `SendMessage`，由 [MongoDB Store](../internal/infrastructure/persistence/chat/store.go) 在 `session.WithTransaction` 中完成消息插入、会话摘要和接收方未读更新；失败整体回滚。仓储以同一消息 ID 核验内容，避免事务重试重复计数；HTTP 新请求仍会产生新 ID，因此不承诺客户端重复提交恰好一次。Redis Pub/Sub 在线推送和通知角标失效在事务之后，各自有失败边界。MongoDB 必须是副本集或支持事务的部署，Compose 的单节点 `rs0` 由 [初始化脚本](../deploy/mongodb/init-replica.sh)建立。
 
 ## 9. 从上传到可播放的链路
 
@@ -303,17 +310,17 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件启动失�
 
 ### 10.2 按代码看：谁依赖接口，谁提供实现？
 
-以投稿为例，`PublishService` 的保存能力字段是 `domain/video/repository.PublicationRepository`。用例声明自己需要保存稿件，不需要知道数据库连接池、表名或 GORM 关联写法。基础设施仓储实现 `Persist`，bootstrap 选择该对象并传给应用构造器。
+以投稿为例，`PublishService` 的保存能力字段是 `domain/video.PublicationRepository`。用例声明自己需要保存稿件，不需要知道数据库连接池、表名或 GORM 关联写法。基础设施仓储实现 `Persist`，bootstrap 选择该对象并传给应用构造器。
 
 ```text
-编译时：PublishService → repository.PublicationRepository
-        GORM 仓储 → repository.PublicationRepository / PublishDraft
+编译时：PublishService → video.PublicationRepository
+        GORM 仓储 → video.PublicationRepository / PublishDraft
         bootstrap → 构造器与具体实现
 
 运行时：Handler → PublishService → 注入的 GORM 仓储 → MySQL
 ```
 
-两条路径能同时成立。Go 接口由方法集满足，构造函数负责拿到对象，Wire 生成的是普通构造代码。依赖倒置不阻止访问数据库，它让业务流程不直接绑定数据库实现。换成 fake 可以验证流程；换真实实现则还需验证事务、错误和 ID 回填等契约。
+两条路径能同时成立。Go 接口由方法集满足，构造函数负责拿到对象，Wire 生成的是普通构造代码。依赖倒置不阻止访问数据库，它让业务流程不直接绑定数据库实现。换成 fake 可以验证流程；换真实实现则还需验证事务、错误和 `PublicationResult` 返回持久化身份等契约。
 
 ### 10.3 按时间看：哪些工作完成了，哪些仍待执行？
 

@@ -91,10 +91,12 @@ logger:
   # Warn 日志文件路径
   warnFileName: ./runtime/warn/f_ccg_video-warn.log
 
-# MongoDB（弹幕等文档数据）
+# MongoDB（私信消息与会话；发送使用事务，必须是副本集或支持事务的部署）
 mongo:
+  # Compose 通过 deploy/mongodb 中的脚本初始化单节点 rs0
   replicaSet: rs0
-  directConnection: true # single-node compose mapped port; use false for multi-node deployments
+  # 宿主机连接单节点 Compose 映射端口；多节点部署按实际拓扑配置为 false
+  directConnection: true
   # 认证库名
   authSource: admin
   # 业务数据库名
@@ -404,7 +406,7 @@ ai:
   # 豆包模型 API Key（图/视频/多模态向量，BaseURL 由方舟 SDK 默认）
   doubaoModelAPIKey: ""
   # 向量维度；方舟多模态向量模型只支持 1024 / 2048
-  # 改动后必须调用 POST /api/video/vector/rebuild {"recreate":true} 重建索引，
+  # 改动后必须调用 POST /v1/admin/video/vector/rebuild {"recreate":true} 重建索引，
   # ES 不允许原地修改 dense_vector 维度
   embeddingDimensions: 2048
   # Embedding 模型名（vision 系列才支持图像模态，是「以图搜视频」的前提）

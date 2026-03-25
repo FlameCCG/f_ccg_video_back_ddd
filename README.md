@@ -44,7 +44,7 @@ flowchart TB
 
 转码消费者默认随 HTTP 服务启动。需要隔离转码资源时，可关闭 HTTP 节点的本地消费，并运行 `cmd/transcode-consumer`；跨节点须共享数据库、消息队列和源文件存储。River 按配置启用，用于关键词搜索索引的增量同步。
 
-写侧以 MySQL 事务保存业务状态，读侧通过查询接口组装页面模型。搜索索引与异步转码独立推进，投稿保存、审核发布与媒体可播放各有自己的完成条件。完整依赖关系和运行流程见[架构说明](docs/architecture.md)。
+写侧以 MySQL 事务保存业务状态，定时发布计划随稿件一并提交；私信消息和会话摘要在 MongoDB 事务中保存。读侧通过查询接口组装页面模型。搜索索引与异步转码独立推进，投稿保存、审核发布与媒体可播放各有自己的完成条件。完整依赖关系和运行流程见[架构说明](docs/architecture.md)。
 
 ### 技术栈
 
@@ -90,7 +90,7 @@ flowchart TB
 ### 1. 准备环境
 
 - **Go**：版本要求见 [go.mod](go.mod)，当前为 `1.24.9`。
-- **数据与消息服务**：MySQL、Redis、MongoDB、Elasticsearch 和 Kafka。Compose 中的参考版本分别为 MySQL 8.0、Redis 7.0、MongoDB 8.0、Elasticsearch 8.12.2 和 Kafka 3.9.0。
+- **数据与消息服务**：MySQL、Redis、MongoDB、Elasticsearch 和 Kafka。Compose 中的参考版本分别为 MySQL 8.0、Redis 7.0、MongoDB 8.0、Elasticsearch 8.12.2 和 Kafka 3.9.0。私信发送需要支持事务的 MongoDB 副本集；Compose 提供单节点 `rs0` 及初始化服务，不能用普通 standalone MongoDB 替代。
 - **搜索插件**：Elasticsearch 需安装与其版本匹配的 IK 与 Pinyin 插件，供[关键词索引映射](internal/interfaces/cli/mappings/videos_mapping.json)使用。
 - **媒体工具**：安装 `ffmpeg` 和 `ffprobe` 并加入 `PATH`；CPU 转码需支持 `libx264`，GPU 转码需具备 NVIDIA 驱动及 NVENC 支持。
 - **文件存储**：按环境选择本地目录或 MinIO，配置中启用对应存储驱动。
@@ -102,6 +102,8 @@ docker volume create f_ccg_video_minio_data
 ```
 
 启动依赖前，请将 Kafka 的 `KAFKA_ADVERTISED_LISTENERS` 外部地址改为应用实际可达的宿主机地址，并同步应用的 `kafka.brokers`。现有 Compose 中的局域网地址和开发凭据需按自己的环境调整。
+
+MongoDB 的两个启动脚本已随仓库放在 [deploy/mongodb](deploy/mongodb)。启动 `mongodb` 和 `mongodb-replica-init` 后，确认初始化服务成功退出且副本集已选出 PRIMARY。宿主机连接单节点映射端口时，示例使用 `mongo.replicaSet: rs0`、`mongo.directConnection: true`；多节点部署须使用实际副本集拓扑并调整连接配置。Compose 的对象存储镜像为兼容 MinIO API 的 Silo，应用仍通过 MinIO 驱动访问。
 
 ### 2. 获取代码与依赖
 
@@ -129,7 +131,7 @@ Copy-Item config.example.yaml config_dev.yaml
 
 | 配置项 | 配置要求 |
 | --- | --- |
-| `mysql`、`redis`、`mongo`、`es` | 填写可达地址、端口与凭据，并预先创建 MySQL 业务数据库 |
+| `mysql`、`redis`、`mongo`、`es` | 填写可达地址、端口与凭据，并预先创建 MySQL 业务数据库；MongoDB 配置事务所需的副本集连接 |
 | `jwt` | 分别设置访问令牌与刷新令牌签名密钥，每个至少 32 字符，替换示例值 |
 | `kafka` | 配置 broker、转码 topic 与消费组；视频转码需要启用 Kafka |
 | `site.storage` | 选择并配置存储驱动；本地目录须可写，MinIO 地址须可供服务及消费者访问 |
@@ -196,6 +198,8 @@ go vet ./...
 ```
 
 测试包含领域规则、应用用例、路由清单、架构依赖和媒体封装等检查。涉及 FFmpeg 或其他环境依赖的测试，请同时查看运行结果中的跳过项。
+
+真实 MongoDB 事务测试需设置 `CHAT_TEST_MONGO_URI`，指向可创建和删除测试数据库的副本集测试实例，再运行 `go test -count=1 ./internal/infrastructure/persistence/chat -run TestSendMessageRealMongoTransaction`。未设置时该用例跳过；它使用独立随机数据库并在结束时删除，不读取应用的本地配置。
 
 修改 Wire provider 或接口绑定后，重新生成装配代码：
 

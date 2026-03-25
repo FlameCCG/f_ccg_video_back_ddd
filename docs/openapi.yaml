@@ -6,7 +6,7 @@ info:
 
     说明：
 
-    - 所有接口统一返回 HTTP 200，业务成功/失败请以响应体 code 判断（0=成功，1=失败），错误信息在 msg。
+    - 普通 JSON 业务响应使用 HTTP 200，通过 code 判断成功/失败（0=成功，1=失败），错误信息在 msg。AI 额度耗尽返回 429（Retry-After=60）；WebSocket 升级返回 101；CORS 拒绝/预检可返回 403/204。SSE、静态文件与 AI 资源代理按各自协议处理。
 
     - 管理后台接口除登录鉴权外还会经过 RBAC（Casbin）权限校验。"
   version: 1.0.0
@@ -2102,7 +2102,7 @@ components:
           description: 豆包模型 API Key（图/视频/向量，管理端明文）
         systemPrompt:
           type: string
-          description: 文本对话/图像理解默认系统提示词；可要求找视频时返回 video_results 链接块
+          description: 文本对话/站内视频检索默认系统提示词；可要求找视频时返回 video_results 链接块
         imageModel:
           type: string
           description: 图像生成/编辑默认模型
@@ -2190,7 +2190,7 @@ components:
                 type: string
     AIResponsesRequest:
       type: object
-      description: 轻量 AIResponses 请求；当前对外仅保留文本对话与图像理解所需字段
+      description: 站内聊天请求；经 Eino Claude ChatModel 调用 Anthropic Messages 协议。input_image 转为聊天文本标记并可用于视频检索，不是通用视觉输入。
       required:
         - input
       properties:
@@ -2221,7 +2221,7 @@ components:
         n:
           type: integer
           minimum: 1
-          maximum: 10
+          maximum: 15
         aspect_ratio:
           type: string
         resolution:
@@ -2245,7 +2245,7 @@ components:
           description: 兼容尺寸字段（部分上游模型使用）
         style:
           type: string
-          description: 兼容风格字段（部分上游模型使用）
+          description: 兼容输入，当前不下发风格参数
         user:
           type: string
     AIImageEditRequest:
@@ -2270,7 +2270,8 @@ components:
                   type: string
         images:
           type: array
-          description: 多图参考编辑，最多 10 张；元素可为 URL 字符串或 `{url,type}` 对象
+          maxItems: 14
+          description: 多图参考编辑，最多 14 张，且参考图与生成图合计不得超过 15 张；元素可为 URL 字符串或 `{url,type}` 对象
           items:
             oneOf:
               - type: string
@@ -2282,14 +2283,14 @@ components:
                     type: string
         mask:
           type: string
-          description: 遮罩图 URL 或 base64 data URI
+          description: 兼容输入，当前不下发遮罩参数
         n:
           type: integer
           minimum: 1
-          maximum: 10
+          maximum: 15
         aspect_ratio:
           type: string
-          description: 仅多图编辑有效
+          description: 单图和多图编辑均使用此比例与尺寸归一
         resolution:
           type: string
           enum:
@@ -2311,7 +2312,7 @@ components:
           description: 兼容尺寸字段（部分上游模型使用）
         style:
           type: string
-          description: 兼容风格字段（部分上游模型使用）
+          description: 兼容输入，当前不下发风格参数
         user:
           type: string
     AIVideoGenerationRequest:
@@ -4861,8 +4862,8 @@ paths:
     post:
       tags:
         - AI
-      summary: AI 文本生成 / 图像理解
-      description: 代理 AI`/v1/responses`；当前用于文本对话与图像理解。后端会先发起一轮非流式 AI分析请求，让模型判断是否为找视频请求并返回关键词数组；关键词数组为空则不查库，直接进入第二轮正式回答。若关键词数组非空，则优先向量检索站内已发布作品（上限为 `vectorTopK`）；没有命中时回退到关键词匹配或按最新发布时间取前 `vectorTopK` 个作品。第二轮正式回答会把作品标题、描述、tags、分P标题和 `/video/:id/:p?` 路由一起注入给模型，是否输出 `video_results` 链接块由模型自主判断。服务端固定 `store=false`，且固定走 SSE，不需要前端传 `stream`。
+      summary: AI 对话与站内视频检索
+      description: 站内流式对话与视频检索，经 Eino Claude ChatModel 调用 Anthropic Messages 协议，不透传上游 Responses API。候选查询可用时先分析意图，需要检索时组织向量/关键词召回及 MySQL/最新作品回退。input_image 转为聊天文本标记，最近图片可参与检索。SSE 每帧仅有 data，JSON 的 type 区分文本、思考、失败与完成；没有具名 event 行。正常完成发送 response.completed 和 [DONE]，流内失败发送 response.failed 后结束。
       requestBody:
         required: true
         content:
@@ -4871,7 +4872,7 @@ paths:
               $ref: "#/components/schemas/AIResponsesRequest"
             examples:
               vision:
-                summary: 图像理解
+                summary: 携带图片的视频检索
                 value:
                   model: deepseek-v4-flash
                   thinking: true
@@ -4880,7 +4881,7 @@ paths:
                     - role: user
                       content:
                         - type: input_text
-                          text: 请描述图中内容并提取可见文字
+                          text: 帮我找与这张图相似的视频
                         - type: input_image
                           image_url: https://example.com/sample.png
                           detail: high
@@ -4905,22 +4906,21 @@ paths:
                 stream:
                   summary: SSE 成功响应
                   value: |-
-                    event: response.output_text.delta
-                    data: {"type":"response.output_text.delta","delta":"图中是一只坐在沙发上的橘猫。"}
+                    data: {"type":"response.output_text.delta","delta":"找到以下相关视频。"}
 
-                    event: response.completed
-                    data: {"type":"response.completed","response":{"id":"resp_123","status":"completed","model":"grok-4.20"}}
+                    data: {"type":"response.completed"}
+
+                    data: [DONE]
                 video_results:
                   summary: 找视频 SSE 响应
                   value: |-
-                    event: response.output_text.delta
                     data: {"type":"response.output_text.delta","delta":"[video_results]\n- [猫咪做饭](/video/11)：一只猫认真做饭，和你的需求最接近。\n- [猫咪日常合集 · P1 做饭篇](/video/12/1)：如果你想看合集里的做饭片段，可以直接点这一P。"}
 
-                    event: response.output_text.delta
                     data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 
-                    event: response.completed
-                    data: {"type":"response.completed","response":{"id":"resp_456","status":"completed","model":"grok-4.20"}}
+                    data: {"type":"response.completed"}
+
+                    data: [DONE]
             application/json:
               schema:
                 $ref: "#/components/schemas/Response"
@@ -4931,12 +4931,23 @@ paths:
                     code: 1
                     data: {}
                     msg: "AI请求失败[400]: 状态码=400"
+        "429":
+          description: AI 请求额度已用完；Retry-After 为 60 秒
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: 建议等待秒数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
   /common/ai/responses/stream:
     get:
       tags:
         - AI
       summary: AI 文本流式输出（EventSource）
-      description: 面向浏览器原生 `EventSource` 的简化 GET 流式入口。由于 `EventSource` 不能自定义请求头，登录 token 通过 query 参数传递。适合纯文本聊天和找视频场景；后端会自动包装 `text` 成用户消息，返回标准 SSE 数据流。
+      description: 原生 EventSource 可通过 query token 认证；text 与 input 至少一个，同时提供优先 input。SSE 仅含 data 行，应监听 message 并解析 JSON type，完成或失败后主动关闭连接。
       parameters:
         - name: token
           in: query
@@ -4962,6 +4973,16 @@ paths:
           schema:
             type: string
           description: 文本模型；未传时使用后台默认值
+        - name: thinking
+          in: query
+          schema:
+            type: boolean
+          description: 省略时跟随后台思考开关，后台关闭时不能强制开启
+        - name: thinkingEffort
+          in: query
+          schema:
+            type: string
+          description: 思考强度，省略时用后台默认值
       responses:
         "200":
           description: 成功建立流时返回 SSE；若在建立流之前失败，则返回标准 JSON 错误对象
@@ -4973,11 +4994,11 @@ paths:
                 stream:
                   summary: EventSource 成功响应
                   value: |-
-                    event: response.output_text.delta
                     data: {"type":"response.output_text.delta","delta":"[video_results]\n- [猫咪做饭](/video/11)：一只猫认真做饭，和你的需求最接近。"}
 
-                    event: response.completed
-                    data: {"type":"response.completed","response":{"id":"resp_789","status":"completed","model":"grok-4.20"}}
+                    data: {"type":"response.completed"}
+
+                    data: [DONE]
             application/json:
               schema:
                 $ref: "#/components/schemas/Response"
@@ -4988,12 +5009,23 @@ paths:
                     code: 1
                     data: {}
                     msg: text 不能为空
+        "429":
+          description: AI 请求额度已用完；Retry-After 为 60 秒
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: 建议等待秒数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
   /common/ai/images/generations:
     post:
       tags:
         - AI
       summary: AI 图片生成
-      description: 代理 AI`/v1/images/generations`，支持文生图、多图批量生成、纵横比和分辨率控制。
+      description: 通过 Eino Ark 调用配置的豆包图片模型；支持文生图、1～15 张生成、比例及尺寸归一。URL 结果改写为站内资源代理，当前不返回上游计费 usage。
       requestBody:
         required: true
         content:
@@ -5004,7 +5036,7 @@ paths:
               default:
                 summary: 图片生成
                 value:
-                  model: grok-imagine-image
+                  model: doubao-seedream-5-0-lite-260128
                   prompt: A cinematic portrait of a robot librarian in a futuristic archive
                   n: 1
                   aspect_ratio: "16:9"
@@ -5028,17 +5060,26 @@ paths:
                     code: 0
                     msg: ok
                     data:
+                      model: doubao-seedream-5-0-lite-260128
                       data:
-                        - url: https://example.com/temp-image.png
-                          mime_type: image/png
-                      usage:
-                        cost_in_usd_ticks: 12345
+                        - url: /v1/common/ai/assets?url=URL_ENCODED_UPSTREAM_URL
+        "429":
+          description: AI 请求额度已用完；Retry-After 为 60 秒
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: 建议等待秒数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
   /common/ai/images/edits:
     post:
       tags:
         - AI
       summary: AI 图片编辑
-      description: 代理 AI`/v1/images/edits`，支持单图编辑与多图参考编辑；单图模式不支持自定义 `aspect_ratio`。
+      description: 通过 Eino Ark 使用参考图生成；image 与 images 二选一，最多 14 张参考图，参考图与生成图合计不得超过 15。尺寸、比例与图片生成使用同一映射，mask 等兼容字段不下发。
       requestBody:
         required: true
         content:
@@ -5049,7 +5090,7 @@ paths:
               multiRef:
                 summary: 多图参考编辑
                 value:
-                  model: grok-imagine-image
+                  model: doubao-seedream-5-0-lite-260128
                   prompt: 让第一张图的人物穿上第二张图的服装，背景改为黄昏街景
                   images:
                     - https://example.com/source.png
@@ -5069,12 +5110,23 @@ paths:
                     properties:
                       data:
                         type: object
+        "429":
+          description: AI 请求额度已用完；Retry-After 为 60 秒
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: 建议等待秒数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
   /common/ai/videos/generations:
     post:
       tags:
         - AI
       summary: AI 视频生成
-      description: 代理 AI`/v1/videos/generations`，支持文生视频、图生视频、参考图视频；不包含 edit-video 与 extend-video。
+      description: 通过方舟 runtime SDK 创建视频任务，支持文本、首帧或参考图输入；返回 SDK 字段并补充 requestId。后续通过 requestID query 查询状态。
       requestBody:
         required: true
         content:
@@ -5085,7 +5137,7 @@ paths:
               textToVideo:
                 summary: 文生视频
                 value:
-                  model: grok-imagine-video
+                  model: doubao-seedance-1-5-pro-251215
                   prompt: A slow aerial shot of a neon city at night in the rain
                   duration: 8
                   aspect_ratio: "16:9"
@@ -5093,7 +5145,7 @@ paths:
               imageToVideo:
                 summary: 图生视频
                 value:
-                  model: grok-imagine-video
+                  model: doubao-seedance-1-5-pro-251215
                   image: https://example.com/source.png
                   prompt: Add subtle wind and camera motion
                   duration: 6
@@ -5116,13 +5168,25 @@ paths:
                     code: 0
                     msg: ok
                     data:
-                      request_id: video_req_xxx
+                      id: task_xxx
+                      requestId: task_xxx
+        "429":
+          description: AI 请求额度已用完；Retry-After 为 60 秒
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: 建议等待秒数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
   /common/ai/videos/status:
     get:
       tags:
         - AI
       summary: 查询 AI视频任务状态
-      description: 查询视频生成任务状态；`status` 可能为 `pending`、`done`、`failed`、`expired`。
+      description: 查询方舟 SDK 任务结构并补充 requestId；当前 SDK 状态包括 queued、running、succeeded、failed、cancelled。视频地址位于 content.video_url，由 Handler 改写为资源代理；不保证返回 progress。
       parameters:
         - name: requestID
           in: query
@@ -5142,25 +5206,26 @@ paths:
                       data:
                         type: object
               examples:
-                done:
+                succeeded:
                   value:
                     code: 0
                     msg: ok
                     data:
-                      status: done
-                      progress: 100
-                      model: grok-imagine-video
-                      video:
-                        url: https://example.com/temp-video.mp4
-                        duration: 8
-                        respect_moderation: true
-                pending:
+                      id: task_xxx
+                      requestId: task_xxx
+                      status: succeeded
+                      model: doubao-seedance-1-5-pro-251215
+                      duration: 8
+                      content:
+                        video_url: /v1/common/ai/assets?url=URL_ENCODED_UPSTREAM_URL
+                queued:
                   value:
                     code: 0
                     msg: ok
                     data:
-                      status: pending
-                      progress: 42
+                      status: queued
+                      id: task_xxx
+                      requestId: task_xxx
   /common/ai/assets:
     get:
       tags:
