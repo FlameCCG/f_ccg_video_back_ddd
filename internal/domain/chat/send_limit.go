@@ -5,6 +5,16 @@ import "time"
 // SendLimit 对端未关注自己时的单日发送限制。零值可用。
 type SendLimit struct{}
 
+// DailySendFacts 是当次发送的关注与自然日消息事实。
+type DailySendFacts struct {
+	ReceiverFollowsSender bool
+	SentToday             bool
+	RepliedToday          bool
+}
+
+func (f DailySendFacts) NeedsHistoryCheck() bool { return !f.ReceiverFollowsSender }
+func (f DailySendFacts) NeedsReplyCheck() bool   { return f.NeedsHistoryCheck() && f.SentToday }
+
 // NeedsDailySendLimitCheck 判断是否需要进入单日发送频率判定。
 //
 // 缺少任一方或自己给自己发时直接放行。
@@ -23,12 +33,12 @@ func (SendLimit) DayRange(now time.Time) (time.Time, time.Time) {
 //
 // 规则（对端未关注自己时生效）：今日已发过一条且对端今日未回复 → 拒绝；
 // 其余情形放行。
-func (SendLimit) EvaluateDailySendLimit(sentToday, repliedToday bool) error {
-	if !sentToday {
+func (SendLimit) EvaluateDailySendLimit(facts DailySendFacts) error {
+	if !facts.NeedsReplyCheck() {
 		return nil
 	}
 
-	if repliedToday {
+	if facts.RepliedToday {
 		return nil
 	}
 

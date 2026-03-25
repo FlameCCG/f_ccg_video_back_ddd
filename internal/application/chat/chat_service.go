@@ -232,7 +232,8 @@ func (s *Service) checkDailySendLimit(
 		return nil
 	}
 
-	if receiverFollowsSender {
+	facts := chatdomain.DailySendFacts{ReceiverFollowsSender: receiverFollowsSender}
+	if !facts.NeedsHistoryCheck() {
 		return nil
 	}
 
@@ -243,7 +244,8 @@ func (s *Service) checkDailySendLimit(
 		return err
 	}
 
-	if !sentToday {
+	facts.SentToday = sentToday
+	if !facts.NeedsReplyCheck() {
 		return nil
 	}
 
@@ -252,7 +254,8 @@ func (s *Service) checkDailySendLimit(
 		return err
 	}
 
-	return s.sendLimit.EvaluateDailySendLimit(sentToday, repliedToday)
+	facts.RepliedToday = repliedToday
+	return s.sendLimit.EvaluateDailySendLimit(facts)
 }
 
 // invalidateBadge 失效接收者的通知角标缓存（端口缺失时静默跳过）。

@@ -179,7 +179,7 @@ func TestEvaluateDailySendLimit(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if err := (SendLimit{}).EvaluateDailySendLimit(tt.sentToday, tt.repliedToday); !errors.Is(err, tt.wantErr) {
+			if err := (SendLimit{}).EvaluateDailySendLimit(DailySendFacts{SentToday: tt.sentToday, RepliedToday: tt.repliedToday}); !errors.Is(err, tt.wantErr) {
 				t.Fatalf("EvaluateDailySendLimit(%v, %v) = %v, want %v",
 					tt.sentToday, tt.repliedToday, err, tt.wantErr)
 			}
