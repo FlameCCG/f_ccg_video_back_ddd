@@ -75,6 +75,5 @@ func (s *HotKeywordStore) Incr(ctx context.Context, keyword string) {
 	if !s.Available() {
 		return
 	}
-
 	_ = s.redis.ZIncrBy(ctx, constants.SearchHotKeywordZSetKey, hotKeywordIncrement, keyword).Err()
 }

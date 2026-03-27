@@ -143,8 +143,8 @@ func (v *VideoVectorIndex) runKnnSearch(
 		"filter":         []any{v.publishedStatusFilter()},
 	}
 	if cfg.MinSimilarity > 0 {
-		// Elasticsearch 的 cosine _score 为 (1 + cosine) / 2。
-		knn["similarity"] = (1 + cfg.MinSimilarity) / 2
+		// knn.similarity 使用原始余弦相似度，而不是换算后的 _score。
+		knn["similarity"] = cfg.MinSimilarity
 	}
 
 	return v.runIndexSearch(ctx, cfg.Index, map[string]any{
