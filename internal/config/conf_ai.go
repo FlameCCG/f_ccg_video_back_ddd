@@ -40,7 +40,12 @@ type AI struct {
 	HistoryMaxTurns int `mapstructure:"historyMaxTurns" json:"historyMaxTurns,omitempty"`
 	// HistoryMaxChars 是透传给聊天模型的历史文本总字符上限。
 	HistoryMaxChars int `mapstructure:"historyMaxChars" json:"historyMaxChars,omitempty"`
-	TimeoutSec      int `mapstructure:"timeoutSec" json:"timeoutSec"`
+	// InputMaxChars 单条消息字符硬上限，缺省 24000；与历史淘汰策略独立。
+	InputMaxChars int `mapstructure:"inputMaxChars" json:"inputMaxChars,omitempty"`
+	// ContextMaxChars 最终上下文字符硬上限（包含系统提示与检索候选），缺省 48000。
+	ContextMaxChars int `mapstructure:"contextMaxChars" json:"contextMaxChars,omitempty"`
+	// TimeoutSec 是完整 AI 用例的超时（秒），<=0 时默认 90 秒。
+	TimeoutSec int `mapstructure:"timeoutSec" json:"timeoutSec"`
 }
 
 // AIModel 是一项可选配置的显示标签与实际值；界面展示 Label，调用上游使用 Value。
