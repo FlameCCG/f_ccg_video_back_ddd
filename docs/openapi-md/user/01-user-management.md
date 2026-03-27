@@ -57,7 +57,7 @@ Base URL：/v1
 | slideCaptchaX | body | integer | 滑块时必填 | 滑块的 X 坐标 |
 | slideCaptchaY | body | integer | 滑块时必填 | 滑块的 Y 坐标 |
 
-先请求 `GET /common/captcha/type?scene=login`，再获取对应挑战并只提交一种交互验证码凭证。点选和滑块可同时开启，但不能同时提交两种 token。滑块接口省略 scene 时默认 register，因此登录必须显式传 `scene=login`；跨场景 token 会校验失败。`site.login.textGraphicCaptcha` 开启时，还须通过 `GET /common/captcha/graphics-text` 获取图形验证码并提交 `captchaID`、`captchaCode`；关闭时不校验这两个字段。此开关独立于注册图形验证码配置，图形验证码验证后不可重复使用，登录失败后应刷新图形验证码。
+先请求 `GET /common/captcha/type?scene=login`，再获取对应挑战并只提交一种交互验证码凭证。点选和滑块可同时开启，但不能同时提交两种 token。滑块接口省略 scene 时默认 register，因此登录必须显式传 `scene=login`；跨场景 token 会校验失败。`site.login.textGraphicCaptcha` 开启时，还须通过 `GET /common/captcha/graphics-text` 获取图形验证码并提交 `captchaID`、`captchaCode`；关闭时不校验这两个字段。此开关独立于注册图形验证码配置，交互验证失败时保留图形码并在原弹窗换题；交互验证通过后才消费图形码，图形码错误或登录后续失败时须返回表单刷新图形码。
 
 请求示例（本次选中滑块）:
 

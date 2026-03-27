@@ -41,8 +41,7 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware(scene string) gin.HandlerFun
 		var payload CaptchaMiddlewareRequest
 		if err = c.ShouldBind(&payload); err != nil {
 			m.log().Error("bind graphics captcha payload failed", zap.Error(err))
-			res.FailWithMsg("图形验证码参数错误", c)
-			c.Abort()
+			captchaFailure(c, "graphic", "invalid", "图形验证码参数错误，请重新填写")
 
 			return
 		}
@@ -52,16 +51,14 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware(scene string) gin.HandlerFun
 		captchaID := strings.TrimSpace(payload.CaptchaID)
 		captchaCode := strings.TrimSpace(payload.CaptchaCode)
 		if captchaID == "" || captchaCode == "" {
-			res.FailWithMsg("请填写图形验证码", c)
-			c.Abort()
+			captchaFailure(c, "graphic", "required", "请填写图形验证码")
 
 			return
 		}
 
 		if ok := m.captcha.VerifyGraphic(captchaID, captchaCode); !ok {
 			m.log().Error("graphics captcha verify failed")
-			res.FailWithMsg("图形验证码错误", c)
-			c.Abort()
+			captchaFailure(c, "graphic", "invalid", "图形验证码错误或已过期，请重新填写")
 
 			return
 		}

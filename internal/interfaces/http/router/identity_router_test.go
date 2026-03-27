@@ -117,7 +117,7 @@ func TestAdminLoginRouteRequiresSlideCaptcha(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 
-	if response.Msg != "captcha verification required" {
+	if response.Msg != "请完成滑块验证码" {
 		t.Fatalf("admin login route should require slide captcha, got %q", response.Msg)
 	}
 }

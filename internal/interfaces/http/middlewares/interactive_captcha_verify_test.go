@@ -2,6 +2,8 @@ package middlewares
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,8 +11,10 @@ import (
 	"testing"
 
 	captcha_service "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +23,89 @@ type stubInteractiveCaptchaVerifier struct {
 	calls string
 	ok    bool
 	err   error
+}
+
+func TestCombinedCaptchaFailurePreservesGraphicUntilInteractivePasses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, kind := range []string{"click", "slide"} {
+		for _, scene := range []string{"login", "register"} {
+			t.Run(scene+"/"+kind, func(t *testing.T) {
+				store := captcha.NewGraphicStore()
+				if err := store.Set("graphic", "42"); err != nil {
+					t.Fatal(err)
+				}
+				provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{
+					Login: &site.Login{TextGraphicCaptcha: true}, Register: &site.Register{TextGraphicCaptcha: true},
+				}})
+				mw := &Middlewares{captcha: captcha_service.NewCaptchaService(nil, nil, store, nil, provider)}
+				verifier := &stubInteractiveCaptchaVerifier{}
+				router := gin.New()
+				router.POST("/", interactiveCaptchaVerify(func() site.CaptchaOptions { return site.CaptchaOptions{Click: true, Slide: true} }, verifier),
+					mw.GraphicsTextCaptchaMiddleware(scene), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+				post := func(answer, wantKind, wantReason string, status int) {
+					t.Helper()
+					payload := map[string]any{"captchaID": "graphic", "captchaCode": answer}
+					if kind == "click" {
+						payload["captchaToken"] = "click"
+						payload["captchaDots"] = []map[string]int{{"index": 0, "x": 20, "y": 30}}
+					} else {
+						payload["slideCaptchaToken"] = "slide"
+					}
+					body, err := json.Marshal(payload)
+					if err != nil {
+						t.Fatal(err)
+					}
+					req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(string(body)))
+					req.Header.Set("Content-Type", "application/json")
+					rec := httptest.NewRecorder()
+					router.ServeHTTP(rec, req)
+					if rec.Code != status {
+						t.Fatal(rec.Code, rec.Body.String())
+					}
+					if status == http.StatusNoContent {
+						return
+					}
+					var response struct {
+						Msg  string `json:"msg"`
+						Data struct {
+							Kind   string `json:"captchaType"`
+							Reason string `json:"captchaReason"`
+						} `json:"data"`
+					}
+					if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+						t.Fatal(err)
+					}
+					if response.Data.Kind != wantKind || response.Data.Reason != wantReason {
+						t.Fatal(rec.Body.String())
+					}
+					if strings.Contains(response.Msg, "private") {
+						t.Fatal("dependency details leaked", response.Msg)
+					}
+				}
+				post("42", kind, "invalid", 200)
+				if store.Get("graphic", false) != "42" {
+					t.Fatal("interactive rejection consumed graphic answer")
+				}
+				verifier.err = captcha.ErrCaptchaExpired
+				post("42", kind, "expired", 200)
+				if store.Get("graphic", false) != "42" {
+					t.Fatal("expired interactive challenge consumed graphic answer")
+				}
+				verifier.err = errors.New("private Redis failure")
+				post("42", kind, "unavailable", 200)
+				verifier.err, verifier.ok = nil, true
+				post("wrong", "graphic", "invalid", 200)
+				if err := store.Set("graphic", "42"); err != nil {
+					t.Fatal(err)
+				}
+				post("42", "", "", 204)
+				if store.Get("graphic", false) != "" {
+					t.Fatal("successful validation did not consume graphic challenge")
+				}
+				post("42", "graphic", "invalid", 200)
+			})
+		}
+	}
 }
 
 func (s *stubInteractiveCaptchaVerifier) VerifyClick(_ context.Context, _ string, _ []captcha_service.ClickCaptchaPoint) (bool, error) {

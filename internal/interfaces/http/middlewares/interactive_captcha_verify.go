@@ -71,32 +71,40 @@ func interactiveCaptchaVerify(options func() site.CaptchaOptions, verifier inter
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		var req interactiveCaptchaReq
 		if err = c.ShouldBind(&req); err != nil {
-			res.FailWithMsg("invalid captcha payload", c)
-			c.Abort()
+			captchaFailure(c, "interactive", "invalid", "交互验证码参数错误，请重新验证")
 			return
 		}
 
 		var ok bool
+		kind, label := "interactive", "交互验证码"
 		// 必须且只能提交一种已开启的验证码，不能通过缺字段或关闭的类型绕过校验。
 		switch {
 		case enabled.Click && req.ClickToken != "" && req.SlideToken == "" && len(req.Dots) > 0:
+			kind, label = "click", "文字点选验证码"
 			ok, err = verifier.VerifyClick(c.Request.Context(), req.ClickToken, req.Dots)
 		case enabled.Slide && req.SlideToken != "" && req.ClickToken == "":
+			kind, label = "slide", "滑块验证码"
 			ok, err = verifier.VerifySlide(c.Request.Context(), captcha_service.SlideCaptchaVerifyReq{
 				Token: req.SlideToken, X: req.X, Y: req.Y,
 			})
 		default:
-			res.FailWithMsg("captcha verification required", c)
-			c.Abort()
+			if enabled.Click && !enabled.Slide {
+				kind, label = "click", "文字点选验证码"
+			}
+			if enabled.Slide && !enabled.Click {
+				kind, label = "slide", "滑块验证码"
+			}
+			captchaFailure(c, kind, "required", "请完成"+label)
 			return
 		}
 		if err != nil || !ok {
-			message := "验证码验证失败"
+			reason, message := "invalid", label+"错误，请重新验证"
 			if errors.Is(err, captcha.ErrCaptchaExpired) {
-				message = captcha.ErrCaptchaExpired.Error()
+				reason, message = "expired", label+"已过期或不存在，请重新验证"
+			} else if err != nil {
+				reason, message = "unavailable", label+"暂时不可用，请重试"
 			}
-			res.FailWithMsg(message, c)
-			c.Abort()
+			captchaFailure(c, kind, reason, message)
 			return
 		}
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))

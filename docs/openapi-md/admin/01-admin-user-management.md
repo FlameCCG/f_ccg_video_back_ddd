@@ -254,7 +254,7 @@ Base URL：/v1
 | slideCaptchaX | body | integer | 滑块时必填 | 滑块的 X 坐标 |
 | slideCaptchaY | body | integer | 滑块时必填 | 滑块的 Y 坐标 |
 
-先调用 `GET /common/captcha/type?scene=login` 再获取对应挑战，不要同时提交两种 token。返回 `none` 时无需交互凭证。滑块接口默认 register，管理员登录须显式传 `scene=login`；跨场景 token 会校验失败。`site.login.textGraphicCaptcha=true` 时，还须提交从 `GET /common/captcha/graphics-text` 获取的 `captchaID` 与答案 `captchaCode`；图形验证码验证成功即消费，登录失败后应刷新。
+先调用 `GET /common/captcha/type?scene=login` 再获取对应挑战，不要同时提交两种 token。返回 `none` 时无需交互凭证。滑块接口默认 register，管理员登录须显式传 `scene=login`；跨场景 token 会校验失败。`site.login.textGraphicCaptcha=true` 时，还须提交从 `GET /common/captcha/graphics-text` 获取的 `captchaID` 与答案 `captchaCode`；交互验证码失败时保留图形码并在弹窗内换题；交互验证通过后才消费图形码，图形码错误时关闭弹窗刷新图形码。
 
 响应字段:
 | 字段 | 类型 | 说明 |

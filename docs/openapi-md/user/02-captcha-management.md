@@ -16,6 +16,17 @@ Base URL：/v1
 
 发邮件还独立受 `site.register.textGraphicCaptcha` 控制：开启时须额外提交 `captchaID + captchaCode`，即使交互类型返回 `none` 也不能省略图形验证码。配置字段见[后台站点管理](../admin/07-admin-site-management.md#交互验证码配置)。
 
+## 验证失败与客户端恢复
+
+验证码校验失败仍返回 HTTP 200、`code=1`，`msg` 保留具体类型，例如「滑块验证码错误，请重新验证」「文字点选验证码已过期或不存在，请重新验证」「图形验证码错误或已过期，请重新填写」。客户端不可统一改写为「验证码错误」。
+
+`data.captchaType` 为 `graphic`、`slide`、`click` 或无法判定具体类型时的 `interactive`；`data.captchaReason` 为 `required`、`invalid`、`expired`、`unavailable`。该结构用于选择恢复流程，不替代服务器校验。
+
+- 先校验交互验证码，通过后才校验并消费图形码。滑块/点选错误、过期或暂时不可用时，不消费图形码。
+- `slide`/`click`/`interactive` 失败：保留弹窗和已填图形码，展示具体原因，重新获取类型及挑战，在弹窗内切换；不重放失败的交互 token。
+- `graphic` 失败：关闭交互弹窗，提示并刷新图形码，保留用户名密码；重新填写后再获取交互挑战。
+- 账号密码错误及其他后续失败：返回表单；图形码已被消费，需要刷新。网络失败无法确定验证是否已完成，同样回到表单刷新，不继续复用旧挑战。
+
 ## [GET] 获取交互验证码类型
 
 - 接口路径: GET /common/captcha/type
