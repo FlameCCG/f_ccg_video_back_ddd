@@ -3,9 +3,12 @@ package ai
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"f_ccg_video_back_ddd/internal/config"
 	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
+
+	"go.uber.org/zap"
 )
 
 // GenerateImage 调用上游文生图接口.
@@ -15,6 +18,8 @@ func (s *Service) GenerateImage(ctx context.Context, req ImageGenerationRequest)
 		return nil, err
 	}
 
+	ctx, cancel := snapshot.runtime.WithContext(ctx)
+	defer cancel()
 	prepared, err := prepareImageGenerationRequest(&snapshot.settings, req)
 	if err != nil {
 		return nil, err
@@ -35,6 +40,8 @@ func (s *Service) EditImage(ctx context.Context, req ImageEditRequest) (any, err
 		return nil, err
 	}
 
+	ctx, cancel := snapshot.runtime.WithContext(ctx)
+	defer cancel()
 	prepared, err := prepareImageEditRequest(&snapshot.settings, req)
 	if err != nil {
 		return nil, err
@@ -63,6 +70,9 @@ func prepareImageGenerationRequest(
 	cfg *config.AI,
 	req ImageGenerationRequest,
 ) (ImageGenerationRequest, error) {
+	if err := (aidomain.InputPolicy{}).ValidateMessage(utf8.RuneCountInString(req.Prompt), cfg.InputMaxChars); err != nil {
+		return req, err
+	}
 	if err := requireDoubaoAPIKey(cfg); err != nil {
 		return req, err
 	}
@@ -82,6 +92,9 @@ func prepareImageGenerationRequest(
 }
 
 func prepareImageEditRequest(cfg *config.AI, req ImageEditRequest) (ImageEditRequest, error) {
+	if err := (aidomain.InputPolicy{}).ValidateMessage(utf8.RuneCountInString(req.Prompt), cfg.InputMaxChars); err != nil {
+		return req, err
+	}
 	if err := requireDoubaoAPIKey(cfg); err != nil {
 		return req, err
 	}
@@ -101,39 +114,41 @@ func prepareImageEditRequest(cfg *config.AI, req ImageEditRequest) (ImageEditReq
 }
 
 // ensureImageResultCount 上游一次未返回足够张数时逐张补图，最多补 want 次。
-func (s *Service) ensureImageResultCount(
-	ctx context.Context,
-	runtime RuntimeConfig,
-	req ImageGenerationRequest,
-	refs []string,
-	result any,
-) (any, error) {
+func (s *Service) ensureImageResultCount(ctx context.Context, runtime RuntimeConfig, req ImageGenerationRequest, refs []string, result any) (any, error) {
 	want := (aidomain.GenerationPolicy{}).RequestedImageCount(req.N)
-	if want <= 1 {
-		return result, nil
-	}
-
 	current := imageGenerationPayload{raw: result}
-	for attempts := 0; current.count() < want && attempts < want; attempts++ {
+	if want == 1 && current.count() == 0 {
+		return nil, aidomain.ErrImageOutputEmpty
+	}
+	attempts := max(want-current.count(), 0)
+	for range attempts {
+		if current.count() >= want {
+			break
+		}
 		singleReq := req
 		one := 1
 		singleReq.N = &one
-
 		next, err := s.images.Generate(ctx, toImageInvocation(runtime, singleReq, refs))
 		if err != nil {
-			return nil, err
+			if current.count() == 0 {
+				return nil, err
+			}
+			s.log().Warn("AI image supplement failed; returning available images", zap.Int("requested", want), zap.Int("returned", current.count()), zap.Error(err))
+			break
 		}
-
 		merged, grew := current.merge(imageGenerationPayload{raw: next}, want)
 		if !grew {
 			break
 		}
-
-		result = merged
-		current = imageGenerationPayload{raw: result}
+		current = imageGenerationPayload{raw: merged}
 	}
-
-	return result, nil
+	if current.count() == 0 {
+		return nil, aidomain.ErrImageOutputEmpty
+	}
+	if current.count() < want {
+		return current.partialResult(want), nil
+	}
+	return current.raw, nil
 }
 
 // imageRefsForEdit 提取图片编辑请求中的参考图地址。

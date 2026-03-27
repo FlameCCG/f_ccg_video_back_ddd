@@ -13,6 +13,19 @@ type imageGenerationPayload struct {
 	raw any
 }
 
+// partialResult 保留已经成功的图片；不向客户端暴露补图失败的上游细节。
+func (payload imageGenerationPayload) partialResult(want int) map[string]any {
+	result := make(map[string]any)
+	if original, ok := payload.raw.(map[string]any); ok {
+		maps.Copy(result, original)
+	}
+	result["partial"] = true
+	result["requestedCount"] = want
+	result["returnedCount"] = payload.count()
+	result["message"] = "部分图片未生成，已保留成功结果"
+	return result
+}
+
 func (payload imageGenerationPayload) count() int {
 	if items := payload.dataItems(); len(items) > 0 {
 		return len(items)

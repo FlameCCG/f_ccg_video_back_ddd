@@ -2,147 +2,16 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"strings"
-	"time"
 
-	"f_ccg_video_back_ddd/internal/config"
 	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
-	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 )
 
-const (
-	promptBuildBudget              = 30 * time.Second
-	analysisHistoryMessages        = 6
-	analysisHistoryCharsPerMessage = 400
-	vectorQueryMaxChars            = 1000
-)
+const vectorQueryMaxChars = 1000
 
-// buildResponsesSystemPrompt 在正式回答前判断找视频意图并注入站内候选。
-// 整条提示词构建链受统一预算约束，超时降级为普通聊天，避免无限延迟首 token。
-func (s *Service) buildResponsesSystemPrompt(
-	ctx context.Context,
-	cfg *config.AI,
-	runtime RuntimeConfig,
-	conv conversation,
-	model string,
-) (string, error) {
-	basePrompt := strings.TrimSpace(cfg.SystemPrompt)
-	if !conv.HasMessages() {
-		return basePrompt, nil
-	}
-	// 无法加载站内候选时，意图分析也无法影响回答；省掉一次额外模型调用。
-	if s.prompts == nil || !s.prompts.Available() {
-		return basePrompt, nil
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	promptCtx, cancel := context.WithTimeout(ctx, promptBuildBudget)
-	defer cancel()
-
-	analysis, err := s.analyzeVideoQuery(
-		promptCtx,
-		cfg,
-		runtime, (aidomain.PromptVideoCandidate{}).FirstNonEmpty(model, cfg.ChatModel), conv,
-	)
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			s.logger.Debug("skip AI video query analysis after context deadline", zap.Error(err))
-
-			return basePrompt, nil
-		}
-
-		return basePrompt, err
-	}
-	if !analysis.WantsVideoSearch() {
-		return basePrompt, nil
-	}
-
-	limit := (aidomain.PromptVideoCandidateSet{}).EnsurePositiveLimit(cfg.VectorTopK)
-	candidateSet, err := s.loadPromptVideoCandidates(promptCtx, conv, analysis.Keywords, limit)
-	if err != nil {
-		return basePrompt, err
-	}
-
-	contextPrompt, err := (promptVideoContext{}).Build(candidateSet, limit)
-	if err != nil {
-		return basePrompt, err
-	}
-	if contextPrompt == "" {
-		return basePrompt, nil
-	}
-	if basePrompt == "" {
-		return contextPrompt, nil
-	}
-
-	return basePrompt + "\n\n" + contextPrompt, nil
-}
-
-func (s *Service) analyzeVideoQuery(
-	ctx context.Context,
-	cfg *config.AI,
-	runtime RuntimeConfig,
-	model string,
-	conv conversation,
-) (aidomain.VideoQueryAnalysis, error) {
-	var analysis aidomain.VideoQueryAnalysis
-
-	transcript := conv.transcript(analysisHistoryMessages, analysisHistoryCharsPerMessage)
-	if strings.TrimSpace(transcript) == "" {
-		return analysis, nil
-	}
-	if len(conv.queryImages()) > 0 {
-		transcript += "\n（用户本轮还上传了图片）"
-	}
-
-	analysisCtx, cancel := context.WithTimeout(ctx, resolveAnalysisTimeout(cfg))
-	defer cancel()
-
-	text, err := s.text.InvokeText(analysisCtx, TextInvocation{
-		Runtime: runtime,
-		Model:   model,
-		Messages: []*schema.Message{
-			schema.SystemMessage(aidomain.VideoQueryAnalysisPrompt),
-			schema.UserMessage(transcript),
-		},
-		MaxTokens: aidomain.AnalysisMaxOutputTokens,
-	})
-	if err != nil {
-		return analysis, err
-	}
-	var payload VideoQueryAnalysis
-	if err = json.Unmarshal([]byte(extractJSONObject(text)), &payload); err != nil {
-		return analysis, fmt.Errorf("解析视频查询分析结果失败: %w", err)
-	}
-
-	analysis = aidomain.VideoQueryAnalysis{Intent: payload.Intent, Keywords: payload.Keywords}
-	analysis.Keywords = analysis.NormalizeAnalysisKeywords(analysis.Keywords)
-	s.logger.Debug(
-		"video query analysis",
-		zap.String("intent", analysis.Intent),
-		zap.Strings("keywords", analysis.Keywords),
-	)
-
-	return analysis, nil
-}
-
-func extractJSONObject(text string) string {
-	text = strings.TrimSpace(text)
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start < 0 || end <= start {
-		return text
-	}
-
-	return text[start : end+1]
-}
-
+// loadPromptVideoCandidates 为搜索工具组织混合召回、数据库回退及候选详情回查。
 func (s *Service) loadPromptVideoCandidates(
 	ctx context.Context,
 	conv conversation,
@@ -155,7 +24,7 @@ func (s *Service) loadPromptVideoCandidates(
 
 	keywords = (aidomain.VideoQueryAnalysis{}).NormalizeAnalysisKeywords(keywords)
 	images := conv.queryImages()
-	if len(keywords) == 0 && len(images) == 0 {
+	if len(keywords) == 0 && len(images) == 0 && strings.TrimSpace(conv.LatestUserText) == "" {
 		return aidomain.PromptVideoCandidateSet{}, nil
 	}
 	if ctx == nil {
@@ -248,6 +117,10 @@ func (s *Service) searchPromptVideoIDs(
 		}
 	}
 
+	// query 的长度预算与模型提取的短关键词不同，缺少关键词时保留完整查询用于 SQL 匹配。
+	if len(keywords) == 0 && input.Text != "" {
+		keywords = []string{input.Text}
+	}
 	ids, err := s.prompts.KeywordSearchIDs(ctx, keywords, limit)
 	if err != nil {
 		s.logger.Warn("keyword match for AI video search failed", zap.Error(err))
@@ -256,18 +129,4 @@ func (s *Service) searchPromptVideoIDs(
 	}
 
 	return ids, aidomain.RetrievalModeKeyword
-}
-
-func resolveAnalysisTimeout(cfg *config.AI) time.Duration {
-	timeout := aidomain.DefaultAnalysisTimeoutSec * time.Second
-	if cfg == nil || cfg.TimeoutSec <= 0 {
-		return timeout
-	}
-
-	configured := time.Duration(cfg.TimeoutSec) * time.Second
-	if configured < timeout {
-		return configured
-	}
-
-	return timeout
 }

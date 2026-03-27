@@ -6,7 +6,6 @@ import (
 	"errors"
 	"reflect"
 	"strconv"
-	"strings"
 	"testing"
 
 	"f_ccg_video_back_ddd/internal/config"
@@ -27,69 +26,32 @@ func TestPromptCandidateLimitKeepsRecallAndPromptInAgreement(t *testing.T) {
 	for _, tc := range []struct{ configured, want int }{{0, 8}, {-1, 8}, {3, 3}, {25, 25}} {
 		t.Run(strconv.Itoa(tc.configured), func(t *testing.T) {
 			vectors := &promptVectorFake{ids: []uint{7}}
-			s := &Service{
-				text:    &promptTextFake{text: `{"intent":"find_video","keywords":["Go"]}`},
+			service := &Service{
 				vectors: vectors,
 				prompts: &promptQueryFake{available: true, inputs: []aidomain.VideoCandidateInput{{VideoID: 7, Title: "Go"}}},
 				logger:  zap.NewNop(),
 			}
-			prompt, err := s.buildResponsesSystemPrompt(t.Context(), &config.AI{VectorTopK: tc.configured}, RuntimeConfig{}, conversation{
-				Messages: []*schema.Message{schema.UserMessage("找 Go 视频")}, LatestUserText: "找 Go 视频",
-			}, "model")
-			if err != nil || vectors.limit != tc.want || !strings.Contains(prompt, "本轮作品候选上限："+strconv.Itoa(tc.want)+"（") {
-				t.Fatalf("recall/prompt limit changed: recall=%d want=%d prompt=%q err=%v", vectors.limit, tc.want, prompt, err)
+			search := &videoSearchTool{service: service, cfg: config.AI{VectorTopK: tc.configured}}
+			raw, err := search.InvokableRun(t.Context(), `{"query":"找 Go 视频","keywords":["Go"]}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result videoSearchResult
+			if err := json.Unmarshal([]byte(raw), &result); err != nil {
+				t.Fatal(err)
+			}
+			if vectors.limit != tc.want || result.ResultCount != 1 {
+				t.Fatalf("recall limit=%d want=%d result=%+v", vectors.limit, tc.want, result)
 			}
 		})
 	}
 }
 
-func TestAnalyzeVideoQueryPreservesResponseTypeErrorText(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct{ response, want string }{
-		{`{"intent":1}`, "解析视频查询分析结果失败: json: cannot unmarshal number into Go struct field VideoQueryAnalysis.intent of type string"},
-		{`{"keywords":1}`, "解析视频查询分析结果失败: json: cannot unmarshal number into Go struct field VideoQueryAnalysis.keywords of type []string"},
-	} {
-		t.Run(tc.response, func(t *testing.T) {
-			t.Parallel()
-			service := &Service{text: &promptTextFake{text: tc.response}, logger: zap.NewNop()}
-			_, err := service.analyzeVideoQuery(t.Context(), &config.AI{}, RuntimeConfig{}, "model", conversation{
-				Messages: []*schema.Message{schema.UserMessage("找视频")},
-			})
-			if err == nil || err.Error() != tc.want {
-				t.Fatalf("error=%v, want %q", err, tc.want)
-			}
-		})
-	}
-}
-
-func (f *promptTextFake) InvokeText(_ context.Context, invocation TextInvocation) (string, error) {
+func (f *promptTextFake) InvokeText(_ context.Context, invocation TextInvocation) (TextResult, error) {
 	f.last = invocation
 	f.calls++
 
-	return f.text, f.err
-}
-
-func TestBuildResponsesSystemPromptSkipsAnalysisWithoutVideoSource(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name    string
-		prompts PromptVideoQuery
-	}{
-		{name: "not configured"},
-		{name: "unavailable", prompts: &promptQueryFake{}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			text := &promptTextFake{err: errors.New("model must not be called")}
-			s := &Service{text: text, prompts: tc.prompts, logger: zap.NewNop()}
-			prompt, err := s.buildResponsesSystemPrompt(context.Background(), &config.AI{SystemPrompt: "服务端提示"}, RuntimeConfig{}, conversation{
-				Messages: []*schema.Message{schema.UserMessage("你好")},
-			}, "test-model")
-			if err != nil || prompt != "服务端提示" || text.calls != 0 {
-				t.Fatalf("prompt=%q err=%v modelCalls=%d", prompt, err, text.calls)
-			}
-		})
-	}
+	return TextResult{Text: f.text, ResponseMetadata: ResponseMetadata{FinishReason: "end_turn"}}, f.err
 }
 
 func (f *promptTextFake) OpenStream(
@@ -149,68 +111,6 @@ func (f *promptQueryFake) Load(
 	f.loadedIDs = append([]uint(nil), ids...)
 
 	return f.inputs, f.loadErr
-}
-
-func TestExtractJSONObjectStripsModelNoise(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]string{
-		`{"intent":"find_video","keywords":["go"]}`:                 `{"intent":"find_video","keywords":["go"]}`,
-		"```json\n{\"intent\":\"chat\",\"keywords\":[]}\n```":       `{"intent":"chat","keywords":[]}`,
-		"分析如下：{\"intent\":\"find_video\",\"keywords\":[\"爬虫\"]} 完毕": `{"intent":"find_video","keywords":["爬虫"]}`,
-	}
-	for input, want := range tests {
-		if got := extractJSONObject(input); got != want {
-			t.Fatalf("extractJSONObject(%q) = %q, want %q", input, got, want)
-		}
-	}
-}
-
-func TestAnalyzeVideoQueryUsesBoundedTranscriptWithoutBase64(t *testing.T) {
-	t.Parallel()
-
-	text := &promptTextFake{text: `{"intent":"find_video","keywords":[" Go ","GO"]}`}
-	service := &Service{text: text, logger: zap.NewNop()}
-	conv, err := parseConversation(json.RawMessage(`[
-		{"role":"assistant","content":"上轮回答"},
-		{"role":"user","content":[
-			{"type":"input_text","text":"帮我找这个教程"},
-			{"type":"input_image","image_url":"data:image/jpeg;base64,SECRET"}
-		]}
-	]`))
-	if err != nil {
-		t.Fatalf("parseConversation: %v", err)
-	}
-
-	runtime := RuntimeConfig{
-		ChatModelBaseURL: "https://old-chat.example/v1",
-		ChatModelAPIKey:  "old-chat-key",
-		DoubaoAPIKey:     "old-doubao-key",
-		TimeoutSec:       11,
-	}
-	analysis, err := service.analyzeVideoQuery(
-		context.Background(),
-		&config.AI{},
-		runtime,
-		"chat-model",
-		conv,
-	)
-	if err != nil {
-		t.Fatalf("analyzeVideoQuery: %v", err)
-	}
-	if analysis.Intent != "find_video" || !reflect.DeepEqual(analysis.Keywords, []string{"Go"}) {
-		t.Fatalf("analysis = %+v", analysis)
-	}
-	if text.last.MaxTokens != aidomain.AnalysisMaxOutputTokens || len(text.last.Messages) != 2 {
-		t.Fatalf("invocation = %+v", text.last)
-	}
-	if text.last.Runtime != runtime {
-		t.Fatalf("runtime = %+v, want %+v", text.last.Runtime, runtime)
-	}
-	transcript := text.last.Messages[1].Content
-	if strings.Contains(transcript, "SECRET") || !strings.Contains(transcript, "用户本轮还上传了图片") {
-		t.Fatalf("transcript = %q", transcript)
-	}
 }
 
 func TestSearchPromptVideoIDsUsesOriginalTextAndFirstImage(t *testing.T) {

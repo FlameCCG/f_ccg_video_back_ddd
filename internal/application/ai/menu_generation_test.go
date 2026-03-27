@@ -2,6 +2,8 @@ package ai
 
 import (
 	"context"
+	"errors"
+	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 	"strings"
 	"testing"
 
@@ -17,10 +19,10 @@ type fakeMenuTextGenerator struct {
 	text       string
 }
 
-func (g *fakeMenuTextGenerator) InvokeText(_ context.Context, invocation TextInvocation) (string, error) {
+func (g *fakeMenuTextGenerator) InvokeText(_ context.Context, invocation TextInvocation) (TextResult, error) {
 	g.invocation = invocation
 
-	return g.text, nil
+	return TextResult{Text: g.text, ResponseMetadata: ResponseMetadata{FinishReason: "end_turn"}}, nil
 }
 
 func (*fakeMenuTextGenerator) OpenStream(
@@ -80,5 +82,31 @@ func TestServiceGenerateMenuSuggestionBuildsDedicatedConversation(t *testing.T) 
 		if !strings.Contains(userPrompt, want) {
 			t.Fatalf("user prompt %q does not contain %q", userPrompt, want)
 		}
+	}
+}
+
+func TestMenuGenerationUsesIndependentContextBudget(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		chars   int
+		tooLong bool
+	}{
+		{"SVG menu beyond chat budget", 60000, false},
+		{"oversized menu", menuGenerationMaxContextChars, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			text := &fakeMenuTextGenerator{text: `{"name":"Users"}`}
+			service := NewService(infraconfig.NewProvider(&config.Config{AI: &config.AI{ChatModelAPIKey: "key", ChatModel: "model", ContextMaxChars: 1000}}), text, nil, nil, nil, nil, nil, zap.NewNop())
+			table := []byte(`[{"icon":"<svg>` + strings.Repeat("x", tc.chars) + `</svg>"}]`)
+			_, err := service.GenerateMenuSuggestion(t.Context(), "菜单", nil, table)
+			if tc.tooLong {
+				if !errors.Is(err, aidomain.ErrContextTooLong) || len(text.invocation.Messages) != 0 {
+					t.Fatal("oversized prompt invoked model", err)
+				}
+			} else if err != nil || !strings.Contains(text.invocation.Messages[1].Content, string(table)) {
+				t.Fatal("normal SVG menu rejected or truncated", err)
+			}
+		})
 	}
 }

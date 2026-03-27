@@ -14,12 +14,23 @@ type VideoInvocation struct {
 	AspectRatio   string
 	Resolution    string
 	Size          string
-	ImageRefs     []string
+	ImageRefs     []VideoImageRef
 	GenerateAudio *bool
 	CameraFixed   *bool
 	Watermark     *bool
 	Seed          *int
 }
+
+// VideoImageRef 保留首帧和参考图的用途，避免在协议转换前丢失生成模式。
+type VideoImageRef struct {
+	URL  string
+	Role string
+}
+
+const (
+	VideoImageFirstFrame = "first_frame"
+	VideoImageReference  = "reference_image"
+)
 
 // VideoTaskClient 视频生成任务端口（上游为方舟 runtime SDK）。
 type VideoTaskClient interface {

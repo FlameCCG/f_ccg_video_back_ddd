@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"strings"
+	"unicode/utf8"
 
 	"f_ccg_video_back_ddd/internal/config"
 	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
@@ -15,6 +16,8 @@ func (s *Service) GenerateVideo(ctx context.Context, req VideoGenerationRequest)
 		return nil, err
 	}
 
+	ctx, cancel := snapshot.runtime.WithContext(ctx)
+	defer cancel()
 	prepared, err := prepareVideoGenerationRequest(&snapshot.settings, req)
 	if err != nil {
 		return nil, err
@@ -33,6 +36,8 @@ func (s *Service) GetVideo(ctx context.Context, requestID string) (any, error) {
 	if strings.TrimSpace(requestID) == "" {
 		return nil, aidomain.ErrEmptyRequestID
 	}
+	ctx, cancel := snapshot.runtime.WithContext(ctx)
+	defer cancel()
 
 	if err = requireDoubaoAPIKey(&snapshot.settings); err != nil {
 		return nil, err
@@ -45,6 +50,9 @@ func prepareVideoGenerationRequest(
 	cfg *config.AI,
 	req VideoGenerationRequest,
 ) (VideoGenerationRequest, error) {
+	if err := (aidomain.InputPolicy{}).ValidateMessage(utf8.RuneCountInString(req.Prompt), cfg.InputMaxChars); err != nil {
+		return req, err
+	}
 	if err := requireDoubaoAPIKey(cfg); err != nil {
 		return req, err
 	}
@@ -73,20 +81,20 @@ func prepareVideoGenerationRequest(
 }
 
 // videoImageRefs 按「首帧图 → input_reference → 参考图组」优先级提取视频参考图。
-func videoImageRefs(req VideoGenerationRequest) []string {
+func videoImageRefs(req VideoGenerationRequest) []VideoImageRef {
 	if req.Image != nil && !req.Image.IsZero() {
-		return []string{strings.TrimSpace(req.Image.URL)}
+		return []VideoImageRef{{URL: strings.TrimSpace(req.Image.URL), Role: VideoImageFirstFrame}}
 	}
 
 	if req.InputReference != nil && !req.InputReference.IsZero() {
-		return []string{strings.TrimSpace(req.InputReference.URL)}
+		return []VideoImageRef{{URL: strings.TrimSpace(req.InputReference.URL), Role: VideoImageFirstFrame}}
 	}
 
-	out := make([]string, 0, len(req.ReferenceImages))
+	out := make([]VideoImageRef, 0, len(req.ReferenceImages))
 
 	for _, image := range req.ReferenceImages {
 		if !image.IsZero() {
-			out = append(out, strings.TrimSpace(image.URL))
+			out = append(out, VideoImageRef{URL: strings.TrimSpace(image.URL), Role: VideoImageReference})
 		}
 	}
 

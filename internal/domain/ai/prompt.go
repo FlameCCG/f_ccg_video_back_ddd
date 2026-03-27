@@ -14,7 +14,7 @@ const (
 	// AnalysisMaxOutputTokens 第一轮意图分析的最大输出 token 数。
 	AnalysisMaxOutputTokens = 256
 	// DefaultAnalysisTimeoutSec 第一轮意图分析的默认超时秒数。
-	DefaultAnalysisTimeoutSec = 20
+	DefaultAnalysisTimeoutSec = 5
 	// maxKeywordRunes 单个关键词最大字符数（超过视为噪声丢弃）。
 	maxKeywordRunes = 32
 	// maxDescriptionRunes 候选作品描述截断长度。
@@ -51,6 +51,16 @@ type VideoQueryAnalysis struct {
 	// Intent 为 find_video 时才做召回；兼容旧格式：Intent 为空但有关键词也视为找视频。
 	Intent   string
 	Keywords []string
+}
+
+// Validate 检查上游意图枚举；空意图仅保留历史 keywords 格式的兼容行为。
+func (analysis VideoQueryAnalysis) Validate() error {
+	switch strings.ToLower(strings.TrimSpace(analysis.Intent)) {
+	case "", "find_video", "chat":
+		return nil
+	default:
+		return ErrVideoAnalysisInvalid
+	}
 }
 
 // WantsVideoSearch 判断意图分析结果是否要求执行站内作品召回。

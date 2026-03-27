@@ -26,25 +26,30 @@ func NewChatModel() *ChatModel {
 }
 
 // InvokeText 非流式生成文本。
-func (m *ChatModel) InvokeText(ctx context.Context, invocation aiapp.TextInvocation) (string, error) {
+func (m *ChatModel) InvokeText(ctx context.Context, invocation aiapp.TextInvocation) (aiapp.TextResult, error) {
 	if len(invocation.Messages) == 0 {
-		return "", errors.New("input 中没有可发送的用户消息")
+		return aiapp.TextResult{}, errors.New("input 中没有可发送的用户消息")
+	}
+	if len(invocation.Tools) > 0 {
+		return m.runAgent(ctx, invocation, false, nil)
 	}
 
-	model, err := m.newModel(ctx, invocation, httpClientFor(invocation.Runtime, false))
+	model, err := m.newModel(ctx, invocation, httpClientFor(invocation.Runtime))
 	if err != nil {
-		return "", err
+		return aiapp.TextResult{}, err
 	}
 
 	response, err := model.Generate(ctx, invocation.Messages)
 	if err != nil {
-		return "", fmt.Errorf("Eino 聊天模型生成失败: %w", err)
+		return aiapp.TextResult{}, fmt.Errorf("Eino 聊天模型生成失败: %w", err)
 	}
 	if response == nil {
-		return "", errors.New("Eino 聊天模型返回空响应")
+		return aiapp.TextResult{}, errors.New("Eino 聊天模型返回空响应")
 	}
 
-	return strings.TrimSpace(response.Content), nil
+	result := aiapp.TextResult{Text: strings.TrimSpace(response.Content)}
+	result.Observe(response)
+	return result, nil
 }
 
 // OpenStream 打开 Eino 消息流。
@@ -55,8 +60,11 @@ func (m *ChatModel) OpenStream(
 	if len(invocation.Messages) == 0 {
 		return nil, errors.New("input 中没有可发送的用户消息")
 	}
+	if len(invocation.Tools) > 0 {
+		return m.openAgentStream(ctx, invocation)
+	}
 
-	httpClient, releaseResponseBody := gatedStreamHTTPClient()
+	httpClient, releaseResponseBody := gatedStreamHTTPClient(invocation.Runtime)
 	model, err := m.newModel(ctx, invocation, httpClient)
 	if err != nil {
 		releaseResponseBody()

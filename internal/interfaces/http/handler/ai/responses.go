@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/gin-gonic/gin"
@@ -102,49 +103,58 @@ func (h *Handler) streamResponses(c *gin.Context, req aiapp.ResponsesRequest) {
 	h.forwardResponsesStream(c, stream)
 }
 
-func (h *Handler) forwardResponsesStream(c *gin.Context, stream *schema.StreamReader[*schema.Message]) {
+func (h *Handler) forwardResponsesStream(c *gin.Context, stream aiapp.MessageStream) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	// Disable nginx/proxy buffering
 	c.Writer.Header().Set("X-Accel-Buffering", "no")
-
 	c.Status(200)
-
+	var metadata aiapp.ResponseMetadata
+	fail := func(message, status string) {
+		if err := writeResponsesEvent(c.Writer, responsesTerminalEvent{
+			Type: "response.failed", Status: status, Message: message, ResponseMetadata: metadata,
+		}); err != nil {
+			h.log().Warn("write AI response failure failed", zap.Error(err))
+		}
+		c.Writer.Flush()
+	}
 	for {
-		if c.Request.Context().Err() != nil {
+		if err := c.Request.Context().Err(); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				fail("AI 回答超时，内容可能不完整，请重试", "incomplete")
+			}
 			return
 		}
 		chunk, receiveErr := stream.Recv()
+		metadata.Observe(chunk)
+		// Recv 可能一直阻塞到超时；应用预算和上游 HTTP 超时都属于未完整生成。
+		requestErr := c.Request.Context().Err()
+		if errors.Is(requestErr, context.Canceled) {
+			return
+		}
+		if ctxutil.IsTimeout(requestErr) || ctxutil.IsTimeout(receiveErr) {
+			fail("AI 回答超时，内容可能不完整，请重试", "incomplete")
+			return
+		}
 		if errors.Is(receiveErr, io.EOF) {
-			if err := writeResponsesCompleted(c.Writer); err != nil {
+			if metadata.Status() != "completed" {
+				fail("AI 回答未完整生成，请重试或缩短问题", "incomplete")
+				return
+			}
+			if err := writeResponsesCompleted(c.Writer, metadata); err != nil {
 				h.log().Warn("write AI response completion failed", zap.Error(err))
-
 				return
 			}
 			c.Writer.Flush()
-
 			return
 		}
 		if receiveErr != nil {
-			if c.Request.Context().Err() != nil {
-				return
-			}
 			h.log().Warn("receive Eino AI response stream failed", zap.Error(receiveErr))
-			// 已发送 SSE 响应头，必须用流内错误通知客户端，避免半截回答被当作成功。
-			if err := writeResponsesEvent(c.Writer, map[string]any{
-				"type":    "response.failed",
-				"message": "AI 回答中断，请稍后重试",
-			}); err != nil {
-				h.log().Warn("write AI response failure failed", zap.Error(err))
-			}
-			c.Writer.Flush()
-
+			fail("AI 回答中断，请稍后重试", "failed")
 			return
 		}
 		if err := writeResponsesChunk(c.Writer, chunk); err != nil {
 			h.log().Warn("write AI response stream failed", zap.Error(err))
-
 			return
 		}
 		c.Writer.Flush()
@@ -154,6 +164,12 @@ func (h *Handler) forwardResponsesStream(c *gin.Context, stream *schema.StreamRe
 func writeResponsesChunk(writer io.Writer, chunk *schema.Message) error {
 	if chunk == nil {
 		return nil
+	}
+	if event, ok := aiapp.MessageToolEvent(chunk); ok {
+		return writeResponsesEvent(writer, struct {
+			Type string `json:"type"`
+			aiapp.ToolCallEvent
+		}{Type: "response.tool." + event.Phase, ToolCallEvent: event})
 	}
 
 	if chunk.ReasoningContent != "" {
@@ -174,8 +190,15 @@ func writeResponsesChunk(writer io.Writer, chunk *schema.Message) error {
 	})
 }
 
-func writeResponsesCompleted(writer io.Writer) error {
-	if err := writeResponsesEvent(writer, map[string]any{"type": "response.completed"}); err != nil {
+type responsesTerminalEvent struct {
+	Type string `json:"type"`
+	aiapp.ResponseMetadata
+	Status  string `json:"status,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func writeResponsesCompleted(writer io.Writer, metadata aiapp.ResponseMetadata) error {
+	if err := writeResponsesEvent(writer, responsesTerminalEvent{Type: "response.completed", ResponseMetadata: metadata}); err != nil {
 		return err
 	}
 

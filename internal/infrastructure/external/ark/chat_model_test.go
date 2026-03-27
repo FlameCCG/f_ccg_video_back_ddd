@@ -66,8 +66,8 @@ func TestInvokeTextUsesEinoClaudeModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeText() error = %v", err)
 	}
-	if text != "Eino 已接管" {
-		t.Fatalf("InvokeText() = %q", text)
+	if text.Text != "Eino 已接管" || text.FinishReason != "end_turn" || text.Usage == nil || text.Usage.InputTokens != 10 || text.Usage.OutputTokens != 4 {
+		t.Fatalf("InvokeText() = %+v", text)
 	}
 
 	captured := <-requests

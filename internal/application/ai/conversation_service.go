@@ -2,11 +2,11 @@ package ai
 
 import (
 	"context"
+	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
 	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
-	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 )
 
@@ -14,58 +14,73 @@ import (
 const defaultMaxOutputTokens = 4096
 
 // CreateResponse 调用聊天模型生成非流式文本响应.
-func (s *Service) CreateResponse(ctx context.Context, req ResponsesRequest) (any, error) {
+func (s *Service) CreateResponse(ctx context.Context, req ResponsesRequest) (*ResponsesPayload, error) {
 	snapshot, err := s.snapshot()
 	if err != nil {
 		return nil, err
 	}
-
+	ctx, cancel := snapshot.runtime.WithContext(ctx)
+	defer cancel()
 	prepared, conv, err := s.prepareResponsesRequest(ctx, &snapshot.settings, snapshot.runtime, req)
 	if err != nil {
 		return nil, err
 	}
-
-	text, err := s.text.InvokeText(ctx, TextInvocation{
-		Runtime:        snapshot.runtime,
-		Model:          prepared.Model,
-		Messages:       conv.modelMessages(),
-		Thinking:       prepared.Thinking,
-		ThinkingEffort: prepared.ThinkingEffort,
-		MaxTokens:      defaultMaxOutputTokens,
+	result, err := s.invokeText(ctx, TextInvocation{
+		Runtime:         snapshot.runtime,
+		Model:           prepared.Model,
+		Messages:        conv.modelMessages(),
+		Thinking:        prepared.Thinking,
+		ThinkingEffort:  prepared.ThinkingEffort,
+		MaxTokens:       defaultMaxOutputTokens,
+		Tools:           s.conversationTools(&snapshot.settings, conv),
+		ContextMaxChars: snapshot.settings.ContextMaxChars,
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	return buildResponsesCompatiblePayload(prepared.Model, text), nil
+	return buildResponsesCompatiblePayload(prepared.Model, result), nil
 }
 
 // OpenResponseStream 打开聊天模型流式响应.
 //
 // 返回流的消费与关闭由接口层负责，客户端断开需沿 context 传播到上游，避免留下无人读取的生成请求。
 // 本用例不直接操作 Gin Writer；HTTP/SSE 编码在接口和外部模型适配器中处理。
-func (s *Service) OpenResponseStream(
-	ctx context.Context,
-	req ResponsesRequest,
-) (*schema.StreamReader[*schema.Message], error) {
+func (s *Service) OpenResponseStream(ctx context.Context, req ResponsesRequest) (MessageStream, error) {
+	started := time.Now()
 	snapshot, err := s.snapshot()
 	if err != nil {
 		return nil, err
 	}
-
+	ctx, cancel := snapshot.runtime.WithContext(ctx)
 	prepared, conv, err := s.prepareResponsesRequest(ctx, &snapshot.settings, snapshot.runtime, req)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-
-	return s.text.OpenStream(ctx, TextInvocation{
-		Runtime:        snapshot.runtime,
-		Model:          prepared.Model,
-		Messages:       conv.modelMessages(),
-		Thinking:       prepared.Thinking,
-		ThinkingEffort: prepared.ThinkingEffort,
-		MaxTokens:      defaultMaxOutputTokens,
+	stream, err := s.text.OpenStream(ctx, TextInvocation{
+		Runtime:         snapshot.runtime,
+		Model:           prepared.Model,
+		Messages:        conv.modelMessages(),
+		Thinking:        prepared.Thinking,
+		ThinkingEffort:  prepared.ThinkingEffort,
+		MaxTokens:       defaultMaxOutputTokens,
+		Tools:           s.conversationTools(&snapshot.settings, conv),
+		ContextMaxChars: snapshot.settings.ContextMaxChars,
 	})
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if stream == nil {
+		cancel()
+		return nil, aidomain.ErrOutputIncomplete
+	}
+	return &responseStream{
+		source: stream,
+		cancel: cancel,
+		start:  started,
+		logger: s.log().With(zap.String("model", prepared.Model)),
+	}, nil
 }
 
 // prepareResponsesRequest 校验并补全聊天请求：模型白名单、思考选项与系统提示词注入。
@@ -100,17 +115,27 @@ func (s *Service) prepareResponsesRequest(
 	if err != nil {
 		return req, conv, err
 	}
+	if err = conv.validateInput(cfg); err != nil {
+		return req, conv, err
+	}
 	conv = conv.trimHistory(cfg)
 	if !conv.HasMessages() {
 		return req, conv, aidomain.ErrNoUserMessage
 	}
-
-	prompt, promptErr := s.buildResponsesSystemPrompt(ctx, cfg, runtime, conv, req.Model)
-	if promptErr != nil {
-		s.logger.Warn("build AI responses system prompt failed", zap.Error(promptErr))
+	base := conv.prependSystem(cfg.SystemPrompt)
+	if err = base.validateContext(cfg); err != nil {
+		return req, conv, err
 	}
 
-	conv = conv.prependSystem((aidomain.PromptVideoCandidate{}).FirstNonEmpty(prompt, cfg.SystemPrompt))
+	prompt := cfg.SystemPrompt
+	if s.prompts != nil && s.prompts.Available() {
+		prompt += "\n\n" + videoSearchInstruction
+	}
+	enhanced := conv.prependSystem(prompt)
+	if err = enhanced.validateContext(cfg); err != nil {
+		return req, conv, err
+	}
+	conv = enhanced
 
 	return req, conv, nil
 }
@@ -133,20 +158,14 @@ func normalizeThinkingOptions(cfg *config.AI, req ResponsesRequest) (ResponsesRe
 }
 
 // buildResponsesCompatiblePayload 组装 Responses API 兼容的非流式响应载荷。
-func buildResponsesCompatiblePayload(model, text string) map[string]any {
-	return map[string]any{
-		"status": "completed",
-		"model":  model,
-		"output": []map[string]any{
-			{
-				"type": "message",
-				"content": []map[string]any{
-					{
-						"type": "output_text",
-						"text": text,
-					},
-				},
-			},
-		},
+func buildResponsesCompatiblePayload(model string, result TextResult) *ResponsesPayload {
+	return &ResponsesPayload{
+		Status:           result.Status(),
+		Model:            model,
+		ResponseMetadata: result.ResponseMetadata,
+		Output: []ResponseOutput{{
+			Type:    "message",
+			Content: []ResponseContent{{Type: "output_text", Text: result.Text}},
+		}},
 	}
 }

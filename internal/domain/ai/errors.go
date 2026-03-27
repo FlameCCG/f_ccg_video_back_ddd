@@ -42,7 +42,12 @@ var (
 	// ErrAssetHostNotAllowed 资源地址不在代理白名单内。
 	ErrAssetHostNotAllowed = errors.New("不支持代理该资源地址")
 	// ErrOutputTextNotFound 上游响应中缺少 output_text。
-	ErrOutputTextNotFound = errors.New("AI 分析响应中未找到 output_text")
+	ErrOutputTextNotFound   = errors.New("AI 分析响应中未找到 output_text")
+	ErrInputTooLong         = errors.New("单条消息过长，请缩短内容后重试")
+	ErrContextTooLong       = errors.New("对话上下文过长，请缩短消息或开始新对话")
+	ErrOutputIncomplete     = errors.New("AI 回答未完整生成，请稍后重试")
+	ErrImageOutputEmpty     = errors.New("AI 未返回有效图片，请稍后重试")
+	ErrVideoAnalysisInvalid = errors.New("AI 视频检索意图无效")
 )
 
 // APIError 表示上游 AI 服务返回的业务错误.

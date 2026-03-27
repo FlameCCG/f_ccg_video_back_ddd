@@ -26,6 +26,15 @@ func NewVideoTaskClient() *VideoTaskClient {
 
 // Create 创建上游视频生成任务。
 func (c *VideoTaskClient) Create(ctx context.Context, inv aiapp.VideoInvocation) (any, error) {
+	resp, err := newArkRuntimeClient(inv.Runtime).CreateContentGenerationTask(ctx, buildVideoTaskRequest(inv))
+	if err != nil {
+		return nil, wrapArkError(err)
+	}
+	return normalizeVideoTaskResponse(resp)
+}
+
+// buildVideoTaskRequest 将应用参数转换为方舟协议，独立验证图片 role 等契约。
+func buildVideoTaskRequest(inv aiapp.VideoInvocation) arkrtmodel.CreateContentGenerationTaskRequest {
 	content := make([]*arkrtmodel.CreateContentGenerationContentItem, 0, 1+len(inv.ImageRefs))
 	if prompt := strings.TrimSpace(inv.Prompt); prompt != "" {
 		text := prompt
@@ -36,13 +45,15 @@ func (c *VideoTaskClient) Create(ctx context.Context, inv aiapp.VideoInvocation)
 	}
 
 	for _, ref := range inv.ImageRefs {
-		url := strings.TrimSpace(ref)
+		url := strings.TrimSpace(ref.URL)
 		if url == "" {
 			continue
 		}
 
+		role := ref.Role
 		content = append(content, &arkrtmodel.CreateContentGenerationContentItem{
 			Type: arkrtmodel.ContentGenerationContentItemTypeImage,
+			Role: &role,
 			ImageURL: &arkrtmodel.ImageURL{
 				URL: url,
 			},
@@ -85,12 +96,7 @@ func (c *VideoTaskClient) Create(ctx context.Context, inv aiapp.VideoInvocation)
 		payload.Seed = &seed
 	}
 
-	resp, err := newArkRuntimeClient(inv.Runtime).CreateContentGenerationTask(ctx, payload)
-	if err != nil {
-		return nil, wrapArkError(err)
-	}
-
-	return normalizeVideoTaskResponse(resp)
+	return payload
 }
 
 // Get 查询上游视频生成任务状态。

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
 
@@ -22,6 +23,9 @@ const defaultMenuGenerationSystemPrompt = `你是企业后台 RBAC 菜单配置�
 4. icon 必须是长度不超过 2048 字节的安全 SVG 字符串，不得包含 script、事件处理器、外链或 foreignObject。
 5. titleEn/titleJa/name/path/component 均不得为空。`
 
+// 菜单表含完整 SVG，使用独立预算，避免聊天额度影响后台菜单生成。
+const menuGenerationMaxContextChars = 256000
+
 // GenerateMenuSuggestion 使用独立系统提示词生成菜单表单字段。
 //
 // AI 上下文只组织模型调用并返回文本，不直接操作 RBAC 仓储。
@@ -37,6 +41,8 @@ func (s *Service) GenerateMenuSuggestion(
 		return "", err
 	}
 	cfg := &snapshot.settings
+	ctx, cancel := snapshot.runtime.WithContext(ctx)
+	defer cancel()
 
 	if err := requireChatAPIKey(cfg); err != nil {
 		return "", err
@@ -64,18 +70,22 @@ func (s *Service) GenerateMenuSuggestion(
 		menuTableJSON,
 	)
 
-	text, err := s.text.InvokeText(ctx, TextInvocation{
-		Runtime: snapshot.runtime,
-		Model:   model,
-		Messages: []*schema.Message{
-			schema.SystemMessage(systemPrompt),
-			schema.UserMessage(userPrompt),
-		},
+	messages := []*schema.Message{schema.SystemMessage(systemPrompt), schema.UserMessage(userPrompt)}
+	if err := (aidomain.InputPolicy{}).ValidateContext(utf8.RuneCountInString(systemPrompt)+utf8.RuneCountInString(userPrompt), menuGenerationMaxContextChars); err != nil {
+		return "", err
+	}
+	result, err := s.invokeText(ctx, TextInvocation{
+		Runtime:   snapshot.runtime,
+		Model:     model,
+		Messages:  messages,
 		MaxTokens: defaultMaxOutputTokens,
 	})
 	if err != nil {
 		return "", fmt.Errorf("生成菜单字段失败: %w", err)
 	}
 
-	return text, nil
+	if result.Status() != "completed" {
+		return "", aidomain.ErrOutputIncomplete
+	}
+	return result.Text, nil
 }

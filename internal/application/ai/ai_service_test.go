@@ -22,15 +22,13 @@ type snapshotTextGenerator struct {
 func (g *snapshotTextGenerator) InvokeText(
 	_ context.Context,
 	invocation TextInvocation,
-) (string, error) {
+) (TextResult, error) {
 	g.invocations = append(g.invocations, invocation)
 	if len(g.invocations) == 1 {
 		g.provider.Set(g.next)
-
-		return `{"intent":"chat","keywords":[]}`, nil
 	}
 
-	return "snapshot answer", nil
+	return TextResult{Text: "snapshot answer", ResponseMetadata: ResponseMetadata{FinishReason: "end_turn"}}, nil
 }
 
 func (*snapshotTextGenerator) OpenStream(
@@ -161,8 +159,11 @@ func TestCreateResponseKeepsRuntimeSnapshotAcrossHotReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateResponse() error = %v", err)
 	}
-	if len(text.invocations) != 2 {
-		t.Fatalf("invocation count = %d, want 2", len(text.invocations))
+	if len(text.invocations) != 1 {
+		t.Fatalf("invocation count = %d, want 1 without intent classification", len(text.invocations))
+	}
+	if len(text.invocations[0].Tools) != 1 {
+		t.Fatal("video search tool was not registered")
 	}
 
 	wantRuntime := RuntimeConfig{

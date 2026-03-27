@@ -45,7 +45,7 @@ func (p *AssetProxy) Open(
 		}
 	}
 
-	client := httpClientFor(runtime, false)
+	client := httpClientFor(runtime)
 	client.CheckRedirect = validateAssetRedirect
 	resp, err := client.Do(req)
 	if err != nil {

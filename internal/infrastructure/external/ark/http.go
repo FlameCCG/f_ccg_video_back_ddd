@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
 	aidomain "f_ccg_video_back_ddd/internal/domain/ai"
@@ -21,18 +20,9 @@ import (
 // errorBodyLimit 读取上游错误响应体的上限。
 const errorBodyLimit = 4096
 
-// httpClientFor 流式请求不设整体超时（由 context 控制），非流式取配置与 AI 基线的较大值。
-func httpClientFor(runtime aiapp.RuntimeConfig, stream bool) *http.Client {
-	if stream {
-		return &http.Client{}
-	}
-
-	timeout := ctxutil.RequestAITimeout
-	if runtime.TimeoutSec > 0 {
-		timeout = max(time.Duration(runtime.TimeoutSec)*time.Second, ctxutil.RequestAITimeout)
-	}
-
-	return &http.Client{Timeout: timeout}
+// httpClientFor 使用统一 AI 预算，调用方 context 的更短截止时间仍优先。
+func httpClientFor(runtime aiapp.RuntimeConfig) *http.Client {
+	return &http.Client{Timeout: ctxutil.AITimeout(runtime.TimeoutSec)}
 }
 
 // gatedStreamHTTPClient 阻止流式响应体在 Eino Stream 返回前被消费。
@@ -40,7 +30,7 @@ func httpClientFor(runtime aiapp.RuntimeConfig, stream bool) *http.Client {
 // Eino Claude 组件会先启动读取 goroutine，再完成 Stream 的返回值装配；如果上游首包
 // 极快，组件内部命名返回值会被两个 goroutine 同时写。适配器在 Stream 返回后打开闸门，
 // 既不缓存响应体，也不改变后续流式读取和取消语义。
-func gatedStreamHTTPClient() (*http.Client, func()) {
+func gatedStreamHTTPClient(runtime aiapp.RuntimeConfig) (*http.Client, func()) {
 	ready := make(chan struct{})
 	var once sync.Once
 	release := func() {
@@ -50,6 +40,7 @@ func gatedStreamHTTPClient() (*http.Client, func()) {
 	}
 
 	return &http.Client{
+		Timeout: ctxutil.AITimeout(runtime.TimeoutSec),
 		Transport: &responseReadGateTransport{
 			base:  http.DefaultTransport,
 			ready: ready,
