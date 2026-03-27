@@ -1,6 +1,7 @@
 package jwts
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -11,12 +12,12 @@ import (
 func TestTokenSigningRejectsEmptySecret(t *testing.T) {
 	t.Parallel()
 
-	_, err := CreateJwtTokenWithPassword("1", "alice", "", false, time.Hour, "", 2*time.Hour, strings.Repeat("r", 32))
+	_, err := CreateJwtTokenWithPassword("1", "alice", "", "test-session", time.Hour, "", 2*time.Hour, strings.Repeat("r", 32))
 	if err == nil {
 		t.Fatal("expected error for empty access secret")
 	}
 
-	_, err = CreateJwtTokenWithPassword("1", "alice", "", false, time.Hour, strings.Repeat("a", 32), 2*time.Hour, "")
+	_, err = CreateJwtTokenWithPassword("1", "alice", "", "test-session", time.Hour, strings.Repeat("a", 32), 2*time.Hour, "")
 	if err == nil {
 		t.Fatal("expected error for empty refresh secret")
 	}
@@ -28,7 +29,7 @@ func TestTokenSigningAndAccessClaimsRoundTrip(t *testing.T) {
 	accessSecret := strings.Repeat("a", 32)
 	refreshSecret := strings.Repeat("b", 32)
 
-	tok, err := CreateJwtTokenWithPassword("42", "bob", "", false, time.Hour, accessSecret, 24*time.Hour, refreshSecret)
+	tok, err := CreateJwtTokenWithPassword("42", "bob", "", "test-session", time.Hour, accessSecret, 24*time.Hour, refreshSecret)
 	if err != nil {
 		t.Fatalf("CreateJwtTokenWithPassword: %v", err)
 	}
@@ -43,6 +44,17 @@ func TestTokenSigningAndAccessClaimsRoundTrip(t *testing.T) {
 	if claims.UID != "42" || claims.Username != "bob" {
 		t.Fatalf("got uid=%q username=%q", claims.UID, claims.Username)
 	}
+	refreshClaims, err := ParseRefreshClaims(tok.RefreshToken, refreshSecret)
+	if err != nil || refreshClaims.UID != claims.UID || refreshClaims.SessionID != claims.SessionID || claims.SessionID != "test-session" {
+		t.Fatalf("token pair does not share a session: %v", err)
+	}
+	if err := refreshClaims.CheckPasswordVersion(refreshSecret, ""); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(tok)
+	if err != nil || strings.Contains(string(payload), "mustChangePassword") {
+		t.Fatalf("removed flag exposed in login response: %v", err)
+	}
 
 	if _, err := ParseAccessToken(tok.AccessToken, ""); err == nil {
 		t.Fatal("access token accepted with an incorrect empty secret")
@@ -50,7 +62,7 @@ func TestTokenSigningAndAccessClaimsRoundTrip(t *testing.T) {
 }
 
 func TestCredentialVersionAndTokenPurpose(t *testing.T) {
-	pair, err := CreateJwtTokenWithPassword("7", "user", "password-hash", false, time.Hour, "shared-secret", time.Hour, "shared-secret")
+	pair, err := CreateJwtTokenWithPassword("7", "user", "password-hash", "test-session", time.Hour, "shared-secret", time.Hour, "shared-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,13 +100,14 @@ func TestAccessClaimsValidateSignaturePurposeExpiryAndCredentials(t *testing.T) 
 		{name: "refresh token", change: func(c jwt.MapClaims) { c["tokenUse"] = "refresh" }, wantErr: true},
 		{name: "expired", change: func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Hour).Unix() }, wantErr: true},
 		{name: "missing expiry", change: func(c jwt.MapClaims) { delete(c, "exp") }, wantErr: true},
-		{name: "missing session", change: func(c jwt.MapClaims) { delete(c, "jti") }, wantErr: true},
+		{name: "missing session", change: func(c jwt.MapClaims) { delete(c, "sid") }, wantErr: true},
+		{name: "missing token ID", change: func(c jwt.MapClaims) { delete(c, "jti") }, wantErr: true},
 		{name: "missing credential version", change: func(c jwt.MapClaims) { delete(c, "pwdVer") }, wantErr: true},
 		{name: "missing UID", change: func(c jwt.MapClaims) { delete(c, "uid") }, wantErr: true},
 		{name: "missing username", change: func(c jwt.MapClaims) { delete(c, "username") }, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			claims := jwt.MapClaims{"uid": "7", "username": "alice", "exp": time.Now().Add(time.Hour).Unix(), "tokenUse": "access", "jti": "session", "pwdVer": PasswordVersion(password, secret)}
+			claims := jwt.MapClaims{"uid": "7", "username": "alice", "exp": time.Now().Add(time.Hour).Unix(), "tokenUse": "access", "jti": "token", "sid": "session", "pwdVer": PasswordVersion(password, secret)}
 			if test.change != nil {
 				test.change(claims)
 			}
@@ -125,6 +138,34 @@ func TestAccessClaimsValidateSignaturePurposeExpiryAndCredentials(t *testing.T) 
 			}
 			if err := parsed.CheckPasswordVersion(secret, "changed-password"); err == nil {
 				t.Fatal("changed credentials accepted")
+			}
+		})
+	}
+}
+
+func TestRefreshClaimsRejectLegacyTokensAndAccessTokens(t *testing.T) {
+	t.Parallel()
+	const secret = "shared-key"
+	for _, test := range []struct {
+		name   string
+		change func(jwt.MapClaims)
+	}{
+		{"missing session", func(c jwt.MapClaims) { delete(c, "sid") }},
+		{"missing token ID", func(c jwt.MapClaims) { delete(c, "jti") }},
+		{"missing expiry", func(c jwt.MapClaims) { delete(c, "exp") }},
+		{"missing credential version", func(c jwt.MapClaims) { delete(c, "pwdVer") }},
+		{"expired", func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Hour).Unix() }},
+		{"access token", func(c jwt.MapClaims) { c["tokenUse"] = "access" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			claims := jwt.MapClaims{"uid": "7", "sid": "device", "jti": "token", "pwdVer": PasswordVersion("hash", secret), "tokenUse": "refresh", "exp": time.Now().Add(time.Hour).Unix()}
+			test.change(claims)
+			token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ParseRefreshClaims(token, secret); err == nil {
+				t.Fatal("invalid refresh claims accepted")
 			}
 		})
 	}

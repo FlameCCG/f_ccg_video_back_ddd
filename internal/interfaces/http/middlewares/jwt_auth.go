@@ -3,6 +3,7 @@ package middlewares
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -87,22 +88,22 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 	user, validationErr := m.resolveAccessUser(c, token)
 	if validationErr != nil {
 		m.log().Warn("JWT credential validation failed", zap.Error(validationErr))
-		res.FailWithMsg("token invalid or account unavailable", c)
-		c.Abort()
-		return false
-	}
-	if user.MustChangePassword() && c.FullPath() != "/v1/common/user/password/change" {
-		res.FailWithMsg("please change your initial password", c)
+		if errors.Is(validationErr, authsession.ErrInvalidSession) {
+			res.FailWithMsg("token invalid or account unavailable", c)
+		} else {
+			status, message := http.StatusServiceUnavailable, "身份验证暂时不可用，请稍后重试"
+			if ctxutil.IsTimeout(validationErr) {
+				status, message = http.StatusGatewayTimeout, "身份验证超时，请稍后重试"
+			}
+			c.JSON(status, res.Response{Code: res.FailServiceCode, Data: map[string]any{}, Msg: message})
+		}
 		c.Abort()
 		return false
 	}
 	c.Request = c.Request.WithContext(authsession.WithValidator(c.Request.Context(), func(ctx context.Context) error {
-		current, err := m.userStatus.ValidateAccessToken(ctx, token, m.accessSecret())
+		_, err := m.userStatus.ValidateAccessToken(ctx, token, m.accessSecret())
 		if err != nil {
 			return err
-		}
-		if current.MustChangePassword() {
-			return errors.New("initial password change required")
 		}
 		return nil
 	}))

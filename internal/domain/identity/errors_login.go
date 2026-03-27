@@ -66,6 +66,4 @@ var (
 
 var ErrAccountBanned = errors.New("account is banned")
 
-var ErrInitialPasswordUnchanged = errors.New("new password must differ from initial password")
-
 var ErrNotAdminAccount = errors.New("非管理员账号")

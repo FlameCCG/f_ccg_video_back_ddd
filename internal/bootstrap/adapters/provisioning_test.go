@@ -32,7 +32,7 @@ func systemProvisioningDB(t *testing.T) *gorm.DB {
 	}
 	for _, sql := range []string{
 		`CREATE TABLE users (id integer PRIMARY KEY AUTOINCREMENT, created_at datetime, updated_at datetime,
- username text, email text, password text, avatar text, description text, refresh_token_hash text, must_change_password numeric,
+ username text, email text, password text, avatar text, description text,
  gender integer, birthday datetime, level integer, open_id text, register_source text, exp integer, coin_count numeric, status integer,
  current_role_id integer, register_ip text, last_login_ip text, register_addr text, last_login_addr text)`,
 		`CREATE TABLE roles (id integer PRIMARY KEY AUTOINCREMENT, created_at datetime, updated_at datetime, name text UNIQUE, "desc" text)`,
@@ -90,7 +90,7 @@ func TestSystemProvisioningSharesTransactionAcrossContexts(t *testing.T) {
 			if err != nil || !result.UserCreated || !result.RoleCreated || binder.calls != 1 {
 				t.Fatalf("result=%+v err=%v binder=%d", result, err, binder.calls)
 			}
-			if err := db.Exec("UPDATE users SET coin_count=12.3,status=2,avatar='preserved',refresh_token_hash='session' WHERE id=?", result.UserID).Error; err != nil {
+			if err := db.Exec("UPDATE users SET coin_count=12.3,status=2,avatar='preserved' WHERE id=?", result.UserID).Error; err != nil {
 				t.Fatal(err)
 			}
 			result, err = service.Provision(t.Context(), []string{"admin", "next-password"})
@@ -101,7 +101,7 @@ func TestSystemProvisioningSharesTransactionAcrossContexts(t *testing.T) {
 			if err := db.First(&user, result.UserID).Error; err != nil {
 				t.Fatal(err)
 			}
-			if !encrypt.ValidatePasswordHash("next-password", user.Password) || !user.MustChangePassword || user.RefreshTokenHash != "" || user.Level != 6 || user.Exp != 20000 || user.CurrentRoleID == 0 {
+			if !encrypt.ValidatePasswordHash("next-password", user.Password) || user.Level != 6 || user.Exp != 20000 || user.CurrentRoleID == 0 {
 				t.Fatalf("incorrect reset: %+v", user)
 			}
 			if user.CoinCount != 12.3 || user.Status != 2 || user.Avatar != "preserved" {

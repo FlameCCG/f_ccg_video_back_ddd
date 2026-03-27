@@ -35,7 +35,7 @@ func TestStatusRefreshRejectsReadOvertakenByNewBan(t *testing.T) {
 		cache.Write(1, enum.UserStatusPermanentlyBanned)
 		return old
 	}}
-	if err := app.NewUserStatusService(cache, repo).Refresh(t.Context(), 1); err != nil {
+	if err := app.NewUserStatusService(cache, repo, nil).Refresh(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
 	status, ok := cache.Load(t.Context(), 1)
@@ -75,7 +75,7 @@ func TestStatusRefreshRejectsStaleFillDuringInvalidation(t *testing.T) {
 				return identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 1, Status: tc.committed})
 			}}
 
-			if err := app.NewUserStatusService(cache, repo).Refresh(t.Context(), 1); err != nil {
+			if err := app.NewUserStatusService(cache, repo, nil).Refresh(t.Context(), 1); err != nil {
 				t.Fatal(err)
 			}
 			status, ok := cache.Load(t.Context(), 1)

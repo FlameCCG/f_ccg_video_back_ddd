@@ -145,7 +145,7 @@ func (r *UserRepository) SaveCredentials(ctx context.Context, user *identitydoma
 	return gormx.DB(ctx, r.db).
 		Model(&po.User{}).
 		Where("id = ?", user.ID()).
-		Updates(map[string]any{"password": user.Password(), "refresh_token_hash": user.RefreshTokenHash(), "must_change_password": user.MustChangePassword()}).Error
+		Updates(map[string]any{"password": user.Password()}).Error
 }
 
 // SaveEmail 只保存绑定邮箱。

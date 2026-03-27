@@ -5,21 +5,9 @@ import (
 	"testing"
 )
 
-func TestRefreshDigestCASAndPasswordUpdate(t *testing.T) {
+func TestPasswordUpdateDoesNotRequireLegacySessionColumns(t *testing.T) {
 	db := openUserProfileTestDB(t)
 	repo := NewUserRepository(db, nil)
-	if ok, err := repo.SetRefreshToken(t.Context(), 1, "password-hash", "original"); err != nil || !ok {
-		t.Fatalf("set ok=%t err=%v", ok, err)
-	}
-	if ok, err := repo.RotateRefreshToken(t.Context(), 1, "password-hash", "original", "next"); err != nil || !ok {
-		t.Fatalf("rotate ok=%t err=%v", ok, err)
-	}
-	if ok, err := repo.RotateRefreshToken(t.Context(), 1, "password-hash", "original", "replay"); err != nil || ok {
-		t.Fatalf("replay ok=%t err=%v", ok, err)
-	}
-	if err := db.Exec("UPDATE users SET must_change_password = 1 WHERE id = 1").Error; err != nil {
-		t.Fatal(err)
-	}
 	account, err := repo.FindByID(t.Context(), 1)
 	if err != nil {
 		t.Fatal(err)
@@ -31,14 +19,8 @@ func TestRefreshDigestCASAndPasswordUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	user, err := repo.FindByID(t.Context(), 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if user.RefreshTokenHash() != "" || user.MustChangePassword() || user.Password() != "new-password-hash" {
-		t.Fatalf("credential state not reset: %+v", user)
-	}
-	if ok, err := repo.SetRefreshToken(t.Context(), 1, "password-hash", "stale-login"); err != nil || ok {
-		t.Fatalf("stale login race ok=%t err=%v", ok, err)
+	if err != nil || user.Password() != "new-password-hash" {
+		t.Fatalf("credential state not saved: %v", err)
 	}
 }
 func TestAdminUserRoleFilterPreservesAllUserFields(t *testing.T) {

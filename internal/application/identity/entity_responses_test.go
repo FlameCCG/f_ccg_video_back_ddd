@@ -8,7 +8,7 @@ import (
 )
 
 func TestUserAndBanResponseCompatibility(t *testing.T) {
-	user := identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Password: "secret-password", RefreshTokenHash: "secret-refresh"})
+	user := identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Password: "secret-password"})
 	raw, err := json.Marshal(ToUserDTO(user))
 	if err != nil {
 		t.Fatal(err)

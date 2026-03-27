@@ -23,7 +23,10 @@ import (
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"f_ccg_video_back_ddd/pkg/validate"
 
+	identitycache "f_ccg_video_back_ddd/internal/infrastructure/cache/identity"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 type submissionStatusCache struct {
@@ -61,14 +64,21 @@ func TestVideoSubmissionRoutesEnforcePolicyBeforeBinding(t *testing.T) {
 	provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{DisableUserSubmission: true}, Jwt: &config.Jwt{AccessSecret: secret}})
 	roles := &routeSubmissionRoles{}
 	statuses := &submissionStatusCache{status: enum.UserStatusActive}
-	mw := middlewares.New(provider, nil, identityapp.NewUserStatusService(statuses, &routeSubmissionUsers{}), roles, nil, nil, nil, nil, nil)
+	sessionRedis := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: sessionRedis.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	sessions := identitycache.NewSessionStore(client)
+	if err := sessions.Create(t.Context(), 7, "test-session", "digest", time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	mw := middlewares.New(provider, nil, identityapp.NewUserStatusService(statuses, &routeSubmissionUsers{}, sessions), roles, nil, nil, nil, nil, nil)
 	engine := gin.New()
 	engine.Use(validate.New().Middleware())
 	uploads := videoapp.NewUploadService(&submissionStorage{}, provider, nil, nil, nil)
-	handler := videohandler.NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, uploads, nil, nil, nil, nil, provider, nil, nil, identityapp.NewUserStatusService(statuses, &routeSubmissionUsers{}))
+	handler := videohandler.NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, uploads, nil, nil, nil, nil, provider, nil, nil, identityapp.NewUserStatusService(statuses, &routeSubmissionUsers{}, sessions))
 	registerVideoCommonRoutes(engine.Group("/v1/common"), mw, handler)
 	registerIdentityCommonRoutes(engine.Group("/v1/common"), mw, &identityhandler.Handler{})
-	token, err := jwts.CreateJwtTokenWithPassword("7", "admin", "", false, time.Hour, secret, time.Hour, secret)
+	token, err := jwts.CreateJwtTokenWithPassword("7", "admin", "", "test-session", time.Hour, secret, time.Hour, secret)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	chatapp "f_ccg_video_back_ddd/internal/application/chat"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wsauth"
 	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
 	"f_ccg_video_back_ddd/pkg/authsession"
 
@@ -418,7 +419,7 @@ func (c *client) writePump() {
 				err := authsession.Validate(authCtx)
 				cancel()
 				if err != nil {
-					c.closeWithReason("session revoked")
+					wsauth.Close(c.conn, err, chatWSWriteWait)
 					return
 				}
 			}
@@ -440,7 +441,7 @@ func (c *client) writePump() {
 				err := authsession.Validate(authCtx)
 				cancel()
 				if err != nil {
-					c.closeWithReason("session revoked")
+					wsauth.Close(c.conn, err, chatWSWriteWait)
 					return
 				}
 			}
@@ -488,7 +489,7 @@ func (c *client) handleSend(evt clientEvent) {
 	ctx, cancel := context.WithTimeout(c.ctx, sendTimeout)
 	defer cancel()
 	if err := authsession.Validate(ctx); err != nil {
-		c.sendSystem("session expired, please sign in again")
+		c.sendSystem(wsauth.FailureMessage(err))
 		return
 	}
 
@@ -519,7 +520,7 @@ func (c *client) handleRead(evt clientEvent) {
 	ctx, cancel := context.WithTimeout(c.ctx, readTimeout)
 	defer cancel()
 	if err := authsession.Validate(ctx); err != nil {
-		c.sendSystem("session expired, please sign in again")
+		c.sendSystem(wsauth.FailureMessage(err))
 		return
 	}
 

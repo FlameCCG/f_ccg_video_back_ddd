@@ -12,84 +12,78 @@ import (
 // 状态只通过构造、业务方法和 RestoreUser 改变。HTTP 响应使用独立 DTO，不序列化本实体。
 // 硬币余额只读；写入只能走 CoinAccount。
 type User struct {
-	refreshTokenHash   string
-	mustChangePassword bool
-	id                 uint
-	createdAt          time.Time
-	updatedAt          time.Time
-	username           string
-	email              string
-	password           string
-	avatar             string
-	description        string
-	gender             int
-	birthday           *time.Time
-	level              int
-	openID             string
-	registerSource     string
-	exp                int64
-	coinCount          float64
-	status             enum.UserStatus
-	currentRoleID      uint
-	registerIP         string
-	lastLoginIP        string
-	registerAddr       string
-	lastLoginAddr      string
+	id             uint
+	createdAt      time.Time
+	updatedAt      time.Time
+	username       string
+	email          string
+	password       string
+	avatar         string
+	description    string
+	gender         int
+	birthday       *time.Time
+	level          int
+	openID         string
+	registerSource string
+	exp            int64
+	coinCount      float64
+	status         enum.UserStatus
+	currentRoleID  uint
+	registerIP     string
+	lastLoginIP    string
+	registerAddr   string
+	lastLoginAddr  string
 }
 
 // UserSnapshot 是用户的持久化快照，字段公开供基础设施重建。
 type UserSnapshot struct {
-	RefreshTokenHash   string
-	MustChangePassword bool
-	ID                 uint
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-	Username           string
-	Email              string
-	Password           string
-	Avatar             string
-	Description        string
-	Gender             int
-	Birthday           *time.Time
-	Level              int
-	OpenID             string
-	RegisterSource     string
-	Exp                int64
-	CoinCount          float64
-	Status             enum.UserStatus
-	CurrentRoleID      uint
-	RegisterIP         string
-	LastLoginIP        string
-	RegisterAddr       string
-	LastLoginAddr      string
+	ID             uint
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	Username       string
+	Email          string
+	Password       string
+	Avatar         string
+	Description    string
+	Gender         int
+	Birthday       *time.Time
+	Level          int
+	OpenID         string
+	RegisterSource string
+	Exp            int64
+	CoinCount      float64
+	Status         enum.UserStatus
+	CurrentRoleID  uint
+	RegisterIP     string
+	LastLoginIP    string
+	RegisterAddr   string
+	LastLoginAddr  string
 }
 
 // RestoreUser 从持久化快照恢复用户，不重新执行注册校验。
 func RestoreUser(snapshot UserSnapshot) *User {
 	return &User{
-		refreshTokenHash:   snapshot.RefreshTokenHash,
-		mustChangePassword: snapshot.MustChangePassword,
-		id:                 snapshot.ID,
-		createdAt:          snapshot.CreatedAt,
-		updatedAt:          snapshot.UpdatedAt,
-		username:           snapshot.Username,
-		email:              snapshot.Email,
-		password:           snapshot.Password,
-		avatar:             snapshot.Avatar,
-		description:        snapshot.Description,
-		gender:             snapshot.Gender,
-		birthday:           (stateCopy{}).time(snapshot.Birthday),
-		level:              snapshot.Level,
-		openID:             snapshot.OpenID,
-		registerSource:     snapshot.RegisterSource,
-		exp:                snapshot.Exp,
-		coinCount:          snapshot.CoinCount,
-		status:             snapshot.Status,
-		currentRoleID:      snapshot.CurrentRoleID,
-		registerIP:         snapshot.RegisterIP,
-		lastLoginIP:        snapshot.LastLoginIP,
-		registerAddr:       snapshot.RegisterAddr,
-		lastLoginAddr:      snapshot.LastLoginAddr,
+		id:             snapshot.ID,
+		createdAt:      snapshot.CreatedAt,
+		updatedAt:      snapshot.UpdatedAt,
+		username:       snapshot.Username,
+		email:          snapshot.Email,
+		password:       snapshot.Password,
+		avatar:         snapshot.Avatar,
+		description:    snapshot.Description,
+		gender:         snapshot.Gender,
+		birthday:       (stateCopy{}).time(snapshot.Birthday),
+		level:          snapshot.Level,
+		openID:         snapshot.OpenID,
+		registerSource: snapshot.RegisterSource,
+		exp:            snapshot.Exp,
+		coinCount:      snapshot.CoinCount,
+		status:         snapshot.Status,
+		currentRoleID:  snapshot.CurrentRoleID,
+		registerIP:     snapshot.RegisterIP,
+		lastLoginIP:    snapshot.LastLoginIP,
+		registerAddr:   snapshot.RegisterAddr,
+		lastLoginAddr:  snapshot.LastLoginAddr,
 	}
 }
 
@@ -100,29 +94,27 @@ func (u *User) Snapshot() UserSnapshot {
 	}
 
 	return UserSnapshot{
-		RefreshTokenHash:   u.refreshTokenHash,
-		MustChangePassword: u.mustChangePassword,
-		ID:                 u.id,
-		CreatedAt:          u.createdAt,
-		UpdatedAt:          u.updatedAt,
-		Username:           u.username,
-		Email:              u.email,
-		Password:           u.password,
-		Avatar:             u.avatar,
-		Description:        u.description,
-		Gender:             u.gender,
-		Birthday:           (stateCopy{}).time(u.birthday),
-		Level:              u.level,
-		OpenID:             u.openID,
-		RegisterSource:     u.registerSource,
-		Exp:                u.exp,
-		CoinCount:          u.coinCount,
-		Status:             u.status,
-		CurrentRoleID:      u.currentRoleID,
-		RegisterIP:         u.registerIP,
-		LastLoginIP:        u.lastLoginIP,
-		RegisterAddr:       u.registerAddr,
-		LastLoginAddr:      u.lastLoginAddr,
+		ID:             u.id,
+		CreatedAt:      u.createdAt,
+		UpdatedAt:      u.updatedAt,
+		Username:       u.username,
+		Email:          u.email,
+		Password:       u.password,
+		Avatar:         u.avatar,
+		Description:    u.description,
+		Gender:         u.gender,
+		Birthday:       (stateCopy{}).time(u.birthday),
+		Level:          u.level,
+		OpenID:         u.openID,
+		RegisterSource: u.registerSource,
+		Exp:            u.exp,
+		CoinCount:      u.coinCount,
+		Status:         u.status,
+		CurrentRoleID:  u.currentRoleID,
+		RegisterIP:     u.registerIP,
+		LastLoginIP:    u.lastLoginIP,
+		RegisterAddr:   u.registerAddr,
+		LastLoginAddr:  u.lastLoginAddr,
 	}
 }
 
@@ -155,28 +147,26 @@ func NewOAuthUser(username, email, avatar, openID, registerIP, registerAddr, reg
 	}
 }
 
-func (u *User) ID() uint                 { return u.orZero().id }
-func (u *User) CreatedAt() time.Time     { return u.orZero().createdAt }
-func (u *User) UpdatedAt() time.Time     { return u.orZero().updatedAt }
-func (u *User) Username() string         { return u.orZero().username }
-func (u *User) Email() string            { return u.orZero().email }
-func (u *User) Password() string         { return u.orZero().password }
-func (u *User) RefreshTokenHash() string { return u.orZero().refreshTokenHash }
-func (u *User) MustChangePassword() bool { return u.orZero().mustChangePassword }
-func (u *User) Avatar() string           { return u.orZero().avatar }
-func (u *User) Description() string      { return u.orZero().description }
-func (u *User) Gender() int              { return u.orZero().gender }
-func (u *User) Level() int               { return u.orZero().level }
-func (u *User) OpenID() string           { return u.orZero().openID }
-func (u *User) RegisterSource() string   { return u.orZero().registerSource }
-func (u *User) Exp() int64               { return u.orZero().exp }
-func (u *User) CoinCount() float64       { return u.orZero().coinCount }
-func (u *User) Status() enum.UserStatus  { return u.orZero().status }
-func (u *User) CurrentRoleID() uint      { return u.orZero().currentRoleID }
-func (u *User) RegisterIP() string       { return u.orZero().registerIP }
-func (u *User) LastLoginIP() string      { return u.orZero().lastLoginIP }
-func (u *User) RegisterAddr() string     { return u.orZero().registerAddr }
-func (u *User) LastLoginAddr() string    { return u.orZero().lastLoginAddr }
+func (u *User) ID() uint                { return u.orZero().id }
+func (u *User) CreatedAt() time.Time    { return u.orZero().createdAt }
+func (u *User) UpdatedAt() time.Time    { return u.orZero().updatedAt }
+func (u *User) Username() string        { return u.orZero().username }
+func (u *User) Email() string           { return u.orZero().email }
+func (u *User) Password() string        { return u.orZero().password }
+func (u *User) Avatar() string          { return u.orZero().avatar }
+func (u *User) Description() string     { return u.orZero().description }
+func (u *User) Gender() int             { return u.orZero().gender }
+func (u *User) Level() int              { return u.orZero().level }
+func (u *User) OpenID() string          { return u.orZero().openID }
+func (u *User) RegisterSource() string  { return u.orZero().registerSource }
+func (u *User) Exp() int64              { return u.orZero().exp }
+func (u *User) CoinCount() float64      { return u.orZero().coinCount }
+func (u *User) Status() enum.UserStatus { return u.orZero().status }
+func (u *User) CurrentRoleID() uint     { return u.orZero().currentRoleID }
+func (u *User) RegisterIP() string      { return u.orZero().registerIP }
+func (u *User) LastLoginIP() string     { return u.orZero().lastLoginIP }
+func (u *User) RegisterAddr() string    { return u.orZero().registerAddr }
+func (u *User) LastLoginAddr() string   { return u.orZero().lastLoginAddr }
 
 // Birthday 返回生日副本，调用方修改不会写回实体。
 func (u *User) Birthday() *time.Time {
@@ -224,11 +214,6 @@ func (u *User) CheckOldPassword(oldPassword string, matches func(passwordHash st
 	}
 
 	return nil
-}
-
-// ReusesInitialPassword 报告强制改密用户是否仍提交了当前密码。
-func (u *User) ReusesInitialPassword(newPasswordMatchesCurrent bool) bool {
-	return u != nil && u.mustChangePassword && newPasswordMatchesCurrent
 }
 
 // HasTimedBan 判断用户是否处于限时封禁（不含永久封禁）。

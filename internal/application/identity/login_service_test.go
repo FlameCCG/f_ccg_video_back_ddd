@@ -36,8 +36,8 @@ func TestLoginServiceRefreshTokenDistinguishesQueryFailure(t *testing.T) {
 		AccessSecret:  "test-access-secret",
 		RefreshSecret: "test-refresh-secret",
 	}}}
-	tokens := NewTokenService(reader)
-	pair, err := tokens.issueCredentialPair(identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester"}))
+	tokens := NewTokenService(reader, nil)
+	pair, err := tokens.issueCredentialPair(identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester"}), "test-session")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
@@ -68,8 +68,8 @@ func TestLoginServiceRefreshTokenReportsMissingUser(t *testing.T) {
 		AccessSecret:  "test-access-secret",
 		RefreshSecret: "test-refresh-secret",
 	}}}
-	tokens := NewTokenService(reader)
-	pair, err := tokens.issueCredentialPair(identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester"}))
+	tokens := NewTokenService(reader, nil)
+	pair, err := tokens.issueCredentialPair(identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester"}), "test-session")
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
@@ -87,5 +87,29 @@ func TestLoginServiceRefreshTokenReportsMissingUser(t *testing.T) {
 
 	if _, err := service.RefreshToken(context.Background(), pair.RefreshToken); !errors.Is(err, identitydomain.ErrUserNotFound) {
 		t.Fatalf("RefreshToken error = %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestLoginSessionFailuresPreserveDependencyCause(t *testing.T) {
+	for _, cause := range []error{errors.New("redis unavailable"), context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			tokens, _ := newSecurityTokens()
+			tokens.sessions.(*securitySessionStore).err = cause
+			user := identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester", Status: 1})
+			password := &LoginService{tokens: tokens, logger: zap.NewNop()}
+			oauth := &OAuthLoginService{tokens: tokens, roles: &userInfoRoleQuery{}, logger: zap.NewNop()}
+			for _, login := range []func() error{
+				func() error {
+					_, err := password.finishLogin(t.Context(), user, PwdLoginInput{}, loginTypeAdminPwd)
+					return err
+				},
+				func() error { _, err := oauth.completeLogin(t.Context(), user, OAuthLoginInput{}); return err },
+			} {
+				err := login()
+				if !errors.Is(err, ErrSessionIssueFailed) || !errors.Is(err, cause) || errors.Is(err, ErrLoginFailed) {
+					t.Fatalf("lost dependency classification: %v", err)
+				}
+			}
+		})
 	}
 }

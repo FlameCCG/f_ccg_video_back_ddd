@@ -7,6 +7,8 @@ package ctxutil
 
 import (
 	"context"
+	"errors"
+	"net"
 	"time"
 )
 
@@ -66,6 +68,23 @@ const (
 	// HTTPMaxHeaderBytes 用于限制 HTTP 请求头大小。
 	HTTPMaxHeaderBytes = 1 << 20
 )
+
+// IsTimeout recognizes wrapped context deadlines and transport timeouts.
+func IsTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var timeoutErr net.Error
+	return errors.As(err, &timeoutErr) && timeoutErr.Timeout()
+}
+
+// AITimeout 将 AI 配置转换为统一预算；未配置时沿用 90 秒默认值。
+func AITimeout(seconds int) time.Duration {
+	if seconds <= 0 {
+		return RequestAITimeout
+	}
+	return time.Duration(seconds) * time.Second
+}
 
 // WithTimeout 基于父上下文创建带超时的上下文；父上下文为空时回退到 Background。
 func WithTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

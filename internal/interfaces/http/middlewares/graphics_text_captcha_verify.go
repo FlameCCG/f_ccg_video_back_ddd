@@ -17,10 +17,10 @@ type CaptchaMiddlewareRequest struct {
 	CaptchaCode string `form:"captchaCode" json:"captchaCode"`
 }
 
-// GraphicsTextCaptchaMiddleware 按图形验证码开关校验当前请求，读取请求体后复位以供后续参数绑定继续使用。
-func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
+// GraphicsTextCaptchaMiddleware 按场景开关校验图形验证码，读取请求体后复位以供后续参数绑定继续使用。
+func (m *Middlewares) GraphicsTextCaptchaMiddleware(scene string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !m.captcha.GraphicCaptchaEnabled() {
+		if !m.captcha.GraphicCaptchaEnabled(scene) {
 			c.Next()
 			return
 		}

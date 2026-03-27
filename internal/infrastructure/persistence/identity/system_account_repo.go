@@ -33,8 +33,8 @@ func (r *UserRepository) CreateSystemAccount(ctx context.Context, user *identity
 
 func (r *UserRepository) SaveSystemAccount(ctx context.Context, user *identitydomain.User) error {
 	return gormx.DB(ctx, r.db).Model(&po.User{}).Where("id = ?", user.ID()).Updates(map[string]any{
-		"password": user.Password(), "refresh_token_hash": user.RefreshTokenHash(),
-		"must_change_password": user.MustChangePassword(), "level": user.Level(),
-		"exp": user.Exp(), "current_role_id": user.CurrentRoleID(),
+		"password": user.Password(),
+		"level":    user.Level(),
+		"exp":      user.Exp(), "current_role_id": user.CurrentRoleID(),
 	}).Error
 }

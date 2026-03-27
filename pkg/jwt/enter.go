@@ -21,19 +21,19 @@ import (
 
 // JwtToken 把访问/刷新令牌及各自的 Unix 秒级过期时间作为一个登录结果返回。
 type JwtToken struct {
-	MustChangePassword bool   `json:"mustChangePassword,omitempty"`
-	AccessToken        string `json:"accessToken"`
-	RefreshToken       string `json:"refreshToken"`
-	AccessExp          int64  `json:"accessExp"`
-	RefreshExp         int64  `json:"refreshExp"`
+	AccessToken  string `json:"accessToken"`
+	RefreshToken string `json:"refreshToken"`
+	AccessExp    int64  `json:"accessExp"`
+	RefreshExp   int64  `json:"refreshExp"`
 }
 
 // AccessClaims contains claims from a verified access token. Credential checks
 // reuse these claims without parsing or verifying the signature again.
 type AccessClaims struct {
-	UID      string
-	Username string
-	version  string
+	UID       string
+	Username  string
+	SessionID string
+	version   string
 }
 
 func ParseAccessToken(tokenString, secret string) (*AccessClaims, error) {
@@ -72,7 +72,11 @@ func ParseAccessToken(tokenString, secret string) (*AccessClaims, error) {
 	if !ok || version == "" {
 		return nil, errors.New("invalid credential version")
 	}
-	return &AccessClaims{UID: uid, Username: username, version: version}, nil
+	sessionID, err := claimString(claims, "sid")
+	if err != nil {
+		return nil, err
+	}
+	return &AccessClaims{UID: uid, Username: username, SessionID: sessionID, version: version}, nil
 }
 
 func (c *AccessClaims) CheckPasswordVersion(secret, passwordHash string) error {
@@ -82,8 +86,64 @@ func (c *AccessClaims) CheckPasswordVersion(secret, passwordHash string) error {
 	return nil
 }
 
+// RefreshClaims 只携带通过刷新令牌签名、用途与有效期检查后的会话身份。
+type RefreshClaims struct {
+	UID       string
+	SessionID string
+	version   string
+}
+
+func (c *RefreshClaims) CheckPasswordVersion(secret, passwordHash string) error {
+	if c == nil || !hmac.Equal([]byte(c.version), []byte(PasswordVersion(passwordHash, secret))) {
+		return errors.New("credentials changed")
+	}
+	return nil
+}
+
+func ParseRefreshClaims(tokenString, secret string) (*RefreshClaims, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected signing method")
+		}
+		return []byte(secret), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+	uid, err := claimString(claims, "uid")
+	if err != nil {
+		return nil, err
+	}
+	sessionID, err := claimString(claims, "sid")
+	if err != nil {
+		return nil, err
+	}
+	exp, err := claimUnix(claims, "exp")
+	if err != nil || exp <= time.Now().Unix() {
+		return nil, errors.New("token expired or missing expiry")
+	}
+	if use, ok := claims["tokenUse"].(string); !ok || use != "refresh" {
+		return nil, errors.New("incorrect token use")
+	}
+	version, err := claimString(claims, "pwdVer")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := claimString(claims, "jti"); err != nil {
+		return nil, err
+	}
+	return &RefreshClaims{UID: uid, SessionID: sessionID, version: version}, nil
+}
+
 // CreateJwtTokenWithPassword binds both tokens to the current credential state.
-func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange bool, exp time.Duration, secret string, refreshExp time.Duration, refreshSecret string) (*JwtToken, error) {
+func CreateJwtTokenWithPassword(uid, username, passwordHash, sessionID string, exp time.Duration, secret string, refreshExp time.Duration, refreshSecret string) (*JwtToken, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, errors.New("jwt session id is required")
+	}
 	if strings.TrimSpace(secret) == "" {
 		return nil, errors.New("jwt access secret is required")
 	}
@@ -95,16 +155,16 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 	if _, err := rand.Read(entropy[:]); err != nil {
 		return nil, err
 	}
-	sessionID := hex.EncodeToString(entropy[:])
+	tokenID := hex.EncodeToString(entropy[:])
 	aExp := time.Now().Add(exp).Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"uid":                uid,
-		"username":           username,
-		"pwdVer":             PasswordVersion(passwordHash, secret),
-		"tokenUse":           "access",
-		"mustChangePassword": mustChange,
-		"jti":                sessionID,
-		"exp":                aExp,
+		"uid":      uid,
+		"username": username,
+		"pwdVer":   PasswordVersion(passwordHash, secret),
+		"tokenUse": "access",
+		"sid":      sessionID,
+		"jti":      tokenID,
+		"exp":      aExp,
 	})
 	aToken, err := token.SignedString([]byte(secret))
 	if err != nil {
@@ -116,7 +176,8 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 		"uid":      uid,
 		"tokenUse": "refresh",
 		"pwdVer":   PasswordVersion(passwordHash, refreshSecret),
-		"jti":      sessionID,
+		"sid":      sessionID,
+		"jti":      tokenID,
 		"exp":      rExp,
 	})
 	rToken, err := refreshToken.SignedString([]byte(refreshSecret))
@@ -125,52 +186,20 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 	}
 
 	return &JwtToken{
-		MustChangePassword: mustChange,
-		AccessToken:        aToken,
-		AccessExp:          aExp,
-		RefreshToken:       rToken,
-		RefreshExp:         rExp,
+		AccessToken:  aToken,
+		AccessExp:    aExp,
+		RefreshToken: rToken,
+		RefreshExp:   rExp,
 	}, nil
 }
 
-// ParseRefreshToken 使用调用方给定的刷新密钥验证令牌并提取 uid/exp，不要求 username 声明。
-// 访问与刷新令牌的隔离依赖应用层正确选择解析入口及各自密钥。
-func ParseRefreshToken(tokenString, secret string) (uid string, err error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		return []byte(secret), nil
-	})
+// ParseRefreshToken 验证刷新令牌的签名、用途、会话与有效期，并提取用户 ID。
+func ParseRefreshToken(tokenString, secret string) (string, error) {
+	claims, err := ParseRefreshClaims(tokenString, secret)
 	if err != nil {
-		return uid, err
+		return "", err
 	}
-
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		uid, err = claimString(claims, "uid")
-		if err != nil {
-			return uid, err
-		}
-
-		var exp int64
-
-		exp, err = claimUnix(claims, "exp")
-		if err != nil {
-			return "", err
-		}
-
-		if exp <= time.Now().Unix() {
-			err = errors.New("token expired")
-			return uid, err
-		}
-
-		return uid, err
-	}
-
-	err = errors.New("invalid token")
-
-	return uid, err
+	return claims.UID, nil
 }
 
 func claimString(claims jwt.MapClaims, key string) (string, error) {

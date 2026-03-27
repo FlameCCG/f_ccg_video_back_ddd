@@ -138,11 +138,20 @@ func (s *CaptchaService) SlideCaptchaEnabled() bool {
 	return cfg != nil && cfg.Site != nil && cfg.Site.Login != nil && cfg.Site.Login.SlideCaptcha
 }
 
-// GraphicCaptchaEnabled 注册是否启用图形验证码。
-func (s *CaptchaService) GraphicCaptchaEnabled() bool {
+// GraphicCaptchaEnabled 读取指定场景的图形验证码开关。
+func (s *CaptchaService) GraphicCaptchaEnabled(scene string) bool {
 	cfg := s.cfgProvider.Get()
-
-	return cfg != nil && cfg.Site != nil && cfg.Site.Register != nil && cfg.Site.Register.TextGraphicCaptcha
+	if cfg == nil || cfg.Site == nil {
+		return false
+	}
+	switch scene {
+	case "login":
+		return cfg.Site.Login != nil && cfg.Site.Login.TextGraphicCaptcha
+	case "register":
+		return cfg.Site.Register != nil && cfg.Site.Register.TextGraphicCaptcha
+	default:
+		return false
+	}
 }
 
 // EmailCaptchaEnabled 注册是否启用邮箱验证码。

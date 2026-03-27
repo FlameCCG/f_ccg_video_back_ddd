@@ -3,9 +3,34 @@ package ctxutil
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"os"
 	"testing"
 	"time"
 )
+
+func TestIsTimeout(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, want: true},
+		{name: "wrapped deadline", err: fmt.Errorf("lookup: %w", context.DeadlineExceeded), want: true},
+		{name: "transport timeout", err: fmt.Errorf("upstream: %w", &net.OpError{Op: "read", Net: "tcp", Err: os.ErrDeadlineExceeded}), want: true},
+		{name: "cancelled", err: context.Canceled},
+		{name: "other error", err: errors.New("connection refused")},
+		{name: "nil"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsTimeout(tc.err); got != tc.want {
+				t.Fatalf("IsTimeout(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestWithDetachedTimeoutIgnoresParentCancel(t *testing.T) {
 	parent, parentCancel := context.WithCancel(context.Background())

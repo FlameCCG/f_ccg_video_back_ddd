@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"f_ccg_video_back_ddd/internal/config"
 	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
@@ -31,28 +32,6 @@ func (r *securityAccountRepo) FindByOpenIDAndSource(context.Context, string, str
 func (r *securityAccountRepo) FindByEmail(context.Context, string) (*identitydomain.User, error) {
 	return r.user, nil
 }
-func (r *securityAccountRepo) SetRefreshToken(_ context.Context, id uint, pwd, digest string) (bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.user.ID() != id || r.user.Password() != pwd {
-		return false, nil
-	}
-	snap := r.user.Snapshot()
-	snap.RefreshTokenHash = digest
-	*r.user = *identitydomain.RestoreUser(snap)
-	return true, nil
-}
-func (r *securityAccountRepo) RotateRefreshToken(_ context.Context, id uint, pwd, old, next string) (bool, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.user.ID() != id || r.user.Password() != pwd || r.user.RefreshTokenHash() != old {
-		return false, nil
-	}
-	snap := r.user.Snapshot()
-	snap.RefreshTokenHash = next
-	*r.user = *identitydomain.RestoreUser(snap)
-	return true, nil
-}
 
 type securityStatusRepo struct {
 	identitydomain.UserRepository
@@ -64,7 +43,7 @@ func (r securityStatusRepo) FindByID(ctx context.Context, id uint) (*identitydom
 }
 func newSecurityTokens() (*TokenService, loginConfigReaderStub) {
 	reader := loginConfigReaderStub{config: &config.Config{Jwt: &config.Jwt{AccessExp: 1, RefreshExp: 1, AccessSecret: "access-key", RefreshSecret: "refresh-key"}}}
-	return NewTokenService(reader), reader
+	return NewTokenService(reader, newSecuritySessionStore()), reader
 }
 func TestOAuthDoesNotLinkPreexistingEmailAccount(t *testing.T) {
 	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 9, Email: "victim@example.com"})}
@@ -77,11 +56,11 @@ func TestOAuthDoesNotLinkPreexistingEmailAccount(t *testing.T) {
 func TestPasswordChangeRevokesAccessAndRefreshAcrossServices(t *testing.T) {
 	tokens, _ := newSecurityTokens()
 	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester", Password: "salted-old-hash", Status: enum.UserStatusActive})}
-	pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
+	pair, err := tokens.IssueForUser(t.Context(), repo.user)
 	if err != nil {
 		t.Fatal(err)
 	}
-	status := NewUserStatusService(nil, securityStatusRepo{account: repo})
+	status := NewUserStatusService(nil, securityStatusRepo{account: repo}, tokens.sessions)
 	if _, err := status.ValidateAccessToken(t.Context(), pair.AccessToken, "access-key"); err != nil {
 		t.Fatal(err)
 	}
@@ -91,14 +70,14 @@ func TestPasswordChangeRevokesAccessAndRefreshAcrossServices(t *testing.T) {
 	if _, err := status.ValidateAccessToken(t.Context(), pair.AccessToken, "access-key"); err == nil {
 		t.Fatal("old access survived password change")
 	}
-	if _, err := tokens.Rotate(t.Context(), repo.user, pair.RefreshToken, repo); !errors.Is(err, ErrRefreshTokenInvalid) {
+	if _, err := tokens.Rotate(t.Context(), repo.user, pair.RefreshToken); !errors.Is(err, ErrRefreshTokenInvalid) {
 		t.Fatalf("old refresh survived password change: %v", err)
 	}
 }
-func TestRefreshTokenRotationIsSingleUseAndReplayRevokesSuccessor(t *testing.T) {
+func TestRefreshTokenRotationRetriesAndLateReplayRevokesSuccessor(t *testing.T) {
 	tokens, reader := newSecurityTokens()
 	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Username: "tester", Password: "hash", Status: enum.UserStatusActive})}
-	original, err := tokens.IssueForUser(t.Context(), repo.user, repo)
+	original, err := tokens.IssueForUser(t.Context(), repo.user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,6 +89,10 @@ func TestRefreshTokenRotationIsSingleUseAndReplayRevokesSuccessor(t *testing.T) 
 	if next.RefreshToken == original.RefreshToken || next.AccessToken == original.AccessToken {
 		t.Fatal("rotation reused JWT")
 	}
+	if _, err := service.RefreshToken(t.Context(), original.RefreshToken); err != nil {
+		t.Fatal("retry rejected", err)
+	}
+	tokens.sessions.(*securitySessionStore).now = func() time.Time { return time.Now().Add(time.Minute) }
 	if _, err := service.RefreshToken(t.Context(), original.RefreshToken); err == nil {
 		t.Fatal("replayed token accepted")
 	}
@@ -117,10 +100,10 @@ func TestRefreshTokenRotationIsSingleUseAndReplayRevokesSuccessor(t *testing.T) 
 		t.Fatal("successor survived detected replay")
 	}
 }
-func TestConcurrentRefreshHasOneWinner(t *testing.T) {
+func TestConcurrentRefreshRetriesRemainValid(t *testing.T) {
 	tokens, _ := newSecurityTokens()
 	repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Password: "hash"})}
-	pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
+	pair, err := tokens.IssueForUser(t.Context(), repo.user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +114,7 @@ func TestConcurrentRefreshHasOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := tokens.Rotate(context.Background(), &user, pair.RefreshToken, repo)
+			_, err := tokens.Rotate(context.Background(), &user, pair.RefreshToken)
 			outcomes <- err
 		}()
 	}
@@ -145,7 +128,7 @@ func TestConcurrentRefreshHasOneWinner(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if successes != 1 {
+	if successes != 2 {
 		t.Fatalf("successful refreshes = %d", successes)
 	}
 }
@@ -153,7 +136,7 @@ func TestBanBlocksRefreshIncludingTemporaryBan(t *testing.T) {
 	for _, state := range []enum.UserStatus{enum.UserStatusBanned, enum.UserStatusPermanentlyBanned} {
 		tokens, _ := newSecurityTokens()
 		repo := &securityAccountRepo{user: identitydomain.RestoreUser(identitydomain.UserSnapshot{ID: 7, Password: "hash", Status: state})}
-		pair, err := tokens.IssueForUser(t.Context(), repo.user, repo)
+		pair, err := tokens.IssueForUser(t.Context(), repo.user)
 		if err != nil {
 			t.Fatal(err)
 		}

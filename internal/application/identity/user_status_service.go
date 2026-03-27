@@ -2,10 +2,13 @@ package identity
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 
 	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/authsession"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 
 	"golang.org/x/sync/singleflight"
@@ -15,17 +18,18 @@ import (
 //
 // 请求合并通过服务实例内的 singleflight.Group 协调。
 type UserStatusService struct {
-	cache UserStatusCache
-	users identitydomain.UserRepository
-	group singleflight.Group
+	cache    UserStatusCache
+	users    identitydomain.UserRepository
+	sessions SessionStore
+	group    singleflight.Group
 }
 
 // 编译期断言：可作为其它上下文的用户状态读取端口。
 var _ UserStatusReader = (*UserStatusService)(nil)
 
 // NewUserStatusService 构造用户状态缓存服务。
-func NewUserStatusService(cache UserStatusCache, users identitydomain.UserRepository) *UserStatusService {
-	return &UserStatusService{cache: cache, users: users}
+func NewUserStatusService(cache UserStatusCache, users identitydomain.UserRepository, sessions SessionStore) *UserStatusService {
+	return &UserStatusService{cache: cache, users: users, sessions: sessions}
 }
 
 // CachedStatus 从 Redis cache-aside 获取用户状态；Redis 不可用或未命中时回源 DB。
@@ -94,24 +98,34 @@ func (s *UserStatusService) Refresh(ctx context.Context, userID uint) error {
 func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secret string) (*identitydomain.User, error) {
 	claims, err := jwts.ParseAccessToken(token, secret)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", authsession.ErrInvalidSession, err)
 	}
 	id, err := strconv.ParseUint(claims.UID, 10, strconv.IntSize)
 	if err != nil || id == 0 {
-		return nil, identitydomain.ErrUserNotLogin
+		return nil, fmt.Errorf("%w: %w", authsession.ErrInvalidSession, identitydomain.ErrUserNotLogin)
 	}
 	user, err := s.users.FindByID(ctx, uint(id))
 	if err != nil {
 		return nil, err
 	}
 	if user == nil {
-		return nil, identitydomain.ErrUserNotFound
+		return nil, fmt.Errorf("%w: %w", authsession.ErrInvalidSession, identitydomain.ErrUserNotFound)
 	}
 	if err := claims.CheckPasswordVersion(secret, user.Password()); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", authsession.ErrInvalidSession, err)
 	}
 	if err := user.EnsureCanLogin(); err != nil {
+		return nil, fmt.Errorf("%w: %w", authsession.ErrInvalidSession, err)
+	}
+	if s.sessions == nil {
+		return nil, errors.New("authentication session store unavailable")
+	}
+	exists, err := s.sessions.Exists(ctx, user.ID(), claims.SessionID)
+	if err != nil {
 		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("%w: %w", authsession.ErrInvalidSession, identitydomain.ErrUserNotLogin)
 	}
 	return user, nil
 }

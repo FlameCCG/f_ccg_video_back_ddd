@@ -23,7 +23,7 @@ func newChangePasswordHandler(t *testing.T) (*Handler, *gorm.DB) {
 
 	db := openTestDB(t, &po.User{}, &po.UserConf{}, &po.FavoriteFolder{})
 	users := persistence.NewUserRepository(db, nil)
-	accounts := app.NewAccountService(gormx.NewTxManager(db), users, nil)
+	accounts := app.NewAccountService(gormx.NewTxManager(db), users, nil, nil, nil)
 
 	return NewHandler(nil, nil, nil, nil, accounts, nil, nil, nil, nil, nil, nil, nil, nil, zap.NewNop()), db
 }

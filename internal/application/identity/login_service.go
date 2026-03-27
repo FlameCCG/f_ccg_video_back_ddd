@@ -2,6 +2,8 @@ package identity
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
 	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
@@ -111,7 +113,7 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 	if err != nil {
 		s.logger.Error("query refresh-token user error", zap.Uint("user_id", userID), zap.Error(err))
 
-		return nil, ErrQueryUserFailed
+		return nil, fmt.Errorf("%w: %w", ErrQueryUserFailed, err)
 	}
 
 	if user == nil {
@@ -122,17 +124,14 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 		return nil, err
 	}
 
-	token, err := s.tokens.Rotate(ctx, user, refreshToken, s.users)
+	token, err := s.tokens.Rotate(ctx, user, refreshToken)
 	if err != nil {
-		if err == ErrRefreshTokenReused {
-			s.logger.Warn("refresh token reuse or credential change detected", zap.Uint("user_id", user.ID()))
-			if user.RefreshTokenHash() != "" {
-				if _, revokeErr := s.users.RotateRefreshToken(ctx, user.ID(), user.Password(), user.RefreshTokenHash(), ""); revokeErr != nil {
-					s.logger.Error("revoke refresh session after reuse failed", zap.Error(revokeErr))
-				}
-			}
+		if errors.Is(err, ErrRefreshTokenReused) {
+			s.logger.Warn("refresh token reuse detected; session revoked", zap.Uint("user_id", user.ID()))
+		} else {
+			s.logger.Warn("refresh token rotation failed", zap.Error(err))
 		}
-		return nil, ErrRefreshTokenFailed
+		return nil, err
 	}
 
 	return token, nil
@@ -178,11 +177,11 @@ func (s *LoginService) finishLogin(
 
 	s.RecordLoginAsync(ctx, user.ID(), in.IP, in.Addr, in.UserAgent, loginType)
 
-	token, err := s.tokens.IssueForUser(ctx, user, s.users)
+	token, err := s.tokens.IssueForUser(ctx, user)
 	if err != nil {
 		s.logger.Error("create jwt token failed", zap.Error(err))
 
-		return nil, ErrLoginFailed
+		return nil, fmt.Errorf("%w: %w", ErrSessionIssueFailed, err)
 	}
 
 	return token, nil

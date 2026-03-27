@@ -9,7 +9,6 @@ package video
 
 import (
 	"context"
-	"errors"
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/pkg/authsession"
 	"strconv"
@@ -143,7 +142,7 @@ func (h *Handler) resolveUID(c *gin.Context) uint {
 	token = strings.TrimPrefix(token, "Bearer ")
 
 	user, err := h.userStatus.ValidateAccessToken(c.Request.Context(), token, h.accessSecret())
-	if err != nil || user.MustChangePassword() {
+	if err != nil {
 		return 0
 	}
 
@@ -169,16 +168,13 @@ func (h *Handler) parseUIDFromToken(c *gin.Context, queryToken, headerToken stri
 		return 0
 	}
 	user, err := h.userStatus.ValidateAccessToken(c.Request.Context(), token, h.accessSecret())
-	if err != nil || user.MustChangePassword() {
+	if err != nil {
 		return 0
 	}
 	c.Request = c.Request.WithContext(authsession.WithValidator(c.Request.Context(), func(ctx context.Context) error {
-		current, err := h.userStatus.ValidateAccessToken(ctx, token, h.accessSecret())
+		_, err := h.userStatus.ValidateAccessToken(ctx, token, h.accessSecret())
 		if err != nil {
 			return err
-		}
-		if current.MustChangePassword() {
-			return errors.New("initial password change required")
 		}
 		return nil
 	}))

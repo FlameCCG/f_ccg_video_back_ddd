@@ -10,6 +10,7 @@ import (
 	"time"
 
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wsauth"
 	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
 	"f_ccg_video_back_ddd/pkg/authsession"
 
@@ -592,7 +593,7 @@ func (c *client) handleSend(msg clientMessage) {
 	ctx, cancel := context.WithTimeout(c.ctx, sendDanmuTimeout)
 	defer cancel()
 	if err := authsession.Validate(ctx); err != nil {
-		c.sendSystem("session expired, please sign in again")
+		c.sendSystem(wsauth.FailureMessage(err))
 		return
 	}
 
@@ -635,7 +636,7 @@ func (c *client) writePump() {
 				err := authsession.Validate(authCtx)
 				cancel()
 				if err != nil {
-					c.closeWithReason("session revoked")
+					wsauth.Close(c.conn, err, wsWriteWait)
 					return
 				}
 			}

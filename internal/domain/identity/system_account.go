@@ -9,12 +9,10 @@ func NewSystemUser(username, passwordHash string, roleID uint) *User {
 	return user
 }
 
-// ProvisionAdministrator 是显式的初始化动作；保留强制改密和既有 6 级、20000 经验。
+// ProvisionAdministrator 是显式的初始化动作；更新密码并保留既有 6 级、20000 经验。
 // 已有用户的余额、资料和封禁状态不参与此动作。
 func (u *User) ProvisionAdministrator(passwordHash string, roleID uint) {
 	u.password = passwordHash
-	u.refreshTokenHash = ""
-	u.mustChangePassword = true
 	u.exp = 20000
 	u.level = (ExperiencePolicy{}).Level(u.exp)
 	u.currentRoleID = roleID

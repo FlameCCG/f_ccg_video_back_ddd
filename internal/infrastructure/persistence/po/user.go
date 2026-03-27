@@ -13,8 +13,6 @@ import (
 // Videos 通过用户名关联而非用户 ID；改名不仅修改 users，还需由账号用例协调作品作者和相关缓存/索引。
 // BeforeCreate/BeforeSave 处理落库细节，业务凭据、封禁和额度规则仍属于领域与应用层。
 type User struct {
-	RefreshTokenHash   string `gorm:"size:64" json:"-"`
-	MustChangePassword bool   `gorm:"not null;default:false" json:"-"`
 	Model
 	Username    string     `gorm:"size:50;not null;uniqueIndex;comment:用户名" json:"username"`
 	Email       string     `gorm:"size:100;not null;uniqueIndex;comment:邮箱" json:"email"`

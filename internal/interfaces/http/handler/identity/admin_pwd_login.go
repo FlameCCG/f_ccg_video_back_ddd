@@ -2,7 +2,6 @@ package identity
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
@@ -30,7 +29,7 @@ func (h *AdminHandler) AdminPwdLoginView(c *gin.Context) {
 		UserAgent:  c.GetHeader("User-Agent"),
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		writeLoginError(c, err)
 
 		return
 	}

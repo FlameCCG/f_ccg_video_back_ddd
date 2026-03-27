@@ -11,7 +11,7 @@ import (
 )
 
 func TestCredentialActionsProtectRelatedState(t *testing.T) {
-	u := identity.RestoreUser(identity.UserSnapshot{ID: 1, Password: "initial", RefreshTokenHash: "refresh", MustChangePassword: true, Email: "old@example.com", CurrentRoleID: 2, CoinCount: 3.4})
+	u := identity.RestoreUser(identity.UserSnapshot{ID: 1, Password: "initial", Email: "old@example.com", CurrentRoleID: 2, CoinCount: 3.4})
 	before := u.Snapshot()
 	for _, tc := range []struct {
 		change identity.PasswordChange
@@ -19,7 +19,6 @@ func TestCredentialActionsProtectRelatedState(t *testing.T) {
 	}{
 		{identity.PasswordChange{PasswordHash: "new"}, identity.ErrOldPasswordRequired},
 		{identity.PasswordChange{OldPassword: "wrong", PasswordHash: "new"}, identity.ErrOldPasswordIncorrect},
-		{identity.PasswordChange{OldPassword: "initial", OldPasswordMatches: true, NewPasswordMatches: true, PasswordHash: "new"}, identity.ErrInitialPasswordUnchanged},
 	} {
 		if err := u.ChangePassword(tc.change); !errors.Is(err, tc.want) || !reflect.DeepEqual(before, u.Snapshot()) {
 			t.Fatalf("rejected change: err=%v user=%+v", err, u.Snapshot())
@@ -28,7 +27,11 @@ func TestCredentialActionsProtectRelatedState(t *testing.T) {
 	if err := u.ChangePassword(identity.PasswordChange{OldPassword: "initial", OldPasswordMatches: true, PasswordHash: "new"}); err != nil {
 		t.Fatal(err)
 	}
-	if u.Password() != "new" || u.RefreshTokenHash() != "" || u.MustChangePassword() || u.CoinCount() != 3.4 || u.Email() != before.Email {
+	// 无强制首登策略时，验证旧密码后可保存重新计算的密码哈希。
+	if err := u.ChangePassword(identity.PasswordChange{OldPassword: "new", OldPasswordMatches: true, PasswordHash: "new"}); err != nil {
+		t.Fatalf("initial-password restriction remained: %v", err)
+	}
+	if u.Password() != "new" || u.CoinCount() != 3.4 || u.Email() != before.Email {
 		t.Fatalf("credential action changed unrelated state or left stale credentials: %+v", u.Snapshot())
 	}
 	if _, err := u.BindEmail("occupied@example.com", 1); !errors.Is(err, identity.ErrEmailOccupied) || u.Email() != before.Email {
@@ -47,8 +50,8 @@ func TestCredentialActionsProtectRelatedState(t *testing.T) {
 		t.Fatal("owned role not selected", err)
 	}
 
-	oauth := identity.RestoreUser(identity.UserSnapshot{ID: 2, RefreshTokenHash: "refresh", MustChangePassword: true})
-	if err := oauth.ChangePassword(identity.PasswordChange{PasswordHash: "first"}); err != nil || oauth.Password() != "first" || oauth.RefreshTokenHash() != "" || oauth.MustChangePassword() {
+	oauth := identity.RestoreUser(identity.UserSnapshot{ID: 2})
+	if err := oauth.ChangePassword(identity.PasswordChange{PasswordHash: "first"}); err != nil || oauth.Password() != "first" {
 		t.Fatal("OAuth first password changed", err)
 	}
 }

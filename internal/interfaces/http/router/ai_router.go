@@ -24,7 +24,7 @@ func registerAIRoutes(g *gin.RouterGroup, mw *middlewares.Middlewares, h *aihand
 	}
 
 	aiStreamGroup := g.Group("ai")
-	aiStreamGroup.Use(middlewares.RequestTimeout(ctxutil.RequestAITimeout), mw.JwtAuthWithQueryToken("token"), mw.UserBanCheck(), mw.AIGenerationLimit())
+	aiStreamGroup.Use(mw.AIRequestTimeout(), mw.JwtAuthWithQueryToken("token"), mw.UserBanCheck(), mw.AIGenerationLimit())
 	{
 		aiStreamGroup.GET(
 			"responses/stream",
@@ -34,7 +34,7 @@ func registerAIRoutes(g *gin.RouterGroup, mw *middlewares.Middlewares, h *aihand
 	}
 
 	aiGroup := g.Group("ai")
-	aiGroup.Use(middlewares.RequestTimeout(ctxutil.RequestAITimeout), mw.JwtAuth())
+	aiGroup.Use(mw.AIRequestTimeout(), mw.JwtAuth())
 	{
 		aiGroup.POST(
 			"responses",

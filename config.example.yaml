@@ -427,6 +427,9 @@ ai:
   historyMaxTurns: 20
   # 透传给聊天模型的历史文本总字符上限
   historyMaxChars: 24000
+  # 单条消息与完整上下文的字符硬上限，完整上下文包含系统提示及检索候选
+  inputMaxChars: 24000
+  contextMaxChars: 48000
   # 默认图片生成模型
   imageModel: doubao-seedream-5-0-lite-260128
   # 可选图片模型列表（管理端下拉）
@@ -450,7 +453,7 @@ ai:
     4. sortOrder 必须是大于 0 的整数，并根据相同父菜单下的现有菜单给出合理插入位置。
     5. icon 必须是完整、安全、长度不超过 2048 字节的 SVG，不得包含 script、foreignObject、事件处理器、javascript: 或外部资源。
     6. 不得修改或返回用户提供的中文标题与父菜单 ID。
-  # AI 请求超时（秒）
+  # AI 完整用例超时（秒），未配置默认 90；每轮最多两次搜索，单次搜索最多 8 秒
   timeoutSec: 90
   # 视频向量索引名
   vectorIndex: search_videos_vector

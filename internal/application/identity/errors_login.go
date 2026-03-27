@@ -15,6 +15,8 @@ var (
 	ErrQueryUserFailed = errors.New("查询用户失败")
 	// ErrLoginFailed 登录收尾失败（角色加载失败 / JWT 签发失败）。
 	ErrLoginFailed = errors.New("登录失败")
+	// ErrSessionIssueFailed 登录会话签发失败，接口层按依赖故障或超时返回。
+	ErrSessionIssueFailed = errors.New("issue login session failed")
 	// ErrAdminRoleMissing 管理员角色不存在。
 	ErrAdminRoleMissing = errors.New("管理员角色不存在")
 	// ErrRoleCheckFailed 角色校验查询失败。

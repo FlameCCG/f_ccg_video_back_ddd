@@ -6,18 +6,25 @@ import (
 	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/encrypt"
+
+	"go.uber.org/zap"
 )
 
 // AccountService 账号凭据与角色切换用例服务。
 type AccountService struct {
-	txm   tx.Manager
-	users identitydomain.UserAccountRepository
-	roles UserRoleQuery
+	txm      tx.Manager
+	users    identitydomain.UserAccountRepository
+	roles    UserRoleQuery
+	sessions SessionStore
+	logger   *zap.Logger
 }
 
 // NewAccountService 构造账号凭据服务。
-func NewAccountService(txm tx.Manager, users identitydomain.UserAccountRepository, roles UserRoleQuery) *AccountService {
-	return &AccountService{txm: txm, users: users, roles: roles}
+func NewAccountService(txm tx.Manager, users identitydomain.UserAccountRepository, roles UserRoleQuery, sessions SessionStore, logger *zap.Logger) *AccountService {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &AccountService{txm: txm, users: users, roles: roles, sessions: sessions, logger: logger}
 }
 
 // BindEmail 绑定邮箱（第三方登录用户）。
@@ -52,7 +59,9 @@ func (s *AccountService) BindEmail(ctx context.Context, in BindEmailInput) (alre
 
 // ResetPassword 通过邮箱验证码重置密码（无需登录态）。
 func (s *AccountService) ResetPassword(ctx context.Context, in ResetPasswordInput) error {
-	return s.transact(ctx, ErrResetPasswordFailed, func(txCtx context.Context) error {
+	var userID uint
+	var sessionIDs []string
+	err := s.transact(ctx, ErrResetPasswordFailed, func(txCtx context.Context) error {
 		user, err := s.users.FindByEmailForUpdate(txCtx, in.Email)
 		if err != nil {
 			return ErrResetPasswordFailed
@@ -67,16 +76,21 @@ func (s *AccountService) ResetPassword(ctx context.Context, in ResetPasswordInpu
 		if err := user.ResetPassword(string(passwordHash)); err != nil {
 			return err
 		}
+		sessionIDs = s.snapshotCredentialSessions(txCtx, user.ID())
 		if err := s.users.SaveCredentials(txCtx, user); err != nil {
 			return ErrResetPasswordFailed
 		}
+		userID = user.ID()
 		return nil
 	})
+	return s.finishCredentialChange(ctx, userID, sessionIDs, err)
 }
 
 // ChangePassword 登录态修改密码；已设密用户必须校验旧密码。
 func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordInput) error {
-	return s.transact(ctx, ErrChangePasswordFailed, func(txCtx context.Context) error {
+	var userID uint
+	var sessionIDs []string
+	err := s.transact(ctx, ErrChangePasswordFailed, func(txCtx context.Context) error {
 		user, err := s.users.FindByIDForUpdate(txCtx, in.UserID)
 		if err != nil || user == nil {
 			return identitydomain.ErrUserNotFound
@@ -84,9 +98,8 @@ func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordIn
 		change := identitydomain.PasswordChange{
 			OldPassword:        in.OldPassword,
 			OldPasswordMatches: encrypt.ValidatePasswordHash(in.OldPassword, user.Password()),
-			NewPasswordMatches: encrypt.ValidatePasswordHash(in.NewPassword, user.Password()),
 		}
-		// 先检查资格再计算新哈希，保留错误优先级（例如错误旧密码与超长新密码）。
+		// 先校验旧密码，再计算新哈希，以此确定错误优先级。
 		if err := user.CheckPasswordChange(change); err != nil {
 			return err
 		}
@@ -98,11 +111,40 @@ func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordIn
 		if err := user.ChangePassword(change); err != nil {
 			return err
 		}
+		sessionIDs = s.snapshotCredentialSessions(txCtx, user.ID())
 		if err := s.users.SaveCredentials(txCtx, user); err != nil {
 			return ErrChangePasswordFailed
 		}
+		userID = user.ID()
 		return nil
 	})
+	return s.finishCredentialChange(ctx, userID, sessionIDs, err)
+}
+
+// 在提交新密码前固定清理集合；提交后建立的新版本会话不属于该集合。
+func (s *AccountService) snapshotCredentialSessions(ctx context.Context, userID uint) []string {
+	if s.sessions == nil {
+		return nil
+	}
+	ids, err := s.sessions.SnapshotUser(ctx, userID)
+	if err != nil {
+		s.logger.Warn("password session snapshot failed", zap.Uint("user_id", userID), zap.Error(err))
+		return nil
+	}
+	return ids
+}
+
+func (s *AccountService) finishCredentialChange(ctx context.Context, userID uint, sessionIDs []string, transactionErr error) error {
+	if transactionErr != nil {
+		return transactionErr
+	}
+	if s.sessions != nil && len(sessionIDs) > 0 {
+		// 密码已提交；即使清理失败，强制从 DB 校验 pwdVer 也会拒绝全部旧凭据。
+		if err := s.sessions.RevokeSessions(context.WithoutCancel(ctx), userID, sessionIDs); err != nil {
+			s.logger.Warn("password changed but session cleanup failed", zap.Uint("user_id", userID), zap.Error(err))
+		}
+	}
+	return nil
 }
 
 // SwitchRole 切换当前用户的活动角色（必须已拥有该角色）。

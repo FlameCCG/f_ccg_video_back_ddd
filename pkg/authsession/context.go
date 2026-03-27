@@ -9,6 +9,9 @@ import (
 type key struct{}
 type Validator func(context.Context) error
 
+// ErrInvalidSession marks a rejected credential, as distinct from a failed lookup.
+var ErrInvalidSession = errors.New("invalid authenticated session")
+
 func WithValidator(ctx context.Context, validate Validator) context.Context {
 	return context.WithValue(ctx, key{}, validate)
 }

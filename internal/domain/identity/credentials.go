@@ -6,7 +6,6 @@ import "strings"
 type PasswordChange struct {
 	OldPassword        string
 	OldPasswordMatches bool
-	NewPasswordMatches bool
 	PasswordHash       string
 }
 
@@ -63,7 +62,7 @@ func (RoleAccess) HasRole(names []string, required string) bool {
 	return false
 }
 
-// CheckPasswordChange 保持先检查旧密码、再检查初始密码复用的错误顺序。
+// CheckPasswordChange 校验已设密用户提交的旧密码。
 func (u *User) CheckPasswordChange(change PasswordChange) error {
 	if u == nil {
 		return ErrUserNotFound
@@ -71,13 +70,10 @@ func (u *User) CheckPasswordChange(change PasswordChange) error {
 	if err := u.CheckOldPassword(change.OldPassword, func(string) bool { return change.OldPasswordMatches }); err != nil {
 		return err
 	}
-	if u.ReusesInitialPassword(change.NewPasswordMatches) {
-		return ErrInitialPasswordUnchanged
-	}
 	return nil
 }
 
-// ChangePassword 在资格校验成功后一起更新密码、强制改密标记和刷新凭据。
+// ChangePassword 在资格校验成功后更新密码；会话失效由外层校验密码版本保证。
 func (u *User) ChangePassword(change PasswordChange) error {
 	if err := u.CheckPasswordChange(change); err != nil {
 		return err
@@ -91,8 +87,6 @@ func (u *User) ResetPassword(passwordHash string) error {
 		return ErrUserNotFound
 	}
 	u.password = passwordHash
-	u.refreshTokenHash = ""
-	u.mustChangePassword = false
 	return nil
 }
 

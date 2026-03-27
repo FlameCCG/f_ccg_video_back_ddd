@@ -280,11 +280,11 @@ func (s *OAuthLoginService) completeLogin(
 		in.Provider,
 	)
 
-	token, err := s.tokens.IssueForUser(ctx, user, s.users)
+	token, err := s.tokens.IssueForUser(ctx, user)
 	if err != nil {
 		s.logger.Error("create jwt token failed", zap.Error(err))
 
-		return nil, ErrLoginFailed
+		return nil, fmt.Errorf("%w: %w", ErrSessionIssueFailed, err)
 	}
 
 	return token, nil

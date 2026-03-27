@@ -73,6 +73,8 @@ var IdentityProviderSet = wire.NewSet(
 	wire.Bind(new(identityapp.UserRoleQuery), new(*identityrepo.UserRoleQuery)),
 
 	// 缓存实现
+	identitycache.NewSessionStore,
+	wire.Bind(new(identityapp.SessionStore), new(*identitycache.SessionStore)),
 	identitycache.NewEmailSendLimiter,
 	wire.Bind(new(identityapp.RateLimiter), new(*identitycache.EmailSendLimiter)),
 	identitycache.NewUserStatusCache,

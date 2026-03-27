@@ -8,29 +8,27 @@ import (
 
 // UserDTO preserves the existing response contract.
 type UserDTO struct {
-	RefreshTokenHash   string          `json:"-"`
-	MustChangePassword bool            `json:"mustChangePassword,omitempty"`
-	ID                 uint            `json:"id"`
-	CreatedAt          time.Time       `json:"-"`
-	UpdatedAt          time.Time       `json:"-"`
-	Username           string          `json:"username"`
-	Email              string          `json:"email"`
-	Password           string          `json:"-"`
-	Avatar             string          `json:"avatar"`
-	Description        string          `json:"description"`
-	Gender             int             `json:"gender"`
-	Birthday           *time.Time      `json:"birthday"`
-	Level              int             `json:"level"`
-	OpenID             string          `json:"openID"`
-	RegisterSource     string          `json:"registerSource"`
-	Exp                int64           `json:"exp"`
-	CoinCount          float64         `json:"coinCount"`
-	Status             enum.UserStatus `json:"status"`
-	CurrentRoleID      uint            `json:"currentRoleID"`
-	RegisterIP         string          `json:"registerIP"`
-	LastLoginIP        string          `json:"lastLoginIP"`
-	RegisterAddr       string          `json:"registerAddr"`
-	LastLoginAddr      string          `json:"lastLoginAddr"`
+	ID             uint            `json:"id"`
+	CreatedAt      time.Time       `json:"-"`
+	UpdatedAt      time.Time       `json:"-"`
+	Username       string          `json:"username"`
+	Email          string          `json:"email"`
+	Password       string          `json:"-"`
+	Avatar         string          `json:"avatar"`
+	Description    string          `json:"description"`
+	Gender         int             `json:"gender"`
+	Birthday       *time.Time      `json:"birthday"`
+	Level          int             `json:"level"`
+	OpenID         string          `json:"openID"`
+	RegisterSource string          `json:"registerSource"`
+	Exp            int64           `json:"exp"`
+	CoinCount      float64         `json:"coinCount"`
+	Status         enum.UserStatus `json:"status"`
+	CurrentRoleID  uint            `json:"currentRoleID"`
+	RegisterIP     string          `json:"registerIP"`
+	LastLoginIP    string          `json:"lastLoginIP"`
+	RegisterAddr   string          `json:"registerAddr"`
+	LastLoginAddr  string          `json:"lastLoginAddr"`
 }
 
 func ToUserDTO(value *identitydomain.User) *UserDTO {
@@ -38,25 +36,24 @@ func ToUserDTO(value *identitydomain.User) *UserDTO {
 		return nil
 	}
 	return &UserDTO{
-		MustChangePassword: value.MustChangePassword(),
-		ID:                 value.ID(),
-		Username:           value.Username(),
-		Email:              value.Email(),
-		Avatar:             value.Avatar(),
-		Description:        value.Description(),
-		Gender:             value.Gender(),
-		Birthday:           value.Birthday(),
-		Level:              value.Level(),
-		OpenID:             value.OpenID(),
-		RegisterSource:     value.RegisterSource(),
-		Exp:                value.Exp(),
-		CoinCount:          value.CoinCount(),
-		Status:             value.Status(),
-		CurrentRoleID:      value.CurrentRoleID(),
-		RegisterIP:         value.RegisterIP(),
-		LastLoginIP:        value.LastLoginIP(),
-		RegisterAddr:       value.RegisterAddr(),
-		LastLoginAddr:      value.LastLoginAddr(),
+		ID:             value.ID(),
+		Username:       value.Username(),
+		Email:          value.Email(),
+		Avatar:         value.Avatar(),
+		Description:    value.Description(),
+		Gender:         value.Gender(),
+		Birthday:       value.Birthday(),
+		Level:          value.Level(),
+		OpenID:         value.OpenID(),
+		RegisterSource: value.RegisterSource(),
+		Exp:            value.Exp(),
+		CoinCount:      value.CoinCount(),
+		Status:         value.Status(),
+		CurrentRoleID:  value.CurrentRoleID(),
+		RegisterIP:     value.RegisterIP(),
+		LastLoginIP:    value.LastLoginIP(),
+		RegisterAddr:   value.RegisterAddr(),
+		LastLoginAddr:  value.LastLoginAddr(),
 	}
 }
 

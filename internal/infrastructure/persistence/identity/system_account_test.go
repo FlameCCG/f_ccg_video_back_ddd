@@ -40,7 +40,7 @@ func TestSystemAccountUpdateDoesNotOverwriteIndependentFields(t *testing.T) {
 	if !changed || saved.CoinCount != 25 || saved.Status != 2 || saved.Avatar != "new-avatar" {
 		t.Fatalf("unrelated state overwritten: %+v", saved)
 	}
-	if saved.Password != "next-hash" || !saved.MustChangePassword || saved.RefreshTokenHash != "" || saved.Level != 6 || saved.Exp != 20000 || saved.CurrentRoleID != 9 {
+	if saved.Password != "next-hash" || saved.Level != 6 || saved.Exp != 20000 || saved.CurrentRoleID != 9 {
 		t.Fatalf("system account transition not saved: %+v", saved)
 	}
 }

@@ -105,7 +105,7 @@ func newBanFixture(t *testing.T) banFixture {
 	users := identityrepo.NewUserRepository(db, nil)
 	records := identityrepo.NewBanRecordRepository(db)
 	cache := newBanStatusCache()
-	statuses := app.NewUserStatusService(cache, users)
+	statuses := app.NewUserStatusService(cache, users, nil)
 
 	return banFixture{
 		service: app.NewBanService(gormx.NewTxManager(db), users, records, statuses, nil),

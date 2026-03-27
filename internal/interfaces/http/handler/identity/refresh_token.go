@@ -1,6 +1,10 @@
 package identity
 
 import (
+	"errors"
+
+	identityapp "f_ccg_video_back_ddd/internal/application/identity"
+	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -19,7 +23,14 @@ func (h *Handler) RefreshTokenView(c *gin.Context) {
 
 	jwtToken, err := h.logins.RefreshToken(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		switch {
+		case errors.Is(err, identityapp.ErrRefreshTokenInvalid), errors.Is(err, identityapp.ErrRefreshTokenReused):
+			res.FailWithMsg(identityapp.ErrRefreshTokenInvalid.Error(), c)
+		case errors.Is(err, identitydomain.ErrUserNotFound), errors.Is(err, identitydomain.ErrAccountBanned), errors.Is(err, identitydomain.ErrAccountPermanentlyBanned):
+			res.FailWithMsg(clienterror.Message(err), c)
+		default:
+			writeAuthDependencyError(c, err)
+		}
 
 		return
 	}

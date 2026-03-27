@@ -9,11 +9,6 @@ import (
 // 与 UserRepository 同由 infrastructure/persistence/identity.UserRepository 实现；
 // 拆成两个接口是为了让只读状态的调用方（中间件、封禁流程）不被迫依赖写能力。
 type UserAccountRepository interface {
-	// RotateRefreshToken conditionally replaces a refresh digest, tied to the current password.
-	RotateRefreshToken(ctx context.Context, userID uint, passwordHash, oldHash, newHash string) (bool, error)
-	// SetRefreshToken sets the current refresh digest if the password has not changed.
-	SetRefreshToken(ctx context.Context, userID uint, passwordHash, tokenHash string) (bool, error)
-
 	// FindByID 按主键读取用户；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, userID uint) (*User, error)
 	// FindByIDForUpdate 在用例事务内锁定最新账号状态。
@@ -42,7 +37,7 @@ type UserAccountRepository interface {
 	// DeleteByID 删除用户（Casbin 绑定失败后的补偿路径）。
 	DeleteByID(ctx context.Context, userID uint) error
 
-	// SaveCredentials 仅保存密码、刷新凭据与强制改密标记。
+	// SaveCredentials 仅保存密码；刷新会话由应用会话端口维护。
 	SaveCredentials(ctx context.Context, user *User) error
 	// SaveEmail 仅保存经过绑定动作后的邮箱。
 	SaveEmail(ctx context.Context, user *User) error
