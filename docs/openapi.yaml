@@ -3460,6 +3460,7 @@ paths:
         使用用户名/邮箱和密码登录。先调用 /common/captcha/type?scene=login，再以同一scene获取挑战。
         仅提交一种已开启的交互验证码：点选提交captchaToken和captchaDots，滑块提交slideCaptchaToken、slideCaptchaX、slideCaptchaY；
         两种类型都关闭时无需交互凭证。不能同时提交两种token，也不能使用register场景签发的token。
+        site.login.textGraphicCaptcha开启时，还须提交图形验证码captchaID和captchaCode；关闭时不校验，独立于注册场景开关。
       requestBody:
         required: true
         content:
@@ -3478,6 +3479,12 @@ paths:
                   type: string
                   description: 密码
                   example: password123
+                captchaID:
+                  type: string
+                  description: site.login.textGraphicCaptcha开启时必填，来自/common/captcha/graphics-text
+                captchaCode:
+                  type: string
+                  description: 登录图形验证码开启时必填，验证码答案；验证后不可重复使用
                 captchaToken:
                   type: string
                   description: 点选类型时必填，来自相同scene的点选挑战；不能同时提交slideCaptchaToken
@@ -3688,7 +3695,7 @@ paths:
       tags:
         - 用户管理
       summary: 刷新访问令牌
-      description: 使用 refreshToken 刷新访问令牌
+      description: 使用一次性 refreshToken 换取新令牌对。凭据无效、用户不存在或封禁时返回 HTTP 200 和 code=1；依赖不可用或超时返回 503/504，客户端应保留令牌供稍后重试。
       requestBody:
         required: true
         content:
@@ -3703,7 +3710,7 @@ paths:
                   description: 刷新令牌
       responses:
         "200":
-          description: 刷新成功
+          description: 刷新成功（code=0）或明确拒绝当前会话（code=1）
           content:
             application/json:
               schema:
@@ -3713,6 +3720,18 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/JwtToken"
+        "503":
+          description: 身份验证依赖暂时不可用，应保留令牌稍后重试
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
+        "504":
+          description: 身份验证超时，应保留令牌稍后重试
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response"
   /common/user/search:
     get:
       tags:
@@ -4863,7 +4882,17 @@ paths:
       tags:
         - AI
       summary: AI 对话与站内视频检索
-      description: 站内流式对话与视频检索，经 Eino Claude ChatModel 调用 Anthropic Messages 协议，不透传上游 Responses API。候选查询可用时先分析意图，需要检索时组织向量/关键词召回及 MySQL/最新作品回退。input_image 转为聊天文本标记，最近图片可参与检索。SSE 每帧仅有 data，JSON 的 type 区分文本、思考、失败与完成；没有具名 event 行。正常完成发送 response.completed 和 [DONE]，流内失败发送 response.failed 后结束。
+      description: >-
+        站内流式对话与视频检索，经 Eino Claude ChatModel 调用 Anthropic Messages 协议，不透传上游 Responses API。
+        候选查询可用时注册 search_videos 工具，由模型自动选择直接回答或调用搜索，无独立意图分析请求。
+        input_image 转为聊天文本标记，最近图片可参与检索。单条与完整上下文分别受 inputMaxChars/contextMaxChars 限制（默认 24000/48000 字符）。
+        搜索工具接收 query 和可选 keywords，绑定当前请求首张图片；保留 ES 混合召回、RRF、MySQL 回退和发布态回查。
+        缺少有效 keywords 时，MySQL 使用完整 query 匹配；query 最多 1000 字符，不受短关键词的 32 字符上限影响。
+        每轮最多两次搜索、三次模型调用；单次搜索最多 8 秒，整个用例受 timeoutSec 限制。
+        SSE 每帧仅有 data，JSON 的 type 区分文本、思考、失败与完成；没有具名 event 行。
+        正常完成发送 response.completed 和 [DONE]，终态可附带 finishReason 和 usage（inputTokens/outputTokens/totalTokens）。
+        工具生命周期使用 response.tool.started / response.tool.completed / response.tool.failed，字段包含 callId、name、label、query、resultCount、retrievalMode、message；工具事件不终止回答。
+        截断、缺少正常结束原因或超时发送 response.failed，status 为 incomplete，不再发送完成标记；其他流内失败 status 为 failed。
       requestBody:
         required: true
         content:
@@ -4909,6 +4938,18 @@ paths:
                     data: {"type":"response.output_text.delta","delta":"找到以下相关视频。"}
 
                     data: {"type":"response.completed"}
+
+                    data: [DONE]
+                tool_search:
+                  summary: 工具搜索与正式回答
+                  value: |-
+                    data: {"type":"response.tool.started","callId":"toolu_1","name":"search_videos","label":"搜索站内视频","query":"Go 教程","resultCount":0}
+
+                    data: {"type":"response.tool.completed","callId":"toolu_1","name":"search_videos","label":"搜索站内视频","resultCount":2,"retrievalMode":"vector_match"}
+
+                    data: {"type":"response.output_text.delta","delta":"找到以下教程。"}
+
+                    data: {"type":"response.completed","finishReason":"end_turn"}
 
                     data: [DONE]
                 video_results:
@@ -6938,7 +6979,9 @@ paths:
       tags:
         - 视频管理
       summary: 弹幕WebSocket
-      description: 弹幕实时推送WebSocket连接
+      description: >-
+        弹幕实时推送WebSocket连接。会话校验超时或服务不可用时拒绝本次发送并提示重试，只有凭据失效时提示重新登录。
+        心跳校验失败需关闭连接时，临时故障使用关闭码 1013（稍后重连），凭据失效使用 1008（重新登录）。
       parameters:
         - name: videoId
           in: query
@@ -7177,6 +7220,8 @@ paths:
         | clientMsgId | string | `ack` | 回传客户端消息ID，便于前端把 pending 消息替换为正式消息 |
         | peerId | integer(uint) | `read_ack` | 已读确认对应的对方用户ID |
         | system | string | `system` | 系统提示文本，如校验失败信息 |
+
+        会话校验超时提示 `session validation timed out, please retry`，数据库/Redis 不可用提示 `session validation unavailable, please retry`，均拒绝本次操作；只有凭据确实失效时提示 `session expired, please sign in again`。下行或心跳校验失败需关闭连接时，临时校验故障使用关闭码 `1013`（稍后重连），凭据失效使用 `1008`（重新登录）。
 
         **客户端发送示例**
 
@@ -9675,6 +9720,7 @@ paths:
         管理员用户名密码登录。先调用 /common/captcha/type?scene=login，再以同一scene获取挑战。
         仅提交一种已开启的交互验证码：点选提交captchaToken和captchaDots，滑块提交slideCaptchaToken、slideCaptchaX、slideCaptchaY；
         两种类型都关闭时无需交互凭证。不能同时提交两种token，也不能使用register场景签发的token。
+        site.login.textGraphicCaptcha开启时还须提交captchaID和captchaCode，前台与后台共享此开关。
       requestBody:
         required: true
         content:
@@ -9691,6 +9737,12 @@ paths:
                 password:
                   type: string
                   description: 密码
+                captchaID:
+                  type: string
+                  description: site.login.textGraphicCaptcha开启时必填，来自图形验证码接口
+                captchaCode:
+                  type: string
+                  description: site.login.textGraphicCaptcha开启时必填，图形验证码答案
                 captchaToken:
                   type: string
                   description: 点选类型时必填，来自相同scene的点选挑战；不能同时提交slideCaptchaToken

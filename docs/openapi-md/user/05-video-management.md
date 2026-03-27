@@ -1794,6 +1794,7 @@ Base URL：/v1
 - 认证: 无需登录
 - 依赖接口: 无
 - 接口说明: 弹幕实时推送WebSocket连接
+- 会话校验失败时拒绝发送弹幕：超时提示 `session validation timed out, please retry`，验证服务不可用提示 `session validation unavailable, please retry`，凭据失效提示 `session expired, please sign in again`。心跳校验失败需关闭连接时，临时故障使用关闭码 `1013`（稍后重连），凭据失效使用 `1008`（重新登录）。
 - HTTP 状态码: 成功升级返回 101；升级前失败可返回业务 JSON 或握手错误状态
 - 响应结构: 升级后使用 WebSocket 帧，不能继续按普通 HTTP JSON 响应解析
 

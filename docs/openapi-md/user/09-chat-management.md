@@ -54,6 +54,8 @@ Base URL：/v1
 | peerId | integer(uint) | `read_ack` | 已读确认对应的对方用户ID |
 | system | string | `system` | 系统提示文本，如校验失败信息 |
 
+会话校验超时提示 `session validation timed out, please retry`，数据库/Redis 不可用提示 `session validation unavailable, please retry`，均拒绝本次操作；只有凭据确实失效时提示 `session expired, please sign in again`。下行或心跳校验失败需关闭连接时，临时校验故障使用关闭码 `1013`（稍后重连），凭据失效使用 `1008`（重新登录）。
+
 **客户端发送示例**
 
 `ping`:

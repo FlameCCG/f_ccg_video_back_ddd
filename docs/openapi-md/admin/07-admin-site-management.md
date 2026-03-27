@@ -460,6 +460,8 @@ name=ai
   "chatModelBaseURL": "https://api.deepseek.com/anthropic",
   "chatModelAPIKey": "sk-your-chat-api-key",
   "chatModel": "deepseek-v4-flash",
+  "inputMaxChars": 24000,
+  "contextMaxChars": 48000,
   "embeddingModel": "doubao-embedding-vision-251215",
   "embeddingDimensions": 2048,
   "doubaoModelAPIKey": "ark-your-doubao-api-key",

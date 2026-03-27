@@ -36,7 +36,15 @@ Base URL：`/v1`。模型与能力以当前后台配置为准；聊天使用 Ein
 
 `input` 可包含 `input_image`，但当前聊天转换把图片变为文本标记，不把图片作为视觉输入传给聊天模型；最近用户图片可参与站内向量检索，不能把此接口当作通用图像理解接口。
 
-历史由客户端随请求提供，服务端按 `historyMaxTurns` / `historyMaxChars` 选择窗口。站内候选查询可用时，后端先分析找视频意图；需要检索时优先向量/关键词召回，故障或无结果时按相应用例回退到 MySQL 或最新已发布作品。候选作品、分 P 和 `/video/:id/:p?` 路由注入提示词，数量由 `vectorTopK` 控制；是否输出 `video_results` 由模型回答决定。分析超时可降级为普通回答。
+历史由客户端随请求提供，服务端按 `historyMaxTurns` / `historyMaxChars` 选择窗口。`inputMaxChars` 独立限制单条消息（默认 24000 字符）；`contextMaxChars` 限制包含系统提示与工具结果的完整上下文（默认 48000 字符），字符预算不等同于提供方的精确 token 数。超长输入在调用模型前拒绝；工具结果会按预算裁剪，后续模型调用仍校验完整上下文。
+
+站内候选查询可用时，后端给 Eino ADK 会话 Agent 注册一个 `search_videos` 工具，不再先发起独立的意图分析请求。普通聊天由第一次模型调用直接回答；找视频时，模型生成工具调用，后端执行搜索并将结果交回模型继续回答。原 `analysisModel` 配置不再使用。
+
+工具参数包含结合历史改写的 `query` 和可选的短 `keywords`；当前请求的首张图片由后端绑定，不要求模型生成图片地址。`query` 用于向量化及 ES 全文检索，`keywords` 辅助 MySQL 回退。每轮最多执行两次搜索、最多三次聊天模型调用，单次搜索最多 8 秒。工具内部保留向量/全文召回、RRF、MySQL 关键词/最新作品回退以及已发布状态回查。工具结果提供候选作品、分 P、准确的 `/video/:id/:p?` 路由和召回来源，数量由 `vectorTopK` 控制；模型沿用 `video_results` 块返回链接。最新作品回退不能表述为精准命中。
+
+缺少有效 `keywords` 时，MySQL 回退使用完整 `query` 做文本匹配；`query` 最多 1000 字符，不受单个短关键词的 32 字符上限影响。
+
+`timeoutSec` 控制完整生成用例，未配置默认 90 秒；更短的父请求截止时间仍然有效。客户端取消同时终止 Agent、模型请求和正在执行的搜索。工具调用轮次的 `tool_use` 由 Agent 内部消费，不作为前端整次回答的完成事件。
 
 成功建立流后，Content-Type 为 `text/event-stream`。每一帧只有 `data:`，事件类型在 JSON 的 `type` 字段中，**没有具名 `event:` 行**：
 
@@ -50,7 +58,19 @@ data: {"type":"response.completed"}
 data: [DONE]
 ```
 
-思考增量可省略；`response.completed` 不附带上游响应 ID、模型或 usage。建立流前失败返回普通 JSON；流建立后发生上游错误，发送 `{"type":"response.failed","message":"AI 回答中断，请稍后重试"}`，随后结束流，不再发送成功完成标记。客户端断开时流直接结束。
+思考增量可省略；终态事件可附带 `finishReason`，以及提供方报告的 `usage: {inputTokens,outputTokens,totalTokens}`，不附带上游响应 ID。建立流前失败返回普通 JSON；流建立后发生上游错误，发送 `{"type":"response.failed","status":"failed","message":"AI 回答中断，请稍后重试"}`，随后结束流。
+
+执行工具时在同一 SSE 连接中发送工具生命周期事件，前端按 `callId` 更新对应记录；工具事件不代表整个回答结束：
+
+```text
+data: {"type":"response.tool.started","callId":"toolu_1","name":"search_videos","label":"搜索站内视频","query":"Go 并发教程","resultCount":0}
+
+data: {"type":"response.tool.completed","callId":"toolu_1","name":"search_videos","label":"搜索站内视频","query":"Go 并发教程","resultCount":2,"retrievalMode":"vector_match"}
+```
+
+工具失败使用 `response.tool.failed`，携带通用 `message`；模型仍可解释失败或在次数限制内改写搜索。前端在对话气泡中展示工具名称、搜索词、执行状态和候选数量；取消或流中断时结束尚未完成的工具状态。只有最终 `response.completed` 才表示整个回答完成；用量为本轮会话各次聊天模型调用的累计值。
+
+达到输出上限、未收到正常结束原因或请求超时，也沿用 `response.failed`，其中 `status` 为 `incomplete`，避免旧客户端把半截回答当作成功。达到输出上限的事件例如 `{"type":"response.failed","status":"incomplete","finishReason":"max_tokens","message":"AI 回答未完整生成，请重试或缩短问题"}`；这类响应不发送 `response.completed` 或 `[DONE]`。客户端主动断开时流直接结束。
 
 ## [GET] EventSource 对话入口
 
@@ -113,6 +133,8 @@ es.onerror = () => es.close();
 
 URL 结果由 Handler 改写为站内代理地址，base64 结果放在 `b64_json`；不保证返回 usage 或成本字段。
 
+多图请求在补图失败或数量不足时保留已成功图片，仍返回 `code=0`，并在 `data` 中增加 `partial:true`、`requestedCount`、`returnedCount` 和通用 `message`。客户端应展示已有图片及部分完成提示；完全没有有效图片时返回失败。
+
 ## [POST] 图片编辑
 
 - 路径：`POST /common/ai/images/edits`，需要登录与豆包密钥。
@@ -134,7 +156,7 @@ URL 结果由 Handler 改写为站内代理地址，base64 结果放在 `b64_jso
 ## [POST] 视频生成
 
 - 路径：`POST /common/ai/videos/generations`，需要登录与豆包密钥。
-- 支持文本、首帧 `image` / `input_reference`、`reference_images`；参考图最多 7 张，须带 prompt，不能与首帧混用。
+- 支持文本、首帧 `image` / `input_reference`、`reference_images`；首帧以 `role=first_frame` 下发，参考图以 `role=reference_image` 下发。参考图最多 7 张，须带 prompt，不能与首帧混用；具体模式仍须所选上游模型支持。
 - `duration` 优先于兼容字段 `seconds`；示例 pro 模型允许 4～15 秒，fast 模型允许 2～12 秒，其他模型按当前政策允许 1～15 秒。
 - `resolution` 接受 480p / 720p / 1080p，`aspect_ratio` 指定比例；可传 `generate_audio`、`camera_fixed`、`watermark`、`seed`。
 

@@ -259,6 +259,10 @@ go run ./cmd/transcode-consumer -f config_dev.yaml
 
 Kafka 的 bootstrap 地址和 broker 宣告的对外地址都必须能从消费节点访问。当前 Compose 的对外 listener 示例为 `192.168.1.3:9094`，部署时替换为实际宿主机地址并重建 Kafka 容器；远程节点的 `kafka.brokers` 也应填写可达地址，不能直接照搬配置示例的 `localhost:9094`。
 
+### 6.4 登录会话
+
+登录凭据按会话保存在 Redis：每次密码/OAuth 登录生成独立 `sid`，access 与 refresh JWT 同时携带 `sid`、`pwdVer`，`jti` 在令牌轮换时更新。Redis 为每个会话保存 refresh token 的 SHA-256 摘要并设置与令牌一致的到期时间；每用户的有序索引支持改密码后的会话清理。刷新通过 Lua 原子校验并替换摘要，同一参数重试幂等；已消费摘要保留固定 30 秒宽限，允许丢失回复后的重试及并发请求，重试不延长原摘要的宽限。宽限期外重放仅撤销同一会话，不影响其他设备。受保护请求同时校验数据库最新密码版本和 Redis 会话；Redis 错误或会话缺失时拒绝鉴权。修改/重置密码先提交数据库，再清理旧会话；清理失败时数据库密码版本仍拒绝全部旧 token。不再使用 `users.refresh_token_hash`、`users.must_change_password`，也没有初始密码强制修改流程。部署本次改动后，不含 `sid` 的既有令牌需重新登录；Redis 会话数据丢失同样需要重新登录，应启用合适的持久化与容量策略。
+
 ## 7. 生命周期与停序
 
 默认 HTTP 服务的 `*App` 聚合 HTTP 服务、后台组件、detached 任务组与基础设施句柄。下列顺序针对 `cmd/server`；本机消费关闭时转码组件的启动会跳过消费，独立入口的生命周期见第 6.3 节。启动和关闭均由组合根显式控制：

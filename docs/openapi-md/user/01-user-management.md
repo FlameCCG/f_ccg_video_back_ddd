@@ -46,6 +46,8 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | username | body | string | 是 | 用户名或邮箱 |
 | password | body | string | 是 | 密码 |
+| captchaID | body | string | 条件必填 | `site.login.textGraphicCaptcha=true` 时必填，来自图形验证码接口 |
+| captchaCode | body | string | 条件必填 | 登录图形验证码开启时必填，填写图形中的答案 |
 | captchaToken | body | string | 条件必填 | 点选类型的 token，来自 `/common/captcha/click?scene=login` |
 | captchaDots | body | array<ClickCaptchaPoint> | 条件必填 | 点选类型的非空点位列表，按点击顺序提交 |
 | captchaDots[].index | body | integer | 点选时必填 | 点击顺序索引（从0开始） |
@@ -55,7 +57,7 @@ Base URL：/v1
 | slideCaptchaX | body | integer | 滑块时必填 | 滑块的 X 坐标 |
 | slideCaptchaY | body | integer | 滑块时必填 | 滑块的 Y 坐标 |
 
-先请求 `GET /common/captcha/type?scene=login`，再获取对应挑战并只提交一种凭证。点选和滑块可同时开启，但不能同时提交两种 token。滑块接口省略 scene 时默认 register，因此登录必须显式传 `scene=login`；跨场景 token 会校验失败。此密码登录路由不额外校验图形验证码。
+先请求 `GET /common/captcha/type?scene=login`，再获取对应挑战并只提交一种交互验证码凭证。点选和滑块可同时开启，但不能同时提交两种 token。滑块接口省略 scene 时默认 register，因此登录必须显式传 `scene=login`；跨场景 token 会校验失败。`site.login.textGraphicCaptcha` 开启时，还须通过 `GET /common/captcha/graphics-text` 获取图形验证码并提交 `captchaID`、`captchaCode`；关闭时不校验这两个字段。此开关独立于注册图形验证码配置，图形验证码验证后不可重复使用，登录失败后应刷新图形验证码。
 
 请求示例（本次选中滑块）:
 
@@ -264,12 +266,14 @@ Base URL：/v1
 }
 ```
 
+密码登录（前台/管理端）及 OAuth 签发会话时，依赖故障返回 HTTP 503，超时返回 HTTP 504；响应仍使用 `code=1` 与公开提示文案。
+
 ## [POST] 刷新访问令牌
 
 - 接口路径: POST /common/user/login/refresh
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 登录接口获取 refreshToken
-- 接口说明: 使用 refreshToken 刷新访问令牌
+- 接口说明: 使用 refreshToken 刷新访问令牌；轮换成功后必须保存新令牌对。已消费令牌有固定 30 秒重试宽限，超出宽限的重放撤销该设备会话。503/504 表示临时依赖故障或超时，应保留原 refreshToken 并尽快重试。
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 

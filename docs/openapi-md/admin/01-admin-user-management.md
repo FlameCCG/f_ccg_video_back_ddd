@@ -246,13 +246,15 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | username | body | string | 是 | 用户名或邮箱 |
 | password | body | string | 是 | 密码 |
+| captchaID | body | string | 条件必填 | `site.login.textGraphicCaptcha=true` 时必填 |
+| captchaCode | body | string | 条件必填 | 图形验证码答案 |
 | captchaToken | body | string | 点选时必填 | 来自 `/common/captcha/click?scene=login` |
 | captchaDots | body | array<ClickCaptchaPoint> | 点选时必填 | 非空点位列表，每项包含 index、x、y，按点击顺序提交 |
 | slideCaptchaToken | body | string | 滑块时必填 | 来自 `/common/captcha/slide?scene=login` |
 | slideCaptchaX | body | integer | 滑块时必填 | 滑块的 X 坐标 |
 | slideCaptchaY | body | integer | 滑块时必填 | 滑块的 Y 坐标 |
 
-先调用 `GET /common/captcha/type?scene=login` 再获取对应挑战，不要同时提交两种 token。返回 `none` 时无需交互凭证。滑块接口默认 register，管理员登录须显式传 `scene=login`；跨场景 token 会校验失败。此密码登录路由不额外校验图形验证码。
+先调用 `GET /common/captcha/type?scene=login` 再获取对应挑战，不要同时提交两种 token。返回 `none` 时无需交互凭证。滑块接口默认 register，管理员登录须显式传 `scene=login`；跨场景 token 会校验失败。`site.login.textGraphicCaptcha=true` 时，还须提交从 `GET /common/captcha/graphics-text` 获取的 `captchaID` 与答案 `captchaCode`；图形验证码验证成功即消费，登录失败后应刷新。
 
 响应字段:
 | 字段 | 类型 | 说明 |
