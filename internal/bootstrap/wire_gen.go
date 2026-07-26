@@ -7,13 +7,17 @@
 package bootstrap
 
 import (
+	provisioning2 "f_ccg_video_back_ddd/internal/application/provisioning"
 	"f_ccg_video_back_ddd/internal/infrastructure/auth"
 	"f_ccg_video_back_ddd/internal/infrastructure/cache"
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/migration"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongodb"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/provisioning"
 	"f_ccg_video_back_ddd/internal/infrastructure/search"
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
 	"f_ccg_video_back_ddd/internal/interfaces/http/router"
@@ -55,6 +59,34 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 		cleanup5()
 		cleanup4()
 		cleanup3()
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// InitializeDBTasks 构造只需要「配置 + 日志 + MySQL + Casbin」的运维任务集合，
+// 服务 -db / -vp / -su（-br 需要对象存储，随 media 上下文接入）。
+//
+// 依赖范围严格等于原 core.InitCore 中 flags.RunDBTasks 执行点之前已初始化的组件。
+func InitializeDBTasks(opts *cli.Options) (*DBTasks, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger)
+	configMysql := config.ProvideMysqlConf(provider)
+	db, cleanup2 := mysql.Provide(configMysql)
+	gormDB := mysql.ProvideGorm(db)
+	syncedEnforcer := auth.NewEnforcer(gormDB)
+	migrator := migration.NewMigrator(gormDB)
+	userRepository := identity.NewUserRepository(gormDB, provider)
+	superUserRepository := provisioning.NewSuperUserRepository(gormDB, userRepository)
+	casbinRoleBinder := provisioning.NewCasbinRoleBinder(syncedEnforcer)
+	superUserService := provisioning2.NewSuperUserService(superUserRepository, casbinRoleBinder)
+	dbTasks := NewDBTasks(loggerLogger, db, syncedEnforcer, migrator, superUserService)
+	return dbTasks, func() {
 		cleanup2()
 		cleanup()
 	}, nil

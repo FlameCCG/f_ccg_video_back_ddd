@@ -32,11 +32,14 @@ const (
 // SuperUserRepository 超级管理员初始化的 GORM 实现。
 type SuperUserRepository struct {
 	db          *gorm.DB
-	userRepoCtx contextDecorator
+	userRepoCtx UserContextDecorator
 }
 
-// contextDecorator 用于给创建用户的 ctx 附加默认横幅 ID（供 po.User 的 AfterCreate 钩子读取）。
-type contextDecorator interface {
+// UserContextDecorator 用于给创建用户的 ctx 附加默认横幅 ID
+// （供 po.User 的 AfterCreate 钩子读取，见 report.md FIND-002）。
+//
+// 由 identity 的用户仓储实现，避免 CLI 建号路径与注册路径行为分叉。
+type UserContextDecorator interface {
 	WithDefaultBanner(ctx context.Context) context.Context
 }
 
@@ -46,7 +49,7 @@ var _ app.SuperUserRepository = (*SuperUserRepository)(nil)
 //
 // userRepoCtx 传入 identity 的用户仓储，用于复用「默认横幅 ID 注入 ctx」的逻辑，
 // 保证 CLI 创建的用户与注册流程一样会得到默认用户配置与默认收藏夹。
-func NewSuperUserRepository(db *gorm.DB, userRepoCtx contextDecorator) *SuperUserRepository {
+func NewSuperUserRepository(db *gorm.DB, userRepoCtx UserContextDecorator) *SuperUserRepository {
 	return &SuperUserRepository{db: db, userRepoCtx: userRepoCtx}
 }
 
