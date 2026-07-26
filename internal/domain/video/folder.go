@@ -51,3 +51,8 @@ func NormalizeFolderVideoSort(sort int) int {
 func TrimKeyword(keyword string) string {
 	return strings.TrimSpace(keyword)
 }
+
+// trimSpace 领域内部使用的空白裁剪助手。
+func trimSpace(s string) string {
+	return strings.TrimSpace(s)
+}

@@ -310,55 +310,55 @@
 
 ## docs
 
-- [ ] `docs/ai_text_image_video_docs_2026-04-10.md` → docs
-- [ ] `docs/openapi.yaml` → docs
-- [ ] `docs/project-architecture.md` → docs
-- [ ] `docs/transcode-dash-architecture.md` → docs
+- [x] `docs/ai_text_image_video_docs_2026-04-10.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi.yaml` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/project-architecture.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/transcode-dash-architecture.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
 
 ## docs/openapi-md
 
-- [ ] `docs/openapi-md/index.md` → docs
+- [x] `docs/openapi-md/index.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
 
 ## docs/openapi-md/admin
 
-- [ ] `docs/openapi-md/admin/01-admin-user-management.md` → docs
-- [ ] `docs/openapi-md/admin/02-admin-video-management.md` → docs
-- [ ] `docs/openapi-md/admin/03-admin-comment-management.md` → docs
-- [ ] `docs/openapi-md/admin/04-admin-dynamic-management.md` → docs
-- [ ] `docs/openapi-md/admin/05-admin-banner-management.md` → docs
-- [ ] `docs/openapi-md/admin/06-admin-notification-management.md` → docs
-- [ ] `docs/openapi-md/admin/07-admin-site-management.md` → docs
-- [ ] `docs/openapi-md/admin/08-rbac-management.md` → docs
-- [ ] `docs/openapi-md/admin/index.md` → docs
+- [x] `docs/openapi-md/admin/01-admin-user-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/02-admin-video-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/03-admin-comment-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/04-admin-dynamic-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/05-admin-banner-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/06-admin-notification-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/07-admin-site-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/08-rbac-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/admin/index.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
 
 ## docs/openapi-md/user
 
-- [ ] `docs/openapi-md/user/01-user-management.md` → docs
-- [ ] `docs/openapi-md/user/02-captcha-management.md` → docs
-- [ ] `docs/openapi-md/user/03-site-management.md` → docs
-- [ ] `docs/openapi-md/user/04-banner-management.md` → docs
-- [ ] `docs/openapi-md/user/05-video-management.md` → docs
-- [ ] `docs/openapi-md/user/06-comment-management.md` → docs
-- [ ] `docs/openapi-md/user/07-social-management.md` → docs
-- [ ] `docs/openapi-md/user/08-notification-management.md` → docs
-- [ ] `docs/openapi-md/user/09-chat-management.md` → docs
-- [ ] `docs/openapi-md/user/10-dynamic-management.md` → docs
-- [ ] `docs/openapi-md/user/11-ai-management.md` → docs
-- [ ] `docs/openapi-md/user/index.md` → docs
+- [x] `docs/openapi-md/user/01-user-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/02-captcha-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/03-site-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/04-banner-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/05-video-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/06-comment-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/07-social-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/08-notification-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/09-chat-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/10-dynamic-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/11-ai-management.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
+- [x] `docs/openapi-md/user/index.md` → docs/（原样继承 + legacy-path-mapping.md 路径换算表）
 
 ## flags
 
 - [ ] `flags/enter.go` → interfaces/cli
 - [ ] `flags/flag_banner.go` → interfaces/cli
-- [ ] `flags/flag_db.go` → interfaces/cli
-- [ ] `flags/flag_db_exit_test.go` → interfaces/cli
-- [ ] `flags/flag_db_test.go` → interfaces/cli
+- [x] `flags/flag_db.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
+- [x] `flags/flag_db_exit_test.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
+- [x] `flags/flag_db_test.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
 - [ ] `flags/flag_es.go` → interfaces/cli
 - [ ] `flags/flag_rbac.go` → interfaces/cli
 - [ ] `flags/flag_resource.go` → interfaces/cli
 - [ ] `flags/flag_su.go` → interfaces/cli
-- [ ] `flags/flag_video_partitions.go` → interfaces/cli
-- [ ] `flags/flag_video_partitions_test.go` → interfaces/cli
+- [x] `flags/flag_video_partitions.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
+- [x] `flags/flag_video_partitions_test.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
 
 ## flags/mappings
 

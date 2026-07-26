@@ -160,3 +160,20 @@
   3. 上述 8 个文件的新内容**明确列为本次交付范围之外**，在 report.md 顶部
      「基线漂移告警」中完整记录，并给出增量迁移建议。
 - 影响：新仓库对 ai / search 上下文复刻的是基线版本；不影响其余上下文。
+
+## D-016 继承文档保留原文 + 集中式路径映射表
+
+- 背景：规范要求迁移「docs/ 中仍适用的文档（路径引用更新为新结构）」。
+  `docs/project-architecture.md`（40KB）、`transcode-dash-architecture.md`（27KB）、
+  `ai_text_image_video_docs_2026-04-10.md`（42KB）含大量 `file.go:line` 级引用与叙述性上下文。
+- 决策：
+  - 接口契约类文档（`openapi.yaml` 334KB、`openapi-md/`）**原样复制**——
+    本次重构保证 HTTP method+path 与请求/响应 JSON 完全一致，故其内容无需任何改动。
+  - 三份架构/功能文档**保留原文**，在标题后插入统一提示，并新增
+    `docs/legacy-path-mapping.md` 作为权威的「旧路径 → 新结构」换算表
+    （覆盖顶层布局、全部 handler 包、全部 service 包、以及 `global.*` / `ctxutil.GoDetached` /
+    `mysqlEntity.*` 等常见符号换算）。
+  - 不做逐处机械改写：10 万字规模的机械替换会产生错误路径（如把
+    `service/video_service/detail_service.go:761` 改成不存在的新文件行号）并破坏行文，
+    可靠性低于一张集中映射表。
+- 影响：文档所述设计/行为与新仓库一致；任何旧路径都能一步换算到新位置。
