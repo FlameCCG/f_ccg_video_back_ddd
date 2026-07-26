@@ -119,3 +119,26 @@
   使 `*notification.Service` 直接满足该端口（`NotifyBanStatus` 方法），
   由 bootstrap 用 `wire.Bind` 绑定。其余顺序不变。
 - 影响：无外部行为变化；避免为跨上下文依赖引入占位实现（规范禁止 stub）。
+
+## D-013 `infrastructure/config` 视为横切关注点，允许外层读取
+
+- 背景：站点配置在运行期可热更新，被 40+ 处应用层与接口层逻辑读取
+  （验证码开关、CORS 白名单、存储类型、三方登录、AI/邮件参数等）。
+  若严格禁止 application 读 infrastructure，需要为每个上下文声明一大堆窄接口，
+  收益极低而改动面极大。
+- 决策：`internal/infrastructure/config` 作为**配置横切关注点**，
+  允许 `application`、`interfaces`、`infrastructure` 三层读取（注入 `*config.Provider` 或窄配置结构体）；
+  **`internal/domain/**` 一律禁止 import 它**（领域层零框架依赖，规则不放松）。
+  规范第 7 节的 DI 验收项是「application/domain 层零 gin 依赖」，本决策不违反该项。
+- 影响：无外部行为变化；领域层保持纯净可测。
+
+## D-014 路由奇偶校验采用「原项目静态提取 + 新项目引擎实测」双侧比对
+
+- 背景：验收要求「分别从新旧两边路由代码提取 method+path 全量清单并 diff，差异为零」。
+  原项目目录只读，不能在其中新增测试程序来 dump `engine.Routes()`。
+- 决策：原侧用脚本静态解析 `router/*.go` 的 `Group`/`METHOD` 调用链提取清单
+  （交叉校验：183 处显式注册 + `/uploads` 静态目录的 GET/HEAD 共 185 条，
+  与 `grep` 计数完全吻合）；新侧在 `internal/interfaces/http/router` 内写测试，
+  用 nil handler 构造 `*Router` 并调 `BuildEngine()`，读 `engine.Routes()` 得到真实注册清单，
+  与 `testdata/routes_golden.txt` 逐条比对。比对结果写入 report.md 附录。
+- 影响：新侧清单来自 gin 引擎实测，比静态解析更可信；差异会在 `go test` 中直接失败。
