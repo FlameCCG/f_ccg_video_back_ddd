@@ -101,6 +101,20 @@ var (
 	ErrActionUnsupported = errors.New("不支持的动作")
 	// ErrSchedulerNotRunning 视频调度器未运行.
 	ErrSchedulerNotRunning = errors.New("video scheduler not running")
+
+	// ErrDuplicateLike 点赞关系唯一键冲突（并发下已存在）.
+	ErrDuplicateLike = errors.New("duplicate video like")
+	// ErrDuplicateCoin 投币关系唯一键冲突（并发下已存在）.
+	ErrDuplicateCoin = errors.New("duplicate video coin")
+)
+
+// 上传相关错误（文案与原 upload_service.go 一致）。
+var (
+	errSourceFileNameEmpty = errors.New("源文件名不能为空")
+	errFileNameEmpty       = errors.New("fileName 不能为空")
+	errFileNameInvalid     = errors.New("fileName 格式无效")
+	errTotalChunksInvalid  = errors.New("totalChunks 必须大于 0")
+	errTotalChunksTooLarge = errors.New("totalChunks 超出限制")
 )
 
 // 房间弹幕分段查询相关错误（仅领域内部构造，文案与原实现一致）。
