@@ -177,3 +177,31 @@
     `service/video_service/detail_service.go:761` 改成不存在的新文件行号）并破坏行文，
     可靠性低于一张集中映射表。
 - 影响：文档所述设计/行为与新仓库一致；任何旧路径都能一步换算到新位置。
+
+## D-017 领域层测试需要真实基础设施适配器时，测试上移到 infrastructure
+
+- 背景：rbac 的「权限覆盖判定」（`PermissionEvaluator`）依赖路径匹配器端口，
+  其语义必须与 Casbin 模型里的 `globMatch` 完全一致。用自制 stub 测会出现
+  「测试通过而线上鉴权结论不同」的假绿，因此该测试需要注入
+  `infrastructure/persistence/rbac.NewGlobPathMatcher()`（真实 casbin `util.GlobMatch`）。
+- 决策：把这类「领域规则 + 真实适配器」的集成测试放到 **infrastructure 层**
+  （`internal/infrastructure/persistence/rbac/permission_evaluator_test.go`），
+  使 `internal/domain/**` 目录保持对 `internal/infrastructure` 的**零引用**，
+  验收扫描无需为测试文件开例外。
+- 影响：断言与覆盖范围不变（4 个用例全部保留），领域层依赖方向更干净。
+
+## D-018 `pkg/validate` 的包级 translator 与 `init()` 属平移件，保持原样
+
+- 背景：规范禁止包级可变单例与 `init()` 里做业务装配。
+  `pkg/validate` 有 `var trans ut.Translator` 与一个 `init()`，在其中注册
+  gin binding 校验器的中文翻译与 `label` tag 名解析。
+- 决策：**原样平移，不改造**。理由：
+  1. 它注册的是 `gin/binding.Validator` 这个**库自身的全局校验器**——
+     翻译器必须与该全局校验器同生命周期，改成注入式无法生效；
+  2. `init()` 里没有任何业务装配，只有第三方库的本地化配置，
+     不构成规范所禁止的「service locator / 业务单例」；
+  3. 错误消息格式（`json---label` 拆分）属于外部契约，任何改造都有回归风险；
+  4. 规范第 1 节明确「与业务无关的工具代码不要为了 DDD 而重写，直接平移」。
+- 影响：`pkg/validate/enter.go` 与原项目逐字一致。验收项「除 bootstrap 外无包级可变单例」
+  按「业务状态单例」口径判定：全仓库除本项（第三方库本地化）外，
+  其余包级 `var` 均为不可变查表 / 正则 / 错误哨兵 / Lua 脚本 / 编译期断言。
