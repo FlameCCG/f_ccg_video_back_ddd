@@ -693,8 +693,8 @@
 
 ## service/notification_service
 
-- [ ] `service/notification_service/cache.go` → domain/notification + application/notification
-- [ ] `service/notification_service/notification_service.go` → domain/notification + application/notification
+- [x] `service/notification_service/cache.go` → domain/notification + application/notification + infrastructure/{persistence,cache}/notification
+- [x] `service/notification_service/notification_service.go` → domain/notification + application/notification + infrastructure/{persistence,cache}/notification
 
 ## service/rbac_service
 
@@ -751,19 +751,19 @@
 
 ## service/user_service
 
-- [ ] `service/user_service/admin_list.go` → domain/identity + application/identity
-- [ ] `service/user_service/ban_record_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/ban_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/coin_record_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/coin_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/creator_analytics_service.go` → domain/identity + application/identity
+- [x] `service/user_service/admin_list.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/ban_record_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/ban_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/coin_record_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/coin_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/creator_analytics_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 - [ ] `service/user_service/enter.go` → domain/identity + application/identity
-- [ ] `service/user_service/exp_record_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/exp_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/exp_service_test.go` → domain/identity + application/identity
+- [x] `service/user_service/exp_record_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/exp_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/exp_service_test.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 - [ ] `service/user_service/focus_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/login_record_service.go` → domain/identity + application/identity
-- [ ] `service/user_service/status_cache.go` → domain/identity + application/identity
+- [x] `service/user_service/login_record_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
+- [x] `service/user_service/status_cache.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 
 ## service/video_service
 

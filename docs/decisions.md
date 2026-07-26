@@ -89,3 +89,33 @@
 - 决策：置于 `internal/domain/shared/enum` 作为共享内核（Shared Kernel）。
   规范禁止的是「领域层之间相互 import」，共享内核是 DDD 标准做法，不构成上下文耦合。
 - 影响：无。
+
+## D-010 跨仓储事务改用 tx.Manager + context 传递
+
+- 背景：原项目通过在服务签名里直接传 `*gorm.DB` 实现跨模块共享事务
+  （`CoinService.ApplyChangeTx(tx *gorm.DB, ...)` 被 `video_service` 三连流程调用），
+  迫使调用方依赖 GORM。
+- 决策：领域层声明 `internal/domain/shared/tx.Manager`；
+  基础设施 `persistence/gormx.TxManager` 实现之，事务句柄随 context 传递
+  （`gormx.WithTx` / `gormx.DB(ctx, root)`）。
+  `Do` 检测 context 中已有事务时**直接复用、不开保存点**，语义等于原 `XxxTx` 方法。
+- 影响：应用层与领域层零 GORM 依赖；三连等跨上下文原子性与原实现一致。
+
+## D-011 读侧投影允许直读其它上下文的表
+
+- 背景：创作中心总览需要「作者已发布视频的统计汇总」与「粉丝数」，
+  原实现在 `user_service` 里直接查 `videos` 表与 `user_focus` 表并叠加 Redis 视频统计缓存。
+- 决策：按 CQRS 约定，**读侧投影**允许直读其它上下文的表，实现放在消费方上下文的
+  infrastructure（`persistence/identity/creator_query.go`）；
+  **写侧**一律经拥有该聚合的上下文（视频统计写侧仍归 video，关注关系写侧仍归 social）。
+  这样各上下文可独立编译、独立演进，也避免为一次 COUNT 引入跨上下文调用链。
+- 影响：SQL 与 Redis key 与原实现完全一致；无外部行为变化。
+
+## D-012 迁移顺序按依赖关系微调：notification 先于 identity 接线
+
+- 背景：规范第 6.3 节建议顺序为 identity → … → notification，
+  但 `identity` 的封禁流程需要向用户发系统通知（原 `user_service` 直接 import `notification_service`）。
+- 决策：identity 声明 `BanNotifier` 端口后，紧接着迁移 notification 上下文，
+  使 `*notification.Service` 直接满足该端口（`NotifyBanStatus` 方法），
+  由 bootstrap 用 `wire.Bind` 绑定。其余顺序不变。
+- 影响：无外部行为变化；避免为跨上下文依赖引入占位实现（规范禁止 stub）。

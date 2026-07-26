@@ -105,3 +105,45 @@
 - 改变外部可观测行为: **是**。部分更新语句不再包含 `open_id = NULL`；
   OAuth 绑定不再被硬币变动清空。这是修正数据损坏，原行为本身即缺陷，
   符合规范第 4 节「仅行为本身是缺陷时才可改变行为」。
+
+## FIND-006 | 类别: 设计
+
+- 原位置: `service/user_service/enter.go:16` `UserService.isLogin` / `IsLogin`
+- 问题: 该函数解析 Authorization 头判断登录态，但全项目除本文件外无任何调用方（死代码）；
+  同时它把 HTTP 关注点（读取请求头）放进了 service 层。
+- 触发场景/影响: 无运行期影响；属于分层污染与死代码。
+- 新代码处理: 迁移为 `internal/interfaces/http/middlewares/is_login.go` 的
+  `IsLogin(c *gin.Context, jwtConf *config.Jwt) bool`，
+  JWT 密钥改显式注入；保持导出但同样无调用方（不丢弃任何原有能力）。
+- 改变外部可观测行为: 否。
+
+## FIND-007 | 类别: 设计
+
+- 原位置: `service/user_service/creator_analytics_service.go:922`
+  `CreatorAnalyticsService.Overview` → `UserService{}.GetFansCount(creatorID)`
+- 问题: `GetFansCount` / `GetFocusCount` / `IsFocus` 内部固定使用 `context.TODO()`，
+  丢弃了请求上下文；请求超时或客户端断开时这些查询无法被取消。
+- 触发场景/影响: 创作中心总览与关注状态查询在请求已超时后仍会占用数据库连接。
+- 新代码处理: `internal/application/identity/creator_analytics_service.go` 与
+  `internal/infrastructure/persistence/identity/creator_query.go` 全部改为透传调用方 ctx。
+- 改变外部可观测行为: 否（成功路径结果一致；超时路径提前释放资源）。
+
+## FIND-008 | 类别: 设计
+
+- 原位置: `service/user_service/creator_analytics_service.go:924`
+  `Overview` 中 `if username == "" { return overview, nil }`
+- 问题: 不可达分支——上一行的 `fetchCreatorUsername` 已在 `username == ""` 时返回
+  `errors.New("用户不存在")`，函数早已 return。
+- 触发场景/影响: 无运行期影响，属于误导性死代码。
+- 新代码处理: 新实现只保留可达语义（用户名为空即返回「用户不存在」），不再保留死分支。
+- 改变外部可观测行为: 否。
+
+## FIND-009 | 类别: 设计
+
+- 原位置: `pkg/middlewares/user_ban_check.go:57` `UserBanCheck`
+- 问题: HTTP 中间件直接使用 `global.DB` 执行 `UPDATE users SET status = ...`
+  完成「限时封禁到期自动解封」，业务写操作下沉到了 interfaces 层。
+- 触发场景/影响: 无法单测；解封逻辑与封禁逻辑分散在两处，容易不一致。
+- 新代码处理: 新增应用层用例 `BanService.ReleaseExpired(ctx, userID)`
+  （更新状态 + write-through 状态缓存），中间件改为调用它。
+- 改变外部可观测行为: 否。
