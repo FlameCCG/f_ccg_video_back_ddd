@@ -482,21 +482,21 @@
 
 ## pkg/middlewares
 
-- [ ] `pkg/middlewares/auth_all.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/body_limit.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/casbin_auth.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/click_captcha_verify.go` → interfaces/http/middlewares
-- [x] `pkg/middlewares/cors.go` → internal/interfaces/http/middlewares/cors.go
-- [ ] `pkg/middlewares/email_captcha_verify.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/graphics_text_captcha_verify.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/jwt_auth.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/jwt_optional.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/params_bind.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/request_timeout.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/request_timeout_test.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/slide_captcha_verify.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/uid.go` → interfaces/http/middlewares
-- [ ] `pkg/middlewares/user_ban_check.go` → interfaces/http/middlewares
+- [x] `pkg/middlewares/auth_all.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/body_limit.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/casbin_auth.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/click_captcha_verify.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/cors.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/email_captcha_verify.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/graphics_text_captcha_verify.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/jwt_auth.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/jwt_optional.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/params_bind.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/request_timeout.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/request_timeout_test.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/slide_captcha_verify.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/uid.go` → internal/interfaces/http/middlewares
+- [x] `pkg/middlewares/user_ban_check.go` → internal/interfaces/http/middlewares
 
 ## pkg/mq
 
@@ -504,7 +504,7 @@
 
 ## pkg/ratelimit
 
-- [ ] `pkg/ratelimit/redis.go` → infrastructure/cache/ratelimit
+- [x] `pkg/ratelimit/redis.go` → internal/infrastructure/cache/ratelimit
 
 ## pkg/recursion
 
@@ -590,8 +590,8 @@
 
 ## service/captcha_service
 
-- [ ] `service/captcha_service/click_captcha.go` → infrastructure/captcha
-- [ ] `service/captcha_service/slide_captcha.go` → infrastructure/captcha
+- [x] `service/captcha_service/click_captcha.go` → internal/infrastructure/captcha + application/identity/captcha_service.go
+- [x] `service/captcha_service/slide_captcha.go` → internal/infrastructure/captcha + application/identity/captcha_service.go
 
 ## service/chat_service
 

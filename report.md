@@ -147,3 +147,44 @@
 - 新代码处理: 新增应用层用例 `BanService.ReleaseExpired(ctx, userID)`
   （更新状态 + write-through 状态缓存），中间件改为调用它。
 - 改变外部可观测行为: 否。
+
+## FIND-010 | 类别: 安全 | **【行为变更】**
+
+- 原位置: `service/captcha_service/click_captcha.go:191` `buildClickTargets`
+- 问题: 函数末尾遗留调试语句 `fmt.Println(targets)`，把点击验证码的**正确答案坐标**
+  （每个目标的 index/x/y/width/height）打印到标准输出。
+- 触发场景/影响: 每次生成点击验证码都会输出答案。标准输出通常被容器日志、
+  systemd journal、日志采集链路收集，任何能读到服务日志的人（运维、日志平台使用者、
+  日志泄露场景）都可以直接拿到验证码答案并绕过点击验证码，
+  使「登录点击验证码」防护形同虚设。
+- 新代码处理: `internal/infrastructure/captcha/click.go` 的 `buildClickTargets`
+  删除该打印语句（其余逻辑逐行保持一致）。
+- 改变外部可观测行为: **是**。标准输出不再出现验证码答案。
+  原行为本身即安全缺陷，符合规范第 4 节允许改变行为的条件。
+
+## FIND-011 | 类别: 设计
+
+- 原位置: `service/captcha_service/click_captcha.go` `fetchCaptchaPayload` /
+  `deleteCaptchaPayload`
+- 问题: 两个函数在改用原子 `GETDEL`（`consumeCaptchaPayload`）后已无任何调用方，属死代码；
+  其中 `deleteCaptchaPayload` 忽略 `Del` 的返回错误。
+- 触发场景/影响: 无运行期影响。
+- 新代码处理: `internal/infrastructure/captcha/store.go` 只保留实际在用的
+  `store` / `consume` 两个方法，不再保留失效路径。
+- 改变外部可观测行为: 否。
+
+## FIND-012 | 类别: bug（潜在 panic）
+
+- 原位置: `service/captcha_service/click_captcha.go:206` `getClickCaptchaTTL`、
+  `getClickCaptchaPadding`、`service/captcha_service/slide_captcha.go` 的同类函数、
+  `pkg/middlewares/click_captcha_verify.go:26`、`slide_captcha_verify.go:27`、
+  `graphics_text_captcha_verify.go:27`、`email_captcha_verify.go:41`
+- 问题: 这些位置读取 `global.Config().Site.Login.X` / `Site.Register.X` 时，
+  只判空到 `Site` 一层，未判 `Site.Login` / `Site.Register` 子结构；
+  而 `site.Site` 中 `Login`、`Register` 均为指针字段。
+- 触发场景/影响: 配置文件缺少 `site.login` 或 `site.register` 段时，
+  首次访问登录/注册/验证码接口即 nil 解引用 panic（被 gin Recovery 兜成 500）。
+- 新代码处理: `internal/application/identity/captcha_service.go` 与
+  `internal/infrastructure/captcha/*.go` 的开关与参数读取补齐指针判空，
+  缺失时回落到与原实现相同的默认值（TTL 2 分钟 / padding 20 或 10 / 开关关闭）。
+- 改变外部可观测行为: 否（正常配置下结果一致；错误配置下由 500 panic 变为按默认值放行）。
