@@ -2,6 +2,8 @@ package notification
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -27,18 +29,30 @@ type Service struct {
 	repo     domain.Repository
 	cache    CountCache
 	chat     ChatUnreadCounter
+	actors   ActorProfileProvider
 	tasks    *ctxutil.DetachedTaskGroup
 	countSFG singleflight.Group
 }
+
+// 管理端更新系统通知的失败分类（对应原处理器三种不同的响应文案）。
+var (
+	// ErrNoticeQueryFailed 读取原通知失败（原文案「查询失败」）。
+	ErrNoticeQueryFailed = errors.New("查询失败")
+	// ErrNoticeNotFound 通知不存在（原文案「通知不存在」）。
+	ErrNoticeNotFound = errors.New("通知不存在")
+	// ErrNoticeUpdateFailed 写入更新失败（原文案「更新失败」）。
+	ErrNoticeUpdateFailed = errors.New("更新失败")
+)
 
 // NewService 构造通知用例服务。
 func NewService(
 	repo domain.Repository,
 	cache CountCache,
 	chat ChatUnreadCounter,
+	actors ActorProfileProvider,
 	tasks *ctxutil.DetachedTaskGroup,
 ) *Service {
-	return &Service{repo: repo, cache: cache, chat: chat, tasks: tasks}
+	return &Service{repo: repo, cache: cache, chat: chat, actors: actors, tasks: tasks}
 }
 
 // Create 写入通知并失效角标缓存。
@@ -398,4 +412,61 @@ func normalizePaging(page, pageSize int) (int, int) {
 	}
 
 	return page, pageSize
+}
+
+// CreateSystemNotice 管理端发布系统通知。
+//
+// 操作者的用户名/头像取自读侧投影；类型固定为系统通知（与原
+// api/notification_api/create.go 一致）。
+func (s *Service) CreateSystemNotice(ctx context.Context, cmd CreateSystemNoticeCommand) error {
+	actionName, actionAvatar := "", ""
+	if s.actors != nil {
+		actionName, actionAvatar = s.actors.Profile(ctx, cmd.ActorID)
+	}
+
+	notice := &domain.Notification{
+		// 管理员发布的系统消息固定为系统类型
+		Type:             enum.NotificationSystemType,
+		ReceiverID:       cmd.ReceiverID,
+		Title:            cmd.Title,
+		Content:          cmd.Content,
+		Link:             cmd.Link,
+		VideoID:          cmd.VideoID,
+		VideoTitle:       cmd.VideoTitle,
+		ActionUserID:     cmd.ActorID,
+		ActionUserName:   actionName,
+		ActionUserAvatar: actionAvatar,
+	}
+
+	return s.Create(ctx, notice)
+}
+
+// UpdateSystemNotice 管理端更新系统通知。
+//
+// 先读原记录，覆盖可编辑字段后强制置为系统通知类型（与原
+// api/notification_api/admin_update.go 一致）。通知不存在时返回 ErrNoticeNotFound。
+func (s *Service) UpdateSystemNotice(ctx context.Context, cmd UpdateSystemNoticeCommand) error {
+	old, err := s.GetAdmin(ctx, cmd.ID)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrNoticeQueryFailed, err)
+	}
+
+	if old == nil {
+		return ErrNoticeNotFound
+	}
+
+	old.Title = cmd.Title
+	old.Content = cmd.Content
+	old.ReceiverID = cmd.ReceiverID
+	old.VideoID = cmd.VideoID
+	old.VideoTitle = cmd.VideoTitle
+	old.Link = cmd.Link
+	// 强制为系统通知
+	old.Type = enum.NotificationSystemType
+
+	if err := s.AdminUpdate(ctx, old); err != nil {
+		return fmt.Errorf("%w: %w", ErrNoticeUpdateFailed, err)
+	}
+
+	return nil
 }

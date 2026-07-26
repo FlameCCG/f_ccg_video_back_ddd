@@ -56,3 +56,33 @@ type CountCache interface {
 type ChatUnreadCounter interface {
 	TotalUnread(ctx context.Context, userID uint) (int64, error)
 }
+
+// ActorProfileProvider 操作者资料查询端口（读侧投影，实现在 infrastructure）。
+//
+// 管理端发布系统通知时需要把操作者的用户名与头像写进通知快照字段。
+type ActorProfileProvider interface {
+	// Profile 返回操作者的用户名与头像；查不到时返回两个空串。
+	Profile(ctx context.Context, userID uint) (username, avatar string)
+}
+
+// CreateSystemNoticeCommand 管理端发布系统通知的入参（字段与原请求体一一对应）。
+type CreateSystemNoticeCommand struct {
+	ActorID    uint
+	Title      string
+	Content    string
+	ReceiverID int
+	VideoID    uint
+	VideoTitle string
+	Link       string
+}
+
+// UpdateSystemNoticeCommand 管理端更新系统通知的入参。
+type UpdateSystemNoticeCommand struct {
+	ID         uint
+	Title      string
+	Content    string
+	ReceiverID int
+	VideoID    uint
+	VideoTitle string
+	Link       string
+}
