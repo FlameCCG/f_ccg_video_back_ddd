@@ -142,3 +142,21 @@
   用 nil handler 构造 `*Router` 并调 `BuildEngine()`，读 `engine.Routes()` 得到真实注册清单，
   与 `testdata/routes_golden.txt` 逐条比对。比对结果写入 report.md 附录。
 - 影响：新侧清单来自 gin 引擎实测，比静态解析更可信；差异会在 `go test` 中直接失败。
+
+## D-015 迁移源固定为开工基线的只读快照（应对原项目被并发修改）
+
+- 背景：迁移进行中检测到原项目工作区被本次重构以外的进程修改
+  （`conf/conf_ai.go`、`service/ai_service/{enter.go,types.go}`、
+  `service/search_service/video_vector.go` 被改，并新增
+  `service/ai_service/conversation.go`、
+  `service/search_service/{ark_embedding.go,cover_image.go,video_vector_rebuild.go}`）。
+  规范第 0 节把基线定义为「原项目磁盘当前工作区状态」，而开工时该状态是干净的
+  git HEAD `481e4e35a3f2c3f6e4c6b617aa76a8cfe1152362`（532 个在范围内的 .go 文件）。
+- 决策：
+  1. 迁移源固定为**开工基线**，并用 `git archive HEAD` 导出只读快照到会话临时目录，
+     所有迁移任务改从快照读取，避免读到半成品状态、避免 1:1 校验对着移动目标。
+  2. **绝不**回滚或改写原项目的这些改动——它们可能是他人正在进行的开发成果，
+     规范要求原项目目录零写入，回滚同样属于写入。
+  3. 上述 8 个文件的新内容**明确列为本次交付范围之外**，在 report.md 顶部
+     「基线漂移告警」中完整记录，并给出增量迁移建议。
+- 影响：新仓库对 ai / search 上下文复刻的是基线版本；不影响其余上下文。

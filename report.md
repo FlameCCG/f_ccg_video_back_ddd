@@ -23,6 +23,39 @@
 `service/river_service/rule`、`service/search_service`、`service/storage_service`、
 `service/transcode_cancel_service`、`service/user_service` 全部 ok；其余包无测试文件。
 
+## 基线漂移告警（重要，非本次重构引入）
+
+开工时（本次任务起点）原项目 `E:_ccg_video_final_ccg_video_back` 工作区**完全干净**
+（`git status --porcelain` 为空），基线锁定为 git HEAD `481e4e35a3f2c3f6e4c6b617aa76a8cfe1152362`，
+共 532 个在范围内的 `.go` 文件。
+
+**迁移进行中（当日 19:04–19:12），原项目被本次重构以外的进程并发修改**，
+检测到 4 个文件被改、4 个文件新增：
+
+| 文件 | 变化 |
+|---|---|
+| `conf/conf_ai.go` | 修改（+17/-…） |
+| `service/ai_service/enter.go` | 修改（208 行变动） |
+| `service/ai_service/types.go` | 修改（+17） |
+| `service/search_service/video_vector.go` | 修改（738 行变动） |
+| `service/ai_service/conversation.go` | **新增**（会话历史裁剪/归一化） |
+| `service/search_service/ark_embedding.go` | **新增**（方舟多模态向量化） |
+| `service/search_service/cover_image.go` | **新增**（封面图向量化） |
+| `service/search_service/video_vector_rebuild.go` | **新增**（向量重建） |
+
+说明与处置：
+
+- 这些改动**不是本次重构写入的**。本次重构对原项目目录**零写入**：
+  全程只执行读取与 `go build` / `go test`，未创建、修改或删除任何文件，未 commit / stash。
+- 为保证「1:1 复刻」可被验证（源不能是移动目标），迁移源已固定为上述基线 HEAD 的
+  只读快照（`git archive HEAD` 导出，532 个 `.go` 文件，与开工时清点结果完全一致），
+  全部迁移任务改从该快照读取源码。
+- 因此**上表 8 个文件的内容不在本次交付范围内**：新仓库复刻的是基线状态的
+  `ai_service` / `search_service` / `conf.AI`。若需要把这批新功能一并 DDD 化，
+  应作为**增量迁移**单独进行（建议先在原项目提交这批改动，再按同一分层约定迁移到
+  `internal/{domain,application,infrastructure}/{ai,search}`）。
+- 详见 docs/decisions.md D-015。
+
 ---
 
 ## FIND-001 | 类别: bug
