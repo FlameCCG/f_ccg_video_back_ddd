@@ -27,8 +27,9 @@ func toDomainBanner(row *po.Banner) *domain.Banner {
 
 // toDomainBanners 批量转换轮播图。
 //
-// 入参为 nil 时返回 nil：原实现把 GORM 查到的 nil 切片直接序列化为响应体（"data": null），
-// 这里保持一致，不擅自替换成空数组。
+// 保持「空结果 = 非 nil 空切片」：GORM 的 Find 会把目标切片初始化为非 nil 空切片，
+// 原实现把它直接序列化为响应体（"data": []），这里不改变该形态；
+// 入参真为 nil（未经 Find 的路径）时同样返回 nil，避免凭空造出空数组。
 func toDomainBanners(rows []po.Banner) []domain.Banner {
 	if rows == nil {
 		return nil

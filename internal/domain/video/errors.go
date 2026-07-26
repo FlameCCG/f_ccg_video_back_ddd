@@ -108,6 +108,20 @@ var (
 	ErrDuplicateCoin = errors.New("duplicate video coin")
 )
 
+// 投稿落库失败的业务文案（由仓储在单事务内映射，与原 persistVideo 逐字一致）。
+var (
+	// ErrCreateVideoFailed 创建视频失败.
+	ErrCreateVideoFailed = errors.New("创建视频失败")
+	// ErrCreateVideoTagsFailed 创建视频标签关系失败.
+	ErrCreateVideoTagsFailed = errors.New("创建视频标签关系失败")
+	// ErrCreatePartsFailed 创建分P失败.
+	ErrCreatePartsFailed = errors.New("创建分P失败")
+	// ErrCreatePartResourcesFailed 创建初始分P资源失败.
+	ErrCreatePartResourcesFailed = errors.New("创建初始分P资源失败")
+	// ErrCreateVideoResourceFailed 创建初始视频资源失败.
+	ErrCreateVideoResourceFailed = errors.New("创建初始视频资源失败")
+)
+
 // 上传相关错误（文案与原 upload_service.go 一致）。
 var (
 	errSourceFileNameEmpty = errors.New("源文件名不能为空")

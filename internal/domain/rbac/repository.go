@@ -104,8 +104,7 @@ type UserRoleRepository interface {
 	UserExists(ctx context.Context, userID uint) (bool, error)
 	// CurrentRoleID 读取用户当前角色 ID；用户不存在时 found 为 false。
 	CurrentRoleID(ctx context.Context, userID uint) (roleID uint, found bool, err error)
-	// RolesByUser 读取用户已绑定的角色；用户不存在时返回 ErrUserNotFound，
-	// 无绑定关系时返回 nil 切片（响应体保持 data:null，与原实现一致）。
+	// RolesByUser 读取用户已绑定的角色；用户不存在时返回 ErrUserNotFound。
 	RolesByUser(ctx context.Context, userID uint) ([]*Role, error)
 	// AppendRoles 为用户追加角色绑定。
 	AppendRoles(ctx context.Context, userID uint, roles []*Role) error

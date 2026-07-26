@@ -201,7 +201,7 @@ func (s *BannerService) Update(ctx context.Context, params UpdateBannerParams) e
 	}
 
 	if params.Type != nil || params.PartitionID != nil {
-		current, err := s.get(ctx, params.ID)
+		current, err := s.Get(ctx, params.ID)
 		if err != nil {
 			return err
 		}
@@ -261,8 +261,11 @@ func (s *BannerService) Delete(ctx context.Context, ids []uint) error {
 	return nil
 }
 
-// get 读取轮播图；任何失败都归为「轮播图不存在」，与原 api 层的错误处理一致。
-func (s *BannerService) get(ctx context.Context, bannerID uint) (*domain.Banner, error) {
+// Get 按主键读取轮播图（原 banner_service.BannerService.Get）。
+//
+// 任何失败（缺少主键、记录不存在、读取报错）都归为 ErrBannerNotFound，
+// 与原 api 层「Get 出错即回显轮播图不存在」的处理一致。
+func (s *BannerService) Get(ctx context.Context, bannerID uint) (*domain.Banner, error) {
 	if bannerID == 0 {
 		return nil, fmt.Errorf("%w: %w", domain.ErrBannerNotFound, domain.ErrBannerInvalidParam)
 	}

@@ -17,11 +17,11 @@ var _ app.Query = (*Store)(nil)
 
 // conversationRow 会话列表聚合投影行。
 type conversationRow struct {
-	ID          string                                `bson:"_id"`
-	PeerID      uint                                  `bson:"peerId"`
-	Unread      int64                                 `bson:"unread"`
-	LastMessage *mongopo.ChatConversationLastMessage   `bson:"lastMessage"`
-	UpdatedAt   primitive.DateTime                    `bson:"updatedAt"`
+	ID          string                               `bson:"_id"`
+	PeerID      uint                                 `bson:"peerId"`
+	Unread      int64                                `bson:"unread"`
+	LastMessage *mongopo.ChatConversationLastMessage `bson:"lastMessage"`
+	UpdatedAt   primitive.DateTime                   `bson:"updatedAt"`
 }
 
 // conversationAggResult $facet 聚合结果。

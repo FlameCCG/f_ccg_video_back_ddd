@@ -105,10 +105,19 @@ type UserVideoQuery interface {
 	RecentActionVideos(ctx context.Context, userID uint, action string, limit int) ([]UserVideoRow, error)
 	// AggregateAuthorStats 汇总作者已发布视频的行内 views/likes（含视频 ID 列表以便叠加 Redis 权威计数）。
 	AggregateAuthorStats(ctx context.Context, authorUsername string) ([]AuthorVideoStatRow, error)
-	// ReportUserIDsByUsernames 按用户名批量解析用户 ID（读侧投影）。
-	ReportUserIDsByUsernames(ctx context.Context, usernames []string) (map[string]uint, error)
-	// UserProfile 读取用户 id/username/avatar（读侧投影，供通知渲染使用）。
-	UserProfile(ctx context.Context, userID uint) (ActionUser, bool)
+}
+
+// NotifySourceQuery 通知渲染所需的读侧投影端口。
+//
+// 按 decisions.md D-011：这些只读投影（users / videos 列）允许在 persistence/video 直读，
+// 不必经跨上下文端口；写入通知行仍走 VideoNotifier。
+type NotifySourceQuery interface {
+	// ActionUser 读取用户 id/username/avatar；不存在时返回 (零值, false)。
+	ActionUser(ctx context.Context, userID uint) (ActionUser, bool)
+	// VideoAuthorAndTitle 读取视频标题与作者用户 ID；任一缺失时返回 ok=false。
+	VideoAuthorAndTitle(ctx context.Context, videoID uint) (authorID uint, videoTitle string, ok bool)
+	// UserIDsByUsernames 按用户名批量解析用户 ID。
+	UserIDsByUsernames(ctx context.Context, usernames []string) (map[string]uint, error)
 }
 
 // ============================================================================
@@ -204,6 +213,15 @@ type DanmuRecentCache interface {
 	Push(ctx context.Context, dto *DanmuDTO)
 	// Invalidate 删除某房间的最近弹幕缓存。
 	Invalidate(ctx context.Context, videoID, partID uint)
+}
+
+// DanmuBroadcaster 弹幕广播端口。
+//
+// 实现是 internal/interfaces/ws/danmu 的 *Hub：它既向本实例的 WebSocket 房间推送，
+// 也经 Redis Pub/Sub 广播到其它实例。bootstrap 在构造 Hub 后调用
+// DanmuService.SetBroadcaster 回填，以打断「Hub → Service → Hub」的构造环。
+type DanmuBroadcaster interface {
+	BroadcastDanmu(ctx context.Context, dto *DanmuDTO)
 }
 
 // ScheduleStore 定时发布任务的 Redis ZSet 端口。
@@ -408,9 +426,9 @@ type CreatorAnalytics interface {
 // 绑定目标：notification 上下文的 *notification.Service（需补两个方法或加薄适配器）。
 // 与原实现一致：写入通知行后失效对应接收者的角标缓存；失败仅记录日志。
 type VideoNotifier interface {
-	// NotifyVideoLike 视频被点赞通知。
-	NotifyVideoLike(ctx context.Context, receiverID uint, actionUser ActionUser, videoID uint, videoTitle string)
-	// NotifySystemBatch 批量系统通知（举报处理结果）。
+	// NotifyVideoLike 视频被点赞通知（类型固定为 enum.NotificationVideoLikeType）。
+	NotifyVideoLike(ctx context.Context, notice VideoNotice)
+	// NotifySystemBatch 批量系统通知（类型固定为 enum.NotificationSystemType，举报处理结果）。
 	NotifySystemBatch(ctx context.Context, notices []SystemNotice)
 }
 
@@ -419,6 +437,18 @@ type ActionUser struct {
 	ID       uint
 	Username string
 	Avatar   string
+}
+
+// VideoNotice 一条视频相关通知（点赞）。
+type VideoNotice struct {
+	ReceiverID       uint
+	ActionUserID     uint
+	ActionUserName   string
+	ActionUserAvatar string
+	Title            string
+	Content          string
+	VideoID          uint
+	VideoTitle       string
 }
 
 // SystemNotice 一条系统通知。

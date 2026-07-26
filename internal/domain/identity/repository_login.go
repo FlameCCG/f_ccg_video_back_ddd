@@ -23,17 +23,19 @@ func (c ProfileChanges) IsEmpty() bool {
 		c.Birthday == nil
 }
 
-// UserWriteRepository 用户聚合的注册/凭据/资料写侧仓储。
+// UserAccountRepository 用户账号仓储：注册、账号查找、凭据与资料写入。
 //
 // 与 UserRepository 同由 infrastructure/persistence/identity.UserRepository 实现；
 // 拆成两个接口是为了让只读状态的调用方（中间件、封禁流程）不被迫依赖写能力。
-type UserWriteRepository interface {
+type UserAccountRepository interface {
 	// WithDefaultBanner 在 context 上附加「注册默认横幅 ID」，供用户创建钩子读取。
 	//
 	// 所有创建用户的路径（邮箱注册、5 家 OAuth 首次登录）都必须使用包装后的 ctx，
 	// 否则新用户的 UserConf 会拿到兜底横幅而不是站点配置值（见 report.md FIND-002）。
 	WithDefaultBanner(ctx context.Context) context.Context
 
+	// FindByID 按主键读取用户；不存在时返回 (nil, nil)。
+	FindByID(ctx context.Context, userID uint) (*User, error)
 	// ExistsByUsernameOrEmail 判断用户名或邮箱是否已被占用。
 	ExistsByUsernameOrEmail(ctx context.Context, username, email string) (bool, error)
 	// FindByUsernameOrEmail 按「用户名或邮箱」登录标识读取用户；不存在时返回 (nil, nil)。

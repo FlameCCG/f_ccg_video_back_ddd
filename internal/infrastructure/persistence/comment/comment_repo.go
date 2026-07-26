@@ -26,29 +26,29 @@ func NewRepository(db *gorm.DB) *Repository {
 
 // FindByID 读取完整评论；不存在时返回 (nil, nil)。
 func (r *Repository) FindByID(ctx context.Context, commentID uint) (*domain.Comment, error) {
-	return r.findOne(ctx, commentID)
+	return r.findOne(ctx, commentID, nil)
 }
 
 // FindPinTarget 只读 id/video_id/dynamic_id/root_id，供置顶鉴权使用。
 func (r *Repository) FindPinTarget(ctx context.Context, commentID uint) (*domain.Comment, error) {
-	return r.findOne(ctx, commentID, "id", "video_id", "dynamic_id", "root_id")
+	return r.findOne(ctx, commentID, []string{"id", "video_id", "dynamic_id", "root_id"})
 }
 
 // FindLikeTarget 只读 id/video_id/like_count，供点赞前置校验使用。
 func (r *Repository) FindLikeTarget(ctx context.Context, commentID uint) (*domain.Comment, error) {
-	return r.findOne(ctx, commentID, "id", "video_id", "like_count")
+	return r.findOne(ctx, commentID, []string{"id", "video_id", "like_count"})
 }
 
 // FindNoticeSource 只读 id/user_id/video_id/dynamic_id/content，供点赞通知渲染使用。
 func (r *Repository) FindNoticeSource(ctx context.Context, commentID uint) (*domain.Comment, error) {
-	return r.findOne(ctx, commentID, "id", "user_id", "video_id", "dynamic_id", "content")
+	return r.findOne(ctx, commentID, []string{"id", "user_id", "video_id", "dynamic_id", "content"})
 }
 
 // findOne 按主键读取单条评论；columns 为空表示读取全部列。
-func (r *Repository) findOne(ctx context.Context, commentID uint, columns ...string) (*domain.Comment, error) {
+func (r *Repository) findOne(ctx context.Context, commentID uint, columns []string) (*domain.Comment, error) {
 	query := gormx.DB(ctx, r.db)
 	if len(columns) > 0 {
-		query = query.Select(columns[0], toAnySlice(columns[1:])...)
+		query = query.Select(columns)
 	}
 
 	var row po.Comment
@@ -316,18 +316,4 @@ func (r *LikeRepository) LikedCommentIDs(
 	}
 
 	return likedMap, nil
-}
-
-// toAnySlice 把列名切片转为 GORM Select 的可变参数形式。
-func toAnySlice(columns []string) []any {
-	if len(columns) == 0 {
-		return nil
-	}
-
-	args := make([]any, 0, len(columns))
-	for _, c := range columns {
-		args = append(args, c)
-	}
-
-	return args
 }

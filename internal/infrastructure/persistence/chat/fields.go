@@ -33,12 +33,11 @@ const (
 
 // 索引名（Mongo 查询 hint 依赖这些名字，属于存储契约）。
 const (
-	indexConversationIDDesc          = "conversationId_id_desc"
-	indexConversationSenderReceiver  = "conversationId_sender_receiver_createdAt_desc"
-	indexReceiverIDDesc              = "receiverId_id_desc"
-	indexParticipantsUpdatedAtDesc   = "participants_updatedAt_desc"
-	suffixVisible                    = ".visible"
-	suffixUnread                     = ".unread"
-	suffixUserID                     = ".userId"
-	suffixLastReadAt                 = ".lastReadAt"
+	indexConversationIDDesc         = "conversationId_id_desc"
+	indexConversationSenderReceiver = "conversationId_sender_receiver_createdAt_desc"
+	indexReceiverIDDesc             = "receiverId_id_desc"
+	indexParticipantsUpdatedAtDesc  = "participants_updatedAt_desc"
+	suffixVisible                   = ".visible"
+	suffixUnread                    = ".unread"
+	suffixLastReadAt                = ".lastReadAt"
 )
