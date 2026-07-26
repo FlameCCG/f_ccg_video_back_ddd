@@ -11,6 +11,10 @@ import (
 //
 // 覆盖判定必须与 Casbin 模型的 globMatch 语义一致，因此这里注入基础设施的真实实现，
 // 而不是自制 stub——否则测试通过而线上鉴权结论不同。
+//
+// 正因为要注入真实的 casbin 匹配器，本用例属于「领域规则 + 基础设施适配器」的集成测试，
+// 故放在 infrastructure 层：这样 internal/domain 目录保持对 infrastructure 的零引用
+// （见 docs/decisions.md D-017）。
 func newEvaluator() *domain.PermissionEvaluator {
 	return domain.NewPermissionEvaluator(infra.NewGlobPathMatcher())
 }
