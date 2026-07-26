@@ -1,0 +1,22 @@
+package po
+
+// Danmu 类型.
+type Danmu struct {
+	Model
+	UserID      uint   `gorm:"not null;comment:用户ID" json:"userId"`
+	VideoID     uint   `gorm:"not null;index:idx_video_time;index:idx_video_part_time,priority:1;comment:视频ID" json:"videoId"`
+	VideoPartID uint   `gorm:"not null;default:0;index:idx_video_part_time,priority:2;comment:分P ID" json:"videoPartId"`
+	Content     string `gorm:"not null;type:text;comment:弹幕内容" json:"content"`
+	TimeOffset  int    `gorm:"not null;default:0;index:idx_video_time;index:idx_video_part_time,priority:3;comment:弹幕时间偏移(秒)" json:"timeOffset"`
+	Color       string `gorm:"default:#FFFFFF;size:20;comment:弹幕颜色" json:"color"`
+	FontSize    int8   `gorm:"default:25;comment:字体大小" json:"fontSize"`
+	Position    int8   `gorm:"default:0;comment:位置: 0-滚动 1-顶部 2-底部" json:"position"`
+	LikeCount   int64  `gorm:"default:0;comment:点赞数" json:"likeCount"`
+	Video       Video  `gorm:"foreignKey:VideoID" json:"video,omitempty"`
+	User        User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
+}
+
+// TableName 方法.
+func (Danmu) TableName() string {
+	return "danmu"
+}
