@@ -1,0 +1,189 @@
+services:
+  mysql:
+    image: mysql:8.0 # 使用官方 MySQL 8.0 镜像
+    container_name: mysql
+    environment:
+      TZ: Asia/Shanghai # 时区
+      MYSQL_ROOT_PASSWORD: 123456 # root 密码（生产勿用弱口令）
+      MYSQL_DATABASE: f_ccg_video # 初始化创建数据库
+    restart: on-failure # 失败自动重启
+    volumes:
+      - ./components/mysql/my.cnf:/etc/mysql/my.cnf # 自定义 my.cnf 挂载
+      - ./components/mysql/data:/var/lib/mysql
+    ports:
+      - "3307:3306" # 暴露 MySQL 端口
+    command: # 自定义启动参数
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+      --explicit_defaults_for_timestamp=true
+      --lower_case_table_names=1
+    networks:
+      - f_video_network
+  redis:
+    image: redis:7.0
+    container_name: redis
+    restart: unless-stopped # 除非手动停止，否则自动重启
+    command: # 以数组形式传参更直观
+      [
+        "redis-server",
+        "--bind",
+        "0.0.0.0", # 允许容器内网络访问
+        "--appendonly",
+        "yes", # 开启 AOF 持久化（默认写 /data/appendonly.aof）
+        "--requirepass",
+        "123456", # 访问密码（生产勿用弱口令）
+      ]
+    ports:
+      - "6380:6379"
+    # AOF/RDB 默认目录为 /data；挂宿主机目录避免容器重建丢数据。
+    # 备份建议：定期拷贝 ./components/redis/data（或 redis-cli BGSAVE + 复制 dump/AOF），勿直接热拷非原子文件。
+    volumes:
+      - ./components/redis/data:/data
+    networks:
+      - f_video_network
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    restart: unless-stopped
+    container_name: elasticsearch
+    environment:
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g # JVM 堆大小
+      - discovery.type=single-node # 单节点集群
+      - xpack.security.enabled=false # 关闭 X-Pack 安全插件
+    ports:
+      - "9200:9200"
+    volumes:
+      - ./components/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - ./components/elasticsearch/data:/usr/share/elasticsearch/data
+      - ./components/elasticsearch/plugins:/usr/share/elasticsearch/plugins
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - f_video_network
+  # logstash:
+  #   image: docker.elastic.co/logstash/logstash:8.12.2
+  #   restart: on-failure # 当前 pipeline 使用 stdin 占位，正常退出时不应被无限拉起
+  #   container_name: logstash
+  #   depends_on: [kafka, elasticsearch]
+  #   environment:
+  #     - LS_JAVA_OPTS=-Xms512m -Xmx512m
+  #   ports:
+  #     - "5044:5044"
+  #     - "9600:9600"
+  #   volumes:
+  #     - ./components/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+  #     - ./components/logstash/pipeline:/usr/share/logstash/pipeline:ro
+  #   networks:
+  #     - f_video_network
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    restart: unless-stopped
+    container_name: kibana
+    depends_on: [elasticsearch]
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    volumes:
+      - ./components/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    networks:
+      - f_video_network
+  kafka: # Kafka 服务定义（服务名为 kafka）
+    image: apache/kafka:3.9.0 # 使用的镜像：Apache 官方 Kafka 3.9.0
+    restart: unless-stopped # 容器异常退出会自动重启，除非手动停止
+    container_name: kafka # 容器名称固定为 kafka
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment: # 环境变量配置
+      - KAFKA_PROCESS_ROLES=broker,controller # 同一进程同时作为 broker 和 controller（KRaft 模式）
+      - KAFKA_NODE_ID=1 # 当前 Kafka 节点 ID（单节点集群就是 1）
+      - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094 # 监听的地址与端口：对内、控制器、对外
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT # 为每个 listener 指定安全协议（这里都为 PLAINTEXT）
+      - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER # 指定 controller 使用的 listener 名称（上面配置里的 CONTROLLER）
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093 # controller 选举集（单节点：节点 1 在 kafka:9093 上）
+      # 对内（容器网）宣告 kafka:9092；对外（宿主机）宣告 host.docker.internal:9094
+      # 如果在 Linux 下 host.docker.internal 不可用，替换为宿主机实际 IP
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT # broker 之间通信使用的 listener 名称（上面 LISTENERS 中的 PLAINTEXT）
+      - KAFKA_LOG_DIRS=/var/lib/kafka/data # Kafka 数据日志目录（保存 topic 分区数据等）
+      - KAFKA_NUM_PARTITIONS=1 # 默认分区数（未指定时使用；开发环境设为 1 即可）
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 # __consumer_offsets 主题的副本因子（单节点只能为 1）
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 # 事务状态日志主题副本因子（单节点只能为 1）
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 # 事务状态日志主题最小 ISR 副本数（单节点为 1）
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=true # 启用自动创建 topic（开发调试方便，生产建议关闭）
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 # 消费组初始重平衡延迟设置为 0（快点开始消费）
+      - KAFKA_HEAP_OPTS=-Xms512m -Xmx512m # Kafka JVM 堆大小设置：最小 512MB，最大 512MB
+    ports:
+      - "9092:9092" # 容器网访问（一般容器间）
+      - "9094:9094" # 宿主机访问 Kafka
+    volumes:
+      - ./components/kafka/data:/var/lib/kafka/data # 数据持久化
+    networks:
+      - f_video_network
+  # Kafka UI（Web 可视化管理） ===
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on: [kafka] # UI 需等 Kafka 可用
+    restart: unless-stopped
+    environment:
+      # 声明一个名为 "local-cluster" 的集群，使用容器网络内的地址
+      KAFKA_CLUSTERS_0_NAME: local-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      # 如需连接多集群，可按 1、2… 继续追加 KAFKA_CLUSTERS_1_... 等变量
+      # —— 可选项（按需解注）——
+      # 页面只读（防止误删 topic 等）：true/false
+      # KAFKA_CLUSTERS_0_READONLY: "false"
+
+      # 认证（简单的基本认证；生产再考虑更严格方案）
+      # AUTH_TYPE: "LOGIN_FORM"
+      # SPRING_SECURITY_USER_NAME: "admin"
+      # SPRING_SECURITY_USER_PASSWORD: "change_me"
+      # 如果你的 Kafka EXTERNAL 监听不是默认的，且想让 UI 也能从宿主机连外部端口，可加：
+      # KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"
+    ports:
+      - "8888:8080"
+    networks:
+      - f_video_network
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    environment:
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    ports:
+      - "9002:9000" # API端口
+      - "9003:9001" # Web管理界面端口
+    command: server --address ":9000" --console-address ":9001" /data
+    volumes:
+      - ./components/minio/data:/data
+    networks:
+      - f_video_network
+    restart: unless-stopped
+  mongodb:
+    image: mongo:8.0
+    container_name: mongodb
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=123456
+      - MONGO_INITDB_DATABASE=f_ccg_video
+      - TZ=Asia/Shanghai
+    ports:
+      - "27017:27017" # MongoDB 默认端口
+    volumes:
+      - ./components/mongodb/data:/data/db # 数据持久化
+      - ./components/mongodb/config:/data/configdb # 配置持久化
+      - ./components/mongodb/logs:/var/log/mongodb # 日志持久化
+    command: # 自定义启动参数
+      [
+        "mongod",
+        "--auth", # 启用认证
+        "--bind_ip_all", # 允许所有 IP 访问
+      ]
+    networks:
+      - f_video_network
+networks:
+  f_video_network:
+    driver: bridge

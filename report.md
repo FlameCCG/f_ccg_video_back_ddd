@@ -1,0 +1,107 @@
+# 迁移问题台账
+
+本文件记录 DDD 重构过程中在原项目 `f_ccg_video_back` 发现的每一个 bug、设计不合理、
+安全隐患、性能问题与隐性不一致，以及新仓库的处理方式。
+
+条目格式见 [docs/refactor-spec.md](./docs/refactor-spec.md) 第 4 节。
+修复原则：默认保持外部行为 1:1；只有当行为本身就是缺陷时才改变行为，并以 **【行为变更】** 醒目标注。
+
+## 基线（开工前在原项目实测）
+
+- 环境：Windows 10、Go 1.26.4（`go.mod` 声明 `go 1.24.9`）、工作区干净（`git status --porcelain` 为空）。
+- `go build ./...`：通过，零错误。
+- `go test ./...`：除下列一项外全部通过。
+
+| 包 | 用例 | 结果 | 归属 |
+|---|---|---|---|
+| `service/video_service` | `TestTripleAtomicSuccess` | FAIL：`triple: SQL logic error: no such column: open_id (1)` | **原项目既有失败**，不计入新项目账（见 FIND-001） |
+
+其余包结果：`api/captcha_api`、`api/rbac_api`、`api/site_api`、`api/user_api`、`api/video_api`、
+`conf`、`core`、`flags`、`global`、`pkg/ctxutil`、`pkg/jwt`、`pkg/middlewares`、`router`、
+`service/chat_service`、`service/cron_service`、`service/email_service`、`service/login_service`、
+`service/login_service/x_service`、`service/mq_service`、`service/river_service`、
+`service/river_service/rule`、`service/search_service`、`service/storage_service`、
+`service/transcode_cancel_service`、`service/user_service` 全部 ok；其余包无测试文件。
+
+---
+
+## FIND-001 | 类别: bug
+
+- 原位置: `service/video_service/triple_service_test.go:191` `TestTripleAtomicSuccess`
+  （被测代码 `service/user_service/coin_service.go:104` `CoinService.ApplyChangeTx`）
+- 问题: 用例在 SQLite 上执行三连（点赞+投币+收藏）事务时报
+  `SQL logic error: no such column: open_id`。测试建表的 `users` 表按被测字段裁剪、不含 `open_id`，
+  而硬币扣减语句 `Update("coin_count", …)` 竟然会连带写 `open_id` 列——
+  这不是测试装置问题，而是 FIND-005 描述的生产缺陷在测试里露头。
+- 触发场景/影响: 开工前在原项目执行 `go test ./service/video_service/` 即稳定复现，
+  是唯一的基线失败项。它实际上是一个未被识别的生产 bug 信号。
+- 新代码处理: 不动测试装置；由 FIND-005 修正
+  `internal/infrastructure/persistence/po/user.go` 的 `normalizeOpenIDColumn` 后，
+  硬币更新不再触碰 `open_id`，用例自然转绿，并作为 FIND-005 的回归守卫保留。
+- 改变外部可观测行为: 否（本条为测试结论；行为变更见 FIND-005）。
+
+## FIND-002 | 类别: 设计
+
+- 原位置: `models/mysqlEntity/user_banner_default.go:1` `DefaultUserBannerID` /
+  `DefaultUserBannerIDs` / `SystemDefaultUserBannerIDs`，被 `models/mysqlEntity/user.go:78`
+  `User.AfterCreate` 调用
+- 问题: 持久化实体包反向依赖全局配置（`global.Config()`），使数据模型层与配置装载耦合，
+  单测必须先摆全局状态才能创建用户；也让「默认横幅 ID」这一业务策略藏在 GORM 钩子里不可见。
+- 触发场景/影响: 任何直接构造 `mysqlEntity.User` 并落库的路径（含 CLI `-su`、测试）
+  都隐式依赖全局配置是否已装载；未装载时静默回落常量 19。
+- 新代码处理: `internal/infrastructure/persistence/po/user_banner_default.go` 改为
+  `WithDefaultUserBannerID(ctx, id)` / `DefaultUserBannerIDFromContext(ctx)`，
+  由仓储层从注入的 `*config.Provider` 解析后写入 context；PO 不再 import 配置。
+  回落值仍为 19，与原实现一致。
+- 改变外部可观测行为: 否。
+
+## FIND-003 | 类别: 设计
+
+- 原位置: `core/init_zap.go:161` `GinLogger`、`core/init_zap.go:195` `GinRecovery`
+- 问题: 两个 gin 中间件定义完整但从未挂载——`router.buildEngine` 使用 `gin.Default()`
+  （即 gin 自带 Logger/Recovery），自定义的 zap 版本是死代码；
+  这导致「请求日志走 zap 落盘」的设计意图实际未生效。
+- 触发场景/影响: 运行期请求日志只输出到 gin 默认 writer，不进入 zap 的分级日志文件；
+  panic 由 gin 自带 Recovery 处理，不产生结构化 zap 记录。
+- 新代码处理: 完整迁移到 `internal/interfaces/http/middlewares/zap_gin.go`（日志器改显式注入），
+  **同样不挂载**，以保持引擎中间件链与原项目 1:1。是否启用留给后续产品决策。
+- 改变外部可观测行为: 否。
+
+## FIND-004 | 类别: 设计
+
+- 原位置: `pkg/ctxutil/detached.go:8` `processDetachedTasks`（包级单例）
+- 问题: 进程级 detached 任务组以包级可变单例实现，无法在测试中隔离；
+  且 `StopDetachedTasks` 一旦调用即进程内不可恢复，任何跑过一次优雅退出的测试会污染同包后续用例。
+- 触发场景/影响: 同包内先执行停止用例再执行提交任务的用例时，后者的任务会被静默拒绝。
+- 新代码处理: `pkg/ctxutil/detached.go` 导出 `DetachedTaskGroup` 类型与 `NewDetachedTaskGroup()`，
+  由 bootstrap 注入唯一实例；测试可各自构造独立实例。
+- 改变外部可观测行为: 否。
+
+## FIND-005 | 类别: bug（数据损坏）| **【行为变更】**
+
+- 原位置: `models/mysqlEntity/user.go:60` `(*User).normalizeOpenIDColumn`
+  （经 `BeforeSave` 触发；典型调用方 `service/user_service/coin_service.go:104`）
+- 问题: `normalizeOpenIDColumn` 在 `BeforeSave` 中**无条件**执行
+  `tx.Statement.SetColumn("open_id", nil)`。GORM 的 `SetColumn` 在 `Statement.Dest`
+  为 `map[string]interface{}` 时是直接写入该 map，而 `db.Update("col", v)` /
+  `db.Updates(map{...})` 的 `Dest` 正是这种 map。
+  于是任何与 `open_id` 毫不相关的部分更新，都会被追加一列 `open_id = NULL`。
+  钩子接收者是 `Model(&User{})` 传入的零值结构体，`u.OpenID` 恒为 `""`，
+  因此提前 return 的守卫永远不生效。
+- 触发场景/影响: 具体链路——用户任意一次硬币变动
+  （`CoinService.ApplyChangeTx` → `tx.Model(&mysqlEntity.User{}).Where("id = ?", userID).Update("coin_count", afterCoins)`）
+  生成的 SQL 变为 `UPDATE users SET coin_count=?, open_id=NULL WHERE id=?`。
+  硬币变动发生在每日登录奖励、收藏奖励、投币/三连消费等高频路径上。
+  后果：**OAuth 用户（QQ/Google/GitHub/LinuxDo/X）的 `open_id` 在首次硬币变动后被静默清空**，
+  之后按 `open_id` 查找账号失效，第三方登录会走到「新用户」分支并可能创建重复账号，
+  原账号（含等级、经验、硬币、投稿）与第三方身份脱钩。
+  该缺陷在原项目中已经以 `TestTripleAtomicSuccess` 失败的形式暴露，但被当作测试问题。
+- 新代码处理: `internal/infrastructure/persistence/po/user.go:58`
+  `normalizeOpenIDColumn` 增加目标类型判定：
+  - `Dest` 为 map 时，仅当 map 中**确实存在** `open_id` 键且其值为空串时，才改写为 `nil`；
+    map 中没有该键则完全不介入（部分更新不再污染无关列）；
+  - `Dest` 为结构体（`Create` / `Save` 全量写入）时保持原逻辑：
+    空 `OpenID` 规范为 SQL `NULL`，以维持 `uk_users_open_id_source` 的「多行无 open_id」语义。
+- 改变外部可观测行为: **是**。部分更新语句不再包含 `open_id = NULL`；
+  OAuth 绑定不再被硬币变动清空。这是修正数据损坏，原行为本身即缺陷，
+  符合规范第 4 节「仅行为本身是缺陷时才可改变行为」。

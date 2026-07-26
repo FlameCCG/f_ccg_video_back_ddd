@@ -1,0 +1,395 @@
+# =============================================================================
+# f_ccg_video 配置示例（字段统一 camelCase，与 conf 结构体 mapstructure/json 标签一致）
+# 复制为 config_dev.yaml / config.yaml 后按环境填写敏感信息
+# =============================================================================
+
+# 邮件服务（验证码 / 通知）
+email:
+  # SMTP 授权码（邮箱服务商生成，非登录密码）
+  authCode: ""
+  # SMTP 服务器域名
+  domain: smtp.qq.com
+  # 验证码等邮件内容有效期（分钟，解析为 time.Duration）
+  isExpire: 10
+  # SMTP 端口（常见 465/587）
+  port: 587
+  # 发件人邮箱地址
+  sendEmail: ""
+  # 发件人显示昵称
+  sendNickName: ""
+  # 是否启用 SSL
+  ssl: true
+  # 是否启用 TLS（STARTTLS）
+  tls: true
+
+# Elasticsearch 搜索引擎
+es:
+  # ES 主机地址
+  host: localhost
+  # 是否使用 HTTPS
+  https: false
+  # HTTPS 时是否跳过证书校验（仅开发环境）
+  insecureSkipVerify: false
+  # ES 密码
+  password: ""
+  # ES 端口
+  port: 9200
+  # ES 用户名
+  username: ""
+
+# JWT 鉴权
+jwt:
+  # Access Token 有效期（天）
+  accessExp: 7
+  # Access Token 签名密钥（必填，长度 ≥ 32，禁止空串；启动期 fail-fast）
+  accessSecret: "replace-with-a-long-random-access-secret"
+  # Refresh Token 有效期（天）
+  refreshExp: 30
+  # Refresh Token 签名密钥（必填，长度 ≥ 32，禁止空串；启动期 fail-fast）
+  refreshSecret: "replace-with-a-long-random-refresh-secret"
+
+# Kafka 消息队列（转码任务等）
+kafka:
+  # Broker 地址列表
+  brokers:
+    - localhost:9094
+  # 客户端 ID
+  clientID: f-ccg-video-server
+  # 是否启用 Kafka
+  enable: true
+  # 消费组 ID
+  groupID: f-ccg-video-transcode-group
+  # 业务 topic 映射
+  topics:
+    # 转码任务 topic
+    transcode: video_transcode_tasks
+    # 转码死信队列 topic
+    transcode_dlq: video_transcode_tasks.dlq
+  # Kafka 协议版本
+  version: 3.9.0
+  # rebalance 等待 claim 释放的最长时间(秒)；长任务建议 >= 最大单任务耗时
+  # rebalanceTimeoutSec: 3600
+
+# 日志
+logger:
+  # Debug 日志文件路径
+  debugFileName: ./runtime/debug/f_ccg_video-debug.log
+  # 是否开发模式（更详细的日志格式）
+  development: true
+  # 是否同时输出到控制台
+  enableConsole: true
+  # Error 日志文件路径
+  errorFileName: ./runtime/error/f_ccg_video-error.log
+  # Info 日志文件路径
+  infoFileName: ./runtime/info/f_ccg_video-info.log
+  # 单文件最大保留天数
+  maxAge: 28
+  # 历史日志文件最大备份数
+  maxBackups: 3
+  # 单文件最大体积（MB）
+  maxSize: 500
+  # Warn 日志文件路径
+  warnFileName: ./runtime/warn/f_ccg_video-warn.log
+
+# MongoDB（弹幕等文档数据）
+mongo:
+  # 认证库名
+  authSource: admin
+  # 业务数据库名
+  db: f_ccg_video
+  # 主机地址
+  host: localhost
+  # 连接池上限
+  maxPool: 50
+  # 密码
+  password: ""
+  # 端口
+  port: 27017
+  # 连接超时（秒）
+  timeoutSec: 5
+  # 用户名
+  username: admin
+
+# MySQL 主库
+mysql:
+  # 数据库名
+  db: f_ccg_video
+  # 主机地址
+  host: localhost
+  # 密码
+  password: ""
+  # 端口
+  port: 3307
+  # 用户名
+  username: root
+
+# Redis 缓存
+redis:
+  # 逻辑库编号
+  db: 0
+  # 主机地址
+  host: localhost
+  # 密码
+  password: ""
+  # 连接池大小
+  poolSize: 10
+  # 端口
+  port: 6380
+
+# go-mysql-elasticsearch (River) 增量同步
+river:
+  # 批量写入 ES 的文档数
+  bulkSize: 128
+  # 本地数据/位点目录
+  dataDir: ./runtime/river
+  # 是否启用 River
+  enable: false
+  # 数据库方言（mysql）
+  flavor: mysql
+  # mysqldump 可执行文件路径（空则依赖 PATH）
+  mysqlDump: ""
+  # 同步规则（示例环境可留空，生产参考 config_dev）
+  rules: []
+  # MySQL binlog server id（集群内需唯一）
+  serverID: 3012
+  # 监听的源表
+  source: []
+
+# HTTP 服务
+server:
+  # 监听地址
+  addr: 0.0.0.0:8080
+  # 运行模式：debug / release / test
+  mode: debug
+  # 服务名称
+  name: f_ccg_video_server
+  # CORS 允许的 Origin 白名单（完整 URL，如 https://www.example.com）。
+  # 配置 "*" 表示放开任意 Origin（不带 credentials）。
+  # debug 且未配置时默认允许 loopback 前端跨端口联调；release 请显式配置。
+  corsOrigins:
+    - http://localhost:5173
+    - http://127.0.0.1:5173
+
+# 站点业务配置
+site:
+  # 登录方式开关与验证码
+  login:
+    # 是否允许 QQ 登录
+    qqLogin: true
+    # 是否允许 X(Twitter) 登录
+    xLogin: true
+    # 是否允许 Google 登录
+    googleLogin: true
+    # 是否允许 GitHub 登录
+    gitHubLogin: true
+    # 是否允许 LinuxDo 登录
+    linuxdoLogin: true
+    # 是否允许用户名密码登录
+    usernamePwdLogin: true
+    # 是否启用图形文字验证码
+    textGraphicCaptcha: true
+    # 是否启用点选文字验证码
+    textClickCaptcha: true
+    # 点选验证码有效期（秒）
+    textClickCaptchaTTL: 300
+    # 点选验证码容错边距（像素）
+    textClickCaptchaPadding: 20
+  # 注册相关
+  register:
+    # 是否要求邮箱验证码
+    emailCaptcha: true
+    # 是否要求图形文字验证码
+    textGraphicCaptcha: true
+    # 是否要求滑动验证码
+    slideCaptcha: true
+    # 滑动验证码有效期（秒）
+    slideCaptchaTTL: 300
+    # 滑动验证码容错边距（像素）
+    slideCaptchaPadding: 10
+  # 对象存储 / 上传
+  storage:
+    # 单分片最大体积（MB）
+    maxChunkSize: 20
+    # 默认分片体积（MB）
+    chunkSize: 10
+    # 单文件最大体积（MB）
+    maxFileSize: 700
+    # 单用户并发上传任务上限
+    maxUploadNum: 10
+    # 分片临时目录
+    chunkDir: ./runtime/chunks
+    # 本地磁盘存储
+    local:
+      # 是否启用本地存储
+      enable: false
+      # 本地存储根路径
+      path: uploads
+    # MinIO / S3 兼容存储
+    minio:
+      # 是否启用 MinIO
+      enable: true
+      # 用户上传对象前缀
+      userUploadPrefix: user_files
+      # 服务 endpoint（host:port）
+      endpoint: localhost:9002
+      # Access Key（docker-compose 默认 minioadmin）
+      accessKey: minioadmin
+      # Secret Key（docker-compose 默认 minioadmin）
+      secretKey: minioadmin
+      # 桶名
+      bucket: videos
+      # 是否使用 HTTPS
+      useSSL: false
+      # 需开放匿名读的对象前缀
+      publicPrefixes:
+        - user_files
+        - covers
+        - images
+  # 内容审核
+  contentReview:
+    # 是否启用内容审核
+    enable: true
+  # 默认用户主页横幅资源 ID
+  defaultUserBannerID: 1
+  # 可选默认横幅资源 ID 列表
+  defaultUserBannerIDs:
+    - 2
+    - 3
+    - 1
+
+# 第三方 OAuth 登录
+thirdLogin:
+  github:
+    # GitHub OAuth Client ID
+    clientID: ""
+    # GitHub OAuth Client Secret
+    clientSecret: ""
+    # 前端回调地址
+    redirect: http://localhost:3000/oauth/github
+  google:
+    # Google OAuth Client ID
+    clientID: ""
+    # Google OAuth Client Secret
+    clientSecret: ""
+    # 前端回调地址
+    redirect: http://localhost:3000/oauth/google
+  linuxdo:
+    # LinuxDo OAuth Client ID
+    clientID: ""
+    # LinuxDo OAuth Client Secret
+    clientSecret: ""
+    # 前端回调地址
+    redirect: http://localhost:3000/oauth/linuxdo
+  qq:
+    # QQ 互联 AppID
+    appID: ""
+    # QQ 互联 AppKey
+    appKey: ""
+    # 回调地址
+    redirect: http://localhost:3000/oauth/qq
+  x:
+    # X(Twitter) OAuth Client ID
+    clientID: ""
+    # X(Twitter) OAuth Client Secret
+    clientSecret: ""
+    # 回调地址
+    redirect: http://127.0.0.1:3000/oauth/x
+
+# 视频转码
+# maxrate 削减比例：值越大封顶越狠，maxrate ≈ 源码率 × (100-ratio)/100（另有分辨率保底）
+transcode:
+  # High 档(QualityModeHigh)：4K 源片规范化 / 高码率 4K 的 DASH 2160 High，轻微封顶，推荐 10~15
+  bitrate2160HighKbpsReduceRatio: 12
+  # High 档：1080 源片规范化 / 4K 管线 1080 High / 1080 高码率源，推荐 12~18
+  bitrate1080HighKbpsReduceRatio: 15
+  # 标准/中码率档：2160P 输出，推荐 20~30
+  bitrate2160KbpsReduceRatio: 25
+  # 标准/中码率档：1080P 输出（含高码率 1080 Medium），推荐 30~45
+  bitrate1080KbpsReduceRatio: 40
+  # 标准档：720P 输出，推荐 50~60
+  bitrate720KbpsReduceRatio: 55
+  # 标准档：360P 输出，推荐 70~80（勿 >=100）
+  bitrate360KbpsReduceRatio: 75
+  # 是否启用 CPU 转码（与 gpuMode 至少一个为 true）
+  cpuMode: true
+  # CPU 编码 preset（越慢压缩越好；勿用 ultrafast/superfast，会削弱 CRF）
+  cpuPreset: medium
+  # 标准档：目标分辨率 <=360 的 CPU CRF（普通/高码率源的 360 输出都用它，推荐 28）
+  crf360: 28
+  # 标准档：目标分辨率 >=720 的 CPU CRF（含普通 720/1080 输出，推荐 24；与是否高码率无关）
+  crf720: 24
+  # High 档：源片规范化 / 1080 High / 4K High 的 CPU CRF（推荐 18）
+  crfHigh: 18
+  # Medium 档：高码率 1080 Medium 的 CPU CRF（推荐 23）
+  crfMedium: 23
+  # 是否产出 MP4 多分辨率资源；与 dashEnable 都为 false 时仍会做源片规范化
+  mp4Enable: true
+  # 是否产出 DASH 自适应流；与 mp4Enable 都为 false 时仍会做源片规范化
+  dashEnable: true
+  # DASH 分片时长（秒）
+  dashSegDuration: 4
+  # 标准档：目标分辨率 <=360 的 GPU CQP（普通/高码率源的 360 输出都用它，推荐 28）
+  gpuCQP360: 28
+  # 标准档：目标分辨率 >=720 的 GPU CQP（含普通 720/1080 输出，推荐 24；与是否高码率无关）
+  gpuCQP720: 24
+  # High 档：源片规范化 / 1080 High / 4K High 的 GPU CQP（推荐 18）
+  gpuCQPHigh: 18
+  # Medium 档：高码率 1080 Medium 的 GPU CQP（推荐 22）
+  gpuCQPMedium: 22
+  # 是否启用 GPU 转码（与 cpuMode 至少一个为 true）
+  gpuMode: true
+  # GPU 编码 preset（p1~p6）
+  gpuPreset: p4
+  # 是否启用硬件缩放
+  hardwareScale: false
+  # 高码率判定阈值（kbps，仅 >=1080P/4K 生效）
+  highBitrateThreshold: 8000
+  # 并发转码 worker 数
+  maxWorkers: 4
+  # 转码线程数
+  threads: 8
+  # 允许产出的分辨率列表（MP4 多分辨率与 DASH 共用）
+  transcodeResolutions:
+    - 360
+    - 720
+    - 1080
+    - 2160
+
+# AI / 向量检索 / 多模态
+ai:
+  # 对话模型名称（默认）
+  chatModel: deepseek-v4-flash
+  # 可选对话模型列表（前台/管理端下拉）
+  chatModels: []
+  # 对话模型 API Key
+  chatModelAPIKey: ""
+  # 对话模型 Base URL
+  chatModelBaseURL: https://api.deepseek.com/anthropic
+  # 是否开启思考模式（开启后前台可选择思考强度）
+  thinkingEnabled: true
+  # 默认思考强度（DeepSeek: high / max；low/medium 会映射为 high）
+  thinkingEffort: high
+  # 可选思考强度列表
+  thinkingEfforts: []
+  # 豆包模型 API Key（图/视频/向量 Embedding，BaseURL 由 Eino Ark SDK 默认）
+  doubaoModelAPIKey: ""
+  # 向量维度
+  embeddingDimensions: 2048
+  # Embedding 模型名
+  embeddingModel: doubao-embedding-vision-251215
+  # 默认图片生成模型
+  imageModel: doubao-seedream-5-0-lite-260128
+  # 可选图片模型列表（管理端下拉）
+  imageModels: []
+  # 系统提示词（站内视频助手）
+  systemPrompt: ""
+  # AI 请求超时（秒）
+  timeoutSec: 90
+  # 视频向量索引名
+  vectorIndex: search_videos_vector
+  # 向量检索 TopK（AI 找视频注入候选也按此上限）
+  vectorTopK: 8
+  # 默认视频生成模型
+  videoModel: doubao-seedance-1-5-pro-251215
+  # 可选视频模型列表
+  videoModels: []
