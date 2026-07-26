@@ -61,6 +61,22 @@ var InterfacesProviderSet = wire.NewSet(
 	router.New,
 )
 
+// DBTasksProviderSet 数据库类运维任务的 provider 集合。
+var DBTasksProviderSet = wire.NewSet(
+	ConfigProviderSet,
+	logger.Provide,
+	mysql.Provide,
+	mysql.ProvideGorm,
+	auth.NewEnforcer,
+	SharedProviderSet,
+	IdentityProviderSet,
+	NotificationProviderSet,
+	ProvisioningProviderSet,
+	cache.Provide,
+	cache.ProvideClient,
+	NewDBTasks,
+)
+
 // AppProviderSet 应用组合根的完整 provider 集合。
 var AppProviderSet = wire.NewSet(
 	ConfigProviderSet,
