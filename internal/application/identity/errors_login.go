@@ -26,6 +26,12 @@ var (
 	// ErrRefreshTokenFailed 刷新令牌签发失败。
 	ErrRefreshTokenFailed = errors.New("刷新令牌失败")
 
+	// ErrOAuthProviderFailed 第三方登录失败（换取用户信息或查找/创建账号失败）。
+	// 接口层据此翻译为「qq登录失败」「github登录失败」等 provider 专属文案。
+	ErrOAuthProviderFailed = errors.New("oauth provider login failed")
+	// ErrOAuthProviderUnsupported 未支持的第三方登录提供商。
+	ErrOAuthProviderUnsupported = errors.New("unsupported oauth provider")
+
 	// ErrChangePasswordFailed 修改密码落库失败。
 	ErrChangePasswordFailed = errors.New("修改失败")
 	// ErrResetPasswordFailed 重置密码失败。
@@ -41,6 +47,8 @@ var (
 	ErrBannerListFailed = errors.New("获取失败")
 	// ErrPersistSiteConfigFailed 站点配置写回文件失败。
 	ErrPersistSiteConfigFailed = errors.New("更新配置文件失败")
+	// ErrSiteConfigNotInitialized 站点配置未初始化。
+	ErrSiteConfigNotInitialized = errors.New("站点配置未初始化")
 	// ErrSetUserBannerFailed 批量迁移用户横幅失败。
 	ErrSetUserBannerFailed = errors.New("设置失败")
 	// ErrStorageConfigInvalid 存储驱动配置错误。

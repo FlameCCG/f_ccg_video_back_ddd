@@ -9,7 +9,7 @@ import (
 // BannerRepository 轮播图聚合的仓储（接口所有权归领域层，实现在 infrastructure）。
 type BannerRepository interface {
 	// ListVisible 按类型与分区读取可展示的轮播图，id 倒序。
-	// 无匹配数据时返回 nil 切片（响应序列化为 null，与原实现一致）。
+	// 无匹配数据时返回空切片（响应序列化为 []，与原实现一致）。
 	ListVisible(ctx context.Context, bannerType enum.BannerType, partitionID *uint) ([]Banner, error)
 	// ListAdmin 后台分页列表，返回当页数据与总数；总数为 0 时返回空切片。
 	ListAdmin(ctx context.Context, query BannerAdminQuery) ([]Banner, int64, error)

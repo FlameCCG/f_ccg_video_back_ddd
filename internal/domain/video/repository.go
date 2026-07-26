@@ -49,12 +49,14 @@ type VideoRepository interface {
 	CountByPartition(ctx context.Context, partitionID uint) (int64, error)
 	// UpdateFields 更新视频的部分字段（列名 → 值）。
 	UpdateFields(ctx context.Context, videoID uint, updates map[string]any) error
-	// ReplaceTags 覆盖视频的标签关联。
-	ReplaceTags(ctx context.Context, videoID uint, tagIDs []uint) error
-	// TagIDsByVideoID 读取视频当前关联的标签 ID。
-	TagIDsByVideoID(ctx context.Context, videoID uint) ([]uint, error)
-	// FindTagsByIDs 按 ID 批量读取标签。
+	// ReplaceTags 覆盖视频的标签关联（tags 为空表示清空关联）。
+	ReplaceTags(ctx context.Context, videoID uint, tags []Tag) error
+	// TagsByVideoID 读取视频当前关联的标签。
+	TagsByVideoID(ctx context.Context, videoID uint) ([]Tag, error)
+	// FindTagsByIDs 按 ID 批量读取标签（无匹配时返回非 nil 空切片，与 GORM Find 语义一致）。
 	FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]Tag, error)
+	// CreateOrGetTag 创建标签（若已存在同名标签则返回现有）。
+	CreateOrGetTag(ctx context.Context, name string) (*Tag, error)
 	// SoftDeleteWithComments 作者软删视频：置为已删除并清理评论与评论点赞，返回删除计数。
 	SoftDeleteWithComments(ctx context.Context, videoID uint) (comments, commentLikes int64, err error)
 	// Persist 在单事务内落库一次投稿（视频 + 标签 + 分P + 初始资源）。

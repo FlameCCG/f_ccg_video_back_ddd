@@ -89,14 +89,14 @@
 
 ## api/notification_api
 
-- [ ] `api/notification_api/admin_list.go` → interfaces/http/handler/notification
-- [ ] `api/notification_api/admin_update.go` → interfaces/http/handler/notification
-- [ ] `api/notification_api/counts.go` → interfaces/http/handler/notification
-- [ ] `api/notification_api/create.go` → interfaces/http/handler/notification
-- [ ] `api/notification_api/delete.go` → interfaces/http/handler/notification
-- [ ] `api/notification_api/enter.go` → interfaces/http/handler/notification
-- [ ] `api/notification_api/list.go` → interfaces/http/handler/notification
-- [ ] `api/notification_api/read.go` → interfaces/http/handler/notification
+- [x] `api/notification_api/admin_list.go` → internal/interfaces/http/handler/notification
+- [x] `api/notification_api/admin_update.go` → internal/interfaces/http/handler/notification
+- [x] `api/notification_api/counts.go` → internal/interfaces/http/handler/notification
+- [x] `api/notification_api/create.go` → internal/interfaces/http/handler/notification
+- [x] `api/notification_api/delete.go` → internal/interfaces/http/handler/notification
+- [x] `api/notification_api/enter.go` → internal/interfaces/http/handler/notification
+- [x] `api/notification_api/list.go` → internal/interfaces/http/handler/notification
+- [x] `api/notification_api/read.go` → internal/interfaces/http/handler/notification
 
 ## api/rbac_api
 
@@ -348,7 +348,7 @@
 
 ## flags
 
-- [ ] `flags/enter.go` → interfaces/cli
+- [x] `flags/enter.go` → internal/interfaces/cli/task.go（分派）+ 各任务实现
 - [ ] `flags/flag_banner.go` → interfaces/cli
 - [x] `flags/flag_db.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
 - [x] `flags/flag_db_exit_test.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
@@ -564,8 +564,8 @@
 - [ ] `router/dynamic_admin_router.go` → interfaces/http/router
 - [ ] `router/dynamic_router.go` → interfaces/http/router
 - [ ] `router/enter.go` → interfaces/http/router
-- [ ] `router/notification_admin_router.go` → interfaces/http/router
-- [ ] `router/notification_router.go` → interfaces/http/router
+- [x] `router/notification_admin_router.go` → internal/interfaces/http/router/notification_router.go
+- [x] `router/notification_router.go` → internal/interfaces/http/router/notification_router.go
 - [ ] `router/rbac_router.go` → interfaces/http/router
 - [ ] `router/site_admin_router.go` → interfaces/http/router
 - [ ] `router/site_router.go` → interfaces/http/router

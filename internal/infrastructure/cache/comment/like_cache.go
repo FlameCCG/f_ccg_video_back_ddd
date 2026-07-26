@@ -333,10 +333,8 @@ func (c *LikeCache) LikedFlags(
 		}
 	}
 
-	if _, err := pipe.Exec(cacheCtx); err != nil && !errors.Is(err, redis.Nil) {
-		// 允许部分 nil
-		_ = err
-	}
+	// 允许部分 key 缺失（Get 带 redis.Nil），逐条读取结果时再判定 miss。
+	_, _ = pipe.Exec(cacheCtx)
 
 	hitIDs := make([]uint, 0, len(commentIDs))
 	missIDs := make([]uint, 0)
