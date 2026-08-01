@@ -4,8 +4,20 @@
 package router
 
 import (
+	aihandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/ai"
+	chathandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/chat"
+	commenthandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/comment"
+	contentopshandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/contentops"
+	dynamichandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/dynamic"
+	identityhandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/identity"
+	notificationhandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/notification"
+	rbachandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/rbac"
+	socialhandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/social"
+	videohandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/video"
+
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/validate"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,11 +33,63 @@ const (
 // 依赖全部由 wire 在 bootstrap 注入；本类型只做路由声明，不含业务逻辑。
 type Router struct {
 	cfgProvider *config.Provider
+	mw          *middlewares.Middlewares
+	validator   *validate.Translator
+
+	identity      *identityhandler.Handler
+	identityAdmin *identityhandler.AdminHandler
+	captcha       *identityhandler.CaptchaHandler
+	contentOps    *contentopshandler.Handler
+	ai            *aihandler.Handler
+	social        *socialhandler.Handler
+	video         *videohandler.Handler
+	videoAdmin    *videohandler.AdminHandler
+	comment       *commenthandler.Handler
+	chat          *chathandler.Handler
+	notification  *notificationhandler.Handler
+	dynamic       *dynamichandler.Handler
+	rbac          *rbachandler.Handler
 }
 
 // New 构造路由装配器。
-func New(cfgProvider *config.Provider) *Router {
-	return &Router{cfgProvider: cfgProvider}
+//
+// 形参顺序对应原 router/enter.go 中 commonGroup / adminGroup 的装配顺序。
+func New(
+	cfgProvider *config.Provider,
+	mw *middlewares.Middlewares,
+	validator *validate.Translator,
+	identity *identityhandler.Handler,
+	identityAdmin *identityhandler.AdminHandler,
+	captcha *identityhandler.CaptchaHandler,
+	contentOps *contentopshandler.Handler,
+	ai *aihandler.Handler,
+	social *socialhandler.Handler,
+	video *videohandler.Handler,
+	videoAdmin *videohandler.AdminHandler,
+	comment *commenthandler.Handler,
+	chat *chathandler.Handler,
+	notification *notificationhandler.Handler,
+	dynamic *dynamichandler.Handler,
+	rbac *rbachandler.Handler,
+) *Router {
+	return &Router{
+		cfgProvider:   cfgProvider,
+		mw:            mw,
+		validator:     validator,
+		identity:      identity,
+		identityAdmin: identityAdmin,
+		captcha:       captcha,
+		contentOps:    contentOps,
+		ai:            ai,
+		social:        social,
+		video:         video,
+		videoAdmin:    videoAdmin,
+		comment:       comment,
+		chat:          chat,
+		notification:  notification,
+		dynamic:       dynamic,
+		rbac:          rbac,
+	}
 }
 
 // BuildEngine 构建并返回配置完毕的 gin 引擎。
@@ -38,6 +102,12 @@ func (r *Router) BuildEngine() *gin.Engine {
 
 	engine := gin.Default()
 	engine.ContextWithFallback = true
+	if r.mw != nil {
+		engine.Use(r.mw.InjectLogger())
+	}
+	if r.validator != nil {
+		engine.Use(r.validator.Middleware())
+	}
 	// 信任代理转发的客户端 IP 头（Nginx / Vite / CDN）
 	// 默认 RemoteIPHeaders 已含 X-Forwarded-For / X-Real-IP，这里补充 CDN 常用头。
 	engine.RemoteIPHeaders = []string{"CF-Connecting-IP", "True-Client-IP", "X-Forwarded-For", "X-Real-IP"}

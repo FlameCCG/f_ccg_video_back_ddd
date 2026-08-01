@@ -19,6 +19,8 @@ import (
 // 注意：与原项目一致，该中间件当前未挂载到引擎上（引擎使用 gin.Default() 自带的
 // Logger/Recovery）。为不丢弃任何原有能力而完整迁移，日志器改为显式传入。
 func GinLogger(lg *zap.Logger) gin.HandlerFunc {
+	lg = loggerOrNop(lg)
+
 	return func(c *gin.Context) {
 		start := time.Now()             // 请求开始时间
 		path := c.Request.URL.Path      // 请求路径
@@ -55,6 +57,8 @@ func GinLogger(lg *zap.Logger) gin.HandlerFunc {
 //
 // 注意：与 GinLogger 相同，原项目未挂载该中间件；此处完整迁移并显式注入日志器。
 func GinRecovery(lg *zap.Logger, stack bool) gin.HandlerFunc {
+	lg = loggerOrNop(lg)
+
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {

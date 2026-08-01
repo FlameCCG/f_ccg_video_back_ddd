@@ -28,7 +28,7 @@ func (m *Middlewares) CasbinAuth() gin.HandlerFunc {
 			obj = realPath
 		}
 		if obj == "" {
-			zap.L().Warn("Casbin 鉴权时路径为空",
+			m.log().Warn("Casbin 鉴权时路径为空",
 				zap.String("uid", uid),
 				zap.String("method", act))
 			res.FailWithMsg("无权限访问", c)
@@ -38,14 +38,14 @@ func (m *Middlewares) CasbinAuth() gin.HandlerFunc {
 
 		ok, err := m.enforcePath(sub, obj, act)
 		if err != nil {
-			zap.L().Error("Casbin 权限验证失败", zap.Error(err))
+			m.log().Error("Casbin 权限验证失败", zap.Error(err))
 			res.FailWithMsg("权限验证失败", c)
 			c.Abort()
 			return
 		}
 
 		if !ok {
-			zap.L().Warn("用户无权限访问",
+			m.log().Warn("用户无权限访问",
 				zap.String("uid", uid),
 				zap.String("path", realPath),
 				zap.String("fullPath", fullPath),

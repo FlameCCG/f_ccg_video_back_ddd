@@ -10,6 +10,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/casbin/casbin/v2"
+	"go.uber.org/zap"
 )
 
 // Middlewares 聚合所有需要依赖注入的 gin 中间件。
@@ -21,6 +22,7 @@ type Middlewares struct {
 	banRecords  *identityapp.BanRecordService
 	captcha     *identityapp.CaptchaService
 	limiter     *ratelimit.Limiter
+	logger      *zap.Logger
 }
 
 // New 构造中间件集合。
@@ -32,6 +34,7 @@ func New(
 	banRecords *identityapp.BanRecordService,
 	captcha *identityapp.CaptchaService,
 	limiter *ratelimit.Limiter,
+	logger *zap.Logger,
 ) *Middlewares {
 	return &Middlewares{
 		cfgProvider: cfgProvider,
@@ -41,5 +44,14 @@ func New(
 		banRecords:  banRecords,
 		captcha:     captcha,
 		limiter:     limiter,
+		logger:      loggerOrNop(logger),
 	}
+}
+
+func (m *Middlewares) log() *zap.Logger {
+	if m == nil {
+		return zap.NewNop()
+	}
+
+	return loggerOrNop(m.logger)
 }

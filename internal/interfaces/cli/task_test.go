@@ -51,15 +51,25 @@ func TestResolveTaskPriority(t *testing.T) {
 func TestInfraScopePerTask(t *testing.T) {
 	t.Parallel()
 
-	dbOnly := []Task{TaskMigrateDB, TaskVideoPartitions, TaskBanner, TaskSuperUser}
+	dbOnly := []Task{TaskMigrateDB, TaskVideoPartitions}
 	for _, task := range dbOnly {
 		if !NeedsDBOnly(task) {
 			t.Fatalf("task %v should only need config+logger+mysql", task)
 		}
 
-		if NeedsES(task) || NeedsFullInfra(task) {
-			t.Fatalf("task %v should not need ES or full infra", task)
+		if NeedsStorage(task) || NeedsCasbin(task) || NeedsES(task) || NeedsFullInfra(task) {
+			t.Fatalf("task %v should not need storage, Casbin, ES or full infra", task)
 		}
+	}
+
+	if !NeedsStorage(TaskBanner) || NeedsDBOnly(TaskBanner) || NeedsCasbin(TaskBanner) ||
+		NeedsES(TaskBanner) || NeedsFullInfra(TaskBanner) {
+		t.Fatal("TaskBanner should need config+logger+mysql+storage only")
+	}
+
+	if !NeedsCasbin(TaskSuperUser) || NeedsDBOnly(TaskSuperUser) || NeedsStorage(TaskSuperUser) ||
+		NeedsES(TaskSuperUser) || NeedsFullInfra(TaskSuperUser) {
+		t.Fatal("TaskSuperUser should need config+logger+mysql+Casbin only")
 	}
 
 	if !NeedsES(TaskESIndex) || NeedsDBOnly(TaskESIndex) || NeedsFullInfra(TaskESIndex) {
@@ -76,7 +86,8 @@ func TestInfraScopePerTask(t *testing.T) {
 		}
 	}
 
-	if NeedsDBOnly(TaskServe) || NeedsES(TaskServe) || NeedsFullInfra(TaskServe) {
+	if NeedsDBOnly(TaskServe) || NeedsStorage(TaskServe) || NeedsCasbin(TaskServe) ||
+		NeedsES(TaskServe) || NeedsFullInfra(TaskServe) {
 		t.Fatal("TaskServe is not a CLI maintenance task")
 	}
 }

@@ -32,6 +32,7 @@ type MinIOStorage struct {
 	chunkPrefix string                     // 分片对象的前缀路径
 	videoPrefix string                     // 合并后视频对象的前缀路径
 	detached    *ctxutil.DetachedTaskGroup // 分片清理等 fire-and-forget 任务
+	logger      *zap.Logger
 }
 
 // 编译期断言：满足领域侧存储驱动端口。
@@ -44,7 +45,12 @@ func NewMinIOStorage(
 	cfg *site.Storage,
 	clients *MinIOClientPool,
 	detached *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) (*MinIOStorage, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if cfg == nil || cfg.MinIO == nil { // 未配置 MinIO 时直接报错
 		return nil, errors.New("未配置 MinIO 存储")
 	}
@@ -54,7 +60,7 @@ func NewMinIOStorage(
 	}
 
 	if clients == nil {
-		clients = NewMinIOClientPool()
+		clients = NewMinIOClientPool(logger)
 	}
 
 	client, err := clients.Client(cfg.MinIO) // 懒加载客户端
@@ -73,6 +79,7 @@ func NewMinIOStorage(
 		chunkPrefix: defaultChunkPrefix,
 		videoPrefix: cfg.MinIO.UserUploadPrefix,
 		detached:    detached,
+		logger:      logger,
 	}, nil
 }
 
@@ -171,7 +178,7 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 		return "", fmt.Errorf("检查最终文件失败: %w", err)
 	} else if exists {
 		m.cleanupChunksAsync(ctx, fileHash)
-		zap.L().Info("complete upload reused existing minio object",
+		m.logger.Info("complete upload reused existing minio object",
 			zap.String("fileHash", fileHash),
 			zap.String("key", finalKey))
 
@@ -182,7 +189,7 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 		return "", err
 	} else if ok {
 		m.cleanupChunksAsync(ctx, fileHash)
-		zap.L().Info("complete upload composed chunks on minio",
+		m.logger.Info("complete upload composed chunks on minio",
 			zap.String("fileHash", fileHash),
 			zap.String("key", finalKey),
 			zap.Int("totalChunks", totalChunks))
@@ -190,7 +197,7 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 		return m.publicURL(finalKey), nil
 	}
 
-	zap.L().Info("complete upload falling back to stream merge",
+	m.logger.Info("complete upload falling back to stream merge",
 		zap.String("fileHash", fileHash),
 		zap.String("key", finalKey),
 		zap.Int("totalChunks", totalChunks))
@@ -348,7 +355,7 @@ func (m *MinIOStorage) SaveTranscodeVideo(
 	}
 
 	// 初始化进度条：专门处理 size = -1 的情况
-	progress := newProgressLogger(size, label)
+	progress := newProgressLogger(size, label, m.logger)
 	defer progress.finish()
 
 	// 使用 TeeReader 包装原始 Reader，在读取数据的同时更新进度
@@ -363,7 +370,7 @@ func (m *MinIOStorage) SaveTranscodeVideo(
 
 	if info.Size <= 0 {
 		if removeErr := m.client.RemoveObject(ctx, m.bucket, key, minio.RemoveObjectOptions{}); removeErr != nil {
-			zap.L().Warn("remove empty transcode object failed", zap.Error(removeErr), zap.String("key", key))
+			m.logger.Warn("remove empty transcode object failed", zap.Error(removeErr), zap.String("key", key))
 		}
 
 		return "", 0, errors.New("转码输出为空，已拒绝提交")
@@ -500,14 +507,14 @@ func (m *MinIOStorage) cleanupChunksAsync(parent context.Context, fileHash strin
 	if !m.detached.Go(parent, ctxutil.AsyncLongTimeout, func(ctx context.Context) {
 		m.cleanupChunks(ctx, fileHash)
 	}) {
-		zap.L().Warn("skip minio chunk cleanup: process is shutting down", zap.String("fileHash", fileHash))
+		m.logger.Warn("skip minio chunk cleanup: process is shutting down", zap.String("fileHash", fileHash))
 	}
 }
 
 // cleanupChunks 删除某个文件 hash 下所有已上传分片。
 func (m *MinIOStorage) cleanupChunks(ctx context.Context, fileHash string) {
 	if err := ValidateUploadID(fileHash); err != nil {
-		zap.L().Warn("skip cleanup chunks with invalid fileHash", zap.Error(err))
+		m.logger.Warn("skip cleanup chunks with invalid fileHash", zap.Error(err))
 
 		return
 	}
@@ -518,13 +525,13 @@ func (m *MinIOStorage) cleanupChunks(ctx context.Context, fileHash string) {
 		Recursive: true,
 	}) {
 		if object.Err != nil { // 如果列举失败，记录日志并结束
-			zap.L().Warn("list chunk objects failed", zap.Error(object.Err))
+			m.logger.Warn("list chunk objects failed", zap.Error(object.Err))
 
 			return
 		}
 
 		if err := m.client.RemoveObject(ctx, m.bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-			zap.L().Warn("remove chunk object failed", zap.Error(err), zap.String("key", object.Key))
+			m.logger.Warn("remove chunk object failed", zap.Error(err), zap.String("key", object.Key))
 		}
 	}
 }

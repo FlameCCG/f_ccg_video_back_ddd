@@ -31,7 +31,7 @@ func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 
 		body, err := c.GetRawData()
 		if err != nil {
-			zap.L().Error("read request body failed", zap.Error(err))
+			m.log().Error("read request body failed", zap.Error(err))
 			res.FailWithMsg("invalid request body", c)
 			c.Abort()
 
@@ -42,7 +42,7 @@ func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 
 		var req slideCaptchaVerifyReq
 		if err = c.ShouldBind(&req); err != nil {
-			zap.L().Error("bind slide captcha payload failed", zap.Error(err))
+			m.log().Error("bind slide captcha payload failed", zap.Error(err))
 			res.FailWithMsg("invalid slide captcha payload", c)
 			c.Abort()
 
@@ -69,7 +69,7 @@ func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 			case errors.Is(verifyErr, captcha.ErrCaptchaExpired):
 				res.FailWithMsg(captcha.ErrCaptchaExpired.Error(), c)
 			default:
-				zap.L().Error("滑块验证码验证失败", zap.Error(verifyErr))
+				m.log().Error("滑块验证码验证失败", zap.Error(verifyErr))
 				res.FailWithMsg("验证码验证失败", c)
 			}
 

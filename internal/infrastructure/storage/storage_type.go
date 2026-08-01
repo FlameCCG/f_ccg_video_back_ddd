@@ -8,6 +8,8 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+
+	"go.uber.org/zap"
 )
 
 // Resolver 依据站点配置解析存储驱动（原 storage_service.ResolveDriver、
@@ -19,6 +21,7 @@ type Resolver struct {
 	cfgProvider *config.Provider
 	clients     *MinIOClientPool
 	detached    *ctxutil.DetachedTaskGroup
+	logger      *zap.Logger
 }
 
 // 编译期断言：满足领域侧存储解析端口。
@@ -29,8 +32,13 @@ func NewResolver(
 	cfgProvider *config.Provider,
 	clients *MinIOClientPool,
 	detached *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *Resolver {
-	return &Resolver{cfgProvider: cfgProvider, clients: clients, detached: detached}
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &Resolver{cfgProvider: cfgProvider, clients: clients, detached: detached, logger: logger}
 }
 
 // storageConfig 读取当前站点存储配置。
@@ -55,11 +63,11 @@ func (r *Resolver) Resolve() (media.StorageDriver, error) {
 	}
 
 	if cfg.Local != nil && cfg.Local.Enable {
-		return NewLocalStorage(cfg), nil
+		return NewLocalStorage(cfg, r.logger), nil
 	}
 
 	if cfg.MinIO != nil && cfg.MinIO.Enable {
-		return NewMinIOStorage(cfg, r.clients, r.detached)
+		return NewMinIOStorage(cfg, r.clients, r.detached, r.logger)
 	}
 
 	return nil, errors.New("未配置可用的存储驱动")
@@ -79,13 +87,13 @@ func (r *Resolver) ResolveByType(storageType enum.VideoStorageType) (media.Stora
 			return nil, errors.New("local storage disabled")
 		}
 
-		return NewLocalStorage(cfg), nil
+		return NewLocalStorage(cfg, r.logger), nil
 	case enum.StorageTypeMinio:
 		if cfg.MinIO == nil || !cfg.MinIO.Enable {
 			return nil, errors.New("minio storage disabled")
 		}
 
-		return NewMinIOStorage(cfg, r.clients, r.detached)
+		return NewMinIOStorage(cfg, r.clients, r.detached, r.logger)
 	default:
 		return r.Resolve()
 	}

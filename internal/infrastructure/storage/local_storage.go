@@ -23,15 +23,20 @@ import (
 
 // LocalStorage 基于本地磁盘的分片上传与合并存储驱动。
 type LocalStorage struct {
-	cfg *site.Storage
+	cfg    *site.Storage
+	logger *zap.Logger
 }
 
 // 编译期断言：满足领域侧存储驱动端口。
 var _ media.StorageDriver = (*LocalStorage)(nil)
 
 // NewLocalStorage 创建本地存储驱动实例。
-func NewLocalStorage(cfg *site.Storage) *LocalStorage {
-	return &LocalStorage{cfg: cfg}
+func NewLocalStorage(cfg *site.Storage, logger *zap.Logger) *LocalStorage {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &LocalStorage{cfg: cfg, logger: logger}
 }
 
 // SaveChunk 把单个分片写入本地分块目录（先写 .uploading 临时文件再原子 rename）。
@@ -82,7 +87,7 @@ func (l *LocalStorage) SaveChunk(
 
 	defer func() {
 		if err := out.Close(); err != nil {
-			zap.L().Warn("close temp chunk file failed", zap.Error(err), zap.String("path", tmpPath))
+			l.logger.Warn("close temp chunk file failed", zap.Error(err), zap.String("path", tmpPath))
 		}
 	}()
 
@@ -215,7 +220,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 	if _, err := os.Stat(finalPath); err == nil {
 		go func() {
 			if err := os.RemoveAll(chunkDir); err != nil {
-				zap.L().Warn("clean chunk dir failed", zap.Error(err), zap.String("dir", chunkDir))
+				l.logger.Warn("clean chunk dir failed", zap.Error(err), zap.String("dir", chunkDir))
 			}
 		}()
 
@@ -229,7 +234,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 
 	defer func() {
 		if err := out.Close(); err != nil {
-			zap.L().Warn("close final file failed", zap.Error(err), zap.String("path", tmpFinalPath))
+			l.logger.Warn("close final file failed", zap.Error(err), zap.String("path", tmpFinalPath))
 		}
 	}()
 
@@ -278,7 +283,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 
 	go func() {
 		if cleanErr := os.RemoveAll(chunkDir); cleanErr != nil {
-			zap.L().Warn("clean chunk dir failed", zap.Error(cleanErr), zap.String("dir", chunkDir))
+			l.logger.Warn("clean chunk dir failed", zap.Error(cleanErr), zap.String("dir", chunkDir))
 		}
 	}()
 
@@ -313,7 +318,7 @@ func (l *LocalStorage) SaveFile(
 
 	defer func() {
 		if closeErr := out.Close(); closeErr != nil {
-			zap.L().Warn("close saved file failed", zap.Error(closeErr), zap.String("path", destPath))
+			l.logger.Warn("close saved file failed", zap.Error(closeErr), zap.String("path", destPath))
 		}
 	}()
 
@@ -367,11 +372,11 @@ func (l *LocalStorage) SaveTranscodeVideo(
 		}
 
 		if cerr := out.Close(); cerr != nil {
-			zap.L().Warn("close transcode file failed", zap.Error(cerr), zap.String("path", destPath))
+			l.logger.Warn("close transcode file failed", zap.Error(cerr), zap.String("path", destPath))
 		}
 	}()
 
-	progress := newProgressLogger(size, label)
+	progress := newProgressLogger(size, label, l.logger)
 	defer progress.finish()
 
 	tee := io.TeeReader(reader, progress)
@@ -390,7 +395,7 @@ func (l *LocalStorage) SaveTranscodeVideo(
 		closed = true
 
 		if removeErr := os.Remove(destPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			zap.L().Warn("remove empty transcode file failed", zap.Error(removeErr), zap.String("path", destPath))
+			l.logger.Warn("remove empty transcode file failed", zap.Error(removeErr), zap.String("path", destPath))
 		}
 
 		return "", 0, errors.New("转码输出为空，已拒绝提交")

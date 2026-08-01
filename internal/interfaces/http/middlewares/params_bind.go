@@ -13,7 +13,7 @@ func JsonBindParams[T any](c *gin.Context) {
 
 	var cr T
 	if err := c.ShouldBindJSON(&cr); err != nil {
-		zap.L().Error("JsonBindParams error", zap.Error(err))
+		loggerFromContext(c).Error("JsonBindParams error", zap.Error(err))
 		res.FailWithError(err, c)
 		c.Abort()
 
@@ -28,7 +28,7 @@ func JsonBindParams[T any](c *gin.Context) {
 func BindParams[T any](c *gin.Context) {
 	var cr T
 	if err := c.ShouldBind(&cr); err != nil {
-		zap.L().Error("BindParams error", zap.Error(err))
+		loggerFromContext(c).Error("BindParams error", zap.Error(err))
 		res.FailWithError(err, c)
 		c.Abort()
 
@@ -43,7 +43,7 @@ func BindParams[T any](c *gin.Context) {
 func BindQueryParams[T any](c *gin.Context) {
 	var cr T
 	if err := c.ShouldBindQuery(&cr); err != nil {
-		zap.L().Error("BindQueryParams error", zap.Error(err))
+		loggerFromContext(c).Error("BindQueryParams error", zap.Error(err))
 		res.FailWithError(err, c)
 		c.Abort()
 

@@ -14,12 +14,18 @@ type progressLogger struct {
 	currentSize int64
 	label       string
 	lastLogTime time.Time
+	logger      *zap.Logger
 }
 
-func newProgressLogger(size int64, label string) *progressLogger {
+func newProgressLogger(size int64, label string, logger *zap.Logger) *progressLogger {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &progressLogger{
 		totalSize: size,
 		label:     label,
+		logger:    logger,
 	}
 }
 
@@ -40,7 +46,7 @@ func (p *progressLogger) Write(b []byte) (int, error) {
 
 func (p *progressLogger) finish() {
 	p.printProgress() // 确保最后 100% 被打印
-	zap.L().Info("transfer finished", zap.String("label", p.label), zap.Int64("total_bytes", p.currentSize))
+	p.logger.Info("transfer finished", zap.String("label", p.label), zap.Int64("total_bytes", p.currentSize))
 }
 
 func (p *progressLogger) printProgress() {
@@ -49,7 +55,7 @@ func (p *progressLogger) printProgress() {
 	// 场景 A: 已知总大小 (本地文件上传) -> 显示百分比
 	if p.totalSize > 0 {
 		percent := float64(p.currentSize) / float64(p.totalSize) * 100
-		zap.L().Debug("upload progress",
+		p.logger.Debug("upload progress",
 			zap.String("label", p.label),
 			zap.String("progress", fmt.Sprintf("%.2f%%", percent)),
 			zap.String("size", fmt.Sprintf("%.2f MB / %.2f MB", currentMB, float64(p.totalSize)/1024/1024)),
@@ -60,7 +66,7 @@ func (p *progressLogger) printProgress() {
 
 	// 场景 B: 未知总大小 (流式转码) -> 只显示已上传大小，
 	// 避免出现 "progress: -50%" 这类由 size=-1 推导出的荒谬百分比。
-	zap.L().Debug("streaming progress",
+	p.logger.Debug("streaming progress",
 		zap.String("label", p.label),
 		zap.String("uploaded", fmt.Sprintf("%.2f MB", currentMB)),
 	)
