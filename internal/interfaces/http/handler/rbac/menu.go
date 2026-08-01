@@ -1,14 +1,17 @@
 package rbac
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
+	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // CreateMenuReq 创建菜单请求。
@@ -40,6 +43,19 @@ type UpdateMenuReq struct {
 	SortOrder *uint   `json:"sortOrder" label:"排序"`
 }
 
+// MoveMenuReq 菜单同层拖拽排序请求。
+type MoveMenuReq struct {
+	ID       uint   `json:"id" binding:"required,gt=0" label:"菜单ID"`
+	TargetID uint   `json:"targetId" binding:"required,gt=0" label:"目标菜单ID"`
+	Position string `json:"position" binding:"required,oneof=before after" label:"放置位置"`
+}
+
+// GenerateMenuReq AI 生成菜单字段请求。
+type GenerateMenuReq struct {
+	Title    string `json:"title" binding:"required" label:"中文标题"`
+	ParentID *uint  `json:"parentId" label:"父菜单ID"`
+}
+
 // AssignMenuReq 分配/移除角色菜单请求。
 type AssignMenuReq struct {
 	RoleID  uint   `json:"roleId" binding:"required" label:"角色ID"`
@@ -60,20 +76,42 @@ func (h *Handler) GetMenuListView(c *gin.Context) {
 // CreateMenuView 创建菜单.
 func (h *Handler) CreateMenuView(c *gin.Context) {
 	req := middlewares.GetBound[CreateMenuReq](c)
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		res.FailWithMsg("菜单标题不能为空", c)
+
+		return
+	}
+
+	creatorID, ok := middlewares.GetUID(c)
+	if !ok {
+		res.FailWithMsg("未获取到创建者信息", c)
+
+		return
+	}
 
 	if err := h.menus.Create(c.Request.Context(), rbacapp.CreateMenuParams{
-		Title:     req.Title,
-		TitleEn:   req.TitleEn,
-		TitleJa:   req.TitleJa,
-		Icon:      req.Icon,
-		Path:      req.Path,
-		Name:      req.Name,
-		Component: req.Component,
+		Title:     title,
+		TitleEn:   strings.TrimSpace(req.TitleEn),
+		TitleJa:   strings.TrimSpace(req.TitleJa),
+		Icon:      strings.TrimSpace(req.Icon),
+		Path:      strings.TrimSpace(req.Path),
+		Name:      strings.TrimSpace(req.Name),
+		Component: strings.TrimSpace(req.Component),
 		KeepAlive: req.KeepAlive,
 		ParentID:  req.ParentID,
 		SortOrder: req.SortOrder,
+		CreatorID: creatorID,
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		h.respondMenuMutationError(
+			c,
+			"create",
+			err,
+			domain.ErrCreateFailed,
+			zap.Uint("creatorId", creatorID),
+			optionalMenuIDField("parentMenuId", req.ParentID),
+		)
+
 		return
 	}
 
@@ -83,25 +121,74 @@ func (h *Handler) CreateMenuView(c *gin.Context) {
 // UpdateMenuView 更新菜单.
 func (h *Handler) UpdateMenuView(c *gin.Context) {
 	req := middlewares.GetBound[UpdateMenuReq](c)
+	if req.Title == nil && req.TitleEn == nil && req.TitleJa == nil && req.Icon == nil &&
+		req.Path == nil && req.Name == nil && req.Component == nil && req.KeepAlive == nil &&
+		req.ParentID == nil && req.SortOrder == nil {
+		res.FailWithMsg("没有需要更新的字段", c)
+
+		return
+	}
 
 	if err := h.menus.Update(c.Request.Context(), rbacapp.UpdateMenuParams{
-		ID:        req.ID,
-		Title:     req.Title,
-		TitleEn:   req.TitleEn,
-		TitleJa:   req.TitleJa,
-		Icon:      req.Icon,
-		Path:      req.Path,
-		Name:      req.Name,
-		Component: req.Component,
-		KeepAlive: req.KeepAlive,
-		ParentID:  req.ParentID,
-		SortOrder: req.SortOrder,
+		ID:             req.ID,
+		Title:          req.Title,
+		TitleEn:        req.TitleEn,
+		TitleJa:        req.TitleJa,
+		Icon:           req.Icon,
+		Path:           req.Path,
+		Name:           req.Name,
+		Component:      req.Component,
+		KeepAlive:      req.KeepAlive,
+		ParentID:       req.ParentID,
+		ParentProvided: req.ParentID != nil,
+		SortOrder:      req.SortOrder,
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		h.respondMenuMutationError(
+			c,
+			"update",
+			err,
+			domain.ErrUpdateFailed,
+			zap.Uint("menuId", req.ID),
+			optionalMenuIDField("parentMenuId", req.ParentID),
+		)
+
 		return
 	}
 
 	res.OkWithMsg("更新成功", c)
+}
+
+// MoveMenuView 处理菜单同层拖拽排序。
+func (h *Handler) MoveMenuView(c *gin.Context) {
+	req := middlewares.GetBound[MoveMenuReq](c)
+	if err := h.menus.Move(c.Request.Context(), req.ID, req.TargetID, req.Position); err != nil {
+		h.respondMenuMutationError(
+			c,
+			"move",
+			err,
+			domain.ErrSortFailed,
+			zap.Uint("menuId", req.ID),
+			zap.Uint("targetMenuId", req.TargetID),
+		)
+
+		return
+	}
+
+	res.OkWithMsg("排序成功", c)
+}
+
+// GenerateMenuView 根据中文标题、父菜单和 menus 表完整数据生成其余字段。
+func (h *Handler) GenerateMenuView(c *gin.Context) {
+	req := middlewares.GetBound[GenerateMenuReq](c)
+
+	suggestion, err := h.menus.Generate(c.Request.Context(), req.Title, req.ParentID)
+	if err != nil {
+		h.respondMenuGenerationError(c, err, req.ParentID)
+
+		return
+	}
+
+	res.OkWithData(suggestion, c)
 }
 
 // DeleteMenuView 删除菜单.
@@ -190,4 +277,80 @@ func (h *Handler) GetUserMenusView(c *gin.Context) {
 	}
 
 	res.OkWithData(menuTree, c)
+}
+
+func (h *Handler) respondMenuMutationError(
+	c *gin.Context,
+	operation string,
+	err error,
+	fallback error,
+	fields ...zap.Field,
+) {
+	for _, businessErr := range []error{
+		domain.ErrNoUpdatableFields,
+		domain.ErrMenuNotFound,
+		domain.ErrMenuExists,
+		domain.ErrMenuTitleEmpty,
+		domain.ErrParentMenuNotFound,
+		domain.ErrMenuParentCycle,
+		domain.ErrMenuCreatorRoleMissing,
+		domain.ErrMenuMoveAcrossLevels,
+		domain.ErrMenuMovePosition,
+	} {
+		if errors.Is(err, businessErr) {
+			res.FailWithMsg(businessErr.Error(), c)
+
+			return
+		}
+	}
+
+	logFields := make([]zap.Field, 0, len(fields)+2)
+	logFields = append(logFields, zap.String("operation", operation))
+	logFields = append(logFields, fields...)
+	logFields = append(logFields, zap.Error(err))
+	h.log().Error("menu mutation failed", logFields...)
+	res.FailWithMsg(fallback.Error(), c)
+}
+
+func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID *uint) {
+	for _, businessErr := range []error{
+		domain.ErrMenuGenerationTitleEmpty,
+		domain.ErrParentMenuNotFound,
+	} {
+		if errors.Is(err, businessErr) {
+			res.FailWithMsg(businessErr.Error(), c)
+
+			return
+		}
+	}
+
+	publicErr := err
+	for _, fallback := range []error{
+		domain.ErrReadParentMenuFailed,
+		domain.ErrReadMenuDataFailed,
+		domain.ErrPrepareMenuDataFailed,
+		domain.ErrMenuGeneratorUnavailable,
+	} {
+		if errors.Is(err, fallback) {
+			publicErr = fallback
+
+			break
+		}
+	}
+
+	fields := []zap.Field{
+		zap.String("operation", "generate"),
+		optionalMenuIDField("parentMenuId", parentID),
+		zap.Error(err),
+	}
+	h.log().Error("menu generation failed", fields...)
+	res.FailWithMsg(publicErr.Error(), c)
+}
+
+func optionalMenuIDField(key string, value *uint) zap.Field {
+	if value == nil {
+		return zap.Skip()
+	}
+
+	return zap.Uint(key, *value)
 }

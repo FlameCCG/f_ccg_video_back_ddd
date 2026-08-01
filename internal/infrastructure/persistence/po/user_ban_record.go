@@ -15,6 +15,7 @@ type UserBanRecord struct {
 	StartAt    time.Time       `gorm:"comment:封禁开始时间" json:"startAt"`
 	EndAt      *time.Time      `gorm:"comment:封禁结束时间" json:"endAt,omitempty"`
 	OperatorID uint            `gorm:"comment:操作人ID" json:"operatorId"`
+	IsUnbanned bool            `gorm:"not null;default:0;index;comment:是否已解封" json:"isUnbanned"`
 }
 
 // TableName 方法.

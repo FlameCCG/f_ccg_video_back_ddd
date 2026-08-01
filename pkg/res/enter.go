@@ -24,8 +24,6 @@ const (
 	FailServiceCode = 1
 )
 
-var empty = map[string]any{}
-
 // Json 方法.
 func (r Response) Json(c *gin.Context) {
 	c.JSON(200, r)
@@ -43,7 +41,7 @@ func OkWithData(data any, c *gin.Context, msg ...string) {
 
 // OkWithMsg 导出符号.
 func OkWithMsg(msg string, c *gin.Context) {
-	Response{SuccessCode, empty, msg}.Json(c)
+	Response{SuccessCode, map[string]any{}, msg}.Json(c)
 }
 
 // OkWithList 导出符号.
@@ -55,12 +53,12 @@ func OkWithList(list any, total int64, c *gin.Context) {
 }
 
 func fail(msg string, c *gin.Context) {
-	Response{FailServiceCode, empty, msg}.Json(c)
+	Response{FailServiceCode, map[string]any{}, msg}.Json(c)
 }
 
 // FailWithError 导出符号.
 func FailWithError(err error, c *gin.Context) {
-	msg := validate.ValidateError(err)
+	msg := validate.ErrorFromContext(c, err)
 	fail(msg, c)
 }
 

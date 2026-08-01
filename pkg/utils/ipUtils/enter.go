@@ -14,15 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// clientIPHeaderCandidates 按优先级尝试的客户端 IP 请求头。
-// 反向代理 / CDN / 开发代理应写入其中至少一项。
-var clientIPHeaderCandidates = []string{
-	"CF-Connecting-IP", // Cloudflare
-	"True-Client-IP",   // Akamai / 部分 CDN
-	"X-Real-IP",        // Nginx 常用
-	"X-Forwarded-For",  // 标准转发链（取最左侧原始客户端）
-}
-
 // GetLocalIPv4 导出符号.
 func GetLocalIPv4() (string, error) {
 	addrs, err := net.InterfaceAddrs()
@@ -139,7 +130,12 @@ func ResolveClientIP(c *gin.Context) string {
 	}
 
 	// 1) 优先使用显式转发头（开发 Vite 代理 / Nginx / CDN 应写入）
-	for _, header := range clientIPHeaderCandidates {
+	for _, header := range [...]string{
+		"CF-Connecting-IP", // Cloudflare
+		"True-Client-IP",   // Akamai / 部分 CDN
+		"X-Real-IP",        // Nginx 常用
+		"X-Forwarded-For",  // 标准转发链（取最左侧原始客户端）
+	} {
 		if candidate := firstValidIPFromHeader(c.GetHeader(header)); candidate != "" {
 			return candidate
 		}

@@ -9,7 +9,7 @@ import (
 
 // DynamicListReq 作品流列表请求.
 type DynamicListReq struct {
-	UserID   uint `form:"userId" binding:"required,gt=0" label:"指定用户ID"`
+	UserID   uint `form:"userId" binding:"omitempty,gt=0" label:"指定用户ID"`
 	Type     int  `form:"type" binding:"omitempty,oneof=0 1 2" label:"类型"`
 	Page     int  `form:"page" label:"页码"`
 	PageSize int  `form:"pageSize" label:"每页数量"`

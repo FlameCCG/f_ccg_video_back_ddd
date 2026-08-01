@@ -9,31 +9,23 @@ import (
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	arkrtmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 // VideoTaskClient 豆包视频生成任务适配器（方舟官方 runtime SDK，Eino 暂无视频组件）。
-type VideoTaskClient struct {
-	cfgProvider *config.Provider
-}
+type VideoTaskClient struct{}
 
 var _ aiapp.VideoTaskClient = (*VideoTaskClient)(nil)
 
-// NewVideoTaskClient 构造视频生成任务适配器。
-func NewVideoTaskClient(cfgProvider *config.Provider) *VideoTaskClient {
-	return &VideoTaskClient{cfgProvider: cfgProvider}
+// NewVideoTaskClient 构造视频生成任务适配器；运行配置由每次调用显式传入。
+func NewVideoTaskClient() *VideoTaskClient {
+	return &VideoTaskClient{}
 }
 
 // Create 创建上游视频生成任务。
 func (c *VideoTaskClient) Create(ctx context.Context, inv aiapp.VideoInvocation) (any, error) {
-	cfg, err := aiConfig(c.cfgProvider)
-	if err != nil {
-		return nil, err
-	}
-
 	content := make([]*arkrtmodel.CreateContentGenerationContentItem, 0, 1+len(inv.ImageRefs))
 	if prompt := strings.TrimSpace(inv.Prompt); prompt != "" {
 		text := prompt
@@ -92,7 +84,7 @@ func (c *VideoTaskClient) Create(ctx context.Context, inv aiapp.VideoInvocation)
 		payload.Seed = &seed
 	}
 
-	resp, err := newArkRuntimeClient(cfg).CreateContentGenerationTask(ctx, payload)
+	resp, err := newArkRuntimeClient(inv.Runtime).CreateContentGenerationTask(ctx, payload)
 	if err != nil {
 		return nil, wrapArkError(err)
 	}
@@ -101,13 +93,12 @@ func (c *VideoTaskClient) Create(ctx context.Context, inv aiapp.VideoInvocation)
 }
 
 // Get 查询上游视频生成任务状态。
-func (c *VideoTaskClient) Get(ctx context.Context, requestID string) (any, error) {
-	cfg, err := aiConfig(c.cfgProvider)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := newArkRuntimeClient(cfg).GetContentGenerationTask(ctx, arkrtmodel.GetContentGenerationTaskRequest{
+func (c *VideoTaskClient) Get(
+	ctx context.Context,
+	runtime aiapp.RuntimeConfig,
+	requestID string,
+) (any, error) {
+	resp, err := newArkRuntimeClient(runtime).GetContentGenerationTask(ctx, arkrtmodel.GetContentGenerationTaskRequest{
 		ID: requestID,
 	})
 	if err != nil {
@@ -118,13 +109,13 @@ func (c *VideoTaskClient) Get(ctx context.Context, requestID string) (any, error
 }
 
 // newArkRuntimeClient 构建方舟官方 runtime 客户端（Eino Ark 组件底层同款，BaseURL 走 SDK 默认）。
-func newArkRuntimeClient(cfg *config.AI) *arkruntime.Client {
+func newArkRuntimeClient(runtime aiapp.RuntimeConfig) *arkruntime.Client {
 	opts := []arkruntime.ConfigOption{}
-	if cfg != nil && cfg.TimeoutSec > 0 {
-		opts = append(opts, arkruntime.WithTimeout(time.Duration(cfg.TimeoutSec)*time.Second))
+	if runtime.TimeoutSec > 0 {
+		opts = append(opts, arkruntime.WithTimeout(time.Duration(runtime.TimeoutSec)*time.Second))
 	}
 
-	return arkruntime.NewClientWithApiKey(doubaoAPIKey(cfg), opts...)
+	return arkruntime.NewClientWithApiKey(doubaoAPIKey(runtime), opts...)
 }
 
 // normalizeVideoTaskResponse 序列化 SDK 响应后补齐 requestId 字段。

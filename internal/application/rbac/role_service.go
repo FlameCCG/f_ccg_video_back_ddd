@@ -19,6 +19,7 @@ type RoleService struct {
 	menus     domain.MenuRepository
 	userRoles domain.UserRoleRepository
 	enforcer  Enforcer
+	logger    *zap.Logger
 }
 
 // NewRoleService 构造角色用例服务。
@@ -28,8 +29,16 @@ func NewRoleService(
 	menus domain.MenuRepository,
 	userRoles domain.UserRoleRepository,
 	enforcer Enforcer,
+	logger *zap.Logger,
 ) *RoleService {
-	return &RoleService{txm: txm, roles: roles, menus: menus, userRoles: userRoles, enforcer: enforcer}
+	return &RoleService{
+		txm:       txm,
+		roles:     roles,
+		menus:     menus,
+		userRoles: userRoles,
+		enforcer:  enforcer,
+		logger:    logger,
+	}
 }
 
 // List 读取全部角色（含各自绑定的菜单）。
@@ -63,7 +72,7 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) error
 		bizErr = nil
 
 		if err := s.roles.Create(txCtx, role); err != nil {
-			zap.L().Error("创建角色失败", zap.Error(err))
+			s.logger.Error("创建角色失败", zap.Error(err))
 			bizErr = domain.ErrCreateFailed
 
 			return bizErr
@@ -121,7 +130,7 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) error
 			return bizErr
 		}
 
-		zap.L().Error("提交事务失败", zap.Error(err))
+		s.logger.Error("提交事务失败", zap.Error(err))
 
 		return domain.ErrCreateFailed
 	}
@@ -193,14 +202,14 @@ func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) error
 	}
 
 	if err := s.roles.UpdateNameAndDesc(ctx, role.ID, nameUpdate, descUpdate); err != nil {
-		zap.L().Error("更新角色失败", zap.Error(err))
+		s.logger.Error("更新角色失败", zap.Error(err))
 
 		return domain.ErrUpdateFailed
 	}
 
 	if newName != oldName {
 		if err := s.renameInCasbin(oldName, newName); err != nil {
-			zap.L().Error("同步 Casbin 角色名失败", zap.Error(err))
+			s.logger.Error("同步 Casbin 角色名失败", zap.Error(err))
 			_ = s.roles.UpdateName(ctx, role.ID, oldName)
 
 			return domain.ErrPermissionSyncFailed
@@ -286,20 +295,20 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) error {
 
 	// 删除角色（持久化钩子会自动清理关联）
 	if err := s.roles.DeleteByID(ctx, role.ID); err != nil {
-		zap.L().Error("删除角色失败", zap.Error(err))
+		s.logger.Error("删除角色失败", zap.Error(err))
 
 		return domain.ErrDeleteFailed
 	}
 
 	// 删除 Casbin 中该角色的所有权限
 	if _, err := s.enforcer.DeleteRole(role.Name); err != nil {
-		zap.L().Error("删除 Casbin 角色失败", zap.Error(err))
+		s.logger.Error("删除 Casbin 角色失败", zap.Error(err))
 
 		return domain.ErrRolePolicyCleanupFailed
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
-		zap.L().Error("保存 Casbin 策略失败", zap.Error(err))
+		s.logger.Error("保存 Casbin 策略失败", zap.Error(err))
 
 		return domain.ErrRolePolicySaveFailed
 	}
@@ -363,7 +372,7 @@ func (s *RoleService) AssignUserRoles(ctx context.Context, userID uint, roleIDs 
 
 		roles, err := s.roles.FindByIDs(txCtx, roleIDs)
 		if err != nil {
-			zap.L().Error("查询角色失败", zap.Error(err))
+			s.logger.Error("查询角色失败", zap.Error(err))
 			bizErr = domain.ErrQueryRoleFailed
 
 			return bizErr
@@ -404,7 +413,7 @@ func (s *RoleService) AssignUserRoles(ctx context.Context, userID uint, roleIDs 
 		// 分配新角色
 		if len(newRoles) > 0 {
 			if err := s.userRoles.AppendRoles(txCtx, userID, newRoles); err != nil {
-				zap.L().Error("分配角色失败", zap.Error(err))
+				s.logger.Error("分配角色失败", zap.Error(err))
 				bizErr = domain.ErrAssignFailed
 
 				return bizErr
@@ -415,7 +424,7 @@ func (s *RoleService) AssignUserRoles(ctx context.Context, userID uint, roleIDs 
 		sub := casbins.GetUserSub(userID)
 		for _, role := range newRoles {
 			if _, err := s.enforcer.AddRoleForUser(sub, role.Name); err != nil {
-				zap.L().Error("Casbin添加角色失败",
+				s.logger.Error("Casbin添加角色失败",
 					zap.Error(err),
 					zap.String("user", sub),
 					zap.String("role", role.Name))
@@ -427,7 +436,7 @@ func (s *RoleService) AssignUserRoles(ctx context.Context, userID uint, roleIDs 
 		}
 
 		if err := s.enforcer.SavePolicy(); err != nil {
-			zap.L().Error("Casbin保存策略失败", zap.Error(err))
+			s.logger.Error("Casbin保存策略失败", zap.Error(err))
 			bizErr = domain.ErrPermissionSaveFailed
 
 			return bizErr
@@ -439,7 +448,7 @@ func (s *RoleService) AssignUserRoles(ctx context.Context, userID uint, roleIDs 
 			return bizErr
 		}
 
-		zap.L().Error("提交事务失败", zap.Error(err))
+		s.logger.Error("提交事务失败", zap.Error(err))
 
 		return domain.ErrAssignFailed
 	}
@@ -458,7 +467,7 @@ func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs 
 
 		exists, err := s.userRoles.UserExists(txCtx, userID)
 		if err != nil {
-			zap.L().Error("查询用户失败", zap.Error(err))
+			s.logger.Error("查询用户失败", zap.Error(err))
 			bizErr = domain.ErrQueryUserFailed
 
 			return bizErr
@@ -473,7 +482,7 @@ func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs 
 		// 批量查询要移除的角色
 		roles, err := s.roles.FindByIDs(txCtx, roleIDs)
 		if err != nil {
-			zap.L().Error("查询角色失败", zap.Error(err))
+			s.logger.Error("查询角色失败", zap.Error(err))
 			bizErr = domain.ErrQueryRoleFailed
 
 			return bizErr
@@ -488,7 +497,7 @@ func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs 
 
 		// 批量移除角色关联
 		if err := s.userRoles.RemoveRoles(txCtx, userID, roles); err != nil {
-			zap.L().Error("移除角色失败", zap.Error(err))
+			s.logger.Error("移除角色失败", zap.Error(err))
 			bizErr = domain.ErrRemoveFailed
 
 			return bizErr
@@ -498,7 +507,7 @@ func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs 
 		sub := casbins.GetUserSub(userID)
 		for _, role := range roles {
 			if _, err := s.enforcer.DeleteRoleForUser(sub, role.Name); err != nil {
-				zap.L().Error("Casbin删除角色失败",
+				s.logger.Error("Casbin删除角色失败",
 					zap.Error(err),
 					zap.String("user", sub),
 					zap.String("role", role.Name))
@@ -506,7 +515,7 @@ func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs 
 		}
 
 		if err := s.enforcer.SavePolicy(); err != nil {
-			zap.L().Error("Casbin保存策略失败", zap.Error(err))
+			s.logger.Error("Casbin保存策略失败", zap.Error(err))
 			bizErr = domain.ErrPermissionSaveFailed
 
 			return bizErr
@@ -518,7 +527,7 @@ func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs 
 			return bizErr
 		}
 
-		zap.L().Error("提交事务失败", zap.Error(err))
+		s.logger.Error("提交事务失败", zap.Error(err))
 
 		return domain.ErrRemoveFailed
 	}
@@ -544,7 +553,7 @@ func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs
 		// 批量查询新角色
 		newRoles, err := s.roles.FindByIDs(txCtx, roleIDs)
 		if err != nil {
-			zap.L().Error("查询角色失败", zap.Error(err))
+			s.logger.Error("查询角色失败", zap.Error(err))
 			bizErr = domain.ErrQueryRoleFailed
 
 			return bizErr
@@ -559,7 +568,7 @@ func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs
 
 		// 替换用户角色（先清空再添加）
 		if err := s.userRoles.ReplaceRoles(txCtx, userID, newRoles); err != nil {
-			zap.L().Error("更新用户角色失败", zap.Error(err))
+			s.logger.Error("更新用户角色失败", zap.Error(err))
 			bizErr = domain.ErrUpdateFailed
 
 			return bizErr
@@ -571,7 +580,7 @@ func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs
 		// 删除旧角色
 		for _, oldRole := range oldRoles {
 			if _, err := s.enforcer.DeleteRoleForUser(sub, oldRole.Name); err != nil {
-				zap.L().Error("Casbin删除旧角色失败",
+				s.logger.Error("Casbin删除旧角色失败",
 					zap.Error(err),
 					zap.String("user", sub),
 					zap.String("role", oldRole.Name))
@@ -581,7 +590,7 @@ func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs
 		// 添加新角色
 		for _, newRole := range newRoles {
 			if _, err := s.enforcer.AddRoleForUser(sub, newRole.Name); err != nil {
-				zap.L().Error("Casbin添加新角色失败",
+				s.logger.Error("Casbin添加新角色失败",
 					zap.Error(err),
 					zap.String("user", sub),
 					zap.String("role", newRole.Name))
@@ -594,7 +603,7 @@ func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs
 
 		// 保存 Casbin 策略
 		if err := s.enforcer.SavePolicy(); err != nil {
-			zap.L().Error("Casbin保存策略失败", zap.Error(err))
+			s.logger.Error("Casbin保存策略失败", zap.Error(err))
 			bizErr = domain.ErrPermissionSaveFailed
 
 			return bizErr
@@ -606,7 +615,7 @@ func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs
 			return bizErr
 		}
 
-		zap.L().Error("提交事务失败", zap.Error(err))
+		s.logger.Error("提交事务失败", zap.Error(err))
 
 		return domain.ErrUpdateFailed
 	}
@@ -620,7 +629,7 @@ func (s *RoleService) mapUserLookupError(err error) error {
 		return domain.ErrUserNotFound
 	}
 
-	zap.L().Error("查询用户失败", zap.Error(err))
+	s.logger.Error("查询用户失败", zap.Error(err))
 
 	return domain.ErrQueryUserFailed
 }

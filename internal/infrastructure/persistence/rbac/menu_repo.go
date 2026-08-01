@@ -9,6 +9,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // MenuRepository 菜单仓储的 GORM 实现。
@@ -32,6 +33,31 @@ func (r *MenuRepository) FindByID(ctx context.Context, menuID uint) (*domain.Men
 	}
 
 	return toDomainMenu(&row), nil
+}
+
+// FindByIDForUpdate 按主键读取并锁定菜单；不存在时返回 (nil, nil)。
+func (r *MenuRepository) FindByIDForUpdate(ctx context.Context, menuID uint) (*domain.Menu, error) {
+	var row po.Menu
+	if err := gormx.DB(ctx, r.db).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&row, menuID).Error; err != nil {
+		return nil, ignoreNotFound(err)
+	}
+
+	return toDomainMenu(&row), nil
+}
+
+// FindByIDsForUpdate 批量读取并锁定菜单。
+func (r *MenuRepository) FindByIDsForUpdate(ctx context.Context, menuIDs []uint) ([]*domain.Menu, error) {
+	var rows []po.Menu
+	if err := gormx.DB(ctx, r.db).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", menuIDs).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	return toDomainMenuValues(rows), nil
 }
 
 // FindByTitle 按标题读取菜单；不存在时返回 (nil, nil)。
@@ -76,6 +102,39 @@ func (r *MenuRepository) ListOrdered(ctx context.Context) ([]*domain.Menu, error
 	}
 
 	return toDomainMenus(rows), nil
+}
+
+// ListForGeneration 按 parent_id、sort_order、id 读取完整菜单提示词数据。
+func (r *MenuRepository) ListForGeneration(ctx context.Context) ([]*domain.Menu, error) {
+	var rows []*po.Menu
+	if err := gormx.DB(ctx, r.db).
+		Order("parent_id ASC, sort_order ASC, id ASC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	return toDomainMenus(rows), nil
+}
+
+// ListSiblingIDsForUpdate 按 sort_order、id 读取并锁定同层菜单 ID。
+func (r *MenuRepository) ListSiblingIDsForUpdate(ctx context.Context, parentID *uint) ([]uint, error) {
+	ids := make([]uint, 0)
+	query := gormx.DB(ctx, r.db).
+		Model(&po.Menu{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Order("sort_order ASC, id ASC")
+
+	if parentID == nil {
+		query = query.Where("parent_id IS NULL OR parent_id = 0")
+	} else {
+		query = query.Where("parent_id = ?", *parentID)
+	}
+
+	if err := query.Pluck("id", &ids).Error; err != nil {
+		return nil, err
+	}
+
+	return ids, nil
 }
 
 // ListByRole 读取角色的全部菜单（不区分是否继承），按 sort_order 升序去重。
@@ -127,9 +186,12 @@ func (r *MenuRepository) CountChildren(ctx context.Context, parentID uint) (int6
 // CountByTitleExcluding 统计同标题且排除指定主键的菜单数量。
 func (r *MenuRepository) CountByTitleExcluding(ctx context.Context, title string, excludeID uint) (int64, error) {
 	var count int64
-	if err := gormx.DB(ctx, r.db).Model(&po.Menu{}).
-		Where("title = ? AND id != ?", title, excludeID).
-		Count(&count).Error; err != nil {
+	query := gormx.DB(ctx, r.db).Model(&po.Menu{}).Where("title = ?", title)
+	if excludeID > 0 {
+		query = query.Where("id != ?", excludeID)
+	}
+
+	if err := query.Count(&count).Error; err != nil {
 		return 0, err
 	}
 
@@ -202,6 +264,14 @@ func (r *MenuRepository) UpdateFields(ctx context.Context, menuID uint, update d
 	}
 
 	return gormx.DB(ctx, r.db).Model(&po.Menu{Model: po.Model{ID: menuID}}).Updates(updates).Error
+}
+
+// UpdateSortOrder 更新单个菜单的同层顺序。
+func (r *MenuRepository) UpdateSortOrder(ctx context.Context, menuID, sortOrder uint) error {
+	return gormx.DB(ctx, r.db).
+		Model(&po.Menu{}).
+		Where("id = ?", menuID).
+		Update("sort_order", sortOrder).Error
 }
 
 // DeleteByID 删除菜单。

@@ -100,6 +100,30 @@ func (r *Repository) Create(ctx context.Context, notice *domain.Notification) er
 	return nil
 }
 
+// CreateBatch 一次性批量写入通知（与原实现的 Create(&list) 语义一致：失败则整批不生效）。
+func (r *Repository) CreateBatch(ctx context.Context, notices []domain.Notification) error {
+	if len(notices) == 0 {
+		return nil
+	}
+
+	rows := make([]po.UserGlobalNotification, 0, len(notices))
+	for i := range notices {
+		rows = append(rows, *toPO(&notices[i]))
+	}
+
+	if err := gormx.DB(ctx, r.db).Create(&rows).Error; err != nil {
+		return err
+	}
+
+	for i := range rows {
+		notices[i].ID = rows[i].ID
+		notices[i].CreatedAt = rows[i].CreatedAt
+		notices[i].UpdatedAt = rows[i].UpdatedAt
+	}
+
+	return nil
+}
+
 // FindByID 按主键读取通知；不存在时返回 (nil, nil)。
 func (r *Repository) FindByID(ctx context.Context, id uint) (*domain.Notification, error) {
 	var row po.UserGlobalNotification

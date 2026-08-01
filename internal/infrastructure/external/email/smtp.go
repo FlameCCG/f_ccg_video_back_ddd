@@ -55,13 +55,18 @@ func (c *bufferedConn) Read(p []byte) (int, error) {
 // Sender SMTP 邮件发送器，同时提供验证码邮件模板。
 type Sender struct {
 	cfgProvider *config.Provider
+	logger      *zap.Logger
 }
 
 var _ app.EmailCaptchaSender = (*Sender)(nil)
 
 // NewSender 构造 SMTP 邮件发送器。
-func NewSender(cfgProvider *config.Provider) *Sender {
-	return &Sender{cfgProvider: cfgProvider}
+func NewSender(cfgProvider *config.Provider, logger *zap.Logger) *Sender {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &Sender{cfgProvider: cfgProvider, logger: logger}
 }
 
 // Send 按站点邮件配置发送一封 text + html 邮件。
@@ -78,8 +83,8 @@ func (s *Sender) Send(to, subject, textBody, htmlBody string) error {
 	e.Text = []byte(textBody)
 	e.HTML = []byte(htmlBody)
 
-	if err := sendSMTPMail(e, em.Domain, em.Port, em.SendEmail, em.AuthCode, em.TLS, em.SSL); err != nil {
-		zap.L().Error("send email error", zap.Error(err))
+	if err := sendSMTPMail(e, em.Domain, em.Port, em.SendEmail, em.AuthCode, em.TLS, em.SSL, s.logger); err != nil {
+		s.logger.Error("send email error", zap.Error(err))
 
 		return err
 	}
@@ -102,6 +107,7 @@ func sendSMTPMail(
 	port int,
 	username, password string,
 	enableStartTLS, enableSSL bool,
+	logger *zap.Logger,
 ) error {
 	envelope, err := buildSMTPEnvelope(e)
 	if err != nil {
@@ -110,7 +116,7 @@ func sendSMTPMail(
 
 	targetAddr := net.JoinHostPort(domain, strconv.Itoa(port))
 
-	conn, err := dialSMTP(targetAddr)
+	conn, err := dialSMTP(targetAddr, logger)
 	if err != nil {
 		return err
 	}
@@ -244,7 +250,11 @@ func buildSMTPEnvelope(e *emaillib.Email) (*smtpEnvelope, error) {
 	}, nil
 }
 
-func dialSMTP(targetAddr string) (net.Conn, error) {
+func dialSMTP(targetAddr string, logger *zap.Logger) (net.Conn, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if proxyURL, ok := smtpProxyURLFromEnv(); ok {
 		conn, err := dialSMTPViaHTTPProxy(proxyURL, targetAddr, smtpDialTimeout)
 		if err == nil {
@@ -253,7 +263,7 @@ func dialSMTP(targetAddr string) (net.Conn, error) {
 
 		directConn, directErr := (&net.Dialer{Timeout: smtpDialTimeout}).Dial("tcp", targetAddr)
 		if directErr == nil {
-			zap.L().Warn("smtp proxy dial failed, fallback to direct", zap.String("proxy", proxyURL.Redacted()), zap.Error(err))
+			logger.Warn("smtp proxy dial failed, fallback to direct", zap.String("proxy", proxyURL.Redacted()), zap.Error(err))
 
 			return directConn, nil
 		}

@@ -33,6 +33,7 @@ const (
 type SuperUserRepository struct {
 	db          *gorm.DB
 	userRepoCtx UserContextDecorator
+	logger      *zap.Logger
 }
 
 // UserContextDecorator 用于给创建用户的 ctx 附加默认横幅 ID
@@ -49,8 +50,16 @@ var _ app.SuperUserRepository = (*SuperUserRepository)(nil)
 //
 // userRepoCtx 传入 identity 的用户仓储，用于复用「默认横幅 ID 注入 ctx」的逻辑，
 // 保证 CLI 创建的用户与注册流程一样会得到默认用户配置与默认收藏夹。
-func NewSuperUserRepository(db *gorm.DB, userRepoCtx UserContextDecorator) *SuperUserRepository {
-	return &SuperUserRepository{db: db, userRepoCtx: userRepoCtx}
+func NewSuperUserRepository(
+	db *gorm.DB,
+	userRepoCtx UserContextDecorator,
+	logger *zap.Logger,
+) *SuperUserRepository {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &SuperUserRepository{db: db, userRepoCtx: userRepoCtx, logger: logger}
 }
 
 // EnsureAdminRole 读取或创建管理员角色。
@@ -64,7 +73,7 @@ func (r *SuperUserRepository) EnsureAdminRole(ctx context.Context) (uint, string
 		return 0, "", false, fmt.Errorf("查询管理员角色失败: %w", err)
 	}
 
-	zap.L().Warn(adminRoleMissingWarnText, zap.String("role", constants.AdminUserRole))
+	r.logger.Warn(adminRoleMissingWarnText, zap.String("role", constants.AdminUserRole))
 
 	adminRole = po.Role{
 		Name: constants.AdminUserRole,
@@ -141,13 +150,18 @@ func (r *SuperUserRepository) ReplaceUserRoles(ctx context.Context, userID, role
 // CasbinRoleBinder Casbin 角色绑定的实现。
 type CasbinRoleBinder struct {
 	enforcer *casbin.SyncedEnforcer
+	logger   *zap.Logger
 }
 
 var _ app.CasbinRoleBinder = (*CasbinRoleBinder)(nil)
 
 // NewCasbinRoleBinder 构造 Casbin 角色绑定器。
-func NewCasbinRoleBinder(enforcer *casbin.SyncedEnforcer) *CasbinRoleBinder {
-	return &CasbinRoleBinder{enforcer: enforcer}
+func NewCasbinRoleBinder(enforcer *casbin.SyncedEnforcer, logger *zap.Logger) *CasbinRoleBinder {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &CasbinRoleBinder{enforcer: enforcer, logger: logger}
 }
 
 // BindUserRole 清空用户旧角色后绑定新角色，并持久化策略。
@@ -168,7 +182,7 @@ func (b *CasbinRoleBinder) BindUserRole(userID uint, roleName string) error {
 		return fmt.Errorf("Casbin保存策略失败: %w", err) //nolint:staticcheck // 保留原日志文案
 	}
 
-	zap.L().Info("Casbin权限策略同步成功", zap.String("sub", sub), zap.String("role", roleName))
+	b.logger.Info("Casbin权限策略同步成功", zap.String("sub", sub), zap.String("role", roleName))
 
 	return nil
 }

@@ -96,6 +96,26 @@ var (
 	ErrParentMenuNotFound = errors.New("父菜单不存在")
 	// ErrParentMenuIsSelf 父菜单不能是自己.
 	ErrParentMenuIsSelf = errors.New("父菜单不能是自己")
+	// ErrMenuParentCycle 父菜单不能是当前菜单或当前菜单的子菜单.
+	ErrMenuParentCycle = errors.New("父菜单不能是自己或自己的子菜单")
+	// ErrMenuCreatorRoleMissing 创建者没有可接收菜单权限的当前角色.
+	ErrMenuCreatorRoleMissing = errors.New("创建者当前角色不存在")
+	// ErrMenuMoveAcrossLevels 拖拽目标不在同一父菜单下.
+	ErrMenuMoveAcrossLevels = errors.New("只能在同一层级内拖动排序")
+	// ErrMenuMovePosition 拖拽位置非法.
+	ErrMenuMovePosition = errors.New("拖拽位置非法")
+	// ErrSortFailed 菜单排序失败.
+	ErrSortFailed = errors.New("排序失败")
+	// ErrMenuGenerationTitleEmpty AI 菜单生成缺少中文标题.
+	ErrMenuGenerationTitleEmpty = errors.New("请先填写中文标题")
+	// ErrReadParentMenuFailed AI 菜单生成读取父菜单失败.
+	ErrReadParentMenuFailed = errors.New("读取父菜单失败")
+	// ErrReadMenuDataFailed AI 菜单生成读取完整菜单数据失败.
+	ErrReadMenuDataFailed = errors.New("读取菜单数据失败")
+	// ErrPrepareMenuDataFailed AI 菜单生成整理菜单数据失败.
+	ErrPrepareMenuDataFailed = errors.New("整理菜单数据失败")
+	// ErrMenuGeneratorUnavailable AI 菜单生成端口未注入.
+	ErrMenuGeneratorUnavailable = errors.New("AI 菜单生成服务未配置")
 	// ErrDeleteChildMenusFirst 请先删除子菜单.
 	ErrDeleteChildMenusFirst = errors.New("请先删除子菜单")
 )

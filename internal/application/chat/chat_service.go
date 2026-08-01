@@ -18,6 +18,7 @@ type Service struct {
 	query   Query
 	follows FollowRelationQuery
 	badges  NotificationBadgeInvalidator
+	logger  *zap.Logger
 }
 
 // NewService 构造私信用例服务。
@@ -26,8 +27,15 @@ func NewService(
 	query Query,
 	follows FollowRelationQuery,
 	badges NotificationBadgeInvalidator,
+	logger *zap.Logger,
 ) *Service {
-	return &Service{repo: repo, query: query, follows: follows, badges: badges}
+	return &Service{
+		repo:    repo,
+		query:   query,
+		follows: follows,
+		badges:  badges,
+		logger:  logger,
+	}
 }
 
 // SendMessage 校验并落库一条私信，同时推进会话摘要与接收方未读数。
@@ -230,7 +238,7 @@ func (s *Service) checkDailySendLimit(
 
 	receiverFollowsSender, err := s.follows.IsFollowing(ctx, receiverID, senderID)
 	if err != nil {
-		zap.L().Warn("check focus relation failed, skip chat daily limit",
+		s.logger.Warn("check focus relation failed, skip chat daily limit",
 			zap.Error(err),
 			zap.Uint("senderId", senderID),
 			zap.Uint("receiverId", receiverID),

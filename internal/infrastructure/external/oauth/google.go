@@ -52,15 +52,21 @@ type UserGoogleInfo struct {
 type GoogleClient struct {
 	cfgProvider *config.Provider
 	httpClient  *http.Client
+	logger      *zap.Logger
 }
 
 var _ app.GoogleOAuthClient = (*GoogleClient)(nil)
 
 // NewGoogleClient 构造 Google OAuth 客户端。
-func NewGoogleClient(cfgProvider *config.Provider) *GoogleClient {
+func NewGoogleClient(cfgProvider *config.Provider, logger *zap.Logger) *GoogleClient {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &GoogleClient{
 		cfgProvider: cfgProvider,
 		httpClient:  &http.Client{Timeout: googleHTTPTimeout},
+		logger:      logger,
 	}
 }
 
@@ -108,7 +114,7 @@ func (c *GoogleClient) GetUserInfo(ctx context.Context, code string) (*UserGoogl
 		return nil, fmt.Errorf("google userinfo request failed, status=%d", resp.StatusCode)
 	}
 
-	zap.L().Debug("Google UserInfo Response", zap.Int("status", resp.StatusCode))
+	c.logger.Debug("Google UserInfo Response", zap.Int("status", resp.StatusCode))
 
 	var userInfo UserGoogleInfo
 	if err = json.Unmarshal(body, &userInfo); err != nil {
@@ -154,7 +160,7 @@ func (c *GoogleClient) accessToken(ctx context.Context, code string) (*GoogleAcc
 		return nil, err
 	}
 
-	zap.L().Debug("Google Token Response", zap.Int("status", resp.StatusCode))
+	c.logger.Debug("Google Token Response", zap.Int("status", resp.StatusCode))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("google token request failed, status=%d", resp.StatusCode)

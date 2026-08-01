@@ -66,8 +66,79 @@ SELECT
 FROM dynamics d
 WHERE d.user_id = ?`
 
+	followingFeedVideoSQL = `
+SELECT
+  1 AS work_type,
+  v.id AS work_id,
+  v.created_at AS created_at,
+  u.id AS author_id,
+  u.username AS author_username,
+  u.avatar AS author_avatar,
+  v.title AS video_title,
+  v.description AS video_desc,
+  v.cover AS video_cover,
+  v.duration AS video_duration,
+  v.views AS video_views,
+  v.danmu_count AS video_danmu_count,
+  v.likes AS video_like_count,
+  v.comment_count AS video_comment_count,
+  NULL AS dyn_content,
+  NULL AS dyn_image_url,
+  0 AS dyn_like_count,
+  v.is_pinned AS dyn_is_pinned,
+  v.pinned_at AS dyn_pinned_at
+FROM videos v
+JOIN users u ON u.username = v.author_username
+WHERE (
+    u.id = ?
+    OR EXISTS (
+      SELECT 1
+      FROM user_focus uf
+      WHERE uf.user_id = ?
+        AND uf.focus_user_id = u.id
+    )
+  )
+  AND (u.id = ? OR v.status = ?)`
+
+	followingFeedDynamicSQL = `
+SELECT
+  2 AS work_type,
+  d.id AS work_id,
+  d.created_at AS created_at,
+  u.id AS author_id,
+  u.username AS author_username,
+  u.avatar AS author_avatar,
+  NULL AS video_title,
+  NULL AS video_desc,
+  NULL AS video_cover,
+  0 AS video_duration,
+  0 AS video_views,
+  0 AS video_danmu_count,
+  0 AS video_like_count,
+  0 AS video_comment_count,
+  d.content AS dyn_content,
+  d.image_url AS dyn_image_url,
+  d.like_count AS dyn_like_count,
+  d.is_pinned AS dyn_is_pinned,
+  d.pinned_at AS dyn_pinned_at
+FROM dynamics d
+JOIN users u ON u.id = d.user_id
+WHERE (
+    u.id = ?
+    OR EXISTS (
+      SELECT 1
+      FROM user_focus uf
+      WHERE uf.user_id = ?
+        AND uf.focus_user_id = u.id
+    )
+  )`
+
 	feedOrderSQL = `
 ORDER BY dyn_is_pinned DESC, dyn_pinned_at DESC, created_at DESC, work_id DESC
+LIMIT ? OFFSET ?`
+
+	followingFeedOrderSQL = `
+ORDER BY created_at DESC, work_type DESC, work_id DESC
 LIMIT ? OFFSET ?`
 )
 
@@ -149,6 +220,40 @@ func (q *FeedQuery) ListAuthorWorks(ctx context.Context, params app.AuthorFeedPa
 		return nil, err
 	}
 
+	return toFeedRows(rows), nil
+}
+
+// ListFollowingWorks 以 UNION ALL 联合查询浏览者本人及其关注用户的视频与动态。
+func (q *FeedQuery) ListFollowingWorks(ctx context.Context, params app.FollowingFeedParams) ([]app.FeedRow, error) {
+	sqlParts := make([]string, 0, 2)
+	args := make([]any, 0, 8)
+
+	if params.Sources.IncludeVideo {
+		sqlParts = append(sqlParts, followingFeedVideoSQL)
+		args = append(args, params.ViewerID, params.ViewerID, params.ViewerID, enum.VideoStatusPublished)
+	}
+
+	if params.Sources.IncludeDynamic {
+		sqlParts = append(sqlParts, followingFeedDynamicSQL)
+		args = append(args, params.ViewerID, params.ViewerID)
+	}
+
+	if len(sqlParts) == 0 {
+		return []app.FeedRow{}, nil
+	}
+
+	sql := strings.Join(sqlParts, "\nUNION ALL\n") + followingFeedOrderSQL
+	args = append(args, params.Limit, params.Offset)
+
+	var rows []feedRow
+	if err := gormx.DB(ctx, q.db).Raw(sql, args...).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	return toFeedRows(rows), nil
+}
+
+func toFeedRows(rows []feedRow) []app.FeedRow {
 	items := make([]app.FeedRow, 0, len(rows))
 	for _, r := range rows {
 		items = append(items, app.FeedRow{
@@ -174,7 +279,7 @@ func (q *FeedQuery) ListAuthorWorks(ctx context.Context, params app.AuthorFeedPa
 		})
 	}
 
-	return items, nil
+	return items
 }
 
 // CountAuthorWorks 统计作者作品总数（视频数 + 动态数）。
@@ -197,6 +302,44 @@ func (q *FeedQuery) CountAuthorWorks(ctx context.Context, params app.AuthorFeedC
 	if params.Sources.IncludeDynamic {
 		if err := gormx.DB(ctx, q.db).Model(&po.Dynamic{}).
 			Where("user_id = ?", params.AuthorID).
+			Count(&dynamicCount).Error; err != nil {
+			return 0, err
+		}
+	}
+
+	return videoCount + dynamicCount, nil
+}
+
+// CountFollowingWorks 统计浏览者本人及其关注用户的作品总数。
+func (q *FeedQuery) CountFollowingWorks(ctx context.Context, params app.FollowingFeedCountParams) (int64, error) {
+	var videoCount int64
+	if params.Sources.IncludeVideo {
+		if err := gormx.DB(ctx, q.db).
+			Table("videos AS v").
+			Joins("JOIN users u ON u.username = v.author_username").
+			Where(`u.id = ? OR EXISTS (
+				SELECT 1
+				FROM user_focus uf
+				WHERE uf.user_id = ?
+				  AND uf.focus_user_id = u.id
+			)`, params.ViewerID, params.ViewerID).
+			Where("u.id = ? OR v.status = ?", params.ViewerID, enum.VideoStatusPublished).
+			Count(&videoCount).Error; err != nil {
+			return 0, err
+		}
+	}
+
+	var dynamicCount int64
+	if params.Sources.IncludeDynamic {
+		if err := gormx.DB(ctx, q.db).
+			Table("dynamics AS d").
+			Joins("JOIN users u ON u.id = d.user_id").
+			Where(`u.id = ? OR EXISTS (
+				SELECT 1
+				FROM user_focus uf
+				WHERE uf.user_id = ?
+				  AND uf.focus_user_id = u.id
+			)`, params.ViewerID, params.ViewerID).
 			Count(&dynamicCount).Error; err != nil {
 			return 0, err
 		}

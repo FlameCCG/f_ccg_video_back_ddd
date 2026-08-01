@@ -18,12 +18,17 @@ const indexInitTimeout = 10 * time.Second
 // chat_service.ChatService{}.EnsureIndexes）；新架构改为可注入的生命周期组件，
 // 由 bootstrap 挂进 App 启动序列，避免基础设施客户端反向依赖业务上下文。
 type IndexInitializer struct {
-	repo domain.Repository
+	repo   domain.Repository
+	logger *zap.Logger
 }
 
 // NewIndexInitializer 构造索引初始化组件。
-func NewIndexInitializer(repo domain.Repository) *IndexInitializer {
-	return &IndexInitializer{repo: repo}
+func NewIndexInitializer(repo domain.Repository, logger *zap.Logger) *IndexInitializer {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &IndexInitializer{repo: repo, logger: logger}
 }
 
 // Start 创建聊天集合索引。
@@ -41,7 +46,7 @@ func (i *IndexInitializer) Start(_ context.Context) error {
 	defer cancel()
 
 	if err := i.repo.EnsureIndexes(indexCtx); err != nil {
-		zap.L().Warn("Mongo 索引初始化失败", zap.Error(err))
+		i.logger.Warn("Mongo 索引初始化失败", zap.Error(err))
 	}
 
 	return nil

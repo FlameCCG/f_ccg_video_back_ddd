@@ -14,8 +14,8 @@ import (
 // assetProxyRoute 本站 AI 资源代理路由（与 router 中注册的路径一致）。
 const assetProxyRoute = "/v1/common/ai/assets"
 
-func failWithAIError(c *gin.Context, action string, err error) {
-	zap.L().Error(action, zap.Error(err))
+func (h *Handler) failWithAIError(c *gin.Context, action string, err error) {
+	h.log().Error(action, zap.Error(err))
 	res.FailWithMsg(userFacingAIError(err), c)
 }
 

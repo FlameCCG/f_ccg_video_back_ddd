@@ -1,0 +1,165 @@
+package ark
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	aiapp "f_ccg_video_back_ddd/internal/application/ai"
+
+	"github.com/cloudwego/eino/schema"
+)
+
+type capturedChatRequest struct {
+	path   string
+	apiKey string
+	body   map[string]any
+	err    error
+}
+
+func TestInvokeTextUsesEinoClaudeModel(t *testing.T) {
+	requests := make(chan capturedChatRequest, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		raw, err := io.ReadAll(request.Body)
+		captured := capturedChatRequest{
+			path:   request.URL.Path,
+			apiKey: request.Header.Get("x-api-key"),
+			err:    err,
+		}
+		if err == nil {
+			captured.err = json.Unmarshal(raw, &captured.body)
+		}
+		requests <- captured
+
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{
+			"id":"msg_test","type":"message","role":"assistant","model":"deepseek-v4-flash",
+			"content":[{"type":"text","text":"Eino 已接管"}],"stop_reason":"end_turn",
+			"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":4}
+		}`)
+	}))
+	t.Cleanup(server.Close)
+
+	runtime := aiapp.RuntimeConfig{
+		ChatModelBaseURL: server.URL,
+		ChatModelAPIKey:  "test-key",
+	}
+	model := NewChatModel()
+	thinking := true
+	text, err := model.InvokeText(context.Background(), aiapp.TextInvocation{
+		Runtime: runtime,
+		Model:   "deepseek-v4-flash",
+		Messages: []*schema.Message{
+			schema.SystemMessage("系统提示"),
+			schema.UserMessage("你好"),
+		},
+		Thinking:       &thinking,
+		ThinkingEffort: "max",
+		MaxTokens:      defaultChatMaxTokens,
+	})
+	if err != nil {
+		t.Fatalf("InvokeText() error = %v", err)
+	}
+	if text != "Eino 已接管" {
+		t.Fatalf("InvokeText() = %q", text)
+	}
+
+	captured := <-requests
+	if captured.err != nil {
+		t.Fatalf("capture request error = %v", captured.err)
+	}
+	if captured.path != "/v1/messages" || captured.apiKey != "test-key" {
+		t.Fatalf("path=%q apiKey=%q", captured.path, captured.apiKey)
+	}
+	thinkingPayload := requireMapField(t, captured.body, "thinking")
+	if thinkingPayload["type"] != "enabled" {
+		t.Fatalf("thinking.type = %#v", thinkingPayload["type"])
+	}
+	outputConfig := requireMapField(t, captured.body, "output_config")
+	if outputConfig["effort"] != "max" {
+		t.Fatalf("output_config.effort = %#v", outputConfig["effort"])
+	}
+	if _, ok := captured.body["system"]; !ok {
+		t.Fatal("request body missing system")
+	}
+	if messages, ok := captured.body["messages"].([]any); !ok || len(messages) != 1 {
+		t.Fatalf("messages = %#v", captured.body["messages"])
+	}
+}
+
+func TestOpenStreamUsesEinoClaudeModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(writer, strings.Join([]string{
+			`event: message_start`,
+			`data: {"type":"message_start","message":{"id":"msg_stream","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":2,"output_tokens":0}}}`,
+			"",
+			`event: content_block_start`,
+			`data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			"",
+			`event: content_block_delta`,
+			`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Eino 流式输出"}}`,
+			"",
+			`event: content_block_stop`,
+			`data: {"type":"content_block_stop","index":0}`,
+			"",
+			`event: message_delta`,
+			`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":4}}`,
+			"",
+			`event: message_stop`,
+			`data: {"type":"message_stop"}`,
+			"",
+			"",
+		}, "\n"))
+	}))
+	t.Cleanup(server.Close)
+
+	runtime := aiapp.RuntimeConfig{
+		ChatModelBaseURL: server.URL,
+		ChatModelAPIKey:  "test-key",
+	}
+	model := NewChatModel()
+	stream, err := model.OpenStream(context.Background(), aiapp.TextInvocation{
+		Runtime:   runtime,
+		Model:     "deepseek-v4-flash",
+		Messages:  []*schema.Message{schema.UserMessage("请流式回答")},
+		MaxTokens: defaultChatMaxTokens,
+	})
+	if err != nil {
+		t.Fatalf("OpenStream() error = %v", err)
+	}
+	defer stream.Close()
+
+	var content strings.Builder
+	for {
+		chunk, receiveErr := stream.Recv()
+		if errors.Is(receiveErr, io.EOF) {
+			break
+		}
+		if receiveErr != nil {
+			t.Fatalf("stream.Recv() error = %v", receiveErr)
+		}
+		if chunk != nil {
+			content.WriteString(chunk.Content)
+		}
+	}
+	if got := content.String(); got != "Eino 流式输出" {
+		t.Fatalf("stream content = %q", got)
+	}
+}
+
+func requireMapField(t *testing.T, payload map[string]any, field string) map[string]any {
+	t.Helper()
+
+	value, ok := payload[field].(map[string]any)
+	if !ok {
+		t.Fatalf("%s = %#v, want object", field, payload[field])
+	}
+
+	return value
+}

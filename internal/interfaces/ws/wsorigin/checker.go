@@ -88,6 +88,10 @@ func (c *Checker) configuredOriginAllowed(origin *url.URL) bool {
 }
 
 // redirectOf 从三方登录配置中取回调地址。
+//
+// 形参是 any 而非具体类型：`ThirdLogin` 的 5 个字段类型各异但都只需要 Redirect 字段。
+// 注意每个分支都必须判 `item == nil`——配置里缺失某家三方登录时该字段是 typed nil 指针，
+// 装进 any 之后 `v == nil` 为 false，直接取字段会 panic（见 report.md FIND-013）。
 func redirectOf(v any) string {
 	if v == nil {
 		return ""
@@ -95,14 +99,34 @@ func redirectOf(v any) string {
 
 	switch item := v.(type) {
 	case *third_login.GitHub:
+		if item == nil {
+			return ""
+		}
+
 		return item.Redirect
 	case *third_login.Google:
+		if item == nil {
+			return ""
+		}
+
 		return item.Redirect
 	case *third_login.LinuxDo:
+		if item == nil {
+			return ""
+		}
+
 		return item.Redirect
 	case *third_login.X:
+		if item == nil {
+			return ""
+		}
+
 		return item.Redirect
 	case *third_login.QQ:
+		if item == nil {
+			return ""
+		}
+
 		return item.Redirect
 	default:
 		return ""

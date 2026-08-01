@@ -1,8 +1,23 @@
 package rbac
 
 import (
+	"context"
+
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 )
+
+// MenuSuggestionGenerator AI 菜单字段生成端口。
+//
+// 接口由消费方 rbac 定义；AI 上下文的应用服务实现它，基础设施聊天模型仍经
+// AI 自己的 TextGenerator 端口调用。
+type MenuSuggestionGenerator interface {
+	GenerateMenuSuggestion(
+		ctx context.Context,
+		title string,
+		parentID *uint,
+		menuTableJSON []byte,
+	) (*domain.MenuSuggestion, error)
+}
 
 // Enforcer Casbin 策略端口（基础设施实现，见 infrastructure/persistence/rbac/enforcer.go）。
 //

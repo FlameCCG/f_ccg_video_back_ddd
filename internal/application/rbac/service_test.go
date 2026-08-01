@@ -13,6 +13,7 @@ import (
 	"f_ccg_video_back_ddd/pkg/casbins"
 
 	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -239,6 +240,7 @@ func (e *fakeEnforcer) SavePolicy() error {
 type suite struct {
 	db          *gorm.DB
 	enforcer    *fakeEnforcer
+	generator   *fakeMenuGenerator
 	roles       *app.RoleService
 	menus       *app.MenuService
 	permissions *app.PermissionService
@@ -279,15 +281,18 @@ func newSuite(t *testing.T) *suite {
 		resRepo   = infra.NewApiResourceRepository(db)
 		graph     = app.NewRoleGraph(enforcer)
 		evaluator = infra.NewPermissionEvaluator()
+		generator = &fakeMenuGenerator{}
+		txm       = gormx.NewTxManager(db)
 	)
 
 	return &suite{
 		db:          db,
 		enforcer:    enforcer,
-		roles:       app.NewRoleService(gormx.NewTxManager(db), roleRepo, menuRepo, urRepo, enforcer),
-		menus:       app.NewMenuService(roleRepo, menuRepo, rmRepo, urRepo),
-		permissions: app.NewPermissionService(roleRepo, rmRepo, resRepo, enforcer, graph, evaluator),
-		inherits:    app.NewInheritService(roleRepo, rmRepo, enforcer, graph),
+		generator:   generator,
+		roles:       app.NewRoleService(txm, roleRepo, menuRepo, urRepo, enforcer, zap.NewNop()),
+		menus:       app.NewMenuService(txm, roleRepo, menuRepo, rmRepo, urRepo, generator, zap.NewNop()),
+		permissions: app.NewPermissionService(roleRepo, rmRepo, resRepo, enforcer, graph, evaluator, zap.NewNop()),
+		inherits:    app.NewInheritService(roleRepo, rmRepo, enforcer, graph, zap.NewNop()),
 		roleRepo:    roleRepo,
 	}
 }

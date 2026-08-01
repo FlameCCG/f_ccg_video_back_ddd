@@ -42,6 +42,10 @@ type RoleRepository interface {
 type MenuRepository interface {
 	// FindByID 按主键读取菜单；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, menuID uint) (*Menu, error)
+	// FindByIDForUpdate 按主键读取并锁定菜单；不存在时返回 (nil, nil)。
+	FindByIDForUpdate(ctx context.Context, menuID uint) (*Menu, error)
+	// FindByIDsForUpdate 批量读取并锁定菜单。
+	FindByIDsForUpdate(ctx context.Context, menuIDs []uint) ([]*Menu, error)
 	// FindByTitle 按标题读取菜单；不存在时返回 (nil, nil)。
 	FindByTitle(ctx context.Context, title string) (*Menu, error)
 	// ExistsByID 判断菜单是否存在。
@@ -50,6 +54,10 @@ type MenuRepository interface {
 	FindByIDs(ctx context.Context, menuIDs []uint) ([]*Menu, error)
 	// ListOrdered 按 sort_order 升序读取全部菜单。
 	ListOrdered(ctx context.Context) ([]*Menu, error)
+	// ListForGeneration 按 parent_id、sort_order、id 读取完整菜单提示词数据。
+	ListForGeneration(ctx context.Context) ([]*Menu, error)
+	// ListSiblingIDsForUpdate 按 sort_order、id 读取并锁定同层菜单 ID。
+	ListSiblingIDsForUpdate(ctx context.Context, parentID *uint) ([]uint, error)
 	// ListByRole 读取角色的全部菜单（不区分是否继承），按 sort_order 升序去重。
 	ListByRole(ctx context.Context, roleID uint) ([]*Menu, error)
 	// ListByRoleInherited 读取角色的直连或继承菜单，按 sort_order 升序去重。
@@ -62,6 +70,8 @@ type MenuRepository interface {
 	Create(ctx context.Context, menu *Menu) error
 	// UpdateFields 按需更新菜单字段；update 为空时不产生 UPDATE。
 	UpdateFields(ctx context.Context, menuID uint, update MenuFieldUpdate) error
+	// UpdateSortOrder 更新单个菜单的同层顺序。
+	UpdateSortOrder(ctx context.Context, menuID, sortOrder uint) error
 	// DeleteByID 删除菜单。
 	DeleteByID(ctx context.Context, menuID uint) error
 }
@@ -80,6 +90,8 @@ type RoleMenuRepository interface {
 	CreateIgnoreConflict(ctx context.Context, items []RoleMenu) error
 	// EnsureRoleMenu 幂等确保存在一条 (roleID, menuID, is_inherited=false) 关联。
 	EnsureRoleMenu(ctx context.Context, roleID, menuID uint) error
+	// GrantDirect 幂等授予直连菜单；已有继承关联时改为直连。
+	GrantDirect(ctx context.Context, roleID, menuID uint) error
 	// DeleteDirectByRole 删除角色的全部直连关联。
 	DeleteDirectByRole(ctx context.Context, roleID uint) error
 	// DeleteDirectByRoleExcept 删除角色除 keepMenuIDs 之外的直连关联。

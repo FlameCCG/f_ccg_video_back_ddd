@@ -16,13 +16,6 @@ const (
 	DefaultMaxImageBytes = 10 * 1024 * 1024
 )
 
-var imageExtensionsByMIME = map[string]string{
-	"image/jpeg": ".jpg",
-	"image/png":  ".png",
-	"image/gif":  ".gif",
-	"image/webp": ".webp",
-}
-
 // ValidateImage 校验图片大小和真实 MIME，并把 reader 复位到开头。
 func ValidateImage(reader io.ReadSeeker, filename string, size, maxBytes int64) (ext, contentType string, err error) {
 	if reader == nil {
@@ -54,7 +47,7 @@ func ValidateImage(reader io.ReadSeeker, filename string, size, maxBytes int64) 
 
 	contentType = http.DetectContentType(head[:n])
 
-	detectedExt, ok := imageExtensionsByMIME[contentType]
+	detectedExt, ok := imageExtensionForMIME(contentType)
 	if !ok {
 		return "", "", errors.New("仅支持 jpg、png、gif、webp 图片")
 	}
@@ -65,6 +58,21 @@ func ValidateImage(reader io.ReadSeeker, filename string, size, maxBytes int64) 
 	}
 
 	return detectedExt, contentType, nil
+}
+
+func imageExtensionForMIME(contentType string) (string, bool) {
+	switch contentType {
+	case "image/jpeg":
+		return ".jpg", true
+	case "image/png":
+		return ".png", true
+	case "image/gif":
+		return ".gif", true
+	case "image/webp":
+		return ".webp", true
+	default:
+		return "", false
+	}
 }
 
 // NewReadSeeker 将通用 reader 转为可复位 reader，用于 multipart.File 之外的测试。
