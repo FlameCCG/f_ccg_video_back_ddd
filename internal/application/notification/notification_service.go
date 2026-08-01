@@ -32,6 +32,7 @@ type Service struct {
 	actors   ActorProfileProvider
 	tasks    *ctxutil.DetachedTaskGroup
 	countSFG singleflight.Group
+	logger   *zap.Logger
 }
 
 // 管理端更新系统通知的失败分类（对应原处理器三种不同的响应文案）。
@@ -51,8 +52,9 @@ func NewService(
 	chat ChatUnreadCounter,
 	actors ActorProfileProvider,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *Service {
-	return &Service{repo: repo, cache: cache, chat: chat, actors: actors, tasks: tasks}
+	return &Service{repo: repo, cache: cache, chat: chat, actors: actors, tasks: tasks, logger: logger}
 }
 
 // Create 写入通知并失效角标缓存。
@@ -90,6 +92,28 @@ func (s *Service) NotifyBanStatus(
 	if err := s.repo.Create(ctx, notice); err == nil {
 		s.invalidateCount(notice.ReceiverID)
 	}
+}
+
+// CreateBatch 批量写入通知，并逐个失效对应接收者的角标计数缓存。
+//
+// 对应原各业务模块「组装 []UserGlobalNotification → 一次 Create → 逐个失效缓存」的写法。
+func (s *Service) CreateBatch(ctx context.Context, notices []domain.Notification) error {
+	if len(notices) == 0 {
+		return nil
+	}
+
+	if err := s.repo.CreateBatch(ctx, notices); err != nil {
+		return err
+	}
+
+	receivers := make([]int, 0, len(notices))
+	for i := range notices {
+		receivers = append(receivers, notices[i].ReceiverID)
+	}
+
+	s.invalidateCountForReceivers(receivers)
+
+	return nil
 }
 
 // List 用户通知分页列表；isRead 由 notification_user_reads 推导（有行 = 已读）。
@@ -329,7 +353,7 @@ func (s *Service) refreshCountSummary(ctx context.Context, receiverID int) (*Not
 func (s *Service) refreshCountSummaryAsync(receiverID int) {
 	s.tasks.Go(context.TODO(), ctxutil.AsyncQuickTimeout, func(bg context.Context) {
 		if _, err := s.refreshCountSummary(bg, receiverID); err != nil {
-			zap.L().Warn("refresh notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+			s.logger.Warn("refresh notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 		}
 	})
 }
@@ -361,7 +385,7 @@ func (s *Service) loadCountSummary(ctx context.Context, receiverID int) (Notific
 
 		n, err := s.chat.TotalUnread(chatCtx, uint(receiverID))
 		if err != nil {
-			zap.L().Warn("load chat unread failed", zap.Int("receiverId", receiverID), zap.Error(err))
+			s.logger.Warn("load chat unread failed", zap.Int("receiverId", receiverID), zap.Error(err))
 
 			return nil
 		}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 // newTestRedis 启动 miniredis 并返回连接其上的客户端（离线测试，不依赖真实 Redis）。
@@ -40,7 +41,7 @@ func TestVisibleBannerCacheKey(t *testing.T) {
 
 func TestBannerCacheStoreLoadInvalidate(t *testing.T) {
 	server, client := newTestRedis(t)
-	cache := NewBannerCache(client)
+	cache := NewBannerCache(client, zap.NewNop())
 
 	homePartition := uint(0)
 	items := []domain.Banner{
@@ -88,7 +89,7 @@ func TestBannerCacheStoreLoadInvalidate(t *testing.T) {
 
 func TestBannerCacheDropsCorruptedValue(t *testing.T) {
 	server, client := newTestRedis(t)
-	cache := NewBannerCache(client)
+	cache := NewBannerCache(client, zap.NewNop())
 
 	key := "banner:visible:1:nil"
 	if err := server.Set(key, "not-json"); err != nil {
@@ -106,7 +107,7 @@ func TestBannerCacheDropsCorruptedValue(t *testing.T) {
 
 // TestBannerCacheWithoutRedis 保证 Redis 缺失时缓存操作静默降级（与原实现一致）。
 func TestBannerCacheWithoutRedis(t *testing.T) {
-	cache := NewBannerCache(nil)
+	cache := NewBannerCache(nil, zap.NewNop())
 
 	if _, ok := cache.LoadVisible(enum.BannerTypeHome, nil); ok {
 		t.Fatal("nil redis should always miss")

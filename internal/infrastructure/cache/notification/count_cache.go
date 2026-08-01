@@ -34,14 +34,19 @@ type redisValue struct {
 //
 // Redis key 前缀与 TTL 与原实现完全一致。
 type CountCache struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 var _ app.CountCache = (*CountCache)(nil)
 
 // NewCountCache 构造角标计数缓存适配器。
-func NewCountCache(redisClient *redis.Client) *CountCache {
-	return &CountCache{redis: redisClient}
+func NewCountCache(redisClient *redis.Client, logger *zap.Logger) *CountCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &CountCache{redis: redisClient, logger: logger}
 }
 
 // Available 报告 Redis 是否可用。
@@ -67,7 +72,7 @@ func (c *CountCache) Load(receiverID int) (*app.NotificationCountSummary, bool, 
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			zap.L().Warn("get notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+			c.logger.Warn("get notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 		}
 
 		return nil, false, false
@@ -75,7 +80,7 @@ func (c *CountCache) Load(receiverID int) (*app.NotificationCountSummary, bool, 
 
 	var payload redisValue
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		zap.L().Warn("unmarshal notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("unmarshal notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
 
 		return nil, false, false
@@ -107,7 +112,7 @@ func (c *CountCache) Store(receiverID int, data app.NotificationCountSummary) {
 
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		zap.L().Warn("marshal notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("marshal notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 
 		return
 	}
@@ -116,7 +121,7 @@ func (c *CountCache) Store(receiverID int, data app.NotificationCountSummary) {
 	defer cancel()
 
 	if err := c.redis.Set(cacheCtx, cacheKey(receiverID), raw, notificationCountCacheStaleTTL).Err(); err != nil {
-		zap.L().Warn("set notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("set notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 	}
 }
 
@@ -130,7 +135,7 @@ func (c *CountCache) Invalidate(receiverID int) {
 	defer cancel()
 
 	if err := c.redis.Del(cacheCtx, cacheKey(receiverID)).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		zap.L().Warn("invalidate notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("invalidate notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
 	}
 }
 
@@ -144,7 +149,7 @@ func (c *CountCache) InvalidateAll() {
 	defer cancel()
 
 	if err := c.deleteKeysByPrefix(cacheCtx, constants.NotificationCountCacheKeyPrefix); err != nil {
-		zap.L().Warn("invalidate all notification count cache failed", zap.Error(err))
+		c.logger.Warn("invalidate all notification count cache failed", zap.Error(err))
 	}
 }
 

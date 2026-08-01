@@ -140,6 +140,20 @@ type AuthorFeedCountParams struct {
 	IsOwnerView    bool
 }
 
+// FollowingFeedParams 当前用户关注聚合流查询参数。
+type FollowingFeedParams struct {
+	ViewerID uint
+	Sources  domain.FeedSources
+	Offset   int
+	Limit    int
+}
+
+// FollowingFeedCountParams 当前用户关注聚合流计数参数。
+type FollowingFeedCountParams struct {
+	ViewerID uint
+	Sources  domain.FeedSources
+}
+
 // FollowRelation 当前用户的一条关注关系（含被关注者资料）。
 type FollowRelation struct {
 	FocusUserID uint

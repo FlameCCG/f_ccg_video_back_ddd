@@ -157,7 +157,7 @@ func (s *Service) AdminDelete(ctx context.Context, commentIDs []uint) (int64, er
 		s.likeCache.Drop(cleanCtx, id)
 	}
 
-	zap.L().Info("admin delete comments ok", zap.Int("count", len(idsToDelete)))
+	s.logger.Info("admin delete comments ok", zap.Int("count", len(idsToDelete)))
 
 	return int64(len(idsToDelete)), nil
 }

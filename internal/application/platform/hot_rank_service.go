@@ -12,11 +12,12 @@ import (
 type HotRankDecayService struct {
 	store  HotRankStore
 	policy domain.HotRankDecayPolicy
+	logger *zap.Logger
 }
 
 // NewHotRankDecayService 构造热门榜衰减用例服务。
-func NewHotRankDecayService(store HotRankStore) *HotRankDecayService {
-	return &HotRankDecayService{store: store, policy: domain.NewHotRankDecayPolicy()}
+func NewHotRankDecayService(store HotRankStore, logger *zap.Logger) *HotRankDecayService {
+	return &HotRankDecayService{store: store, policy: domain.NewHotRankDecayPolicy(), logger: logger}
 }
 
 // Run 对热门榜单做一轮时间衰减，避免老视频长期占榜。
@@ -26,7 +27,7 @@ func NewHotRankDecayService(store HotRankStore) *HotRankDecayService {
 // 每一步失败只记录警告日志；衰减管线失败不阻断后续裁剪（与原实现一致）。
 func (s *HotRankDecayService) Run(ctx context.Context) {
 	if !s.store.Available() {
-		zap.L().Warn("skip DecayVideoHotScore: redis not configured")
+		s.logger.Warn("skip DecayVideoHotScore: redis not configured")
 
 		return
 	}
@@ -38,7 +39,7 @@ func (s *HotRankDecayService) Run(ctx context.Context) {
 
 	total, err := s.store.Size(ctx)
 	if err != nil {
-		zap.L().Warn("fetch hot rank size failed", zap.Error(err))
+		s.logger.Warn("fetch hot rank size failed", zap.Error(err))
 
 		return
 	}
@@ -49,7 +50,7 @@ func (s *HotRankDecayService) Run(ctx context.Context) {
 
 	entries, err := s.store.Entries(ctx)
 	if err != nil {
-		zap.L().Warn("fetch hot rank scores failed", zap.Error(err))
+		s.logger.Warn("fetch hot rank scores failed", zap.Error(err))
 
 		return
 	}
@@ -59,19 +60,19 @@ func (s *HotRankDecayService) Run(ctx context.Context) {
 	}
 
 	if err := s.store.ApplyDecay(ctx, s.policy.DecayAll(entries)); err != nil {
-		zap.L().Warn("decay hot rank failed", zap.Error(err))
+		s.logger.Warn("decay hot rank failed", zap.Error(err))
 	}
 
 	total, err = s.store.Size(ctx)
 	if err != nil {
-		zap.L().Warn("fetch hot rank size failed", zap.Error(err))
+		s.logger.Warn("fetch hot rank size failed", zap.Error(err))
 
 		return
 	}
 
 	if removeCount := s.policy.OverflowCount(total); removeCount > 0 {
 		if err := s.store.TrimLowest(ctx, removeCount); err != nil {
-			zap.L().Warn("trim hot rank failed", zap.Error(err))
+			s.logger.Warn("trim hot rank failed", zap.Error(err))
 		}
 	}
 }

@@ -34,11 +34,12 @@ var ErrBannerImagesDirUnreadable = errors.New("读取横幅图片目录失败")
 type BannerService struct {
 	storage StorageDriver
 	repo    BannerRepository
+	logger  *zap.Logger
 }
 
 // NewBannerService 构造 Banner 初始化用例。
-func NewBannerService(storage StorageDriver, repo BannerRepository) *BannerService {
-	return &BannerService{storage: storage, repo: repo}
+func NewBannerService(storage StorageDriver, repo BannerRepository, logger *zap.Logger) *BannerService {
+	return &BannerService{storage: storage, repo: repo, logger: logger}
 }
 
 // Provision 扫描 init_resource/images，把匹配的图片上传到存储并幂等写入 banner 表。
@@ -51,7 +52,7 @@ func (s *BannerService) Provision(ctx context.Context) (int, error) {
 	}
 
 	if len(files) == 0 {
-		zap.L().Warn("No images found in images directory", zap.String("dir", bannerImagesDir))
+		s.logger.Warn("No images found in images directory", zap.String("dir", bannerImagesDir))
 
 		return 0, nil
 	}
@@ -73,14 +74,14 @@ func (s *BannerService) Provision(ctx context.Context) (int, error) {
 		bannerType, ok := classifyBannerFile(filename)
 		if !ok {
 			// Skip files that don't match the criteria
-			zap.L().Debug("Skipping unrelated file in images folder", zap.String("filename", filename))
+			s.logger.Debug("Skipping unrelated file in images folder", zap.String("filename", filename))
 
 			continue
 		}
 
 		publicURL, err := s.upload(ctx, filename)
 		if err != nil {
-			zap.L().Error("Failed to upload banner to storage",
+			s.logger.Error("Failed to upload banner to storage",
 				zap.String("filename", filename), zap.Error(err))
 
 			continue
@@ -88,19 +89,19 @@ func (s *BannerService) Provision(ctx context.Context) (int, error) {
 
 		created, err := s.repo.UpsertBannerByCover(ctx, publicURL, bannerType)
 		if err != nil {
-			zap.L().Error("Failed to persist banner record",
+			s.logger.Error("Failed to persist banner record",
 				zap.String("filename", filename), zap.Error(err))
 
 			continue
 		}
 
 		if created {
-			zap.L().Info("Created new banner record",
+			s.logger.Info("Created new banner record",
 				zap.String("filename", filename),
 				zap.String("url", publicURL),
 				zap.Int("type", int(bannerType)))
 		} else {
-			zap.L().Info("Updated existing banner record",
+			s.logger.Info("Updated existing banner record",
 				zap.String("filename", filename),
 				zap.String("url", publicURL))
 		}

@@ -43,6 +43,7 @@ type Service struct {
 	videos    VideoCommentCounter
 	hotScore  VideoHotScoreRecorder
 	tasks     *ctxutil.DetachedTaskGroup
+	logger    *zap.Logger
 }
 
 // NewService 构造评论用例服务。
@@ -57,6 +58,7 @@ func NewService(
 	videos VideoCommentCounter,
 	hotScore VideoHotScoreRecorder,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *Service {
 	return &Service{
 		txm:       txm,
@@ -69,6 +71,7 @@ func NewService(
 		videos:    videos,
 		hotScore:  hotScore,
 		tasks:     tasks,
+		logger:    logger,
 	}
 }
 
@@ -522,7 +525,7 @@ func (s *Service) ToggleLike(ctx context.Context, userID, commentID uint) (int64
 	if s.likeCache.Available() {
 		// Set+Count 不完整则同步从 DB 重建（无 seeded 标记）
 		if err := s.ensureLikeCacheReady(ctx, commentID); err != nil {
-			zap.L().Warn("ensure comment like cache ready failed, fallback to db",
+			s.logger.Warn("ensure comment like cache ready failed, fallback to db",
 				zap.Uint("commentId", commentID), zap.Error(err))
 		} else {
 			likeCount, isLiked, toggleErr := s.likeCache.Toggle(ctx, commentID, userID)
@@ -534,7 +537,7 @@ func (s *Service) ToggleLike(ctx context.Context, userID, commentID uint) (int64
 				return likeCount, isLiked, nil
 			}
 
-			zap.L().Warn("toggle like via redis failed, fallback to db",
+			s.logger.Warn("toggle like via redis failed, fallback to db",
 				zap.Uint("commentId", commentID), zap.Error(toggleErr))
 		}
 	}
@@ -664,7 +667,7 @@ func (s *Service) scheduleLikeCacheRebuild(parent context.Context, commentIDs ..
 	s.tasks.Go(parent, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
 		for _, id := range ids {
 			if err := s.rebuildLikeCache(asyncCtx, id); err != nil {
-				zap.L().Warn("async rebuild comment like cache failed", zap.Uint("commentId", id), zap.Error(err))
+				s.logger.Warn("async rebuild comment like cache failed", zap.Uint("commentId", id), zap.Error(err))
 			}
 		}
 	})
@@ -1060,7 +1063,7 @@ func (s *Service) sendCommentLikeNotification(ctx context.Context, actionUserID,
 	}
 
 	if err := s.notifier.CreateNotices(ctx, []Notice{notice}); err != nil {
-		zap.L().Warn("create comment like notification failed", zap.Error(err))
+		s.logger.Warn("create comment like notification failed", zap.Error(err))
 
 		return
 	}
@@ -1075,7 +1078,7 @@ func (s *Service) dispatchNotices(ctx context.Context, notices []Notice, failMsg
 	}
 
 	if err := s.notifier.CreateNotices(ctx, notices); err != nil {
-		zap.L().Warn(failMsg, zap.Error(err))
+		s.logger.Warn(failMsg, zap.Error(err))
 
 		return
 	}

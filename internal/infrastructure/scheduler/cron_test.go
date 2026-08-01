@@ -5,11 +5,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func TestStop_NilSafeAndIdempotent(t *testing.T) {
 	// 未启动状态与重复 Stop 均不应 panic。
-	component := NewCronComponent(nil, nil, nil, nil)
+	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
 
 	if err := component.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)
@@ -32,7 +34,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 		exited  atomic.Bool
 	)
 
-	component := NewCronComponent(nil, nil, nil, nil)
+	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
 
 	// 注册一个长任务：启动后阻塞，直到 Stop 的 context 等待窗口结束或任务自行返回。
 	// 这里用短 sleep，确保 crontab.Stop() 的 Done 能在任务结束后触发。
@@ -80,7 +82,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 func TestStartJobs_IgnoresDuplicateStart(t *testing.T) {
 	var runs atomic.Int64
 
-	component := NewCronComponent(nil, nil, nil, nil)
+	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
 
 	job := []cronJob{{
 		name: "TestJob",
@@ -109,7 +111,7 @@ func TestStartJobs_IgnoresDuplicateStart(t *testing.T) {
 
 func TestCronSpecsMatchLegacySchedule(t *testing.T) {
 	// cron 表达式属外部契约，逐条与原 service/cron_service/enter.go 核对。
-	component := NewCronComponent(nil, nil, nil, nil)
+	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
 
 	want := []struct {
 		name string

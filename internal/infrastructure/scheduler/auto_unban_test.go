@@ -12,6 +12,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -58,7 +59,8 @@ func openAutoUnbanTestDB(t *testing.T) *gorm.DB {
 			days integer DEFAULT 0,
 			start_at datetime,
 			end_at datetime,
-			operator_id integer DEFAULT 0
+			operator_id integer DEFAULT 0,
+			is_unbanned numeric NOT NULL DEFAULT 0
 		)`,
 	}
 	for _, stmt := range statements {
@@ -97,6 +99,7 @@ func TestAutoUnbanReleasesOnlyExpiredBans(t *testing.T) {
 		gormx.NewTxManager(db),
 		NewBanMaintenanceRepository(db),
 		recorder,
+		zap.NewNop(),
 	)
 
 	service.Run(context.Background())
@@ -113,19 +116,23 @@ func TestAutoUnbanReleasesOnlyExpiredBans(t *testing.T) {
 		t.Fatalf("expected user 3 still permanently banned, got %d", got)
 	}
 
-	// 只应为到期用户补写一条解封记录。
+	// 自动解封只标记原封禁记录，不补写 Active 记录。
 	var records []po.UserBanRecord
-	if err := db.Where("user_id = ? AND status = ?", 1, enum.UserStatusActive).
-		Find(&records).Error; err != nil {
-		t.Fatalf("load unban records failed: %v", err)
+	if err := db.Where("user_id = ?", 1).Find(&records).Error; err != nil {
+		t.Fatalf("load ban records failed: %v", err)
 	}
 
+	if len(records) != 1 || records[0].Status != enum.UserStatusBanned || !records[0].IsUnbanned {
+		t.Fatalf("unexpected released original record: %+v", records)
+	}
+
+	// 再跑一轮不得重复处理已解封记录。
+	service.Run(context.Background())
+	if err := db.Where("user_id = ?", 1).Find(&records).Error; err != nil {
+		t.Fatalf("reload ban records failed: %v", err)
+	}
 	if len(records) != 1 {
-		t.Fatalf("expected 1 unban record for user 1, got %d", len(records))
-	}
-
-	if records[0].Reason != "自动解封" || records[0].Days != 0 || records[0].OperatorID != 0 {
-		t.Fatalf("unexpected unban record: %+v", records[0])
+		t.Fatalf("expected no duplicate records, got %d", len(records))
 	}
 
 	// 解封后必须 write-through Active，且只写到期用户。
@@ -144,6 +151,7 @@ func TestAutoUnbanNoopWhenNothingExpired(t *testing.T) {
 		gormx.NewTxManager(db),
 		NewBanMaintenanceRepository(db),
 		recorder,
+		zap.NewNop(),
 	)
 
 	service.Run(context.Background())

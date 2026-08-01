@@ -18,14 +18,19 @@ const regionFieldCount = 5
 // 替代原 pkg/utils/ipUtils.GetIpAddr 对 global.IPSearcher 的全局引用。
 type Resolver struct {
 	searcher *xdb.Searcher
+	logger   *zap.Logger
 }
 
 // 编译期断言：Resolver 满足 pkg 侧声明的归属地解析端口。
 var _ ipUtils.RegionResolver = (*Resolver)(nil)
 
 // NewResolver 构造归属地解析器；searcher 为 nil 时所有公网 IP 返回「未知地址」。
-func NewResolver(searcher *xdb.Searcher) *Resolver {
-	return &Resolver{searcher: searcher}
+func NewResolver(searcher *xdb.Searcher, logger *zap.Logger) *Resolver {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &Resolver{searcher: searcher, logger: logger}
 }
 
 // Region 返回 IP 归属地，语义与原 ipUtils.GetIpAddr 完全一致。
@@ -40,14 +45,14 @@ func (r *Resolver) Region(ip string) string {
 
 	region, err := r.searcher.SearchByStr(ip)
 	if err != nil {
-		zap.L().Warn("ipUtils.GetIpAddr failed", zap.Error(err))
+		r.logger.Warn("ipUtils.GetIpAddr failed", zap.Error(err))
 
 		return "异常地址"
 	}
 
 	addrList := strings.Split(region, "|")
 	if len(addrList) != regionFieldCount {
-		zap.L().Warn("ipUtils.GetIpAddr failed", zap.Error(errors.New("addrList len != 5")))
+		r.logger.Warn("ipUtils.GetIpAddr failed", zap.Error(errors.New("addrList len != 5")))
 
 		return "未知地址"
 	}

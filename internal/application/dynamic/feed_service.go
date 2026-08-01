@@ -18,18 +18,19 @@ const feedMetricTimeout = 800 * time.Millisecond
 
 // FeedService 作品流查询用例服务（原 service/dynamic_service/feed_service.go）。
 type FeedService struct {
-	users UserProfileQuery
-	feed  FeedQuery
+	users  UserProfileQuery
+	feed   FeedQuery
+	logger *zap.Logger
 }
 
 // NewFeedService 构造作品流查询用例服务。
-func NewFeedService(users UserProfileQuery, feed FeedQuery) *FeedService {
-	return &FeedService{users: users, feed: feed}
+func NewFeedService(users UserProfileQuery, feed FeedQuery, logger *zap.Logger) *FeedService {
+	return &FeedService{users: users, feed: feed, logger: logger}
 }
 
-// ListFeed 分页查询指定作者的作品流（视频 + 动态）。
+// ListFeed 分页查询作品流（视频 + 动态）。
 //
-// workType：0 全部、1 仅视频、2 仅动态；viewerID 为浏览者，作者本人可看到未发布视频。
+// workType：0 全部、1 仅视频、2 仅动态；authorID=0 时返回浏览者本人及关注用户的聚合流。
 func (s *FeedService) ListFeed(
 	ctx context.Context,
 	userID, authorID uint,
@@ -38,11 +39,62 @@ func (s *FeedService) ListFeed(
 	page, pageSize = domain.NormalizeFeedPaging(page, pageSize)
 	offset := max((page-1)*pageSize, 0)
 
-	if authorID == 0 {
-		return nil, 0, domain.ErrUserIDRequired
+	if authorID > 0 {
+		return s.listAuthorFeed(ctx, userID, authorID, workType, offset, pageSize)
 	}
 
-	return s.listAuthorFeed(ctx, userID, authorID, workType, offset, pageSize)
+	if userID == 0 {
+		return nil, 0, domain.ErrUserNotLogin
+	}
+
+	return s.listFollowingFeed(ctx, userID, workType, offset, pageSize)
+}
+
+func (s *FeedService) listFollowingFeed(
+	ctx context.Context,
+	viewerID uint,
+	workType, offset, limit int,
+) ([]WorkFeedItem, int64, error) {
+	sources := domain.BuildFeedSources(workType)
+	if !sources.Any() {
+		return []WorkFeedItem{}, 0, nil
+	}
+
+	rows, err := s.feed.ListFollowingWorks(ctx, FollowingFeedParams{
+		ViewerID: viewerID,
+		Sources:  sources,
+		Offset:   offset,
+		Limit:    limit + 1,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	total, rows, err := resolveFeedTotal(ctx, rows, offset, limit, func(countCtx context.Context) (int64, error) {
+		return s.feed.CountFollowingWorks(countCtx, FollowingFeedCountParams{
+			ViewerID: viewerID,
+			Sources:  sources,
+		})
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if total == 0 {
+		return []WorkFeedItem{}, 0, nil
+	}
+
+	metrics, err := s.buildFeedMetrics(ctx, viewerID, rows)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]WorkFeedItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, rowToFeedItem(row, metrics))
+	}
+
+	return items, total, nil
 }
 
 func (s *FeedService) listAuthorFeed(
@@ -269,7 +321,7 @@ func (s *FeedService) likedVideoIDsBestEffort(ctx context.Context, viewerID uint
 
 	ids, err := s.feed.LikedVideoIDs(queryCtx, viewerID, videoIDs)
 	if err != nil {
-		zap.L().Warn("load liked video ids failed", zap.Uint("viewerId", viewerID), zap.Error(err))
+		s.logger.Warn("load liked video ids failed", zap.Uint("viewerId", viewerID), zap.Error(err))
 
 		return result
 	}
@@ -288,7 +340,7 @@ func (s *FeedService) likedDynamicIDsBestEffort(ctx context.Context, viewerID ui
 
 	ids, err := s.feed.LikedDynamicIDs(queryCtx, viewerID, dynamicIDs)
 	if err != nil {
-		zap.L().Warn("load liked dynamic ids failed", zap.Uint("viewerId", viewerID), zap.Error(err))
+		s.logger.Warn("load liked dynamic ids failed", zap.Uint("viewerId", viewerID), zap.Error(err))
 
 		return result
 	}
@@ -307,7 +359,7 @@ func (s *FeedService) dynamicCommentsBestEffort(ctx context.Context, dynamicIDs 
 
 	counts, err := s.feed.CommentCountsByDynamic(queryCtx, dynamicIDs)
 	if err != nil {
-		zap.L().Warn("load dynamic comment counts failed", zap.Error(err))
+		s.logger.Warn("load dynamic comment counts failed", zap.Error(err))
 
 		return result
 	}

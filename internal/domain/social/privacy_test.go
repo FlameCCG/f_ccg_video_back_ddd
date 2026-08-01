@@ -31,7 +31,13 @@ func TestEnsureFollowListVisible(t *testing.T) {
 		},
 		{name: "他人翻页超限", privacy: open, viewerID: 1, ownerID: 2, page: domain.MaxForeignListPage + 1, wantErr: domain.ErrForeignPageLimited},
 		{name: "他人翻页边界可见", privacy: open, viewerID: 1, ownerID: 2, page: domain.MaxForeignListPage},
-		{name: "本人可深翻页", privacy: open, viewerID: 2, ownerID: 2, page: 100},
+		{
+			name:     "本人绕过关闭的隐私开关和深翻页限制",
+			privacy:  domain.FollowPrivacy{Exists: true},
+			viewerID: 2,
+			ownerID:  2,
+			page:     100,
+		},
 	}
 
 	for _, tc := range cases {
@@ -75,8 +81,8 @@ func TestEnsureFansListVisible(t *testing.T) {
 			wantErr:  domain.ErrForeignPageLimited,
 		},
 		{
-			name:     "本人可深翻页",
-			privacy:  domain.FollowPrivacy{Exists: true, OpenFans: true},
+			name:     "本人绕过关闭的隐私开关和深翻页限制",
+			privacy:  domain.FollowPrivacy{Exists: true},
 			viewerID: 9,
 			ownerID:  9,
 			page:     50,

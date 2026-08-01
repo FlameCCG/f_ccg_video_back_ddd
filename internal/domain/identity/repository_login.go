@@ -36,6 +36,8 @@ type UserAccountRepository interface {
 
 	// FindByID 按主键读取用户；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, userID uint) (*User, error)
+	// FindWithConfByID 一次查询读取用户及其一对一配置；用户不存在时返回 (nil, nil, nil)。
+	FindWithConfByID(ctx context.Context, userID uint) (*User, *UserConf, error)
 	// ExistsByUsernameOrEmail 判断用户名或邮箱是否已被占用。
 	ExistsByUsernameOrEmail(ctx context.Context, username, email string) (bool, error)
 	// FindByUsernameOrEmail 按「用户名或邮箱」登录标识读取用户；不存在时返回 (nil, nil)。

@@ -18,6 +18,7 @@ type Service struct {
 	videos    VideoOwnershipQuery
 	videoPins VideoPinWriter
 	comments  DynamicCommentPurger
+	logger    *zap.Logger
 }
 
 // NewService 构造动态命令用例服务。
@@ -28,6 +29,7 @@ func NewService(
 	videos VideoOwnershipQuery,
 	videoPins VideoPinWriter,
 	comments DynamicCommentPurger,
+	logger *zap.Logger,
 ) *Service {
 	return &Service{
 		txm:       txm,
@@ -36,6 +38,7 @@ func NewService(
 		videos:    videos,
 		videoPins: videoPins,
 		comments:  comments,
+		logger:    logger,
 	}
 }
 
@@ -113,7 +116,7 @@ func (s *Service) Delete(ctx context.Context, userID, dynamicID uint) error {
 		return err
 	}
 
-	zap.L().Info("delete dynamic ok",
+	s.logger.Info("delete dynamic ok",
 		zap.Uint("dynamicId", dynamicID),
 		zap.Int64("commentDeleted", deletedComments),
 		zap.Int64("commentLikeDeleted", deletedCommentLikes),

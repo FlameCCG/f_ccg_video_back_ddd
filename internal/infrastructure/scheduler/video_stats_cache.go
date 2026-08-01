@@ -58,14 +58,19 @@ type videoStatsPayload struct {
 // Redis key 与原实现完全一致（脏集合 video:detail:stats:dirty、
 // 统计 video:detail:stats:<id>、版本 video:detail:stats:ver:<id>）。
 type VideoStatsCache struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 var _ app.VideoStatsCache = (*VideoStatsCache)(nil)
 
 // NewVideoStatsCache 构造视频统计缓存适配器。
-func NewVideoStatsCache(redisClient *redis.Client) *VideoStatsCache {
-	return &VideoStatsCache{redis: redisClient}
+func NewVideoStatsCache(redisClient *redis.Client, logger *zap.Logger) *VideoStatsCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &VideoStatsCache{redis: redisClient, logger: logger}
 }
 
 // Available 报告底层 Redis 是否已配置。
@@ -110,7 +115,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 	for i, memberID := range ids {
 		videoID, parseErr := parseDirtyVideoID(memberID)
 		if parseErr != nil {
-			zap.L().Warn("invalid dirty video id", zap.String("member", memberID), zap.Error(parseErr))
+			c.logger.Warn("invalid dirty video id", zap.String("member", memberID), zap.Error(parseErr))
 			c.clearDirtyMember(ctx, memberID)
 
 			continue
@@ -120,7 +125,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 		versionIdx := statsIdx + 1
 
 		if versionIdx >= len(rawResult) {
-			zap.L().Warn("load dirty video stats snapshot incomplete", zap.String("member", memberID))
+			c.logger.Warn("load dirty video stats snapshot incomplete", zap.String("member", memberID))
 
 			continue
 		}
@@ -134,7 +139,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 
 		var payload videoStatsPayload
 		if err := json.Unmarshal(raw, &payload); err != nil {
-			zap.L().Warn("unmarshal dirty video stats failed", zap.Uint("videoId", videoID), zap.Error(err))
+			c.logger.Warn("unmarshal dirty video stats failed", zap.Uint("videoId", videoID), zap.Error(err))
 
 			continue
 		}

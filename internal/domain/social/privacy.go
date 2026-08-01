@@ -24,10 +24,14 @@ type ActionPrivacy struct {
 // EnsureFollowListVisible 判定关注列表对浏览者是否可见。
 //
 // 判定顺序与原 api/social_api/focus_list.go 一致：
-// 用户是否存在 → 是否公开关注 → 他人视角的翻页上限。
+// 用户是否存在 → 本人绕过隐私与翻页限制 → 是否公开关注 → 他人视角的翻页上限。
 func EnsureFollowListVisible(privacy FollowPrivacy, viewerID, ownerID, page int) error {
 	if !privacy.Exists {
 		return ErrUserNotFound
+	}
+
+	if viewerID == ownerID {
+		return nil
 	}
 
 	if !privacy.OpenFollow {
@@ -40,10 +44,14 @@ func EnsureFollowListVisible(privacy FollowPrivacy, viewerID, ownerID, page int)
 // EnsureFansListVisible 判定粉丝列表对浏览者是否可见。
 //
 // 判定顺序与原 api/social_api/fans_list.go 一致：
-// 用户是否存在 → 是否公开粉丝 → 他人视角的翻页上限。
+// 用户是否存在 → 本人绕过隐私与翻页限制 → 是否公开粉丝 → 他人视角的翻页上限。
 func EnsureFansListVisible(privacy FollowPrivacy, viewerID, ownerID, page int) error {
 	if !privacy.Exists {
 		return ErrUserNotFound
+	}
+
+	if viewerID == ownerID {
+		return nil
 	}
 
 	if !privacy.OpenFans {

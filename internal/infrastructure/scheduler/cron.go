@@ -51,6 +51,7 @@ type CronComponent struct {
 	videoStat   VideoStatSyncJob
 	hotRank     HotRankDecayJob
 	autoUnban   AutoUnbanJob
+	logger      *zap.Logger
 
 	mu      sync.Mutex
 	crontab *cron.Cron
@@ -64,12 +65,18 @@ func NewCronComponent(
 	videoStat VideoStatSyncJob,
 	hotRank HotRankDecayJob,
 	autoUnban AutoUnbanJob,
+	logger *zap.Logger,
 ) *CronComponent {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &CronComponent{
 		commentLike: commentLike,
 		videoStat:   videoStat,
 		hotRank:     hotRank,
 		autoUnban:   autoUnban,
+		logger:      logger,
 	}
 }
 
@@ -114,7 +121,7 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 	c.mu.Lock()
 	if c.crontab != nil {
 		c.mu.Unlock()
-		zap.L().Warn("定时任务已在运行，忽略重复启动")
+		c.logger.Warn("定时任务已在运行，忽略重复启动")
 
 		return nil
 	}
@@ -122,7 +129,7 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 
 	crontab := cron.New(
 		cron.WithSeconds(),
-		cron.WithLocation(cronLocation()),
+		cron.WithLocation(c.cronLocation()),
 		cron.WithChain(
 			cron.SkipIfStillRunning(cron.DefaultLogger),
 			cron.Recover(cron.DefaultLogger),
@@ -131,7 +138,7 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 
 	for _, job := range jobs {
 		if _, err := crontab.AddFunc(job.spec, job.run); err != nil {
-			zap.L().Error("register "+job.name+" cron failed", zap.Error(err))
+			c.logger.Error("register "+job.name+" cron failed", zap.Error(err))
 		}
 	}
 
@@ -141,7 +148,7 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 	c.crontab = crontab
 	c.mu.Unlock()
 
-	zap.L().Info("定时任务启动成功!")
+	c.logger.Info("定时任务启动成功!")
 
 	return nil
 }
@@ -167,9 +174,9 @@ func (c *CronComponent) Stop(_ context.Context) error {
 	stopCtx := crontab.Stop()
 	select {
 	case <-stopCtx.Done():
-		zap.L().Info("定时任务已停止")
+		c.logger.Info("定时任务已停止")
 	case <-time.After(cronStopTimeout):
-		zap.L().Warn("定时任务停止超时，继续退出")
+		c.logger.Warn("定时任务停止超时，继续退出")
 	}
 
 	return nil
@@ -180,10 +187,10 @@ func (c *CronComponent) Stop(_ context.Context) error {
 // 原实现忽略 LoadLocation 的错误，一旦运行环境缺少 tzdata 就会得到 nil *time.Location，
 // 使 cron 在计算下次触发点时 panic（time.Time.In(nil)）。
 // 这里回落到本地时区并告警；tzdata 可用时（正常部署）行为与原实现完全一致。
-func cronLocation() *time.Location {
+func (c *CronComponent) cronLocation() *time.Location {
 	timezone, err := time.LoadLocation(cronTimezone)
 	if err != nil || timezone == nil {
-		zap.L().Warn("load cron timezone failed, fallback to local",
+		c.logger.Warn("load cron timezone failed, fallback to local",
 			zap.String("timezone", cronTimezone), zap.Error(err))
 
 		return time.Local

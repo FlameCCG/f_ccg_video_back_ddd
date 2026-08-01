@@ -1647,6 +1647,8 @@ components:
           properties:
             visitUsers:
               $ref: "#/components/schemas/TrendSeries"
+            loginUsers:
+              $ref: "#/components/schemas/TrendSeries"
             publishVideos:
               $ref: "#/components/schemas/TrendSeries"
             newUsers:

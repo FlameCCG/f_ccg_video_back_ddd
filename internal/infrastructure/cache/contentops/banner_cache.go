@@ -30,14 +30,19 @@ const (
 // Redis key 前缀（banner:visible:）、10 分钟 TTL、300ms 独立超时与缓存值的
 // JSON 结构均与原实现完全一致。
 type BannerCache struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 var _ app.BannerCache = (*BannerCache)(nil)
 
 // NewBannerCache 构造可见轮播图缓存适配器。
-func NewBannerCache(redisClient *redis.Client) *BannerCache {
-	return &BannerCache{redis: redisClient}
+func NewBannerCache(redisClient *redis.Client, logger *zap.Logger) *BannerCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &BannerCache{redis: redisClient, logger: logger}
 }
 
 // visibleBannerCacheKey 组装缓存 key：banner:visible:<type>:<partitionId|nil>。
@@ -64,7 +69,7 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			zap.L().Warn("get visible banner cache failed", zap.String("key", key), zap.Error(err))
+			c.logger.Warn("get visible banner cache failed", zap.String("key", key), zap.Error(err))
 		}
 
 		return nil, false
@@ -72,7 +77,7 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 
 	var items []domain.Banner
 	if err := json.Unmarshal(raw, &items); err != nil {
-		zap.L().Warn("unmarshal visible banner cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("unmarshal visible banner cache failed", zap.String("key", key), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
 
 		return nil, false
@@ -95,7 +100,7 @@ func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint
 
 	raw, err := json.Marshal(items)
 	if err != nil {
-		zap.L().Warn("marshal visible banner cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("marshal visible banner cache failed", zap.String("key", key), zap.Error(err))
 
 		return
 	}
@@ -104,7 +109,7 @@ func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint
 	defer cancel()
 
 	if err := c.redis.Set(cacheCtx, key, raw, visibleBannerCacheTTL).Err(); err != nil {
-		zap.L().Warn("set visible banner cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("set visible banner cache failed", zap.String("key", key), zap.Error(err))
 	}
 }
 
@@ -118,7 +123,7 @@ func (c *BannerCache) InvalidateVisible() {
 	defer cancel()
 
 	if err := c.deleteKeysByPrefix(cacheCtx, constants.BannerVisibleCacheKeyPrefix); err != nil {
-		zap.L().Warn("invalidate visible banner cache failed", zap.Error(err))
+		c.logger.Warn("invalidate visible banner cache failed", zap.Error(err))
 	}
 }
 

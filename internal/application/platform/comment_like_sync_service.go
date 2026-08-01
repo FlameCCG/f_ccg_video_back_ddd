@@ -18,6 +18,7 @@ type CommentLikeSyncService struct {
 	txm        tx.Manager
 	queue      CommentLikeQueue
 	projection CommentLikeProjection
+	logger     *zap.Logger
 }
 
 // NewCommentLikeSyncService 构造评论点赞增量落库用例服务。
@@ -25,8 +26,9 @@ func NewCommentLikeSyncService(
 	txm tx.Manager,
 	queue CommentLikeQueue,
 	projection CommentLikeProjection,
+	logger *zap.Logger,
 ) *CommentLikeSyncService {
-	return &CommentLikeSyncService{txm: txm, queue: queue, projection: projection}
+	return &CommentLikeSyncService{txm: txm, queue: queue, projection: projection, logger: logger}
 }
 
 // Run 循环消费评论点赞增量队列，直到队列取空或出现失败。
@@ -38,7 +40,7 @@ func NewCommentLikeSyncService(
 //   - 确认失败：记录警告并结束本轮。
 func (s *CommentLikeSyncService) Run(ctx context.Context) {
 	if !s.queue.Available() {
-		zap.L().Warn("skip SyncCommentLike: redis not configured")
+		s.logger.Warn("skip SyncCommentLike: redis not configured")
 
 		return
 	}
@@ -51,7 +53,7 @@ func (s *CommentLikeSyncService) Run(ctx context.Context) {
 	for {
 		items, err := s.queue.NextBatch(ctx)
 		if err != nil {
-			zap.L().Warn("load comment like batch failed", zap.Error(err))
+			s.logger.Warn("load comment like batch failed", zap.Error(err))
 
 			return
 		}
@@ -60,24 +62,24 @@ func (s *CommentLikeSyncService) Run(ctx context.Context) {
 			return
 		}
 
-		intents, decodeOK := domain.FoldCommentLikeIntents(decodeCommentLikeEvents(items))
+		intents, decodeOK := domain.FoldCommentLikeIntents(s.decodeCommentLikeEvents(items))
 		if !decodeOK {
 			// 整批都是坏消息：直接 ack 丢掉，避免堵死
 			if err := s.queue.Ack(ctx, len(items)); err != nil {
-				zap.L().Warn("ack comment like batch failed", zap.Error(err))
+				s.logger.Warn("ack comment like batch failed", zap.Error(err))
 			}
 
 			continue
 		}
 
 		if err := s.applyIntents(ctx, intents); err != nil {
-			zap.L().Warn("apply comment like intents failed", zap.Error(err))
+			s.logger.Warn("apply comment like intents failed", zap.Error(err))
 			// 不 ack：processing 保留，下次整批重试（apply 相对行状态幂等）
 			return
 		}
 
 		if err := s.queue.Ack(ctx, len(items)); err != nil {
-			zap.L().Warn("ack comment like batch failed", zap.Int("batchSize", len(items)), zap.Error(err))
+			s.logger.Warn("ack comment like batch failed", zap.Int("batchSize", len(items)), zap.Error(err))
 
 			return
 		}
@@ -85,13 +87,13 @@ func (s *CommentLikeSyncService) Run(ctx context.Context) {
 }
 
 // decodeCommentLikeEvents 按入队顺序解码原始消息，解码失败的条目记录警告后丢弃。
-func decodeCommentLikeEvents(items []string) []domain.CommentLikeEvent {
+func (s *CommentLikeSyncService) decodeCommentLikeEvents(items []string) []domain.CommentLikeEvent {
 	events := make([]domain.CommentLikeEvent, 0, len(items))
 
 	for _, raw := range items {
 		var evt domain.CommentLikeEvent
 		if err := json.Unmarshal([]byte(raw), &evt); err != nil {
-			zap.L().Warn("unmarshal comment like event failed", zap.Error(err))
+			s.logger.Warn("unmarshal comment like event failed", zap.Error(err))
 
 			continue
 		}

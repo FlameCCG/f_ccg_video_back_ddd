@@ -32,14 +32,19 @@ type redisValue struct {
 //
 // Redis key 前缀与 TTL 与原实现完全一致。
 type UnreadFollowCountCache struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 var _ app.UnreadFollowCountCache = (*UnreadFollowCountCache)(nil)
 
 // NewUnreadFollowCountCache 构造关注未读数缓存适配器。
-func NewUnreadFollowCountCache(redisClient *redis.Client) *UnreadFollowCountCache {
-	return &UnreadFollowCountCache{redis: redisClient}
+func NewUnreadFollowCountCache(redisClient *redis.Client, logger *zap.Logger) *UnreadFollowCountCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &UnreadFollowCountCache{redis: redisClient, logger: logger}
 }
 
 func cacheKey(userID uint) string {
@@ -62,7 +67,7 @@ func (c *UnreadFollowCountCache) Load(userID uint) (int64, bool, bool) {
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			zap.L().Warn("get unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+			c.logger.Warn("get unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
 		}
 
 		return 0, false, false
@@ -70,7 +75,7 @@ func (c *UnreadFollowCountCache) Load(userID uint) (int64, bool, bool) {
 
 	var payload redisValue
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		zap.L().Warn("unmarshal unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("unmarshal unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
 
 		return 0, false, false
@@ -101,7 +106,7 @@ func (c *UnreadFollowCountCache) Store(userID uint, count int64) {
 
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		zap.L().Warn("marshal unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("marshal unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
 
 		return
 	}
@@ -110,7 +115,7 @@ func (c *UnreadFollowCountCache) Store(userID uint, count int64) {
 	defer cancel()
 
 	if err := c.redis.Set(cacheCtx, cacheKey(userID), raw, unreadFollowCountCacheStaleTTL).Err(); err != nil {
-		zap.L().Warn("set unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("set unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
 	}
 }
 
@@ -124,6 +129,6 @@ func (c *UnreadFollowCountCache) Invalidate(userID uint) {
 	defer cancel()
 
 	if err := c.redis.Del(cacheCtx, cacheKey(userID)).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		zap.L().Warn("invalidate unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("invalidate unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
 	}
 }

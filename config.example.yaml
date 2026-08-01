@@ -363,7 +363,7 @@ ai:
   chatModels: []
   # 对话模型 API Key
   chatModelAPIKey: ""
-  # 对话模型 Base URL
+  # 对话模型 Base URL（由 Eino Claude ChatModel 按 Anthropic Messages 协议调用）
   chatModelBaseURL: https://api.deepseek.com/anthropic
   # 是否开启思考模式（开启后前台可选择思考强度）
   thinkingEnabled: true
@@ -371,18 +371,53 @@ ai:
   thinkingEffort: high
   # 可选思考强度列表
   thinkingEfforts: []
-  # 豆包模型 API Key（图/视频/向量 Embedding，BaseURL 由 Eino Ark SDK 默认）
+  # 豆包模型 API Key（图/视频/多模态向量，BaseURL 由方舟 SDK 默认）
   doubaoModelAPIKey: ""
-  # 向量维度
+  # 向量维度；方舟多模态向量模型只支持 1024 / 2048
+  # 改动后必须调用 POST /api/video/vector/rebuild {"recreate":true} 重建索引，
+  # ES 不允许原地修改 dense_vector 维度
   embeddingDimensions: 2048
-  # Embedding 模型名
+  # Embedding 模型名（vision 系列才支持图像模态，是「以图搜视频」的前提）
   embeddingModel: doubao-embedding-vision-251215
+  # 封面图是否参与多模态向量化：
+  #   auto —— 能解析到封面就带上，解析不到退化为纯文本向量（默认）
+  #   on   —— 强制要求封面可用，解析失败直接报错（便于排查索引质量问题）
+  #   off  —— 纯文本向量，「以图搜视频」将失效
+  embeddingImageMode: auto
+  # 站内资源公网前缀，用于把相对封面路径补成绝对地址；
+  # 留空时本地存储的封面会直接从磁盘读取，MinIO 等内网地址会由后端代抓再转 base64
+  assetBaseURL: ""
+  # 向量召回与关键词召回做 RRF 融合的排名常数（业界惯例 60）
+  vectorRRFRankConstant: 60
+  # 向量召回的最低余弦相似度（0~1）；以图搜视频建议 0.2 以上，0 表示不过滤
+  vectorMinSimilarity: 0
+  # 透传给聊天模型的最大历史消息条数（会话记忆窗口）
+  historyMaxTurns: 20
+  # 透传给聊天模型的历史文本总字符上限
+  historyMaxChars: 24000
   # 默认图片生成模型
   imageModel: doubao-seedream-5-0-lite-260128
   # 可选图片模型列表（管理端下拉）
   imageModels: []
   # 系统提示词（站内视频助手）
   systemPrompt: ""
+  # 管理端创建菜单时生成 titleEn/titleJa/icon/path/name/component/keepAlive/sortOrder 的独立系统提示词；
+  # 可以按项目路由规范自行调整；留空时仍会使用后端内置的同等默认提示词
+  menuGenerationSystemPrompt: |-
+    你是企业后台 RBAC 菜单配置生成器。你会收到中文菜单标题、可选父菜单 ID，以及 menus 表的全部现有数据。
+    请参考现有菜单的命名、层级、路由、组件路径、SVG 图标和同级排序风格，为新菜单生成除中文标题与父菜单之外的全部业务字段。
+
+    只返回一个合法 JSON 对象，不要使用 Markdown 代码块，不要解释，也不要输出 JSON 以外的内容。
+    JSON 必须包含且只包含以下字段：
+    {"titleEn":"英文标题","titleJa":"日文标题","icon":"完整且可直接渲染的 SVG 字符串","path":"路由路径","name":"唯一的 PascalCase 路由名称","component":"前端组件路径或 Layout","keepAlive":false,"sortOrder":1}
+
+    硬性规则：
+    1. 顶级菜单的 path 使用以 / 开头的绝对路径，component 通常为 Layout。
+    2. 子菜单的 path 使用相对路径，component 使用 views/<模块>/<页面>/index.vue；必须结合父菜单 ID 判断所属模块。
+    3. titleEn、titleJa、path、name、component 均不能为空；name、path、component 必须参考现有 menus 数据保持唯一且风格一致。
+    4. sortOrder 必须是大于 0 的整数，并根据相同父菜单下的现有菜单给出合理插入位置。
+    5. icon 必须是完整、安全、长度不超过 2048 字节的 SVG，不得包含 script、foreignObject、事件处理器、javascript: 或外部资源。
+    6. 不得修改或返回用户提供的中文标题与父菜单 ID。
   # AI 请求超时（秒）
   timeoutSec: 90
   # 视频向量索引名

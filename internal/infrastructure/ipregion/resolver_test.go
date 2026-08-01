@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lionsoul2014/ip2region/binding/golang/xdb"
+	"go.uber.org/zap"
 )
 
 // xdbTestPath 从本包目录出发指向仓库内的 ip2region 数据文件。
@@ -21,7 +22,7 @@ func TestResolverRegionPublicIP(t *testing.T) {
 
 	t.Cleanup(searcher.Close)
 
-	resolver := NewResolver(searcher)
+	resolver := NewResolver(searcher, zap.NewNop())
 
 	addr := resolver.Region("8.8.8.8")
 	if addr == "" {
@@ -37,7 +38,7 @@ func TestResolverRegionPublicIP(t *testing.T) {
 func TestResolverRegionPrivateIP(t *testing.T) {
 	t.Parallel()
 
-	resolver := NewResolver(nil)
+	resolver := NewResolver(nil, zap.NewNop())
 
 	for _, ip := range []string{"127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.1.1"} {
 		if got := resolver.Region(ip); got != "内网" {
@@ -51,7 +52,7 @@ func TestResolverRegionPrivateIP(t *testing.T) {
 func TestResolverRegionWithoutSearcher(t *testing.T) {
 	t.Parallel()
 
-	resolver := NewResolver(nil)
+	resolver := NewResolver(nil, zap.NewNop())
 
 	if got := resolver.Region("8.8.8.8"); got != "未知地址" {
 		t.Fatalf("Region without searcher = %q, want 未知地址", got)
@@ -69,7 +70,7 @@ func TestResolverRegionInvalidIP(t *testing.T) {
 
 	t.Cleanup(searcher.Close)
 
-	resolver := NewResolver(searcher)
+	resolver := NewResolver(searcher, zap.NewNop())
 
 	if got := resolver.Region("not-an-ip"); got != "异常地址" {
 		t.Fatalf("Region(invalid) = %q, want 异常地址", got)

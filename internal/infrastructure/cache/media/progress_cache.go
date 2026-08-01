@@ -22,7 +22,8 @@ const progressClearTimeout = 2 * time.Second
 
 // ProgressCache 转码进度的 Redis 适配器，同时实现读端口与写端口。
 type ProgressCache struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 var (
@@ -31,8 +32,12 @@ var (
 )
 
 // NewProgressCache 构造转码进度缓存适配器。
-func NewProgressCache(redisClient *redis.Client) *ProgressCache {
-	return &ProgressCache{redis: redisClient}
+func NewProgressCache(redisClient *redis.Client, logger *zap.Logger) *ProgressCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &ProgressCache{redis: redisClient, logger: logger}
 }
 
 // Write 写入进度快照，维护分P 集合并广播变更（最佳努力）。
@@ -49,7 +54,7 @@ func (c *ProgressCache) Write(ctx context.Context, snapshot *domain.TranscodePro
 	}
 
 	if err := c.redis.Set(ctx, domain.TranscodeProgressKey(snapshot.VideoID, snapshot.PartID), raw, ttl).Err(); err != nil {
-		zap.L().Warn("write transcode progress failed",
+		c.logger.Warn("write transcode progress failed",
 			zap.Uint("videoId", snapshot.VideoID),
 			zap.Uint("partId", snapshot.PartID),
 			zap.Error(err),
@@ -97,7 +102,7 @@ func (c *ProgressCache) Clear(ctx context.Context, videoID, partID uint) {
 	}
 
 	if _, err := pipe.Exec(cleanupCtx); err != nil && !errors.Is(err, redis.Nil) {
-		zap.L().Warn("clear canceled transcode progress failed",
+		c.logger.Warn("clear canceled transcode progress failed",
 			zap.Uint("videoId", videoID),
 			zap.Uint("partId", partID),
 			zap.Error(err),
@@ -173,7 +178,7 @@ func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]doma
 		partValues := partCmds[id].Val()
 		if len(partValues) > 0 {
 			for _, raw := range partValues {
-				if p, ok := decodeTranscodeProgress(raw); ok {
+				if p, ok := decodeTranscodeProgress(raw, c.logger); ok {
 					out = append(out, p)
 				}
 			}
@@ -181,7 +186,7 @@ func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]doma
 			continue
 		}
 
-		if p, ok := decodeTranscodeProgress(videoCmds[id].Val()); ok {
+		if p, ok := decodeTranscodeProgress(videoCmds[id].Val(), c.logger); ok {
 			out = append(out, p)
 		}
 	}
@@ -246,21 +251,27 @@ func (c *ProgressCache) Subscribe(ctx context.Context) (domain.ProgressSubscript
 		return nil, err
 	}
 
-	return newProgressSubscription(pubsub), nil
+	return newProgressSubscription(pubsub, c.logger), nil
 }
 
 // progressSubscription 把 Redis Pub/Sub 消息解码成领域进度快照。
 type progressSubscription struct {
 	pubsub *redis.PubSub
 	events chan domain.TranscodeProgress
+	logger *zap.Logger
 }
 
 var _ domain.ProgressSubscription = (*progressSubscription)(nil)
 
-func newProgressSubscription(pubsub *redis.PubSub) *progressSubscription {
+func newProgressSubscription(pubsub *redis.PubSub, logger *zap.Logger) *progressSubscription {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	s := &progressSubscription{
 		pubsub: pubsub,
 		events: make(chan domain.TranscodeProgress, 32),
+		logger: logger,
 	}
 
 	go s.pump()
@@ -272,7 +283,7 @@ func (s *progressSubscription) pump() {
 	defer close(s.events)
 
 	for message := range s.pubsub.Channel() {
-		p, ok := decodeTranscodeProgress(message.Payload)
+		p, ok := decodeTranscodeProgress(message.Payload, s.logger)
 		if !ok {
 			continue
 		}
@@ -291,14 +302,14 @@ func (s *progressSubscription) Close() error {
 	return s.pubsub.Close()
 }
 
-func decodeTranscodeProgress(raw string) (domain.TranscodeProgress, bool) {
+func decodeTranscodeProgress(raw string, logger *zap.Logger) (domain.TranscodeProgress, bool) {
 	if strings.TrimSpace(raw) == "" {
 		return domain.TranscodeProgress{}, false
 	}
 
 	var p domain.TranscodeProgress
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
-		zap.L().Debug("skip invalid transcode progress json", zap.Error(err))
+		logger.Debug("skip invalid transcode progress json", zap.Error(err))
 
 		return domain.TranscodeProgress{}, false
 	}

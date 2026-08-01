@@ -25,24 +25,21 @@ type LogConfig struct {
 	Development   bool   `json:"development"`   // 开发模式，控制台输出更友好
 }
 
-// Logger 包装 zap 日志器，负责生命周期（构建时替换 zap 全局，停止时 Sync）。
-//
-// zap.ReplaceGlobals 保留与原实现一致的 zap.L() 使用方式：
-// zap 全局属于日志库自身的输出通道，不是业务装配的 service locator。
+// Logger 包装 zap 日志器并负责其生命周期。
 type Logger struct {
 	lg *zap.Logger
 }
 
 // Zap 返回底层 zap 日志器。
 func (l *Logger) Zap() *zap.Logger {
-	if l == nil {
-		return zap.L()
+	if l == nil || l.lg == nil {
+		return zap.NewNop()
 	}
 
 	return l.lg
 }
 
-// New 依据日志配置构建 zap 日志器，并替换 zap 全局日志器。
+// New 依据日志配置构建 zap 日志器。
 // 语义与原 core.InitZapLogger 一致。
 func New(cfg *config.Logger) *Logger {
 	// 与原实现一致：logger 配置段缺失属于配置错误，直接以 nil 解引用 panic 暴露，
@@ -97,7 +94,6 @@ func New(cfg *config.Logger) *Logger {
 
 	core := zapcore.NewTee(cores...)
 	lg := zap.New(core, zap.AddCaller())
-	zap.ReplaceGlobals(lg)
 
 	return &Logger{lg: lg}
 }
@@ -172,9 +168,13 @@ func getLogWriter(filename string, maxSize, maxBackup, maxAge int) zapcore.Write
 	return zapcore.AddSync(lumberJackLogger) // 将 lumberjack 封装为 zap 可识别的输出目标
 }
 
-// Provide 供 wire 使用的 provider：返回日志器与其刷盘关闭函数。
-func Provide(cfg *config.Logger) (*Logger, func()) {
+// Provide 供 wire 使用的 provider：返回日志器与其刷盘关闭函数，并把日志器
+// 显式附加到已装载的配置 Provider，供后续热更新诊断使用。
+func Provide(cfg *config.Logger, provider *config.Provider) (*Logger, func()) {
 	lg := New(cfg)
+	if provider != nil {
+		provider.SetLogger(lg.Zap())
+	}
 
 	return lg, lg.Stop
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/wenlng/go-captcha-assets/resources/imagesv2" // 背景图资源
 	"github.com/wenlng/go-captcha-assets/resources/tiles"    // 滑块模板资源
 	"github.com/wenlng/go-captcha/v2/slide"                  // go-captcha 滑块核心库
+	"go.uber.org/zap"
 )
 
 const (
@@ -41,8 +42,19 @@ type SlideCaptcha struct {
 var _ app.SlideCaptchaPort = (*SlideCaptcha)(nil)
 
 // NewSlideCaptcha 构造滑块验证码适配器。
-func NewSlideCaptcha(redisClient *redis.Client, cfgProvider *config.Provider) *SlideCaptcha {
-	return &SlideCaptcha{store: payloadStore{redis: redisClient}, cfgProvider: cfgProvider}
+func NewSlideCaptcha(
+	redisClient *redis.Client,
+	cfgProvider *config.Provider,
+	logger *zap.Logger,
+) *SlideCaptcha {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &SlideCaptcha{
+		store:       payloadStore{redis: redisClient, logger: logger},
+		cfgProvider: cfgProvider,
+	}
 }
 
 // Generate 生成滑块验证码，并把答案写入 Redis。

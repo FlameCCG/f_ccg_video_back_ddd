@@ -31,6 +31,7 @@ type BanRecord struct {
 	StartAt    time.Time       `json:"startAt"`
 	EndAt      *time.Time      `json:"endAt,omitempty"`
 	OperatorID uint            `json:"operatorId"`
+	IsUnbanned bool            `json:"isUnbanned"`
 }
 
 // 封禁流程校验错误（消息与原实现逐字一致，保证接口错误文案不变）。
@@ -98,5 +99,6 @@ func NewBanRecord(action BanAction, now time.Time) *BanRecord {
 		StartAt:    now,
 		EndAt:      endAt,
 		OperatorID: action.OperatorID,
+		IsUnbanned: action.Status == enum.UserStatusActive,
 	}
 }

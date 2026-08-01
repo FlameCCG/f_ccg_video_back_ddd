@@ -14,6 +14,7 @@ import (
 // Redis 包装 *redis.Client，负责连接池生命周期。
 type Redis struct {
 	client *redis.Client
+	logger *zap.Logger
 }
 
 // Client 返回底层 *redis.Client。
@@ -26,7 +27,11 @@ func (r *Redis) Client() *redis.Client {
 }
 
 // New 连接 Redis 并 Ping 探活；失败时 zap.Panic（与原 core.InitRedis 一致）。
-func New(cfg *config.Redis) *Redis {
+func New(cfg *config.Redis, logger *zap.Logger) *Redis {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Host + ":" + cfg.Port,
 		Password: cfg.Password,
@@ -45,12 +50,12 @@ func New(cfg *config.Redis) *Redis {
 
 	res, err := rdb.Ping(ctx).Result()
 	if err != nil {
-		zap.L().Panic("redis连接失败", zap.Error(err))
+		logger.Panic("redis连接失败", zap.Error(err))
 	}
 
-	zap.L().Info("redis连接成功", zap.String("res", res))
+	logger.Info("redis连接成功", zap.String("res", res))
 
-	return &Redis{client: rdb}
+	return &Redis{client: rdb, logger: logger}
 }
 
 // Stop 关闭 Redis 客户端连接池。
@@ -60,12 +65,12 @@ func (r *Redis) Stop() {
 	}
 
 	if err := r.client.Close(); err != nil {
-		zap.L().Warn("redis close failed", zap.Error(err))
+		r.logger.Warn("redis close failed", zap.Error(err))
 	}
 
 	r.client = nil
 
-	zap.L().Info("redis连接已关闭")
+	r.logger.Info("redis连接已关闭")
 }
 
 // ProvideClient 从 Redis 包装中取出 *redis.Client 供仓储与限流器注入。
@@ -74,8 +79,8 @@ func ProvideClient(r *Redis) *redis.Client {
 }
 
 // Provide 供 wire 使用的 provider：返回 Redis 客户端与其资源关闭函数。
-func Provide(cfg *config.Redis) (*Redis, func()) {
-	client := New(cfg)
+func Provide(cfg *config.Redis, logger *zap.Logger) (*Redis, func()) {
+	client := New(cfg, logger)
 
 	return client, client.Stop
 }

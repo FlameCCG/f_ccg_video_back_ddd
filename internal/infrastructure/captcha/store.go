@@ -17,7 +17,8 @@ var ErrCaptchaExpired = errors.New("验证码已过期或不存在")
 
 // payloadStore 封装验证码答案在 Redis 中的存取，供点击/滑块验证码复用。
 type payloadStore struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 // store 写入答案并设置过期时间。
@@ -35,7 +36,7 @@ func (s payloadStore) consume(ctx context.Context, key string) ([]byte, error) {
 
 	data, err := s.redis.GetDel(ctxWithTimeout, key).Bytes()
 	if err != nil {
-		zap.L().Error("无效的captchaToken,可能已过期或不存在", zap.Error(err))
+		s.logger.Error("无效的captchaToken,可能已过期或不存在", zap.Error(err))
 
 		return nil, ErrCaptchaExpired
 	}
