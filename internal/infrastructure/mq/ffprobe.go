@@ -44,12 +44,16 @@ type ffprobeResult struct {
 }
 
 // ProbeVideoMeta 探测本地视频文件元数据。
-func ProbeVideoMeta(ctx context.Context, p string) (media.VideoMeta, error) {
-	return ProbeVideo(ctx, p)
+func ProbeVideoMeta(ctx context.Context, p string, logger *zap.Logger) (media.VideoMeta, error) {
+	return ProbeVideo(ctx, p, logger)
 }
 
 // ProbeVideo 调用 ffprobe 解析视频元数据（分辨率、码率、编码、容器 brand、时长等）。
-func ProbeVideo(ctx context.Context, p string) (media.VideoMeta, error) {
+func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoMeta, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "error",
 		"-show_streams",
@@ -65,7 +69,7 @@ func ProbeVideo(ctx context.Context, p string) (media.VideoMeta, error) {
 
 	var result ffprobeResult
 	if err := json.Unmarshal(out, &result); err != nil {
-		zap.L().Error("unmarshal ffprobe json failed", zap.String("json", string(out)))
+		logger.Error("unmarshal ffprobe json failed", zap.String("json", string(out)))
 
 		return media.VideoMeta{}, err
 	}
@@ -99,7 +103,7 @@ func ProbeVideo(ctx context.Context, p string) (media.VideoMeta, error) {
 	if err != nil || v <= 0 {
 		v, err = strconv.ParseFloat(format.Duration, 64)
 		if err != nil || v <= 0 {
-			zap.L().Warn("无效的视频时长信息")
+			logger.Warn("无效的视频时长信息")
 
 			v = 0
 		}

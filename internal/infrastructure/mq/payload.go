@@ -49,6 +49,16 @@ func (p TranscodePayload) Task() media.TranscodeTask {
 	}
 }
 
+// decodeTranscodePayload 反序列化 Kafka 消息体。
+func decodeTranscodePayload(payloadBytes []byte) (TranscodePayload, error) {
+	var payload TranscodePayload
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return TranscodePayload{}, err
+	}
+
+	return payload, nil
+}
+
 // taskIdentityFromMessage 只解析消息中的身份字段，用于在完整反序列化失败时仍能定位任务。
 func taskIdentityFromMessage(payloadBytes []byte) media.TaskKey {
 	var identity struct {

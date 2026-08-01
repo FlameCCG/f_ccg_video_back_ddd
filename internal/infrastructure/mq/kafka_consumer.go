@@ -27,6 +27,7 @@ type KafkaConsumer struct {
 	topics    []string
 	fn        MessageHandler
 	producers *ProducerPool
+	logger    *zap.Logger
 	// consumeCtx 仅控制拉取循环；与长任务处理解耦，避免 rebalance 取消转码。
 	consumeCtx    context.Context
 	consumeCancel context.CancelFunc
@@ -64,7 +65,12 @@ func NewKafkaConsumer(
 	topics []string,
 	handler MessageHandler,
 	producers *ProducerPool,
+	logger *zap.Logger,
 ) (*KafkaConsumer, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if cfg == nil || len(cfg.Brokers) == 0 {
 		return nil, errors.New("kafka brokers not configured")
 	}
@@ -81,7 +87,7 @@ func NewKafkaConsumer(
 		return nil, errors.New("message handler required")
 	}
 
-	cg, err := newConsumerGroup(cfg)
+	cg, err := newConsumerGroup(cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -95,6 +101,7 @@ func NewKafkaConsumer(
 		topics:         topics,
 		fn:             handler,
 		producers:      producers,
+		logger:         logger,
 		consumeCtx:     consumeCtx,
 		consumeCancel:  consumeCancel,
 		shutdownCtx:    shutdownCtx,
@@ -102,15 +109,19 @@ func NewKafkaConsumer(
 	}, nil
 }
 
-func newConsumerGroup(cfg *config.Kafka) (sarama.ConsumerGroup, error) {
-	kCfg := newConsumerGroupConfig(cfg)
+func newConsumerGroup(cfg *config.Kafka, logger *zap.Logger) (sarama.ConsumerGroup, error) {
+	kCfg := newConsumerGroupConfig(cfg, logger)
 
 	return sarama.NewConsumerGroup(cfg.Brokers, cfg.GroupID, kCfg)
 }
 
 // newConsumerGroupConfig 构建 Sarama Consumer Group 客户端配置。
 // 下列每一项都对应 Kafka 消费组协议中的具体行为，影响连接稳定性、rebalance 与 offset 语义。
-func newConsumerGroupConfig(cfg *config.Kafka) *sarama.Config {
+func newConsumerGroupConfig(cfg *config.Kafka, logger *zap.Logger) *sarama.Config {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	// 创建带 Sarama 默认值的基础配置（例如 AutoCommit.Enable=true、AutoCommit.Interval=1s 等）。
 	kCfg := sarama.NewConfig()
 
@@ -156,7 +167,7 @@ func newConsumerGroupConfig(cfg *config.Kafka) *sarama.Config {
 	if v := strings.TrimSpace(cfg.Version); v != "" {
 		version, err := sarama.ParseKafkaVersion(v)
 		if err != nil {
-			zap.L().Warn("parse kafka version failed", zap.Error(err))
+			logger.Warn("parse kafka version failed", zap.Error(err))
 		} else {
 			kCfg.Version = version
 		}
@@ -175,7 +186,7 @@ func (c *KafkaConsumer) Start() error {
 
 	go c.loop()
 
-	zap.L().Info("kafka consumer started", zap.Strings("topics", c.topics), zap.String("group", c.cfg.GroupID))
+	c.logger.Info("kafka consumer started", zap.Strings("topics", c.topics), zap.String("group", c.cfg.GroupID))
 
 	return nil
 }
@@ -233,6 +244,7 @@ func (c *KafkaConsumer) loop() {
 		fn:       c.fn,
 		producer: c.initConsumerDLQProducer(),
 		dlqTopic: resolveDLQTopic(c.cfg, c.topics),
+		logger:   c.logger,
 	}
 
 	for {
@@ -247,7 +259,7 @@ func (c *KafkaConsumer) loop() {
 				}
 
 				if recreateErr := c.recreateGroup(); recreateErr != nil {
-					zap.L().Error("recreate kafka consumer group failed", zap.Error(recreateErr))
+					c.logger.Error("recreate kafka consumer group failed", zap.Error(recreateErr))
 					time.Sleep(consumerRetryBackoff)
 				}
 
@@ -255,13 +267,13 @@ func (c *KafkaConsumer) loop() {
 			}
 
 			if shouldRecreateConsumerGroup(err) {
-				zap.L().Warn("kafka consumer group unhealthy, recreating", zap.Error(err))
+				c.logger.Warn("kafka consumer group unhealthy, recreating", zap.Error(err))
 
 				if recreateErr := c.recreateGroup(); recreateErr != nil {
-					zap.L().Error("recreate kafka consumer group failed", zap.Error(recreateErr))
+					c.logger.Error("recreate kafka consumer group failed", zap.Error(recreateErr))
 				}
 			} else {
-				zap.L().Error("kafka consume failed", zap.Error(err))
+				c.logger.Error("kafka consume failed", zap.Error(err))
 			}
 
 			if c.consumeCtx.Err() != nil {
@@ -282,7 +294,7 @@ func resolveKafkaRebalanceTimeout(cfg *config.Kafka) time.Duration {
 }
 
 func (c *KafkaConsumer) recreateGroup() error {
-	nextGroup, err := newConsumerGroup(c.cfg)
+	nextGroup, err := newConsumerGroup(c.cfg, c.logger)
 	if err != nil {
 		return err
 	}
@@ -347,11 +359,20 @@ type consumerGroupHandler struct {
 	fn       MessageHandler
 	producer sarama.SyncProducer
 	dlqTopic string
+	logger   *zap.Logger
+}
+
+func (h consumerGroupHandler) log() *zap.Logger {
+	if h.logger == nil {
+		return zap.NewNop()
+	}
+
+	return h.logger
 }
 
 // Setup 在每轮 rebalance 分配完成后记录成员与 claim 信息。
 func (h consumerGroupHandler) Setup(session sarama.ConsumerGroupSession) error {
-	zap.L().Info("kafka consumer rebalance setup",
+	h.log().Info("kafka consumer rebalance setup",
 		zap.String("memberId", session.MemberID()),
 		zap.Int32("generation", session.GenerationID()),
 		zap.Any("claims", session.Claims()),
@@ -362,7 +383,7 @@ func (h consumerGroupHandler) Setup(session sarama.ConsumerGroupSession) error {
 
 // Cleanup 在会话结束时记录退出原因，便于排查 rebalance 与关机导致的重投递。
 func (h consumerGroupHandler) Cleanup(session sarama.ConsumerGroupSession) error {
-	zap.L().Info("kafka consumer rebalance cleanup",
+	h.log().Info("kafka consumer rebalance cleanup",
 		zap.String("memberId", session.MemberID()),
 		zap.Int32("generation", session.GenerationID()),
 		zap.Any("claims", session.Claims()),
@@ -378,7 +399,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 	session sarama.ConsumerGroupSession,
 	claim sarama.ConsumerGroupClaim,
 ) error {
-	zap.L().Info("kafka claim started",
+	h.log().Info("kafka claim started",
 		zap.String("topic", claim.Topic()),
 		zap.Int32("partition", claim.Partition()),
 		zap.Int64("initialOffset", claim.InitialOffset()),
@@ -390,7 +411,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 		select {
 		case msg := <-claim.Messages():
 			if msg == nil {
-				zap.L().Info("kafka claim messages channel closed",
+				h.log().Info("kafka claim messages channel closed",
 					zap.String("topic", claim.Topic()),
 					zap.Int32("partition", claim.Partition()),
 					zap.String("memberId", session.MemberID()),
@@ -405,7 +426,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 				if session.Context().Err() != nil ||
 					errors.Is(err, context.Canceled) ||
 					errors.Is(err, context.DeadlineExceeded) {
-					zap.L().Warn("kafka claim ending due to session/context cancel (offset not committed; may redeliver)",
+					h.log().Warn("kafka claim ending due to session/context cancel (offset not committed; may redeliver)",
 						zap.String("topic", msg.Topic),
 						zap.Int32("partition", msg.Partition),
 						zap.Int64("offset", msg.Offset),
@@ -426,7 +447,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 					}
 
 					session.MarkMessage(msg, "permanent failure sent to dlq")
-					zap.L().Error("permanent kafka message sent to dlq",
+					h.log().Error("permanent kafka message sent to dlq",
 						zap.Error(permanentErr.Unwrap()),
 						zap.String("topic", msg.Topic),
 						zap.Int32("partition", msg.Partition),
@@ -436,7 +457,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 					continue
 				}
 
-				zap.L().Error("handle kafka message failed",
+				h.log().Error("handle kafka message failed",
 					zap.Error(err),
 					zap.String("topic", msg.Topic),
 					zap.Int32("partition", msg.Partition),
@@ -448,7 +469,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 				return err
 			}
 		case <-session.Context().Done():
-			zap.L().Warn("kafka claim session done (rebalance/shutdown; in-flight offset may redeliver)",
+			h.log().Warn("kafka claim session done (rebalance/shutdown; in-flight offset may redeliver)",
 				zap.String("topic", claim.Topic()),
 				zap.Int32("partition", claim.Partition()),
 				zap.String("memberId", session.MemberID()),
@@ -470,7 +491,7 @@ func (h consumerGroupHandler) handleMessage(
 
 	for attempt := 0; attempt <= maxMessageRetryAttempts; attempt++ {
 		if attempt > 0 {
-			zap.L().Warn("kafka message handler retry",
+			h.log().Warn("kafka message handler retry",
 				zap.Int("attempt", attempt),
 				zap.Int("maxAttempts", maxMessageRetryAttempts),
 				zap.String("topic", msg.Topic),
@@ -488,7 +509,7 @@ func (h consumerGroupHandler) handleMessage(
 		if session.Context().Err() != nil ||
 			errors.Is(err, context.Canceled) ||
 			errors.Is(err, context.DeadlineExceeded) {
-			zap.L().Warn("kafka message handler stopped by session/context cancel",
+			h.log().Warn("kafka message handler stopped by session/context cancel",
 				zap.Int("attempt", attempt),
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
@@ -509,7 +530,7 @@ func (h consumerGroupHandler) handleMessage(
 		lastErr = err
 
 		if attempt == maxMessageRetryAttempts {
-			zap.L().Error("kafka message handler exhausted retries",
+			h.log().Error("kafka message handler exhausted retries",
 				zap.Int("attempts", attempt+1),
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
@@ -531,7 +552,7 @@ func (h consumerGroupHandler) handleMessage(
 				}
 			}
 
-			zap.L().Warn("kafka message handler retry aborted by session cancel",
+			h.log().Warn("kafka message handler retry aborted by session cancel",
 				zap.Int("attempt", attempt),
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
@@ -597,12 +618,12 @@ func (h consumerGroupHandler) publishDLQ(msg *sarama.ConsumerMessage, cause erro
 func (c *KafkaConsumer) initConsumerDLQProducer() sarama.SyncProducer {
 	producers := c.producers
 	if producers == nil {
-		producers = NewProducerPool()
+		producers = NewProducerPool(c.logger)
 	}
 
 	producer, err := producers.Producer(c.cfg)
 	if err != nil {
-		zap.L().Warn("init kafka dlq producer failed", zap.Error(err))
+		c.logger.Warn("init kafka dlq producer failed", zap.Error(err))
 
 		return nil
 	}
