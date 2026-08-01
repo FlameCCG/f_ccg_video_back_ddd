@@ -231,3 +231,56 @@ func (f *fakeUserDocumentIndexer) BulkIndexUsers(_ context.Context, docs []UserS
 
 	return f.err
 }
+
+type fakeVectorIndex struct {
+	available bool
+	ids       []uint
+	searchErr error
+	storeErr  error
+	deleteErr error
+
+	searchCalls []EmbedInput
+	searchLimit int
+	stored      []VideoVectorSource
+	deleted     []uint
+	lastCfg     VectorConfig
+}
+
+func (f *fakeVectorIndex) Available() bool { return f.available }
+
+func (f *fakeVectorIndex) SearchIDs(_ context.Context, cfg VectorConfig, input EmbedInput, limit int) ([]uint, error) {
+	f.lastCfg = cfg
+	f.searchCalls = append(f.searchCalls, input)
+	f.searchLimit = limit
+
+	return f.ids, f.searchErr
+}
+
+func (f *fakeVectorIndex) Store(_ context.Context, cfg VectorConfig, source VideoVectorSource) error {
+	f.lastCfg = cfg
+	f.stored = append(f.stored, source)
+
+	return f.storeErr
+}
+
+func (f *fakeVectorIndex) Delete(_ context.Context, cfg VectorConfig, videoID uint) error {
+	f.lastCfg = cfg
+	f.deleted = append(f.deleted, videoID)
+
+	return f.deleteErr
+}
+
+type fakeVectorSource struct {
+	available bool
+	source    VideoVectorSource
+	err       error
+	loadCalls []uint
+}
+
+func (f *fakeVectorSource) Available() bool { return f.available }
+
+func (f *fakeVectorSource) Load(_ context.Context, videoID uint) (VideoVectorSource, error) {
+	f.loadCalls = append(f.loadCalls, videoID)
+
+	return f.source, f.err
+}

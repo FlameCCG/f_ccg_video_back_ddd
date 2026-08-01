@@ -20,11 +20,12 @@ var ErrInvalidMentionUserID = errors.New("invalid user id")
 type MentionService struct {
 	relations MentionRelationQuery
 	index     MentionSearch
+	logger    *zap.Logger
 }
 
 // NewMentionService 构造 @ 提及联想服务。
-func NewMentionService(relations MentionRelationQuery, index MentionSearch) *MentionService {
-	return &MentionService{relations: relations, index: index}
+func NewMentionService(relations MentionRelationQuery, index MentionSearch, logger *zap.Logger) *MentionService {
+	return &MentionService{relations: relations, index: index, logger: logger}
 }
 
 // SuggestFollowUsers 返回当前用户关注列表中匹配关键词的用户（好友优先），以及匹配总量。
@@ -86,7 +87,7 @@ func (s *MentionService) filterByKeyword(
 
 		matchedIDs, err := s.index.MatchUserIDs(ctx, ids, keyword)
 		if err != nil {
-			zap.L().Warn("mention suggest fallback to local match", zap.Error(err))
+			s.logger.Warn("mention suggest fallback to local match", zap.Error(err))
 		} else {
 			for _, id := range matchedIDs {
 				if user, ok := userMap[id]; ok {

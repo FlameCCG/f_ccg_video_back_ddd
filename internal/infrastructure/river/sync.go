@@ -2,9 +2,11 @@ package river
 
 import ( // 依赖导入：二进制序列化、反射、时间、ES/canal/mysql/schema 等
 	"bytes"            // 构建字符串缓冲（生成文档ID）
+	"context"          // ES bulk 独立超时与取消
 	"encoding/json"    // 解析 JSON 列类型
 	stderrors "errors" // errors.Is：识别被 Trace 包装的哨兵错误
 	"fmt"              // 格式化输出
+	"net/http"         // ES bulk 状态码分类
 	"reflect"          // 反射（判断整型、比较变更）
 	"strconv"          // 字符串转数字
 	"strings"          // 字符串处理
@@ -15,6 +17,7 @@ import ( // 依赖导入：二进制序列化、反射、时间、ES/canal/mysql
 	"f_ccg_video_back_ddd/pkg/constants"                      // 统一索引名常量等
 
 	"github.com/juju/errors"                               // 错误包装：附带堆栈
+	elastic7 "github.com/olivere/elastic/v7"               // 支持 context 的 ES bulk 客户端
 	"github.com/siddontang/go-log/log"                     // 日志
 	"github.com/siddontang/go-mysql-elasticsearch/elastic" // ES 客户端封装：BulkRequest/Client
 	"github.com/siddontang/go-mysql/canal"                 // canal：订阅 MySQL binlog
@@ -43,7 +46,26 @@ const (
 	posSaveThrottle = 3 * time.Second
 	// syncReqsInitCap 批量请求聚合切片的初始容量.
 	syncReqsInitCap = 1024
+	// riverBulkRequestTimeout 单次 ES bulk 的独立超时.
+	riverBulkRequestTimeout = 3 * time.Second
+	// riverBulkInitialBackoff 可重试失败后的初始退避.
+	riverBulkInitialBackoff = 200 * time.Millisecond
+	// riverBulkMaxBackoff 限制可重试失败的最大退避，避免恢复后响应过慢.
+	riverBulkMaxBackoff = 5 * time.Second
 )
+
+type riverBulkError struct {
+	err       error
+	retryable bool
+}
+
+func (e *riverBulkError) Error() string {
+	return e.err.Error()
+}
+
+func (e *riverBulkError) Unwrap() error {
+	return e.err
+}
 
 type posSaver struct { // 通过 channel 传递的“位点保存”指令
 	pos   mysql.Position // 目标位点（binlog 文件名 + 偏移）
@@ -190,7 +212,7 @@ func (r *River) syncLoop() { // 核心批处理协程：聚合 BulkRequest，控
 		}
 
 		if needFlush {
-			if err := r.doBulk(reqs); err != nil { // 执行 ES 批量写
+			if err := r.doBulkWithRetry(reqs); err != nil { // 执行 ES 批量写
 				log.Errorf("do ES bulk err %v, close sync", err)
 				r.cancel() // 一旦 Bulk 失败，立刻停止（防止位点继续前进造成丢数）
 
@@ -1060,30 +1082,177 @@ func (r *River) loadUserRelationStats(userID uint64) (int64, []string, []string)
 	return followerCount, followingNames, friendNames
 }
 
-// doBulk 执行 ES 批量请求。
-//
-// 整体失败返回错误（上层会 cancel 停止同步）；部分条目失败只逐条打日志，与原实现一致。
+func (r *River) doBulkWithRetry(reqs []*elastic.BulkRequest) error {
+	backoff := riverBulkInitialBackoff
+
+	for attempt := 1; ; attempt++ {
+		err := r.doBulk(reqs)
+		if err == nil {
+			return nil
+		}
+
+		if r.ctx.Err() != nil {
+			return r.ctx.Err()
+		}
+
+		var bulkErr *riverBulkError
+		if !stderrors.As(err, &bulkErr) || !bulkErr.retryable {
+			return err
+		}
+
+		log.Errorf(
+			"transient ES bulk error (attempt=%d, retry_in=%s): %v",
+			attempt,
+			backoff,
+			err,
+		)
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-timer.C:
+		case <-r.ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+
+			return r.ctx.Err()
+		}
+
+		backoff = min(backoff*2, riverBulkMaxBackoff)
+	}
+}
+
+// doBulk 执行 ES 批量请求，并把总体失败与逐项失败统一分类为可重试或永久失败。
 func (r *River) doBulk(reqs []*elastic.BulkRequest) error {
 	if len(reqs) == 0 {
 		return nil
 	}
 
-	if resp, err := r.es.Bulk(reqs); err != nil { // 网络/集群不可达等“总体失败”
-		log.Errorf("sync docs err %v after binlog %s", err, r.canal.SyncedPosition())
+	if r.es == nil {
+		return &riverBulkError{err: errors.New("river ES client is not initialized")}
+	}
 
-		return errors.Trace(err) // 返回错误，上层会 cancel 停止同步
-	} else if resp.Code/100 == 2 || resp.Errors { // 2xx 或部分错误
-		for i := range len(resp.Items) {
-			for action, item := range resp.Items[i] {
-				if len(item.Error) > 0 { // 逐条日志输出失败项（例如 mapping 冲突、版本冲突等）
-					log.Errorf("%s index: %s, type: %s, id: %s, status: %d, error: %s",
-						action, item.Index, item.Type, item.ID, item.Status, item.Error)
-				}
+	bulk := r.es.Bulk()
+	for _, req := range reqs {
+		if req == nil {
+			return &riverBulkError{err: errors.New("nil ES bulk request")}
+		}
+
+		switch req.Action {
+		case elastic.ActionCreate:
+			item := elastic7.NewBulkCreateRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent).
+				Pipeline(req.Pipeline).
+				Doc(req.Data)
+			bulk.Add(item)
+		case elastic.ActionIndex:
+			item := elastic7.NewBulkIndexRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent).
+				Pipeline(req.Pipeline).
+				Doc(req.Data)
+			bulk.Add(item)
+		case elastic.ActionUpdate:
+			item := elastic7.NewBulkUpdateRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent).
+				Doc(req.Data)
+			bulk.Add(item)
+		case elastic.ActionDelete:
+			item := elastic7.NewBulkDeleteRequest().
+				Index(req.Index).
+				Type(req.Type).
+				Id(req.ID).
+				Parent(req.Parent)
+			bulk.Add(item)
+		default:
+			return &riverBulkError{
+				err: fmt.Errorf("unsupported ES bulk action %q", req.Action),
 			}
 		}
 	}
 
+	requestCtx, cancel := context.WithTimeout(r.ctx, riverBulkRequestTimeout)
+	defer cancel()
+
+	resp, err := bulk.Do(requestCtx)
+	if err != nil {
+		retryable := true
+
+		var esErr *elastic7.Error
+		if stderrors.As(err, &esErr) {
+			retryable = isRetryableESStatus(esErr.Status)
+		}
+
+		return &riverBulkError{
+			err:       fmt.Errorf("execute ES bulk: %w", err),
+			retryable: retryable,
+		}
+	}
+
+	if resp == nil {
+		return &riverBulkError{
+			err:       errors.New("empty ES bulk response"),
+			retryable: true,
+		}
+	}
+
+	var retryableItemErr error
+	for _, items := range resp.Items {
+		for action, item := range items {
+			if item == nil || item.Error == nil {
+				continue
+			}
+
+			itemErr := fmt.Errorf(
+				"%s index=%s id=%s status=%d: %s",
+				action,
+				item.Index,
+				item.Id,
+				item.Status,
+				item.Error.Reason,
+			)
+			if !isRetryableESStatus(item.Status) {
+				return &riverBulkError{err: itemErr}
+			}
+
+			if retryableItemErr == nil {
+				retryableItemErr = itemErr
+			}
+		}
+	}
+
+	if retryableItemErr != nil {
+		return &riverBulkError{
+			err:       retryableItemErr,
+			retryable: true,
+		}
+	}
+
+	if resp.Errors {
+		return &riverBulkError{
+			err: errors.New("ES bulk response contains unreported item errors"),
+		}
+	}
+
 	return nil
+}
+
+func isRetryableESStatus(status int) bool {
+	return status == http.StatusRequestTimeout ||
+		status == http.StatusTooEarly ||
+		status == http.StatusTooManyRequests ||
+		status >= http.StatusInternalServerError
 }
 
 // getFieldValue 施加映射配置里声明的类型转换（",list" / ",date"）。

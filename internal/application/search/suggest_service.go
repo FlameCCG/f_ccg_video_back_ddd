@@ -24,11 +24,17 @@ type SuggestService struct {
 	index    SuggestSearch
 	fallback SuggestFallbackQuery
 	cache    SuggestionCache
+	logger   *zap.Logger
 }
 
 // NewSuggestService 构造搜索联想服务。
-func NewSuggestService(index SuggestSearch, fallback SuggestFallbackQuery, cache SuggestionCache) *SuggestService {
-	return &SuggestService{index: index, fallback: fallback, cache: cache}
+func NewSuggestService(
+	index SuggestSearch,
+	fallback SuggestFallbackQuery,
+	cache SuggestionCache,
+	logger *zap.Logger,
+) *SuggestService {
+	return &SuggestService{index: index, fallback: fallback, cache: cache, logger: logger}
 }
 
 // Suggest 返回联想候选项；ES 不可用或查询失败时回退 MySQL LIKE 查询。
@@ -100,7 +106,7 @@ func (s *SuggestService) Suggest(ctx context.Context, prefix string, size int) (
 	})
 
 	if err := group.Wait(); err != nil {
-		zap.L().Warn("suggest fallback to mysql", zap.String("prefix", prefix), zap.Error(err))
+		s.logger.Warn("suggest fallback to mysql", zap.String("prefix", prefix), zap.Error(err))
 
 		items, fallbackErr := s.fallbackSuggest(parent, prefix, size)
 		if fallbackErr != nil {

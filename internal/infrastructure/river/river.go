@@ -6,7 +6,9 @@ package river
 
 import ( // 导入依赖
 	"context" // 上下文控制：取消、超时等
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,8 +19,8 @@ import ( // 导入依赖
 	"f_ccg_video_back_ddd/internal/infrastructure/river/rule" // 引入规则模块
 
 	"github.com/juju/errors"
+	elastic7 "github.com/olivere/elastic/v7"
 	"github.com/siddontang/go-log/log"
-	"github.com/siddontang/go-mysql-elasticsearch/elastic"
 	"github.com/siddontang/go-mysql/canal"
 	"gorm.io/gorm"
 )
@@ -42,7 +44,8 @@ type River struct {
 	ctx      context.Context       // 控制定时/关闭的根上下文
 	cancel   context.CancelFunc    // 用于取消 ctx 的函数（Close 时调用）
 	wg       sync.WaitGroup        // 等待组，确保 goroutine 优雅退出
-	es       *elastic.Client       // ES 客户端：负责写入/更新/删除文档
+	es       *elastic7.Client      // ES 客户端：负责写入/更新/删除文档
+	esHTTP   *http.Client          // River 独占的 HTTP 客户端，Close 时释放空闲连接
 	master   *masterInfo           // binlog 位点的持久化信息（文件+位置），用于断点续传
 	syncCh   chan any              // 事件/队列通道：内部同步协程消费（如 insert/update/delete）
 	cfg      *config.River         // River 同步配置（源、规则、批量大小等）
@@ -102,14 +105,59 @@ func NewRiver(riverCfg *config.River, mysqlCfg *config.Mysql, esCfg *config.ES, 
 		return nil, errors.Trace(err)
 	}
 
-	cfg := new(elastic.ClientConfig)                        // 构建 ES 客户端配置
-	cfg.Addr = fmt.Sprintf("%s:%d", esCfg.Host, esCfg.Port) // 目标地址
-	cfg.User = esCfg.Username                               // 用户名（如果启用鉴权）
-	cfg.Password = esCfg.Password                           // 密码
-	cfg.HTTPS = esCfg.IsHTTPS                               // 是否使用 HTTPS（走 9200 的 TLS）
-	r.es = elastic.NewClient(cfg)                           // 初始化 ES 客户端（后续在事件处理中写入）
+	r.es, r.esHTTP, err = newRiverESClient(esCfg)
+	if err != nil {
+		r.cancel()
+		r.canal.Close()
+
+		if closeErr := r.master.Close(); closeErr != nil {
+			log.Errorf("close master info after ES init failure: %v", closeErr)
+		}
+
+		return nil, errors.Trace(err)
+	}
 
 	return r, nil // 创建完成
+}
+
+func newRiverESClient(cfg *config.ES) (*elastic7.Client, *http.Client, error) {
+	scheme := "http"
+	if cfg.IsHTTPS {
+		scheme = "https"
+	}
+
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, nil, errors.New("default HTTP transport is not configurable")
+	}
+
+	transport := baseTransport.Clone()
+	if cfg.IsHTTPS {
+		transport.TLSClientConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: cfg.InsecureSkipVerify, //nolint:gosec // 与显式 ES 开发环境配置保持一致
+		}
+	}
+
+	httpClient := &http.Client{Transport: transport}
+	opts := []elastic7.ClientOptionFunc{
+		elastic7.SetURL(fmt.Sprintf("%s://%s:%d", scheme, cfg.Host, cfg.Port)),
+		elastic7.SetHttpClient(httpClient),
+		elastic7.SetSniff(false),
+		elastic7.SetHealthcheck(false),
+	}
+	if cfg.Username != "" || cfg.Password != "" {
+		opts = append(opts, elastic7.SetBasicAuth(cfg.Username, cfg.Password))
+	}
+
+	client, err := elastic7.NewClient(opts...)
+	if err != nil {
+		httpClient.CloseIdleConnections()
+
+		return nil, nil, fmt.Errorf("create ES client for river: %w", err)
+	}
+
+	return client, httpClient, nil
 }
 
 func (r *River) newCanal() error { // 构建 canal 配置并连接 MySQL
@@ -436,6 +484,14 @@ func (r *River) Close() {
 	}
 
 	r.wg.Wait() // 等待所有 goroutine 结束，保证优雅退出
+
+	if r.es != nil {
+		r.es.Stop()
+	}
+
+	if r.esHTTP != nil {
+		r.esHTTP.CloseIdleConnections()
+	}
 }
 
 func isValidTables(tables []string) bool { // 校验“多表配置是否包含 * 通配”

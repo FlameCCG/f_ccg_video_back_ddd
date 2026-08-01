@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -19,11 +20,17 @@ const (
 	defaultVideoVectorTopK = 8
 	// defaultVideoEmbeddingDims 未配置 embeddingDimensions 时的向量维度.
 	defaultVideoEmbeddingDims = 2048
+	// defaultVectorRRFRankConstant 是混合召回的默认 RRF 排名常数。
+	defaultVectorRRFRankConstant = 60
+
+	embeddingImageModeAuto = "auto"
+	embeddingImageModeOn   = "on"
+	embeddingImageModeOff  = "off"
 
 	// vectorSearchTimeout 向量检索超时.
-	vectorSearchTimeout = 5 * time.Second
+	vectorSearchTimeout = 20 * time.Second
 	// vectorIndexTimeout 向量索引写入超时.
-	vectorIndexTimeout = 10 * time.Second
+	vectorIndexTimeout = 60 * time.Second
 	// vectorDeleteTimeout 向量文档删除超时.
 	vectorDeleteTimeout = 5 * time.Second
 )
@@ -47,6 +54,7 @@ type VideoVectorService struct {
 	cfg    *config.Provider
 	index  VideoVectorIndex
 	source VideoVectorSourceQuery
+	logger *zap.Logger
 }
 
 // NewVideoVectorService 构造视频向量索引服务。
@@ -54,19 +62,26 @@ func NewVideoVectorService(
 	cfgProvider *config.Provider,
 	index VideoVectorIndex,
 	source VideoVectorSourceQuery,
+	logger *zap.Logger,
 ) *VideoVectorService {
-	return &VideoVectorService{cfg: cfgProvider, index: index, source: source}
+	return &VideoVectorService{cfg: cfgProvider, index: index, source: source, logger: logger}
 }
 
 // SearchVideoVectorIDs 以文本 query 做向量召回，返回去重后的已发布视频 ID。
 func (s *VideoVectorService) SearchVideoVectorIDs(ctx context.Context, query string, limit int) ([]uint, error) {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, nil
-	}
+	return s.SearchVideoVectorIDsMultiModal(ctx, EmbedInput{Text: query}, limit)
+}
 
-	if limit <= 0 {
-		limit = defaultVideoVectorTopK
+// SearchVideoVectorIDsMultiModal 以文本、图片或二者组合做混合召回。
+func (s *VideoVectorService) SearchVideoVectorIDsMultiModal(
+	ctx context.Context,
+	input EmbedInput,
+	limit int,
+) ([]uint, error) {
+	input.Text = strings.TrimSpace(input.Text)
+	input.ImageURL = strings.TrimSpace(input.ImageURL)
+	if input.IsZero() {
+		return nil, nil
 	}
 
 	if !s.index.Available() {
@@ -77,6 +92,9 @@ func (s *VideoVectorService) SearchVideoVectorIDs(ctx context.Context, query str
 	if err != nil {
 		return nil, err
 	}
+	if limit <= 0 {
+		limit = cfg.TopK
+	}
 
 	if cfg.TopK > 0 && limit > cfg.TopK {
 		limit = cfg.TopK
@@ -85,7 +103,7 @@ func (s *VideoVectorService) SearchVideoVectorIDs(ctx context.Context, query str
 	searchCtx, cancel := context.WithTimeout(ensureContext(ctx), vectorSearchTimeout)
 	defer cancel()
 
-	return s.index.SearchIDs(searchCtx, cfg, query, limit)
+	return s.index.SearchIDs(searchCtx, cfg, input, limit)
 }
 
 // IndexVideoVector 将已发布视频写入向量检索索引；非已发布或已删除时改为删除文档。
@@ -102,20 +120,40 @@ func (s *VideoVectorService) IndexVideoVector(ctx context.Context, videoID uint)
 	indexCtx, cancel := context.WithTimeout(ensureContext(ctx), vectorIndexTimeout)
 	defer cancel()
 
-	source, err := s.source.Load(indexCtx, videoID)
+	return s.indexVideoVectorWithConfig(indexCtx, cfg, videoID)
+}
+
+// indexVideoVectorWithConfig 用固定配置快照同步单个视频；全量重建据此避免热更新造成维度撕裂。
+func (s *VideoVectorService) indexVideoVectorWithConfig(
+	ctx context.Context,
+	cfg VectorConfig,
+	videoID uint,
+) error {
+
+	source, err := s.source.Load(ctx, videoID)
 	if err != nil {
 		if errors.Is(err, ErrVectorSourceNotFound) {
-			return s.DeleteVideoVector(indexCtx, videoID)
+			return s.index.Delete(ctx, cfg, videoID)
 		}
 
 		return err
 	}
 
+	return s.indexVideoVectorSourceWithConfig(ctx, cfg, source)
+}
+
+// indexVideoVectorSourceWithConfig 用已预载的源数据同步单个视频。
+// 全量重建按页批量预载关联数据后调用它，避免逐条回查数据库形成 N+1 查询。
+func (s *VideoVectorService) indexVideoVectorSourceWithConfig(
+	ctx context.Context,
+	cfg VectorConfig,
+	source VideoVectorSource,
+) error {
 	if source.Status != enum.VideoStatusPublished {
-		return s.DeleteVideoVector(indexCtx, videoID)
+		return s.index.Delete(ctx, cfg, source.ID)
 	}
 
-	return s.index.Store(indexCtx, cfg, source)
+	return s.index.Store(ctx, cfg, source)
 }
 
 // DeleteVideoVector 从向量检索索引删除视频文档（文档不存在视为成功）。
@@ -138,14 +176,14 @@ func (s *VideoVectorService) DeleteVideoVector(ctx context.Context, videoID uint
 // IndexVideoVectorBestEffort 尽力同步向量索引，失败仅记日志.
 func (s *VideoVectorService) IndexVideoVectorBestEffort(ctx context.Context, videoID uint) {
 	if err := s.IndexVideoVector(ctx, videoID); err != nil {
-		zap.L().Warn("sync video vector index failed", zap.Uint("videoId", videoID), zap.Error(err))
+		s.logger.Warn("sync video vector index failed", zap.Uint("videoId", videoID), zap.Error(err))
 	}
 }
 
 // DeleteVideoVectorBestEffort 尽力删除向量索引文档，失败仅记日志.
 func (s *VideoVectorService) DeleteVideoVectorBestEffort(ctx context.Context, videoID uint) {
 	if err := s.DeleteVideoVector(ctx, videoID); err != nil {
-		zap.L().Warn("delete video vector index failed", zap.Uint("videoId", videoID), zap.Error(err))
+		s.logger.Warn("delete video vector index failed", zap.Uint("videoId", videoID), zap.Error(err))
 	}
 }
 
@@ -155,7 +193,8 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 		return VectorConfig{}, ErrAIConfigMissing
 	}
 
-	source := *s.cfg.Get().AI
+	snapshot := s.cfg.Get()
+	source := *snapshot.AI
 
 	index := strings.TrimSpace(source.VectorIndex)
 	if index == "" {
@@ -171,6 +210,11 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 	if dimensions <= 0 {
 		dimensions = defaultVideoEmbeddingDims
 	}
+	if dimensions != 1024 && dimensions != defaultVideoEmbeddingDims {
+		return VectorConfig{}, fmt.Errorf(
+			"embeddingDimensions 只支持 1024 或 2048，当前为 %d", dimensions,
+		)
+	}
 
 	model := strings.TrimSpace(source.EmbeddingModel)
 	if model == "" {
@@ -182,6 +226,17 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 		return VectorConfig{}, ErrEmbeddingAPIKeyMissing
 	}
 
+	rankConstant := source.VectorRRFRankConstant
+	if rankConstant <= 0 {
+		rankConstant = defaultVectorRRFRankConstant
+	}
+
+	localStorageRoot := ""
+	if snapshot.Site != nil && snapshot.Site.Storage != nil && snapshot.Site.Storage.Local != nil &&
+		snapshot.Site.Storage.Local.Enable {
+		localStorageRoot = strings.TrimSpace(snapshot.Site.Storage.Local.Path)
+	}
+
 	return VectorConfig{
 		Index:               index,
 		TopK:                topK,
@@ -189,5 +244,21 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 		EmbeddingAPIKey:     apiKey,
 		EmbeddingDimensions: dimensions,
 		TimeoutSec:          source.TimeoutSec,
+		ImageMode:           normalizeEmbeddingImageMode(source.EmbeddingImageMode),
+		AssetBaseURL:        strings.TrimSpace(source.AssetBaseURL),
+		LocalStorageRoot:    localStorageRoot,
+		RRFRankConstant:     rankConstant,
+		MinSimilarity:       source.VectorMinSimilarity,
 	}, nil
+}
+
+func normalizeEmbeddingImageMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case embeddingImageModeOn:
+		return embeddingImageModeOn
+	case embeddingImageModeOff:
+		return embeddingImageModeOff
+	default:
+		return embeddingImageModeAuto
+	}
 }

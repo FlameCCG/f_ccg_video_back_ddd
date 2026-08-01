@@ -1,75 +1,92 @@
 package search
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
 	domain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
-	arkembedding "github.com/cloudwego/eino-ext/components/embedding/ark"
-	indexeres8 "github.com/cloudwego/eino-ext/components/indexer/es8"
-	retrieveres8 "github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/search_mode"
-	"github.com/cloudwego/eino/components/embedding"
-	"github.com/cloudwego/eino/schema"
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
-	estypes "github.com/elastic/go-elasticsearch/v8/typedapi/types"
-)
-
-// 向量索引字段名（与 buildVideoVectorIndexSpec 的 mapping 一一对应，属于索引契约）.
-const (
-	vectorFieldVideoID   = "video_id"
-	vectorFieldTitle     = "title"
-	vectorFieldDesc      = "description"
-	vectorFieldTags      = "tags"
-	vectorFieldPartition = "partition"
-	vectorFieldCover     = "cover"
-	vectorFieldStatus    = "status"
-	vectorFieldContent   = "content"
-	vectorFieldEmbedding = "content_vector"
-	vectorFieldCreatedAt = "created_at"
-
-	esMappingType    = "type"
-	esMappingText    = "text"
-	esMappingKeyword = "keyword"
+	"go.uber.org/zap"
 )
 
 const (
-	// defaultEmbeddingDims 未配置维度时的向量维度（与应用层默认值一致）.
-	defaultEmbeddingDims = 2048
-	// defaultEmbeddingTimeout 未配置 timeoutSec 时的向量模型调用超时.
-	defaultEmbeddingTimeout = 30 * time.Second
-	// vectorIndexBatchSize eino 索引器的批量大小.
-	vectorIndexBatchSize = 4
-	// vectorNumCandidatesFactor 近似检索候选放大倍数.
-	vectorNumCandidatesFactor = 20
-	// vectorNumCandidatesMin 近似检索候选下限.
-	vectorNumCandidatesMin = 100
-	// vectorErrorBodyLimit 读取 ES 错误响应体的上限.
-	vectorErrorBodyLimit = 4096
+	defaultEmbeddingDims   = 2048
+	defaultRRFRankConstant = 60
+	knnCandidateFactor     = 20
+	knnMinCandidates       = 100
+	keywordRecallFactor    = 3
+	vectorErrorBodyLimit   = 4096
+	coverFetchTimeout      = 10 * time.Second
+	vectorFieldVideoID     = "video_id"
+	vectorFieldTitle       = "title"
+	vectorFieldDesc        = "description"
+	vectorFieldTags        = "tags"
+	vectorFieldPartition   = "partition"
+	vectorFieldCover       = "cover"
+	vectorFieldStatus      = "status"
+	vectorFieldContent     = "content"
+	vectorFieldEmbedding   = "content_vector"
+	vectorFieldCreatedAt   = "created_at"
+	vectorFieldHasImage    = "has_image_vector"
+	esMappingType          = "type"
+	esMappingText          = "text"
+	esMappingKeyword       = "keyword"
+	embeddingImageModeOn   = "on"
+	embeddingImageModeOff  = "off"
 )
 
-// VideoVectorIndex 是视频向量索引的 ES8 + eino-ext 适配器（原 service/search_service/video_vector.go）。
-//
-// 索引名与维度来自运行期 AI 配置（由应用层读取后传入），mapping 与字段名属于索引契约。
+type vectorHit struct {
+	VideoID uint
+	Score   float64
+}
+
+type vectorIndexState struct {
+	index string
+	dims  int
+}
+
+// VideoVectorIndex 是视频多模态向量索引的 ES8 + 方舟适配器。
+// 客户端、embedding 连接池与索引校验缓存均为实例状态，不依赖包级可变单例。
 type VideoVectorIndex struct {
-	client *elasticsearch8.Client
+	client      *elasticsearch8.Client
+	coverClient *http.Client
+	logger      *zap.Logger
+
+	embedMu   sync.Mutex
+	embedders map[arkEmbedderKey]*arkEmbedder
+
+	indexMu sync.Mutex
+	checked map[vectorIndexState]struct{}
 }
 
 var _ app.VideoVectorIndex = (*VideoVectorIndex)(nil)
+var _ app.VideoVectorIndexLifecycle = (*VideoVectorIndex)(nil)
 
 // NewVideoVectorIndex 构造视频向量索引适配器（client 允许为 nil）。
-func NewVideoVectorIndex(client *elasticsearch8.Client) *VideoVectorIndex {
-	return &VideoVectorIndex{client: client}
+func NewVideoVectorIndex(client *elasticsearch8.Client, logger *zap.Logger) *VideoVectorIndex {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &VideoVectorIndex{
+		client:      client,
+		coverClient: &http.Client{Timeout: coverFetchTimeout},
+		logger:      logger,
+		embedders:   make(map[arkEmbedderKey]*arkEmbedder),
+		checked:     make(map[vectorIndexState]struct{}),
+	}
 }
 
 // Available 报告 ES8 客户端是否就绪。
@@ -77,180 +94,471 @@ func (v *VideoVectorIndex) Available() bool {
 	return v != nil && v.client != nil
 }
 
-// SearchIDs 以文本 query 做近似向量检索（混合检索），返回去重后的视频 ID。
+// SearchIDs 对文本、图片或二者组合执行 kNN + BM25 召回，并在应用侧用 RRF 融合。
 func (v *VideoVectorIndex) SearchIDs(
 	ctx context.Context,
 	cfg app.VectorConfig,
-	query string,
+	input app.EmbedInput,
 	limit int,
 ) ([]uint, error) {
 	if !v.Available() {
 		return nil, app.ErrES8Unavailable
 	}
 
-	embedder, err := newArkMultimodalEmbedder(ctx, cfg)
+	input.Text = strings.TrimSpace(input.Text)
+	input.ImageURL = strings.TrimSpace(input.ImageURL)
+	if input.IsZero() {
+		return nil, nil
+	}
+
+	vector, err := v.embedder(cfg).Embed(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 
-	k := limit
+	knnHits, err := v.runKnnSearch(ctx, cfg, vector, limit)
+	if err != nil {
+		return nil, err
+	}
 
-	numCandidates := max(limit*vectorNumCandidatesFactor, vectorNumCandidatesMin)
+	if input.Text == "" {
+		return topVectorHitIDs(knnHits, limit), nil
+	}
 
-	retriever, err := retrieveres8.NewRetriever(ctx, &retrieveres8.RetrieverConfig{
-		Client: v.client,
-		Index:  cfg.Index,
-		TopK:   limit,
-		SearchMode: search_mode.SearchModeApproximate(&search_mode.ApproximateConfig{
-			QueryFieldName:  vectorFieldContent,
-			VectorFieldName: vectorFieldEmbedding,
-			Hybrid:          true,
-			RRF:             false,
-			K:               &k,
-			NumCandidates:   &numCandidates,
-		}),
-		ResultParser: parseVectorSearchHit,
-		Embedding:    embedder,
+	keywordHits, err := v.runKeywordSearch(ctx, cfg, input.Text, limit*keywordRecallFactor)
+	if err != nil {
+		v.logger.Warn(
+			"keyword recall on vector index failed, falling back to vector-only",
+			zap.String("index", cfg.Index),
+			zap.Error(err),
+		)
+
+		return topVectorHitIDs(knnHits, limit), nil
+	}
+
+	return fuseByRRF(cfg.RRFRankConstant, limit, knnHits, keywordHits), nil
+}
+
+func (v *VideoVectorIndex) runKnnSearch(
+	ctx context.Context,
+	cfg app.VectorConfig,
+	vector []float32,
+	limit int,
+) ([]vectorHit, error) {
+	knn := map[string]any{
+		"field":          vectorFieldEmbedding,
+		"query_vector":   vector,
+		"k":              limit,
+		"num_candidates": max(limit*knnCandidateFactor, knnMinCandidates),
+		"filter":         []any{publishedStatusFilter()},
+	}
+	if cfg.MinSimilarity > 0 {
+		// Elasticsearch 的 cosine _score 为 (1 + cosine) / 2。
+		knn["similarity"] = (1 + cfg.MinSimilarity) / 2
+	}
+
+	return v.runIndexSearch(ctx, cfg.Index, map[string]any{
+		"size":    limit,
+		"_source": []string{vectorFieldVideoID},
+		"knn":     knn,
 	})
-	if err != nil {
-		return nil, err
-	}
+}
 
-	docs, err := retriever.Retrieve(ctx, query, retrieveres8.WithFilters([]estypes.Query{
-		{
-			Term: map[string]estypes.TermQuery{
-				vectorFieldStatus: {Value: int(enum.VideoStatusPublished)},
+func (v *VideoVectorIndex) runKeywordSearch(
+	ctx context.Context,
+	cfg app.VectorConfig,
+	query string,
+	limit int,
+) ([]vectorHit, error) {
+	return v.runIndexSearch(ctx, cfg.Index, map[string]any{
+		"size":    limit,
+		"_source": []string{vectorFieldVideoID},
+		"query": map[string]any{
+			"bool": map[string]any{
+				"filter": []any{publishedStatusFilter()},
+				"must": []any{map[string]any{
+					"multi_match": map[string]any{
+						"query": query,
+						"fields": []string{
+							vectorFieldTitle + "^3",
+							vectorFieldTags + "^2",
+							vectorFieldPartition + "^2",
+							vectorFieldDesc,
+							vectorFieldContent,
+						},
+					},
+				}},
 			},
 		},
-	}))
-	if err != nil {
-		return nil, err
-	}
-
-	ids := make([]uint, 0, len(docs))
-
-	seen := make(map[uint]struct{}, len(docs))
-
-	for _, doc := range docs {
-		if doc == nil || doc.MetaData == nil {
-			continue
-		}
-
-		id := toUint(doc.MetaData[vectorFieldVideoID])
-		if id == 0 {
-			continue
-		}
-
-		if _, ok := seen[id]; ok {
-			continue
-		}
-
-		seen[id] = struct{}{}
-
-		ids = append(ids, id)
-
-		if len(ids) >= limit {
-			break
-		}
-	}
-
-	return ids, nil
+	})
 }
 
-// Store 覆盖写入一个视频的向量文档。
-func (v *VideoVectorIndex) Store(ctx context.Context, cfg app.VectorConfig, source app.VideoVectorSource) error {
-	if !v.Available() {
-		return app.ErrES8Unavailable
+func publishedStatusFilter() map[string]any {
+	return map[string]any{
+		"term": map[string]any{
+			vectorFieldStatus: map[string]any{"value": int(enum.VideoStatusPublished)},
+		},
 	}
-
-	indexer, err := newVideoVectorIndexer(ctx, v.client, cfg)
-	if err != nil {
-		return err
-	}
-
-	_, err = indexer.Store(ctx, []*schema.Document{buildVideoVectorDocument(source)})
-
-	return err
 }
 
-// Delete 删除一个视频的向量文档；文档不存在视为成功。
-func (v *VideoVectorIndex) Delete(ctx context.Context, cfg app.VectorConfig, videoID uint) error {
-	if !v.Available() {
-		return app.ErrES8Unavailable
-	}
-
-	req := esapi.DeleteRequest{
-		Index:      cfg.Index,
-		DocumentID: domain.VideoDocumentID(videoID),
-		Refresh:    "true",
-	}
-
-	resp, err := req.Do(ctx, v.client)
+func (v *VideoVectorIndex) runIndexSearch(
+	ctx context.Context,
+	index string,
+	body map[string]any,
+) ([]vectorHit, error) {
+	payload, err := json.Marshal(body)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("marshal vector search body failed: %w", err)
 	}
 
+	resp, err := (esapi.SearchRequest{
+		Index: []string{index},
+		Body:  bytes.NewReader(payload),
+	}).Do(ctx, v.client)
+	if err != nil {
+		return nil, fmt.Errorf("vector search request failed: %w", err)
+	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusNotFound {
-		return nil
+	if resp.IsError() {
+		return nil, fmt.Errorf("vector search failed: %s %s", resp.Status(), readErrorBody(resp.Body))
 	}
 
-	if resp.IsError() {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, vectorErrorBodyLimit))
+	var parsed struct {
+		Hits struct {
+			Hits []struct {
+				Score  float64 `json:"_score"`
+				Source struct {
+					VideoID json.Number `json:"video_id"`
+				} `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("decode vector search response failed: %w", err)
+	}
 
-		return fmt.Errorf("delete video vector document failed: %s %s", resp.Status(), strings.TrimSpace(string(body)))
+	hits := make([]vectorHit, 0, len(parsed.Hits.Hits))
+	for _, hit := range parsed.Hits.Hits {
+		id, convertErr := hit.Source.VideoID.Int64()
+		if convertErr != nil || id <= 0 {
+			continue
+		}
+		hits = append(hits, vectorHit{VideoID: uint(id), Score: hit.Score})
+	}
+
+	return hits, nil
+}
+
+// Store 覆盖写入一个已发布视频的文本+封面融合向量文档。
+func (v *VideoVectorIndex) Store(
+	ctx context.Context,
+	cfg app.VectorConfig,
+	source app.VideoVectorSource,
+) error {
+	if !v.Available() {
+		return app.ErrES8Unavailable
+	}
+	if err := v.Prepare(ctx, cfg, false); err != nil {
+		return err
+	}
+
+	document, content := buildVideoVectorDocument(source)
+	imageSource, imageErr := v.resolveVideoCover(ctx, cfg, source.Cover)
+	if imageErr != nil {
+		if cfg.ImageMode == embeddingImageModeOn {
+			return fmt.Errorf(
+				"video %d cover embedding is required but unavailable: %w",
+				source.ID,
+				imageErr,
+			)
+		}
+		v.logger.Debug("index video without cover vector", zap.Uint("videoId", source.ID), zap.Error(imageErr))
+	}
+
+	vector, err := v.embedder(cfg).Embed(ctx, app.EmbedInput{Text: content, ImageURL: imageSource})
+	if err != nil {
+		return fmt.Errorf("embed video %d failed: %w", source.ID, err)
+	}
+	document[vectorFieldEmbedding] = vector
+	document[vectorFieldHasImage] = imageSource != ""
+
+	payload, err := json.Marshal(document)
+	if err != nil {
+		return fmt.Errorf("marshal video vector document failed: %w", err)
+	}
+
+	resp, err := (esapi.IndexRequest{
+		Index:      cfg.Index,
+		DocumentID: domain.VideoDocumentID(source.ID),
+		Body:       bytes.NewReader(payload),
+	}).Do(ctx, v.client)
+	if err != nil {
+		return fmt.Errorf("index video vector request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.IsError() {
+		return fmt.Errorf(
+			"index video vector document failed: %s %s",
+			resp.Status(),
+			readErrorBody(resp.Body),
+		)
 	}
 
 	return nil
 }
 
-func newVideoVectorIndexer(
+func (v *VideoVectorIndex) resolveVideoCover(
 	ctx context.Context,
-	client *elasticsearch8.Client,
 	cfg app.VectorConfig,
-) (*indexeres8.Indexer, error) {
-	embedder, err := newArkMultimodalEmbedder(ctx, cfg)
-	if err != nil {
-		return nil, err
+	cover string,
+) (string, error) {
+	if cfg.ImageMode == embeddingImageModeOff {
+		return "", nil
 	}
 
-	return indexeres8.NewIndexer(ctx, &indexeres8.IndexerConfig{
-		Client:    client,
-		Index:     cfg.Index,
-		IndexSpec: buildVideoVectorIndexSpec(cfg.EmbeddingDimensions),
-		BatchSize: vectorIndexBatchSize,
-		DocumentToFields: func(_ context.Context, doc *schema.Document) (map[string]indexeres8.FieldValue, error) {
-			return documentToVideoVectorFields(doc), nil
-		},
-		Embedding: embedder,
-	})
+	return resolveCoverEmbedSource(ctx, v.coverClient, cover, cfg.AssetBaseURL, cfg.LocalStorageRoot)
 }
 
-func buildVideoVectorIndexSpec(dimensions int) *indexeres8.IndexSpec {
+// Delete 删除一个视频向量文档；索引或文档不存在均视为成功。
+func (v *VideoVectorIndex) Delete(ctx context.Context, cfg app.VectorConfig, videoID uint) error {
+	if !v.Available() {
+		return app.ErrES8Unavailable
+	}
+
+	resp, err := (esapi.DeleteRequest{
+		Index:      cfg.Index,
+		DocumentID: domain.VideoDocumentID(videoID),
+		Refresh:    "true",
+	}).Do(ctx, v.client)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.IsError() {
+		return fmt.Errorf(
+			"delete video vector document failed: %s %s",
+			resp.Status(),
+			readErrorBody(resp.Body),
+		)
+	}
+
+	return nil
+}
+
+// Prepare 确保索引存在，并校验已有 dense_vector mapping 的维度。
+func (v *VideoVectorIndex) Prepare(ctx context.Context, cfg app.VectorConfig, recreate bool) error {
+	if !v.Available() {
+		return app.ErrES8Unavailable
+	}
+
+	if recreate {
+		ignoreUnavailable := true
+		resp, err := (esapi.IndicesDeleteRequest{
+			Index:             []string{cfg.Index},
+			IgnoreUnavailable: &ignoreUnavailable,
+		}).Do(ctx, v.client)
+		if err != nil {
+			return fmt.Errorf("删除向量索引失败: %w", err)
+		}
+		if err = closeVectorResponse(resp, "删除向量索引失败"); err != nil {
+			return err
+		}
+		v.resetIndexChecks()
+	}
+
+	state := vectorIndexState{index: cfg.Index, dims: cfg.EmbeddingDimensions}
+	v.indexMu.Lock()
+	_, checked := v.checked[state]
+	v.indexMu.Unlock()
+	if checked {
+		return nil
+	}
+
+	exists, err := v.indexExists(ctx, cfg.Index)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err = v.createIndex(ctx, cfg); err != nil {
+			return err
+		}
+	} else if err = v.verifyIndexDimensions(ctx, cfg); err != nil {
+		return err
+	}
+
+	v.indexMu.Lock()
+	v.checked[state] = struct{}{}
+	v.indexMu.Unlock()
+
+	return nil
+}
+
+func (v *VideoVectorIndex) indexExists(ctx context.Context, index string) (bool, error) {
+	resp, err := (esapi.IndicesExistsRequest{Index: []string{index}}).Do(ctx, v.client)
+	if err != nil {
+		return false, fmt.Errorf("check vector index existence failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.IsError() {
+		return false, fmt.Errorf("check vector index existence failed: %s", resp.Status())
+	}
+
+	return true, nil
+}
+
+func (v *VideoVectorIndex) createIndex(ctx context.Context, cfg app.VectorConfig) error {
+	payload, err := json.Marshal(buildVideoVectorIndexSpec(cfg.EmbeddingDimensions))
+	if err != nil {
+		return fmt.Errorf("marshal vector index spec failed: %w", err)
+	}
+
+	resp, err := (esapi.IndicesCreateRequest{
+		Index: cfg.Index,
+		Body:  bytes.NewReader(payload),
+	}).Do(ctx, v.client)
+	if err != nil {
+		return fmt.Errorf("create vector index failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.IsError() {
+		body := readErrorBody(resp.Body)
+		if strings.Contains(body, "resource_already_exists_exception") {
+			return nil
+		}
+
+		return fmt.Errorf("create vector index failed: %s %s", resp.Status(), body)
+	}
+
+	v.logger.Info(
+		"vector index created",
+		zap.String("index", cfg.Index),
+		zap.Int("dims", cfg.EmbeddingDimensions),
+	)
+
+	return nil
+}
+
+func (v *VideoVectorIndex) verifyIndexDimensions(ctx context.Context, cfg app.VectorConfig) error {
+	resp, err := (esapi.IndicesGetMappingRequest{Index: []string{cfg.Index}}).Do(ctx, v.client)
+	if err != nil {
+		return fmt.Errorf("read vector index mapping failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.IsError() {
+		return fmt.Errorf("read vector index mapping failed: %s %s", resp.Status(), readErrorBody(resp.Body))
+	}
+
+	var parsed map[string]struct {
+		Mappings struct {
+			Properties struct {
+				ContentVector struct {
+					Dims int `json:"dims"`
+				} `json:"content_vector"`
+			} `json:"properties"`
+		} `json:"mappings"`
+	}
+	if err = json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return fmt.Errorf("decode vector index mapping failed: %w", err)
+	}
+
+	for _, entry := range parsed {
+		dims := entry.Mappings.Properties.ContentVector.Dims
+		if dims > 0 && dims != cfg.EmbeddingDimensions {
+			return fmt.Errorf(
+				"vector index %q was built with dims=%d but embeddingDimensions=%d; "+
+					"ES 不支持原地修改 dense_vector 维度，请删除索引后调用重建接口",
+				cfg.Index,
+				dims,
+				cfg.EmbeddingDimensions,
+			)
+		}
+	}
+
+	return nil
+}
+
+func (v *VideoVectorIndex) resetIndexChecks() {
+	v.indexMu.Lock()
+	v.checked = make(map[vectorIndexState]struct{})
+	v.indexMu.Unlock()
+}
+
+// Refresh 让本次写入立即可检索。
+func (v *VideoVectorIndex) Refresh(ctx context.Context, cfg app.VectorConfig) error {
+	if !v.Available() {
+		return app.ErrES8Unavailable
+	}
+
+	resp, err := (esapi.IndicesRefreshRequest{Index: []string{cfg.Index}}).Do(ctx, v.client)
+	if err != nil {
+		return fmt.Errorf("刷新向量索引失败: %w", err)
+	}
+
+	return closeVectorResponse(resp, "刷新向量索引失败")
+}
+
+func closeVectorResponse(response *esapi.Response, operation string) error {
+	if response == nil {
+		return fmt.Errorf("%s: empty response", operation)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if !response.IsError() {
+		return nil
+	}
+
+	return fmt.Errorf("%s: %s %s", operation, response.Status(), readErrorBody(response.Body))
+}
+
+func buildVideoVectorIndexSpec(dimensions int) map[string]any {
 	if dimensions <= 0 {
 		dimensions = defaultEmbeddingDims
 	}
 
-	return &indexeres8.IndexSpec{
-		Settings: map[string]any{
+	return map[string]any{
+		"settings": map[string]any{
 			"number_of_shards":   1,
 			"number_of_replicas": 0,
 		},
-		Mappings: map[string]any{
+		"mappings": map[string]any{
 			"properties": map[string]any{
 				vectorFieldVideoID: map[string]any{esMappingType: "long"},
 				vectorFieldTitle: map[string]any{
 					esMappingType: esMappingText,
-					"fields":      map[string]any{esMappingKeyword: map[string]any{esMappingType: esMappingKeyword}},
+					"fields": map[string]any{
+						esMappingKeyword: map[string]any{esMappingType: esMappingKeyword},
+					},
 				},
-				vectorFieldDesc:      map[string]any{esMappingType: esMappingText},
-				vectorFieldTags:      map[string]any{esMappingType: esMappingKeyword},
-				vectorFieldPartition: map[string]any{esMappingType: esMappingKeyword},
+				vectorFieldDesc: map[string]any{esMappingType: esMappingText},
+				vectorFieldTags: map[string]any{
+					esMappingType: esMappingText,
+					"fields": map[string]any{
+						esMappingKeyword: map[string]any{esMappingType: esMappingKeyword},
+					},
+				},
+				vectorFieldPartition: map[string]any{
+					esMappingType: esMappingText,
+					"fields": map[string]any{
+						esMappingKeyword: map[string]any{esMappingType: esMappingKeyword},
+					},
+				},
 				vectorFieldCover:     map[string]any{esMappingType: esMappingKeyword, "index": false},
 				vectorFieldStatus:    map[string]any{esMappingType: "integer"},
 				vectorFieldContent:   map[string]any{esMappingType: esMappingText},
 				vectorFieldCreatedAt: map[string]any{esMappingType: "date"},
+				vectorFieldHasImage:  map[string]any{esMappingType: "boolean"},
 				vectorFieldEmbedding: map[string]any{
 					esMappingType: "dense_vector",
 					"dims":        dimensions,
@@ -262,108 +570,87 @@ func buildVideoVectorIndexSpec(dimensions int) *indexeres8.IndexSpec {
 	}
 }
 
-func documentToVideoVectorFields(doc *schema.Document) map[string]indexeres8.FieldValue {
-	meta := doc.MetaData
-
-	return map[string]indexeres8.FieldValue{
-		vectorFieldVideoID:   {Value: meta[vectorFieldVideoID]},
-		vectorFieldTitle:     {Value: meta[vectorFieldTitle]},
-		vectorFieldDesc:      {Value: meta[vectorFieldDesc]},
-		vectorFieldTags:      {Value: meta[vectorFieldTags]},
-		vectorFieldPartition: {Value: meta[vectorFieldPartition]},
-		vectorFieldCover:     {Value: meta[vectorFieldCover]},
-		vectorFieldStatus:    {Value: meta[vectorFieldStatus]},
-		vectorFieldCreatedAt: {Value: meta[vectorFieldCreatedAt]},
-		vectorFieldContent: {
-			Value:    doc.Content,
-			EmbedKey: vectorFieldEmbedding,
-			// 官方 ark.Embedder 仅支持文本 EmbedStrings；封面图仅作元数据存储。
-			Stringify: func(value any) (string, error) {
-				return fmt.Sprint(value), nil
-			},
-		},
-	}
-}
-
-func parseVectorSearchHit(_ context.Context, hit estypes.Hit) (*schema.Document, error) {
-	if hit.Id_ == nil {
-		return nil, errors.New("vector search hit missing _id")
-	}
-
-	if hit.Source_ == nil {
-		return nil, errors.New("vector search hit missing _source")
-	}
-
-	var source map[string]any
-	if err := json.Unmarshal(hit.Source_, &source); err != nil {
-		return nil, err
-	}
-
-	content := toString(source[vectorFieldContent])
-
-	meta := make(map[string]any, len(source)+1)
-
-	for key, value := range source {
-		if key == vectorFieldEmbedding || key == vectorFieldContent {
-			continue
-		}
-
-		meta[key] = value
-	}
-
-	if hit.Score_ != nil {
-		meta["score"] = float64(*hit.Score_)
-	}
-
-	return (&schema.Document{
-		ID:       *hit.Id_,
-		Content:  content,
-		MetaData: meta,
-	}).WithScore(toFloat64(meta["score"])), nil
-}
-
-// buildVideoVectorDocument 把库内视频数据组装成向量文档。
-func buildVideoVectorDocument(source app.VideoVectorSource) *schema.Document {
+func buildVideoVectorDocument(source app.VideoVectorSource) (map[string]any, string) {
 	tagNames := domain.TrimNonEmpty(source.Tags)
-	input := domain.VideoVectorInput{
+	content := (domain.VideoVectorInput{
 		Title:       source.Title,
 		Description: source.Description,
 		Partition:   source.Partition,
 		Tags:        source.Tags,
 		PartTitles:  source.PartTitles,
-	}
+	}).BuildContent()
 
-	return &schema.Document{
-		ID:      domain.VideoDocumentID(source.ID),
-		Content: input.BuildContent(),
-		MetaData: map[string]any{
-			vectorFieldVideoID:   source.ID,
-			vectorFieldTitle:     strings.TrimSpace(source.Title),
-			vectorFieldDesc:      strings.TrimSpace(source.Description),
-			vectorFieldTags:      tagNames,
-			vectorFieldPartition: strings.TrimSpace(source.Partition),
-			vectorFieldCover:     strings.TrimSpace(source.Cover),
-			vectorFieldStatus:    int(source.Status),
-			vectorFieldCreatedAt: source.CreatedAt.Format(time.RFC3339),
-		},
-	}
+	return map[string]any{
+		vectorFieldVideoID:   source.ID,
+		vectorFieldTitle:     strings.TrimSpace(source.Title),
+		vectorFieldDesc:      strings.TrimSpace(source.Description),
+		vectorFieldTags:      tagNames,
+		vectorFieldPartition: strings.TrimSpace(source.Partition),
+		vectorFieldCover:     strings.TrimSpace(source.Cover),
+		vectorFieldStatus:    int(source.Status),
+		vectorFieldCreatedAt: source.CreatedAt.Format(time.RFC3339),
+		vectorFieldContent:   content,
+	}, content
 }
 
-// newArkMultimodalEmbedder 使用 Eino 官方 embedding/ark（默认 BaseURL，多模态文本 API）。
-func newArkMultimodalEmbedder(ctx context.Context, cfg app.VectorConfig) (embedding.Embedder, error) {
-	apiType := arkembedding.APITypeMultiModal
-	dims := cfg.EmbeddingDimensions
-	timeout := defaultEmbeddingTimeout
-
-	if cfg.TimeoutSec > 0 {
-		timeout = time.Duration(cfg.TimeoutSec) * time.Second
+func fuseByRRF(rankConstant, limit int, rankings ...[]vectorHit) []uint {
+	if rankConstant <= 0 {
+		rankConstant = defaultRRFRankConstant
 	}
 
-	return arkembedding.NewEmbedder(ctx, &arkembedding.EmbeddingConfig{
-		APIKey:     cfg.EmbeddingAPIKey,
-		Model:      cfg.EmbeddingModel,
-		APIType:    &apiType,
-		Dimensions: &dims,
-		Timeout:    &timeout,
+	scores := make(map[uint]float64)
+	order := make([]uint, 0, limit*len(rankings))
+	for _, ranking := range rankings {
+		for rank, hit := range ranking {
+			if _, seen := scores[hit.VideoID]; !seen {
+				order = append(order, hit.VideoID)
+			}
+			scores[hit.VideoID] += 1 / float64(rankConstant+rank+1)
+		}
+	}
+
+	position := make(map[uint]int, len(order))
+	for index, id := range order {
+		position[id] = index
+	}
+	sort.SliceStable(order, func(left, right int) bool {
+		leftID, rightID := order[left], order[right]
+		if scores[leftID] != scores[rightID] {
+			return scores[leftID] > scores[rightID]
+		}
+
+		return position[leftID] < position[rightID]
 	})
+
+	if limit > 0 && len(order) > limit {
+		order = order[:limit]
+	}
+
+	return order
+}
+
+func topVectorHitIDs(hits []vectorHit, limit int) []uint {
+	ids := make([]uint, 0, len(hits))
+	seen := make(map[uint]struct{}, len(hits))
+	for _, hit := range hits {
+		if _, ok := seen[hit.VideoID]; ok {
+			continue
+		}
+		seen[hit.VideoID] = struct{}{}
+		ids = append(ids, hit.VideoID)
+		if limit > 0 && len(ids) >= limit {
+			break
+		}
+	}
+
+	return ids
+}
+
+func readErrorBody(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, vectorErrorBodyLimit))
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(raw))
 }

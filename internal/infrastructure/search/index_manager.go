@@ -20,11 +20,16 @@ var ErrIndexClientUnavailable = errors.New("elasticsearch client not initialized
 // 只由启动流程与 CLI 运维任务（-es）调用，mapping JSON 由调用方 embed 后传入。
 type IndexManager struct {
 	client *elastic.Client
+	logger *zap.Logger
 }
 
 // NewIndexManager 构造索引管理器（client 允许为 nil，方法将返回 ErrIndexClientUnavailable）。
-func NewIndexManager(client *elastic.Client) *IndexManager {
-	return &IndexManager{client: client}
+func NewIndexManager(client *elastic.Client, logger *zap.Logger) *IndexManager {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &IndexManager{client: client, logger: logger}
 }
 
 // rootContext 返回索引运维任务使用的根上下文。
@@ -62,12 +67,12 @@ func (m *IndexManager) CreateIndex(index, mapping string) error {
 
 	_, err := m.client.CreateIndex(index).BodyString(mapping).Do(m.rootContext())
 	if err != nil {
-		zap.L().Error("创建索引失败", zap.Error(err), zap.String("index", index))
+		m.logger.Error("创建索引失败", zap.Error(err), zap.String("index", index))
 
 		return fmt.Errorf("创建索引失败 %s: %w", index, err)
 	}
 
-	zap.L().Info("创建索引成功", zap.String("index", index))
+	m.logger.Info("创建索引成功", zap.String("index", index))
 
 	return nil
 }
@@ -80,7 +85,7 @@ func (m *IndexManager) ExistsIndex(index string) (bool, error) {
 
 	exists, err := m.client.IndexExists(index).Do(m.rootContext())
 	if err != nil {
-		zap.L().Error("判断索引是否存在失败", zap.Error(err), zap.String("index", index))
+		m.logger.Error("判断索引是否存在失败", zap.Error(err), zap.String("index", index))
 
 		return false, fmt.Errorf("判断索引是否存在失败 %s: %w", index, err)
 	}
@@ -96,12 +101,12 @@ func (m *IndexManager) DeleteIndex(index string) error {
 
 	_, err := m.client.DeleteIndex(index).Do(m.rootContext())
 	if err != nil {
-		zap.L().Error("删除索引失败", zap.Error(err), zap.String("index", index))
+		m.logger.Error("删除索引失败", zap.Error(err), zap.String("index", index))
 
 		return fmt.Errorf("删除索引失败 %s: %w", index, err)
 	}
 
-	zap.L().Info("删除索引成功", zap.String("index", index))
+	m.logger.Info("删除索引成功", zap.String("index", index))
 
 	return nil
 }

@@ -21,6 +21,7 @@ const suggestCandidateLimit = 40
 // client 为 nil 时 Available() 返回 false，应用层据此走 MySQL 回退（等价原 global.ESClient == nil 判断）。
 type Adapter struct {
 	client *elastic.Client
+	logger *zap.Logger
 }
 
 var (
@@ -30,8 +31,12 @@ var (
 )
 
 // NewAdapter 构造 Elasticsearch 检索适配器（client 允许为 nil）。
-func NewAdapter(client *elastic.Client) *Adapter {
-	return &Adapter{client: client}
+func NewAdapter(client *elastic.Client, logger *zap.Logger) *Adapter {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &Adapter{client: client, logger: logger}
 }
 
 // Available 报告 ES 客户端是否就绪。
@@ -58,8 +63,8 @@ func (a *Adapter) MultiSearch(ctx context.Context, opts app.SearchOptions, from 
 	}
 
 	return app.CombinedHits{
-		Videos: parseVideoHits(resp.Responses[0]),
-		Users:  parseUserHits(resp.Responses[1]),
+		Videos: parseVideoHits(resp.Responses[0], a.logger),
+		Users:  parseUserHits(resp.Responses[1], a.logger),
 	}, nil
 }
 
@@ -161,7 +166,7 @@ func (a *Adapter) FieldSuggest(
 		SearchSource(source).
 		Do(ctx)
 	if err != nil {
-		zap.L().Warn("suggest search failed",
+		a.logger.Warn("suggest search failed",
 			zap.String("index", index), zap.String("docType", docType), zap.Error(err))
 
 		return nil, err
