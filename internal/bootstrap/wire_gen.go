@@ -7,21 +7,79 @@
 package bootstrap
 
 import (
+	ai2 "f_ccg_video_back_ddd/internal/application/ai"
+	chat2 "f_ccg_video_back_ddd/internal/application/chat"
+	comment3 "f_ccg_video_back_ddd/internal/application/comment"
+	contentops3 "f_ccg_video_back_ddd/internal/application/contentops"
+	dynamic2 "f_ccg_video_back_ddd/internal/application/dynamic"
+	identity3 "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/application/media"
+	notification3 "f_ccg_video_back_ddd/internal/application/notification"
+	"f_ccg_video_back_ddd/internal/application/platform"
 	provisioning2 "f_ccg_video_back_ddd/internal/application/provisioning"
+	rbac2 "f_ccg_video_back_ddd/internal/application/rbac"
+	search3 "f_ccg_video_back_ddd/internal/application/search"
+	social2 "f_ccg_video_back_ddd/internal/application/social"
+	video3 "f_ccg_video_back_ddd/internal/application/video"
+	"f_ccg_video_back_ddd/internal/bootstrap/adapters"
 	"f_ccg_video_back_ddd/internal/infrastructure/auth"
 	"f_ccg_video_back_ddd/internal/infrastructure/cache"
+	chat3 "f_ccg_video_back_ddd/internal/infrastructure/cache/chat"
+	comment2 "f_ccg_video_back_ddd/internal/infrastructure/cache/comment"
+	contentops2 "f_ccg_video_back_ddd/internal/infrastructure/cache/contentops"
+	dynamic3 "f_ccg_video_back_ddd/internal/infrastructure/cache/dynamic"
+	"f_ccg_video_back_ddd/internal/infrastructure/cache/identity"
+	media2 "f_ccg_video_back_ddd/internal/infrastructure/cache/media"
+	notification2 "f_ccg_video_back_ddd/internal/infrastructure/cache/notification"
+	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
+	search4 "f_ccg_video_back_ddd/internal/infrastructure/cache/search"
+	video2 "f_ccg_video_back_ddd/internal/infrastructure/cache/video"
+	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/infrastructure/external/ark"
+	"f_ccg_video_back_ddd/internal/infrastructure/external/email"
+	"f_ccg_video_back_ddd/internal/infrastructure/external/oauth"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
+	"f_ccg_video_back_ddd/internal/infrastructure/mq"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/ai"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/chat"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/comment"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/contentops"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/dynamic"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	identity2 "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
+	media3 "f_ccg_video_back_ddd/internal/infrastructure/persistence/media"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/migration"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongodb"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/notification"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/provisioning"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
+	search2 "f_ccg_video_back_ddd/internal/infrastructure/persistence/search"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/social"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
+	"f_ccg_video_back_ddd/internal/infrastructure/river"
+	"f_ccg_video_back_ddd/internal/infrastructure/scheduler"
 	"f_ccg_video_back_ddd/internal/infrastructure/search"
+	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
+	ai3 "f_ccg_video_back_ddd/internal/interfaces/http/handler/ai"
+	chat5 "f_ccg_video_back_ddd/internal/interfaces/http/handler/chat"
+	comment4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/comment"
+	contentops4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/contentops"
+	dynamic4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/dynamic"
+	identity4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/identity"
+	notification4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/notification"
+	rbac3 "f_ccg_video_back_ddd/internal/interfaces/http/handler/rbac"
+	social3 "f_ccg_video_back_ddd/internal/interfaces/http/handler/social"
+	video4 "f_ccg_video_back_ddd/internal/interfaces/http/handler/video"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/internal/interfaces/http/router"
+	chat4 "f_ccg_video_back_ddd/internal/interfaces/ws/chat"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/validate"
 )
 
 // Injectors from wire.go:
@@ -38,22 +96,292 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 		return nil, nil, err
 	}
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
 	configMysql := config.ProvideMysqlConf(provider)
-	db, cleanup2 := mysql.Provide(configMysql)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
 	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es)
+	searchES, cleanup3 := search.Provide(es, zapLogger)
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup4 := cache.Provide(redis)
+	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
 	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup5 := mongodb.Provide(mongo)
-	searcher, cleanup6 := ipregion.Provide()
+	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
+	searcher, cleanup6 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
-	syncedEnforcer := auth.NewEnforcer(gormDB)
+	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
+	if err != nil {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	infrastructure := NewInfrastructure(loggerLogger, db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
-	routerRouter := router.New(provider)
+	client := cache.ProvideClient(cacheRedis)
+	userStatusCache := identity.NewUserStatusCache(client, zapLogger)
+	userRepository := identity2.NewUserRepository(gormDB, provider)
+	userStatusService := identity3.NewUserStatusService(userStatusCache, userRepository)
+	txManager := gormx.NewTxManager(gormDB)
+	banRecordRepository := identity2.NewBanRecordRepository(gormDB)
+	repository := notification.NewRepository(gormDB)
+	countCache := notification2.NewCountCache(client, zapLogger)
+	database := mongodb.ProvideDatabase(mongodbMongo)
+	store := chat.NewStore(database)
+	actorQuery := notification.NewActorQuery(gormDB)
 	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
-	app := NewApp(infrastructure, provider, loggerLogger, routerRouter, detachedTaskGroup)
+	service := notification3.NewService(repository, countCache, store, actorQuery, detachedTaskGroup, zapLogger)
+	banService := identity3.NewBanService(txManager, userRepository, banRecordRepository, userStatusService, service)
+	banRecordQuery := identity2.NewBanRecordQuery(gormDB)
+	banRecordService := identity3.NewBanRecordService(banRecordRepository, banRecordQuery)
+	clickCaptcha := captcha.NewClickCaptcha(client, provider, zapLogger)
+	slideCaptcha := captcha.NewSlideCaptcha(client, provider, zapLogger)
+	graphicCaptchaStore := captcha.NewGraphicStore()
+	emailCaptchaStore := captcha.NewEmailCaptchaStore(client)
+	captchaService := identity3.NewCaptchaService(clickCaptcha, slideCaptcha, graphicCaptchaStore, emailCaptchaStore, provider)
+	limiter := ratelimit.New(client)
+	middlewaresMiddlewares := middlewares.New(provider, syncedEnforcer, userStatusService, banService, banRecordService, captchaService, limiter, zapLogger)
+	translator := validate.New()
+	userRelationQuery := identity2.NewUserRelationQuery(gormDB)
+	userVideoQuery := video.NewUserVideoQuery(gormDB)
+	videoRepository := video.NewVideoRepository(gormDB)
+	authorIDCache := video2.NewAuthorIDCache(client)
+	detailMetaCache := video2.NewDetailMetaCache(client, zapLogger)
+	usernameCache := video2.NewUsernameCache()
+	authorService := video3.NewAuthorService(videoRepository, authorIDCache, detailMetaCache, usernameCache, zapLogger)
+	historyRepository := video.NewHistoryRepository(gormDB)
+	statsCache := video2.NewStatsCache(client, zapLogger)
+	hotRankCache := video2.NewHotRankCache(client)
+	creatorMetricStore := identity.NewCreatorMetricStore(client)
+	creatorVideoStatsQuery := identity2.NewCreatorVideoStatsQuery(gormDB, client)
+	fansCounter := identity2.NewFansCounter(gormDB)
+	creatorAnalyticsService := identity3.NewCreatorAnalyticsService(creatorMetricStore, userRepository, creatorVideoStatsQuery, fansCounter)
+	statsService := video3.NewStatsService(videoRepository, statsCache, hotRankCache, authorService, creatorAnalyticsService, zapLogger)
+	userVideoService := video3.NewUserVideoService(userVideoQuery, authorService, historyRepository, statsService)
+	identityVideoQuery := adapters.NewIdentityVideoQuery(userVideoService)
+	identityVideoTagWriter := adapters.NewIdentityVideoTagWriter(videoRepository)
+	purgeRepository := comment.NewPurgeRepository(gormDB)
+	taskRegistry := media.ProvideTaskRegistry()
+	cancelBroadcaster := media2.NewCancelBroadcaster(client)
+	cancelService := media.NewCancelService(taskRegistry, cancelBroadcaster, zapLogger)
+	scheduleStore := video2.NewScheduleStore(client)
+	deleteService := video3.NewDeleteService(txManager, videoRepository, purgeRepository, cancelService, scheduleStore, authorService, zapLogger)
+	elasticClient := search.ProvideV7(searchES)
+	adapter := search.NewAdapter(elasticClient, zapLogger)
+	searchFallbackQuery := search2.NewSearchFallbackQuery(gormDB)
+	searchService := search3.NewSearchService(adapter, searchFallbackQuery, zapLogger)
+	mentionQuery := search2.NewMentionQuery(gormDB)
+	mentionService := search3.NewMentionService(mentionQuery, adapter, zapLogger)
+	identitySearchQuery := adapters.NewIdentitySearchQuery(searchService, mentionService)
+	userActivityService := identity3.NewUserActivityService(userRelationQuery, identityVideoQuery, identityVideoTagWriter, deleteService, identitySearchQuery, identitySearchQuery)
+	userConfRepository := identity2.NewUserConfRepository(gormDB)
+	userBannerQuery := identity2.NewUserBannerQuery(gormDB)
+	userRoleQuery := identity2.NewUserRoleQuery(gormDB)
+	authorStatsCache := video2.NewAuthorStatsCache()
+	authorStatsService := video3.NewAuthorStatsService(userVideoQuery, statsService, authorStatsCache)
+	identityPublishedVideoStats := adapters.NewIdentityPublishedVideoStats(authorStatsService)
+	authorRenameRepository := video.NewAuthorRenameRepository(gormDB)
+	identityVideoCacheInvalidator := adapters.NewIdentityVideoCacheInvalidator(authorService)
+	profileService := identity3.NewProfileService(provider, txManager, userRepository, userConfRepository, userBannerQuery, userRelationQuery, userRoleQuery, identityPublishedVideoStats, authorRenameRepository, identityVideoCacheInvalidator)
+	userConfService := identity3.NewUserConfService(provider, userConfRepository, userConfRepository, userBannerQuery)
+	configFileWriter := contentops.NewConfigFileWriter(string2)
+	minIOClientPool := storage.NewMinIOClientPool(zapLogger)
+	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
+	identityBannerStorage := adapters.NewIdentityBannerStorage(resolver)
+	userBannerService := identity3.NewUserBannerService(provider, userConfRepository, userBannerQuery, configFileWriter, identityBannerStorage, zapLogger)
+	accountService := identity3.NewAccountService(userRepository, userRoleQuery)
+	casbinEnforcer := rbac.NewCasbinEnforcer(syncedEnforcer)
+	identityUserRoleBinder := adapters.NewIdentityUserRoleBinder(casbinEnforcer)
+	registrationService := identity3.NewRegistrationService(txManager, userRepository, userRoleQuery, identityUserRoleBinder, zapLogger)
+	tokenService := identity3.NewTokenService(provider)
+	folderRepository := video.NewFolderRepository(gormDB)
+	folderQuery := video.NewFolderQuery(gormDB)
+	folderListCache := video2.NewFolderListCache(client, zapLogger)
+	folderService := video3.NewFolderService(txManager, folderRepository, folderQuery, folderListCache, statsService, authorService, creatorAnalyticsService)
+	identityDefaultFolderEnsurer := adapters.NewIdentityDefaultFolderEnsurer(folderService)
+	loginRecordRepository := identity2.NewLoginRecordRepository(gormDB)
+	loginRecordQuery := identity2.NewLoginRecordQuery(gormDB)
+	loginRecordService := identity3.NewLoginRecordService(txManager, userRepository, loginRecordRepository, loginRecordQuery)
+	loginService := identity3.NewLoginService(provider, userRepository, userRoleQuery, tokenService, identityDefaultFolderEnsurer, loginRecordService, detachedTaskGroup, zapLogger)
+	stateStore := oauth.NewStateStore(client)
+	qqClient := oauth.NewQQClient(provider)
+	googleClient := oauth.NewGoogleClient(provider, zapLogger)
+	gitHubClient := oauth.NewGitHubClient(provider)
+	linuxDoClient := oauth.NewLinuxDoClient(provider)
+	xClient := oauth.NewXClient(provider)
+	oAuthLoginService := identity3.NewOAuthLoginService(provider, txManager, userRepository, userRoleQuery, identityUserRoleBinder, stateStore, tokenService, loginRecordService, detachedTaskGroup, qqClient, googleClient, gitHubClient, linuxDoClient, xClient, zapLogger)
+	expRecordQuery := identity2.NewExpRecordQuery(gormDB)
+	expRecordService := identity3.NewExpRecordService(expRecordQuery)
+	coinRecordRepository := identity2.NewCoinRecordRepository(gormDB)
+	coinRecordQuery := identity2.NewCoinRecordQuery(gormDB)
+	coinRecordService := identity3.NewCoinRecordService(coinRecordRepository, coinRecordQuery)
+	xdbSearcher := ipregion.ProvideXDB(searcher)
+	ipregionResolver := ipregion.NewResolver(xdbSearcher, zapLogger)
+	handler := identity4.NewHandler(userActivityService, profileService, userConfService, userBannerService, accountService, registrationService, loginService, oAuthLoginService, creatorAnalyticsService, loginRecordService, expRecordService, coinRecordService, ipregionResolver, zapLogger)
+	adminUserQuery := identity2.NewAdminUserQuery(gormDB)
+	adminUserService := identity3.NewAdminUserService(adminUserQuery)
+	adminHandler := identity4.NewAdminHandler(loginService, adminUserService, accountService, profileService, userBannerService, banService, banRecordService, ipregionResolver)
+	addressVerifier := email.NewAddressVerifier()
+	sender := email.NewSender(provider, zapLogger)
+	emailCaptchaSendService := identity3.NewEmailCaptchaSendService(userRepository, captchaService, addressVerifier, sender, limiter, detachedTaskGroup, zapLogger)
+	captchaHandler := identity4.NewCaptchaHandler(captchaService, emailCaptchaSendService, zapLogger)
+	bannerRepository := contentops.NewBannerRepository(gormDB)
+	bannerCache := contentops2.NewBannerCache(client, zapLogger)
+	videoPartitionQuery := contentops.NewVideoPartitionQuery(gormDB)
+	bannerService := contentops3.NewBannerService(bannerRepository, bannerCache, videoPartitionQuery)
+	siteStatStore := contentops2.NewSiteStatStore(client)
+	adminStatsQuery := contentops.NewAdminStatsQuery(gormDB)
+	expRecordRepository := identity2.NewExpRecordRepository(gormDB)
+	expService := identity3.NewExpService(txManager, userRepository, expRecordRepository)
+	coinService := identity3.NewCoinService(txManager, userRepository, coinRecordRepository)
+	statService := contentops3.NewStatService(siteStatStore, adminStatsQuery, detachedTaskGroup, expService, coinService, zapLogger)
+	siteConfigService := contentops3.NewSiteConfigService(provider, configFileWriter)
+	oAuthURLService := contentops3.NewOAuthURLService(provider, oAuthLoginService)
+	contentopsHandler := contentops4.NewHandler(bannerService, statService, siteConfigService, oAuthURLService, ipregionResolver)
+	chatModel := ark.NewChatModel()
+	imageModel := ark.NewImageModel(zapLogger)
+	videoTaskClient := ark.NewVideoTaskClient()
+	assetProxy := ark.NewAssetProxy()
+	promptVideoQuery := ai.NewPromptVideoQuery(gormDB)
+	elasticsearchClient := search.ProvideV8(searchES)
+	videoVectorIndex := search.NewVideoVectorIndex(elasticsearchClient, zapLogger)
+	vectorSourceQuery := search2.NewVectorSourceQuery(gormDB)
+	videoVectorService := search3.NewVideoVectorService(provider, videoVectorIndex, vectorSourceQuery, zapLogger)
+	aiVideoVectorSearch := adapters.NewAIVideoVectorSearch(videoVectorService)
+	aiService := ai2.NewService(provider, chatModel, imageModel, videoTaskClient, assetProxy, promptVideoQuery, aiVideoVectorSearch, zapLogger)
+	aiHandler := ai3.NewHandler(aiService, zapLogger)
+	focusRepository := social.NewFocusRepository(gormDB)
+	userExistsQuery := social.NewUserExistsQuery(gormDB)
+	userDocumentQuery := search2.NewUserDocumentQuery(gormDB)
+	userIndexer := search.NewUserIndexer(elasticClient)
+	userIndexService := search3.NewUserIndexService(userDocumentQuery, userIndexer)
+	focusService := social2.NewFocusService(focusRepository, userExistsQuery, creatorAnalyticsService, userIndexService, zapLogger)
+	relationQuery := social.NewRelationQuery(gormDB)
+	relationService := social2.NewRelationService(relationQuery)
+	socialHandler := social3.NewHandler(focusService, relationService)
+	feedQuery := video.NewFeedQuery(gormDB)
+	feedService := video3.NewFeedService(feedQuery, historyRepository, hotRankCache, statsService)
+	detailQuery := video.NewDetailQuery(gormDB)
+	httpdashVariantResolver := video3.NewHTTPDASHVariantResolver(zapLogger)
+	detailService := video3.NewDetailService(detailQuery, detailMetaCache, statsService, httpdashVariantResolver)
+	recommendQuery := video.NewRecommendQuery(gormDB)
+	recommendService := video3.NewRecommendService(recommendQuery, statsService)
+	likeRepository := video.NewLikeRepository(gormDB)
+	coinRepository := video.NewCoinRepository(gormDB)
+	identityCoinLedger := adapters.NewIdentityCoinLedger(coinService)
+	notifier := adapters.NewNotifier(service)
+	notifySourceQuery := video.NewNotifySourceQuery(gormDB)
+	interactionService := video3.NewInteractionService(txManager, videoRepository, likeRepository, coinRepository, folderRepository, statsService, authorService, folderService, folderListCache, creatorAnalyticsService, expService, identityCoinLedger, notifier, notifySourceQuery, detachedTaskGroup, zapLogger)
+	danmuRepository := video.NewDanmuRepository(gormDB)
+	danmuQuery := video.NewDanmuQuery(gormDB)
+	danmuRecentCache := video2.NewDanmuRecentCache(client, zapLogger)
+	danmuService := video3.NewDanmuService(videoRepository, danmuRepository, danmuQuery, danmuRecentCache, statsService, authorService, creatorAnalyticsService, zapLogger)
+	historyQuery := video.NewHistoryQuery(gormDB)
+	historyService := video3.NewHistoryService(videoRepository, historyRepository, historyQuery)
+	partitionRepository := video.NewPartitionRepository(gormDB)
+	partitionCache := video2.NewPartitionCache(client, zapLogger)
+	partitionService := video3.NewPartitionService(partitionRepository, videoRepository, partitionCache, authorService, zapLogger)
+	videoStorageResolver := adapters.NewVideoStorageResolver(resolver)
+	uploadService := video3.NewUploadService(videoStorageResolver, provider, zapLogger)
+	kafka := config.ProvideKafkaConf(provider)
+	producerPool := mq.NewProducerPool(zapLogger)
+	mqService := mq.NewMQService(kafka, producerPool, zapLogger)
+	progressCache := media2.NewProgressCache(client, zapLogger)
+	transcodeDispatchService := media.NewTranscodeDispatchService(mqService, progressCache)
+	videoTranscodeDispatcher := adapters.NewVideoTranscodeDispatcher(transcodeDispatchService)
+	videoVectorRebuildService := search3.NewVideoVectorRebuildService(videoVectorService, vectorSourceQuery, videoVectorIndex, detachedTaskGroup, zapLogger)
+	videoVectorRebuilder := adapters.NewVideoVectorRebuilder(videoVectorRebuildService)
+	vectorSyncService := video3.NewVectorSyncService(videoVectorService, videoVectorRebuilder, detachedTaskGroup)
+	videoScheduler := video3.NewScheduler(videoRepository, scheduleStore, vectorSyncService, provider, zapLogger)
+	publishService := video3.NewPublishService(videoRepository, partitionRepository, uploadService, videoTranscodeDispatcher, vectorSyncService, videoScheduler, provider, detachedTaskGroup, zapLogger)
+	updateService := video3.NewUpdateService(txManager, videoRepository, partitionRepository, scheduleStore, authorService, vectorSyncService, provider)
+	reportRepository := video.NewReportRepository(gormDB)
+	reportQuery := video.NewReportQuery(gormDB)
+	reportService := video3.NewReportService(videoRepository, danmuRepository, reportRepository, reportQuery, notifySourceQuery, notifier, detachedTaskGroup, zapLogger)
+	suggestFallbackQuery := search2.NewSuggestFallbackQuery(gormDB)
+	suggestionCache := search4.NewSuggestionCache()
+	suggestService := search3.NewSuggestService(adapter, suggestFallbackQuery, suggestionCache, zapLogger)
+	hotKeywordStore := search4.NewHotKeywordStore(client)
+	hotKeywordQuery := search2.NewHotKeywordQuery(gormDB)
+	hotKeywordService := search3.NewHotKeywordService(hotKeywordStore, hotKeywordQuery)
+	videoSearcher := adapters.NewVideoSearcher(searchService, suggestService, hotKeywordService)
+	readRepository := dynamic.NewReadRepository(gormDB)
+	followRelationQuery := dynamic.NewFollowRelationQuery(gormDB)
+	activityQuery := dynamic.NewActivityQuery(gormDB)
+	userProfileQuery := dynamic.NewUserProfileQuery(gormDB)
+	dynamicFeedQuery := dynamic.NewFeedQuery(gormDB)
+	dynamicFeedService := dynamic2.NewFeedService(userProfileQuery, dynamicFeedQuery, zapLogger)
+	unreadFollowCountCache := dynamic3.NewUnreadFollowCountCache(client, zapLogger)
+	followService := dynamic2.NewFollowService(followRelationQuery, activityQuery, unreadFollowCountCache, detachedTaskGroup, zapLogger)
+	readService := dynamic2.NewReadService(readRepository, followRelationQuery, activityQuery, userProfileQuery, dynamicFeedService, followService)
+	danmuEventBus := video2.NewDanmuEventBus(client, zapLogger)
+	checker := wsorigin.NewChecker(provider)
+	hub := NewDanmuHub(danmuService, danmuEventBus, checker, zapLogger)
+	videoHandler := video4.NewHandler(feedService, detailService, recommendService, interactionService, danmuService, historyService, folderService, partitionService, publishService, updateService, uploadService, reportService, videoSearcher, readService, hub, provider, ipregionResolver, zapLogger)
+	adminVideoQuery := video.NewAdminVideoQuery(gormDB)
+	adminVideoService := video3.NewAdminVideoService(videoRepository, adminVideoQuery, statsService, authorService, detailMetaCache, hotRankCache, scheduleStore, vectorSyncService, purgeRepository, cancelService, videoStorageResolver, uploadService, zapLogger)
+	progressQueryService := media.NewProgressQueryService(progressCache)
+	videoTranscodeProgressReader := adapters.NewVideoTranscodeProgressReader(progressQueryService)
+	videoAdminHandler := video4.NewAdminHandler(adminVideoService, detailService, danmuService, reportService, partitionService, videoTranscodeProgressReader, vectorSyncService, zapLogger)
+	commentRepository := comment.NewRepository(gormDB)
+	commentLikeRepository := comment.NewLikeRepository(gormDB)
+	query := comment.NewQuery(gormDB)
+	relatedQuery := comment.NewRelatedQuery(gormDB)
+	likeCache := comment2.NewLikeCache(client, zapLogger)
+	commentService := comment3.NewService(txManager, commentRepository, commentLikeRepository, query, relatedQuery, likeCache, notifier, statsService, statsService, detachedTaskGroup, zapLogger)
+	commentHandler := comment4.NewHandler(commentService, ipregionResolver)
+	chatFollowRelationQuery := chat.NewFollowRelationQuery(gormDB)
+	badgeInvalidator := adapters.NewBadgeInvalidator(countCache)
+	chatService := chat2.NewService(store, store, chatFollowRelationQuery, badgeInvalidator, zapLogger)
+	eventBus := chat3.NewEventBus(client, zapLogger)
+	chatHub := chat4.NewHub(chatService, eventBus, checker, zapLogger)
+	chatHandler := chat5.NewHandler(chatService, chatHub)
+	notificationHandler := notification4.NewHandler(service)
+	dynamicRepository := dynamic.NewDynamicRepository(gormDB)
+	videoOwnershipQuery := dynamic.NewVideoOwnershipQuery(gormDB)
+	pinRepository := video.NewPinRepository(gormDB)
+	dynamicService := dynamic2.NewService(txManager, dynamicRepository, userProfileQuery, videoOwnershipQuery, pinRepository, purgeRepository, zapLogger)
+	dynamicLikeRepository := dynamic.NewLikeRepository(gormDB)
+	likeService := dynamic2.NewLikeService(txManager, dynamicRepository, dynamicLikeRepository, userProfileQuery, notifier, detachedTaskGroup, zapLogger)
+	adminDynamicQuery := dynamic.NewAdminDynamicQuery(gormDB)
+	adminService := dynamic2.NewAdminService(dynamicRepository, adminDynamicQuery)
+	dynamicHandler := dynamic4.NewHandler(dynamicService, dynamicFeedService, followService, likeService, readService, adminService)
+	roleRepository := rbac.NewRoleRepository(gormDB)
+	menuRepository := rbac.NewMenuRepository(gormDB)
+	userRoleRepository := rbac.NewUserRoleRepository(gormDB)
+	roleService := rbac2.NewRoleService(txManager, roleRepository, menuRepository, userRoleRepository, casbinEnforcer, zapLogger)
+	roleMenuRepository := rbac.NewRoleMenuRepository(gormDB)
+	menuService := rbac2.NewMenuService(txManager, roleRepository, menuRepository, roleMenuRepository, userRoleRepository, aiService, zapLogger)
+	apiResourceRepository := rbac.NewApiResourceRepository(gormDB)
+	roleGraph := rbac2.NewRoleGraph(casbinEnforcer)
+	permissionEvaluator := rbac.NewPermissionEvaluator()
+	permissionService := rbac2.NewPermissionService(roleRepository, roleMenuRepository, apiResourceRepository, casbinEnforcer, roleGraph, permissionEvaluator, zapLogger)
+	inheritService := rbac2.NewInheritService(roleRepository, roleMenuRepository, casbinEnforcer, roleGraph, zapLogger)
+	rbacHandler := rbac3.NewHandler(roleService, menuService, permissionService, inheritService, zapLogger)
+	routerRouter := router.New(provider, middlewaresMiddlewares, translator, handler, adminHandler, captchaHandler, contentopsHandler, aiHandler, socialHandler, videoHandler, videoAdminHandler, commentHandler, chatHandler, notificationHandler, dynamicHandler, rbacHandler)
+	configRiver := config.ProvideRiverConf(provider)
+	riverComponent := river.NewRiverComponent(configRiver, configMysql, es, gormDB, zapLogger)
+	transcodeResourceRepository := media3.NewTranscodeResourceRepository(gormDB, txManager)
+	videoDetailCache := media2.NewVideoDetailCache(client, zapLogger)
+	transcodeEngine := mq.NewTranscodeEngine(provider, transcodeResourceRepository, zapLogger)
+	gpuCooldown := media.ProvideGPUCooldown()
+	transcodeService := media.NewTranscodeService(transcodeResourceRepository, resolver, progressCache, videoDetailCache, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, gpuCooldown, provider, zapLogger)
+	cancelSubscriber := media2.NewCancelSubscriber(client, taskRegistry, zapLogger)
+	transcodeConsumerComponent := mq.NewTranscodeConsumerComponent(kafka, transcodeService, taskRegistry, cancelSubscriber, producerPool, zapLogger)
+	commentLikeQueue := scheduler.NewCommentLikeQueue(client)
+	commentLikeProjection := scheduler.NewCommentLikeProjection(gormDB)
+	commentLikeSyncService := platform.NewCommentLikeSyncService(txManager, commentLikeQueue, commentLikeProjection, zapLogger)
+	videoStatsCache := scheduler.NewVideoStatsCache(client, zapLogger)
+	videoStatsProjection := scheduler.NewVideoStatsProjection(gormDB)
+	videoStatSyncService := platform.NewVideoStatSyncService(videoStatsCache, videoStatsProjection, zapLogger)
+	hotRankStore := scheduler.NewHotRankStore(client)
+	hotRankDecayService := platform.NewHotRankDecayService(hotRankStore, zapLogger)
+	banMaintenanceRepository := scheduler.NewBanMaintenanceRepository(gormDB)
+	autoUnbanService := platform.NewAutoUnbanService(txManager, banMaintenanceRepository, userStatusService, zapLogger)
+	cronComponent := scheduler.NewCronComponent(commentLikeSyncService, videoStatSyncService, hotRankDecayService, autoUnbanService, zapLogger)
+	runtimeComponents := NewRuntimeComponents(riverComponent, videoScheduler, transcodeConsumerComponent, cronComponent, chatHub, hub, zapLogger)
+	app := NewApp(infrastructure, provider, loggerLogger, routerRouter, detachedTaskGroup, runtimeComponents)
 	return app, func() {
 		cleanup6()
 		cleanup5()
@@ -64,29 +392,217 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	}, nil
 }
 
-// InitializeDBTasks 构造只需要「配置 + 日志 + MySQL + Casbin」的运维任务集合，
-// 服务 -db / -vp / -su（-br 需要对象存储，随 media 上下文接入）。
-//
-// 依赖范围严格等于原 core.InitCore 中 flags.RunDBTasks 执行点之前已初始化的组件。
-func InitializeDBTasks(opts *cli.Options) (*DBTasks, func(), error) {
+// InitializeMigrateDBTask 构造 -db 运维任务（配置 + 日志 + MySQL）。
+func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	configMysql := config.ProvideMysqlConf(provider)
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	gormDB := mysql.ProvideGorm(db)
+	migrator := migration.NewMigrator(gormDB, zapLogger)
+	executor := cli.NewMigrateDBExecutor(migrator)
+	return executor, func() {
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// InitializeVideoPartitionsTask 构造 -vp 运维任务（配置 + 日志 + MySQL）。
+func InitializeVideoPartitionsTask(opts *cli.Options) (*cli.Executor, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	configMysql := config.ProvideMysqlConf(provider)
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	gormDB := mysql.ProvideGorm(db)
+	migrator := migration.NewMigrator(gormDB, zapLogger)
+	executor := cli.NewVideoPartitionsExecutor(migrator, zapLogger)
+	return executor, func() {
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// InitializeBannerTask 构造 -br 运维任务（配置 + 日志 + MySQL + 存储）。
+func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
 	provider, err := config.Load(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	minIOClientPool := storage.NewMinIOClientPool(zapLogger)
+	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
+	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
+	bannerStorageResolverAdapter := NewBannerStorageResolverAdapter(resolver)
 	configMysql := config.ProvideMysqlConf(provider)
-	db, cleanup2 := mysql.Provide(configMysql)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
-	syncedEnforcer := auth.NewEnforcer(gormDB)
-	migrator := migration.NewMigrator(gormDB)
-	userRepository := identity.NewUserRepository(gormDB, provider)
-	superUserRepository := provisioning.NewSuperUserRepository(gormDB, userRepository)
-	casbinRoleBinder := provisioning.NewCasbinRoleBinder(syncedEnforcer)
+	bannerRepository := provisioning.NewBannerRepository(gormDB)
+	executor := cli.NewBannerExecutor(bannerStorageResolverAdapter, bannerRepository, zapLogger)
+	return executor, func() {
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// InitializeSuperUserTask 构造 -su 运维任务（配置 + 日志 + MySQL + Casbin）。
+func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	configMysql := config.ProvideMysqlConf(provider)
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	gormDB := mysql.ProvideGorm(db)
+	userRepository := identity2.NewUserRepository(gormDB, provider)
+	superUserRepository := provisioning.NewSuperUserRepository(gormDB, userRepository, zapLogger)
+	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	casbinRoleBinder := provisioning.NewCasbinRoleBinder(syncedEnforcer, zapLogger)
 	superUserService := provisioning2.NewSuperUserService(superUserRepository, casbinRoleBinder)
-	dbTasks := NewDBTasks(loggerLogger, db, syncedEnforcer, migrator, superUserService)
-	return dbTasks, func() {
+	executor := cli.NewSuperUserExecutor(superUserService, zapLogger)
+	return executor, func() {
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// InitializeESIndexTask 构造 -es 运维任务（配置 + 日志 + MySQL + Elasticsearch）。
+func InitializeESIndexTask(opts *cli.Options) (*cli.Executor, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	configMysql := config.ProvideMysqlConf(provider)
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	es := config.ProvideESConf(provider)
+	searchES, cleanup3 := search.Provide(es, zapLogger)
+	client := search.ProvideV7(searchES)
+	indexManager := search.NewIndexManager(client, zapLogger)
+	executor := NewESCLIExecutor(db, indexManager, zapLogger)
+	return executor, func() {
+		cleanup3()
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// InitializeResourceSyncTask 构造 -rs 运维任务（完整前置基础设施 + 真实 HTTP Router）。
+func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	configMysql := config.ProvideMysqlConf(provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	es := config.ProvideESConf(provider)
+	searchES, cleanup3 := search.Provide(es, zapLogger)
+	redis := config.ProvideRedisConf(provider)
+	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
+	mongo := config.ProvideMongoConf(provider)
+	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
+	searcher, cleanup6 := ipregion.Provide(zapLogger)
+	gormDB := mysql.ProvideGorm(db)
+	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
+	if err != nil {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	infrastructure := NewInfrastructure(loggerLogger, db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
+	apiResourceRepository := rbac.NewApiResourceRepository(gormDB)
+	translator := validate.New()
+	routerRouter := NewCLIRouter(provider, syncedEnforcer, zapLogger, translator)
+	routerRouteLister := NewRouterRouteLister(routerRouter)
+	openAPIMetaLoader := rbac.NewOpenAPIMetaLoader()
+	resourceSyncService := rbac2.NewResourceSyncService(apiResourceRepository, routerRouteLister, openAPIMetaLoader, zapLogger)
+	executor := NewResourceSyncCLIExecutor(infrastructure, resourceSyncService, zapLogger)
+	return executor, func() {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
+// InitializeRBACInitTask 构造 -rbac 运维任务（完整前置基础设施）。
+func InitializeRBACInitTask(opts *cli.Options) (*cli.Executor, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	configMysql := config.ProvideMysqlConf(provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	es := config.ProvideESConf(provider)
+	searchES, cleanup3 := search.Provide(es, zapLogger)
+	redis := config.ProvideRedisConf(provider)
+	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
+	mongo := config.ProvideMongoConf(provider)
+	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
+	searcher, cleanup6 := ipregion.Provide(zapLogger)
+	gormDB := mysql.ProvideGorm(db)
+	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
+	if err != nil {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	infrastructure := NewInfrastructure(loggerLogger, db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
+	roleRepository := rbac.NewRoleRepository(gormDB)
+	menuRepository := rbac.NewMenuRepository(gormDB)
+	roleMenuRepository := rbac.NewRoleMenuRepository(gormDB)
+	casbinEnforcer := rbac.NewCasbinEnforcer(syncedEnforcer)
+	initService := rbac2.NewInitService(roleRepository, menuRepository, roleMenuRepository, casbinEnforcer, zapLogger)
+	executor := NewRBACInitCLIExecutor(infrastructure, initService, zapLogger)
+	return executor, func() {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil
