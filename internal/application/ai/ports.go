@@ -2,17 +2,31 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
+	"strings"
 
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
+
+	"github.com/cloudwego/eino/schema"
 )
+
+// RuntimeConfig 是一次 AI 公开用例调用捕获的上游运行配置。
+//
+// 它属于应用层端口契约，不暴露 infrastructure/config 类型。值在用例入口完成
+// 规范化后按值传递，因此配置热更新不会让同一次调用混用不同版本的地址、密钥或超时。
+type RuntimeConfig struct {
+	ChatModelBaseURL string
+	ChatModelAPIKey  string
+	DoubaoAPIKey     string
+	TimeoutSec       int
+}
 
 // TextInvocation 聊天模型调用参数（已完成模型/思考选项校验与系统提示词注入）。
 type TextInvocation struct {
-	Model string
-	// Input 客户端原始消息（字符串或消息数组），由适配器翻译为上游协议。
-	Input json.RawMessage
+	Runtime RuntimeConfig
+	Model   string
+	// Messages 是解析、裁剪并注入服务端系统提示词后的 Eino 标准消息。
+	Messages []*schema.Message
 	// Thinking 是否开启思考；nil 视为关闭。
 	Thinking *bool
 	// ThinkingEffort 思考强度，空表示不下发。
@@ -23,6 +37,7 @@ type TextInvocation struct {
 
 // ImageInvocation 图片生成调用参数。
 type ImageInvocation struct {
+	Runtime        RuntimeConfig
 	Model          string
 	Prompt         string
 	N              *int
@@ -36,6 +51,7 @@ type ImageInvocation struct {
 
 // VideoInvocation 视频生成任务参数。
 type VideoInvocation struct {
+	Runtime       RuntimeConfig
 	Model         string
 	Prompt        string
 	Duration      *int
@@ -54,10 +70,10 @@ type VideoInvocation struct {
 //
 // 实现见 infrastructure/external/ark：负责上游请求体拼装、SSE 事件翻译与错误映射。
 type TextGenerator interface {
-	// InvokeText 非流式生成；返回提取出的文本与上游原始响应体。
-	InvokeText(ctx context.Context, inv TextInvocation) (string, []byte, error)
-	// OpenStream 打开流式响应；返回值的 Body 由调用方负责关闭。
-	OpenStream(ctx context.Context, inv TextInvocation) (*http.Response, error)
+	// InvokeText 非流式生成。
+	InvokeText(ctx context.Context, inv TextInvocation) (string, error)
+	// OpenStream 打开 Eino 消息流；调用方负责 Close。
+	OpenStream(ctx context.Context, inv TextInvocation) (*schema.StreamReader[*schema.Message], error)
 }
 
 // ImageGenerator 文生图/图生图端口（上游为方舟 Ark 图片模型）。
@@ -71,7 +87,7 @@ type VideoTaskClient interface {
 	// Create 创建视频生成任务。
 	Create(ctx context.Context, inv VideoInvocation) (any, error)
 	// Get 查询视频生成任务状态。
-	Get(ctx context.Context, requestID string) (any, error)
+	Get(ctx context.Context, runtime RuntimeConfig, requestID string) (any, error)
 }
 
 // AssetFetcher 上游资源代理拉取端口。
@@ -79,7 +95,12 @@ type VideoTaskClient interface {
 // 调用方（应用服务）已完成 scheme 与域名白名单校验，适配器只做转发。
 type AssetFetcher interface {
 	// Open 拉取资源流；返回值的 Body 由调用方负责关闭。
-	Open(ctx context.Context, assetURL string, incomingHeaders http.Header) (*http.Response, error)
+	Open(
+		ctx context.Context,
+		runtime RuntimeConfig,
+		assetURL string,
+		incomingHeaders http.Header,
+	) (*http.Response, error)
 }
 
 // PromptVideoQuery 站内作品候选读侧投影端口。
@@ -103,6 +124,17 @@ type PromptVideoQuery interface {
 // 由 search 上下文的应用服务在 bootstrap 中绑定实现
 // （原 search_service.SearchVideoVectorIDs）。
 type VideoVectorSearch interface {
-	// SearchVideoVectorIDs 按文本做语义召回，返回已发布作品 ID。
-	SearchVideoVectorIDs(ctx context.Context, query string, limit int) ([]uint, error)
+	// SearchVideoVectorIDsMultiModal 按文本、图片或二者组合召回已发布作品 ID。
+	SearchVideoVectorIDsMultiModal(ctx context.Context, query VideoVectorQuery, limit int) ([]uint, error)
+}
+
+// VideoVectorQuery 是 AI 上下文传给搜索上下文的多模态查询值对象。
+type VideoVectorQuery struct {
+	Text     string
+	ImageURL string
+}
+
+// IsZero 判断查询是否同时缺少文本与图片。
+func (query VideoVectorQuery) IsZero() bool {
+	return strings.TrimSpace(query.Text) == "" && strings.TrimSpace(query.ImageURL) == ""
 }

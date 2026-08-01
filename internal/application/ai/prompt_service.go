@@ -11,43 +11,59 @@ import (
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
+	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 )
 
-// buildResponsesSystemPrompt 组装本轮系统提示词。
-//
-// 两轮流程与原实现一致：先用小 token 预算做「是否在找站内视频」的意图分析，
-// 命中则召回候选作品并把候选上下文追加到后台系统提示词之后。
-// 任一环节失败都返回 basePrompt + 错误，由调用方仅告警、不中断正式回答。
+const (
+	promptBuildBudget              = 30 * time.Second
+	analysisHistoryMessages        = 6
+	analysisHistoryCharsPerMessage = 400
+	vectorQueryMaxChars            = 1000
+)
+
+// buildResponsesSystemPrompt 在正式回答前判断找视频意图并注入站内候选。
+// 整条提示词构建链受统一预算约束，超时降级为普通聊天，避免无限延迟首 token。
 func (s *Service) buildResponsesSystemPrompt(
 	ctx context.Context,
 	cfg *config.AI,
-	input json.RawMessage,
+	runtime RuntimeConfig,
+	conv conversation,
 	model string,
 ) (string, error) {
 	basePrompt := strings.TrimSpace(cfg.SystemPrompt)
-	if !domain.HasRawJSON(input) {
+	if !conv.HasMessages() {
 		return basePrompt, nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	analysis, err := s.analyzeVideoQuery(ctx, cfg, domain.FirstNonEmpty(model, cfg.ChatModel), input)
+	promptCtx, cancel := context.WithTimeout(ctx, promptBuildBudget)
+	defer cancel()
+
+	analysis, err := s.analyzeVideoQuery(
+		promptCtx,
+		cfg,
+		runtime,
+		domain.FirstNonEmpty(model, cfg.ChatModel),
+		conv,
+	)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			zap.L().Debug("skip AI video query analysis after context deadline", zap.Error(err))
+			s.logger.Debug("skip AI video query analysis after context deadline", zap.Error(err))
 
 			return basePrompt, nil
 		}
 
 		return basePrompt, err
 	}
-
-	if len(analysis.Keywords) == 0 {
+	if !analysis.WantsVideoSearch() {
 		return basePrompt, nil
 	}
 
 	limit := resolvePromptCandidateLimit(cfg)
-
-	candidateSet, err := s.loadPromptVideoCandidates(ctx, analysis.Keywords, limit)
+	candidateSet, err := s.loadPromptVideoCandidates(promptCtx, conv, analysis.Keywords, limit)
 	if err != nil {
 		return basePrompt, err
 	}
@@ -56,11 +72,9 @@ func (s *Service) buildResponsesSystemPrompt(
 	if err != nil {
 		return basePrompt, err
 	}
-
 	if contextPrompt == "" {
 		return basePrompt, nil
 	}
-
 	if basePrompt == "" {
 		return contextPrompt, nil
 	}
@@ -68,44 +82,66 @@ func (s *Service) buildResponsesSystemPrompt(
 	return basePrompt + "\n\n" + contextPrompt, nil
 }
 
-// analyzeVideoQuery 第一轮意图分析：让聊天模型提炼站内检索关键词。
 func (s *Service) analyzeVideoQuery(
 	ctx context.Context,
 	cfg *config.AI,
+	runtime RuntimeConfig,
 	model string,
-	input json.RawMessage,
-) (*domain.VideoQueryAnalysis, error) {
-	analysisInput, err := domain.InjectSystemPrompt(input, domain.VideoQueryAnalysisPrompt)
-	if err != nil {
-		return nil, err
+	conv conversation,
+) (domain.VideoQueryAnalysis, error) {
+	var analysis domain.VideoQueryAnalysis
+
+	transcript := conv.transcript(analysisHistoryMessages, analysisHistoryCharsPerMessage)
+	if strings.TrimSpace(transcript) == "" {
+		return analysis, nil
+	}
+	if len(conv.queryImages()) > 0 {
+		transcript += "\n（用户本轮还上传了图片）"
 	}
 
 	analysisCtx, cancel := context.WithTimeout(ctx, resolveAnalysisTimeout(cfg))
 	defer cancel()
 
-	text, _, err := s.text.InvokeText(analysisCtx, TextInvocation{
-		Model:     model,
-		Input:     analysisInput,
+	text, err := s.text.InvokeText(analysisCtx, TextInvocation{
+		Runtime: runtime,
+		Model:   model,
+		Messages: []*schema.Message{
+			schema.SystemMessage(domain.VideoQueryAnalysisPrompt),
+			schema.UserMessage(transcript),
+		},
 		MaxTokens: domain.AnalysisMaxOutputTokens,
 	})
 	if err != nil {
-		return nil, err
+		return analysis, err
+	}
+	if err = json.Unmarshal([]byte(extractJSONObject(text)), &analysis); err != nil {
+		return analysis, fmt.Errorf("解析视频查询分析结果失败: %w", err)
 	}
 
-	var analysis domain.VideoQueryAnalysis
-	if err = json.Unmarshal([]byte(text), &analysis); err != nil {
-		return nil, fmt.Errorf("解析视频查询分析结果失败: %w", err)
-	}
-
-	zap.L().Info("解析视频查询分析结果", zap.Any("analysis", analysis))
 	analysis.Keywords = domain.NormalizeAnalysisKeywords(analysis.Keywords)
+	s.logger.Debug(
+		"video query analysis",
+		zap.String("intent", analysis.Intent),
+		zap.Strings("keywords", analysis.Keywords),
+	)
 
-	return &analysis, nil
+	return analysis, nil
 }
 
-// loadPromptVideoCandidates 按关键词召回站内候选作品；未命中时回退最新发布。
+func extractJSONObject(text string) string {
+	text = strings.TrimSpace(text)
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start < 0 || end <= start {
+		return text
+	}
+
+	return text[start : end+1]
+}
+
 func (s *Service) loadPromptVideoCandidates(
 	ctx context.Context,
+	conv conversation,
 	keywords []string,
 	limit int,
 ) (domain.PromptVideoCandidateSet, error) {
@@ -114,44 +150,52 @@ func (s *Service) loadPromptVideoCandidates(
 	}
 
 	keywords = domain.NormalizeAnalysisKeywords(keywords)
-	if len(keywords) == 0 {
+	images := conv.queryImages()
+	if len(keywords) == 0 && len(images) == 0 {
 		return domain.PromptVideoCandidateSet{}, nil
 	}
-
 	if ctx == nil {
-		ctx = context.TODO()
+		ctx = context.Background()
 	}
 
-	ids, retrievalMode, err := s.searchPromptVideoIDs(ctx, keywords, limit)
-	if err != nil {
-		return domain.PromptVideoCandidateSet{}, err
-	}
-
+	ids, retrievalMode := s.searchPromptVideoIDs(ctx, conv, keywords, limit)
 	if len(ids) == 0 {
-		ids, err = s.prompts.LatestPublishedIDs(ctx, domain.EnsurePositiveLimit(limit))
+		latestIDs, err := s.prompts.LatestPublishedIDs(ctx, domain.EnsurePositiveLimit(limit))
 		if err != nil {
 			return domain.PromptVideoCandidateSet{}, err
 		}
-
-		if len(ids) == 0 {
+		if len(latestIDs) == 0 {
 			return domain.PromptVideoCandidateSet{
 				RetrievalMode: domain.RetrievalModeLatest,
 				QueryKeywords: keywords,
+				UsedImage:     len(images) > 0,
 			}, nil
 		}
 
-		return s.hydratePromptVideoCandidates(ctx, ids, domain.RetrievalModeLatest, keywords)
+		return s.hydratePromptVideoCandidates(
+			ctx,
+			latestIDs,
+			domain.RetrievalModeLatest,
+			keywords,
+			len(images) > 0,
+		)
 	}
 
-	return s.hydratePromptVideoCandidates(ctx, ids, retrievalMode, keywords)
+	return s.hydratePromptVideoCandidates(
+		ctx,
+		ids,
+		retrievalMode,
+		keywords,
+		len(images) > 0,
+	)
 }
 
-// hydratePromptVideoCandidates 按 ID 顺序加载并构造候选作品。
 func (s *Service) hydratePromptVideoCandidates(
 	ctx context.Context,
 	ids []uint,
 	retrievalMode string,
 	keywords []string,
+	usedImage bool,
 ) (domain.PromptVideoCandidateSet, error) {
 	inputs, err := s.prompts.Load(ctx, ids)
 	if err != nil {
@@ -166,38 +210,52 @@ func (s *Service) hydratePromptVideoCandidates(
 	return domain.PromptVideoCandidateSet{
 		RetrievalMode: retrievalMode,
 		QueryKeywords: keywords,
+		UsedImage:     usedImage,
 		Candidates:    items,
 	}, nil
 }
 
-// searchPromptVideoIDs 先走语义向量召回，失败或空结果时回退关键词命中。
+// searchPromptVideoIDs 先使用用户原句和首张图片做多模态召回，再退到 SQL 关键词匹配。
 func (s *Service) searchPromptVideoIDs(
 	ctx context.Context,
+	conv conversation,
 	keywords []string,
 	limit int,
-) ([]uint, string, error) {
+) ([]uint, string) {
 	limit = domain.EnsurePositiveLimit(limit)
+	images := conv.queryImages()
+	input := VideoVectorQuery{
+		Text: domain.TrimPromptText(strings.TrimSpace(conv.LatestUserText), vectorQueryMaxChars),
+	}
+	if len(images) > 0 {
+		input.ImageURL = images[0]
+	}
+	if input.Text == "" && len(keywords) > 0 {
+		input.Text = strings.Join(keywords, " ")
+	}
 
-	if s.vectors != nil {
-		ids, err := s.vectors.SearchVideoVectorIDs(ctx, strings.Join(keywords, " "), limit)
-		if err == nil && len(ids) > 0 {
-			return ids, domain.RetrievalModeVector, nil
-		}
-
-		if err != nil {
-			zap.L().Warn("search video vector index failed, fallback to keyword match", zap.Error(err))
+	if s.vectors != nil && !input.IsZero() {
+		ids, err := s.vectors.SearchVideoVectorIDsMultiModal(ctx, input, limit)
+		switch {
+		case err != nil:
+			s.logger.Warn("search video vector index failed, fallback to keyword match", zap.Error(err))
+		case len(ids) > 0 && input.ImageURL != "":
+			return ids, domain.RetrievalModeImageVector
+		case len(ids) > 0:
+			return ids, domain.RetrievalModeVector
 		}
 	}
 
 	ids, err := s.prompts.KeywordSearchIDs(ctx, keywords, limit)
 	if err != nil {
-		return nil, domain.RetrievalModeKeyword, err
+		s.logger.Warn("keyword match for AI video search failed", zap.Error(err))
+
+		return nil, domain.RetrievalModeKeyword
 	}
 
-	return ids, domain.RetrievalModeKeyword, nil
+	return ids, domain.RetrievalModeKeyword
 }
 
-// resolvePromptCandidateLimit 使用 vectorTopK 作为 AI 找视频候选上限（向量/关键词/最新回退共用）。
 func resolvePromptCandidateLimit(cfg *config.AI) int {
 	if cfg != nil && cfg.VectorTopK > 0 {
 		return cfg.VectorTopK
@@ -206,16 +264,15 @@ func resolvePromptCandidateLimit(cfg *config.AI) int {
 	return domain.DefaultCandidateLimit
 }
 
-// resolveAnalysisTimeout 意图分析超时：默认 20s，配置更小时取配置值。
 func resolveAnalysisTimeout(cfg *config.AI) time.Duration {
 	timeout := domain.DefaultAnalysisTimeoutSec * time.Second
 	if cfg == nil || cfg.TimeoutSec <= 0 {
 		return timeout
 	}
 
-	cfgTimeout := time.Duration(cfg.TimeoutSec) * time.Second
-	if cfgTimeout < timeout {
-		return cfgTimeout
+	configured := time.Duration(cfg.TimeoutSec) * time.Second
+	if configured < timeout {
+		return configured
 	}
 
 	return timeout

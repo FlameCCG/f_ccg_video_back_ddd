@@ -83,16 +83,18 @@ type Hub struct {
 	serverID string
 	service  *chatapp.Service
 	bus      EventBus
+	logger   *zap.Logger
 	upgrader websocket.Upgrader
 }
 
 // NewHub 构造私信 WebSocket 房间中心。
-func NewHub(service *chatapp.Service, bus EventBus, origin *wsorigin.Checker) *Hub {
+func NewHub(service *chatapp.Service, bus EventBus, origin *wsorigin.Checker, logger *zap.Logger) *Hub {
 	return &Hub{
 		rooms:    make(map[uint]*room),
 		serverID: uuid.NewString(),
 		service:  service,
 		bus:      bus,
+		logger:   loggerOrNop(logger),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return origin.Check(r) },
 		},
@@ -131,7 +133,7 @@ func (h *Hub) Stop(_ context.Context) error {
 func (h *Hub) ServeWS(c *gin.Context, userID uint) error {
 	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		zap.L().Warn("chat websocket upgrade failed", zap.Error(err))
+		h.log().Warn("chat websocket upgrade failed", zap.Error(err))
 
 		return err
 	}
@@ -156,6 +158,22 @@ func (h *Hub) ServeWS(c *gin.Context, userID uint) error {
 	room.removeClient(client)
 
 	return nil
+}
+
+func (h *Hub) log() *zap.Logger {
+	if h == nil {
+		return zap.NewNop()
+	}
+
+	return loggerOrNop(h.logger)
+}
+
+func loggerOrNop(logger *zap.Logger) *zap.Logger {
+	if logger == nil {
+		return zap.NewNop()
+	}
+
+	return logger
 }
 
 func (h *Hub) getRoom(userID uint) *room {

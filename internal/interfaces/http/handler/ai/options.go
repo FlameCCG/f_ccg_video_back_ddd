@@ -12,7 +12,7 @@ import (
 func (h *Handler) OptionsView(c *gin.Context) {
 	opts, err := h.service.PublicOptions()
 	if err != nil {
-		zap.L().Error("get AI public options failed", zap.Error(err))
+		h.log().Error("get AI public options failed", zap.Error(err))
 		res.FailWithMsg("AI 配置暂不可用", c)
 
 		return

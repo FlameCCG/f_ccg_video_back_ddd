@@ -7,10 +7,12 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
 
 	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -346,7 +348,15 @@ func TestMenuServiceAssignAndRead(t *testing.T) {
 		t.Fatalf("set parent: %v", err)
 	}
 
-	svc := app.NewMenuService(f.roles, f.menus, f.roleMenus, f.userRoles)
+	svc := app.NewMenuService(
+		gormx.NewTxManager(f.db),
+		f.roles,
+		f.menus,
+		f.roleMenus,
+		f.userRoles,
+		nil,
+		zap.NewNop(),
+	)
 
 	// 继承菜单先落一条，AssignRoleMenus 必须把它从入参里过滤掉且不删除它。
 	if err := f.roleMenus.CreateIgnoreConflict(ctx, domain.NewInheritedRoleMenus(role.ID, []uint{second.ID})); err != nil {

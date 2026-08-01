@@ -18,6 +18,7 @@ type PermissionService struct {
 	enforcer  Enforcer
 	graph     *RoleGraph
 	evaluator *domain.PermissionEvaluator
+	logger    *zap.Logger
 }
 
 // NewPermissionService 构造权限用例服务。
@@ -28,6 +29,7 @@ func NewPermissionService(
 	enforcer Enforcer,
 	graph *RoleGraph,
 	evaluator *domain.PermissionEvaluator,
+	logger *zap.Logger,
 ) *PermissionService {
 	return &PermissionService{
 		roles:     roles,
@@ -36,6 +38,7 @@ func NewPermissionService(
 		enforcer:  enforcer,
 		graph:     graph,
 		evaluator: evaluator,
+		logger:    logger,
 	}
 }
 
@@ -95,14 +98,14 @@ func (s *PermissionService) Remove(ctx context.Context, params AssignPermissionP
 
 	for _, p := range perms {
 		if _, err := s.enforcer.RemovePolicy(params.RoleName, p.Resource, p.Action); err != nil {
-			zap.L().Error("移除失败", zap.Error(err))
+			s.logger.Error("移除失败", zap.Error(err))
 
 			return domain.ErrRemoveFailed
 		}
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
-		zap.L().Error("保存失败", zap.Error(err))
+		s.logger.Error("保存失败", zap.Error(err))
 
 		return domain.ErrSaveFailed
 	}
@@ -119,14 +122,14 @@ func (s *PermissionService) RolePermissions(ctx context.Context, roleName string
 
 	directRows, err := s.enforcer.GetPermissionsForUser(roleName)
 	if err != nil {
-		zap.L().Error("获取角色直接权限失败", zap.Error(err))
+		s.logger.Error("获取角色直接权限失败", zap.Error(err))
 
 		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
 	}
 
 	effectiveRows, err := s.enforcer.GetImplicitPermissionsForUser(roleName)
 	if err != nil {
-		zap.L().Error("获取角色有效权限失败", zap.Error(err))
+		s.logger.Error("获取角色有效权限失败", zap.Error(err))
 
 		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
 	}
@@ -135,7 +138,7 @@ func (s *PermissionService) RolePermissions(ctx context.Context, roleName string
 
 	directParents, err := s.graph.DirectParents(roleName)
 	if err != nil {
-		zap.L().Error("获取直接父角色失败", zap.Error(err))
+		s.logger.Error("获取直接父角色失败", zap.Error(err))
 
 		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
 	}
@@ -187,7 +190,7 @@ func (s *PermissionService) RolePermissions(ctx context.Context, roleName string
 		} else {
 			top, kind, ferr := s.graph.FindTopParentForOwner(roleName, owner)
 			if ferr != nil {
-				zap.L().Warn("解析继承顶层父角色失败", zap.Error(ferr), zap.String("owner", owner))
+				s.logger.Warn("解析继承顶层父角色失败", zap.Error(ferr), zap.String("owner", owner))
 			}
 
 			if kind == domain.InheritKindDirect {
@@ -234,7 +237,7 @@ func (s *PermissionService) RolePermissions(ctx context.Context, roleName string
 	// 计算资源表中被有效权限覆盖的具体 API
 	resources, err := s.resources.ListPathMethod(ctx)
 	if err != nil {
-		zap.L().Error("读取资源表失败", zap.Error(err))
+		s.logger.Error("读取资源表失败", zap.Error(err))
 
 		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
 	}
@@ -305,21 +308,21 @@ func (s *PermissionService) UpdateRolePermissions(ctx context.Context, params Up
 
 	// 清空原有直接权限
 	if _, err := s.enforcer.RemoveFilteredPolicy(0, role.Name); err != nil {
-		zap.L().Error("清理角色权限失败", zap.Error(err))
+		s.logger.Error("清理角色权限失败", zap.Error(err))
 
 		return domain.ErrUpdateFailed
 	}
 
 	for _, p := range perms {
 		if _, err := s.enforcer.AddPolicy(role.Name, p.Resource, p.Action); err != nil {
-			zap.L().Error("添加角色权限失败", zap.Error(err))
+			s.logger.Error("添加角色权限失败", zap.Error(err))
 
 			return domain.ErrUpdateFailed
 		}
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
-		zap.L().Error("保存角色权限失败", zap.Error(err))
+		s.logger.Error("保存角色权限失败", zap.Error(err))
 
 		return domain.ErrUpdateFailed
 	}
@@ -331,21 +334,21 @@ func (s *PermissionService) UpdateRolePermissions(ctx context.Context, params Up
 func (s *PermissionService) clearRoleInheritance(ctx context.Context, role *domain.Role) error {
 	parents, err := s.enforcer.GetRolesForUser(role.Name)
 	if err != nil {
-		zap.L().Error("读取角色继承失败", zap.Error(err))
+		s.logger.Error("读取角色继承失败", zap.Error(err))
 
 		return domain.ErrBreakInheritanceFailed
 	}
 
 	for _, parent := range parents {
 		if _, err := s.enforcer.DeleteRoleForUser(role.Name, parent); err != nil {
-			zap.L().Error("移除角色继承失败", zap.Error(err), zap.String("parent", parent))
+			s.logger.Error("移除角色继承失败", zap.Error(err), zap.String("parent", parent))
 
 			return domain.ErrBreakInheritanceFailed
 		}
 	}
 
 	if err := s.roleMenus.DeleteInheritedByRole(ctx, role.ID); err != nil {
-		zap.L().Error("移除继承菜单失败", zap.Error(err))
+		s.logger.Error("移除继承菜单失败", zap.Error(err))
 
 		return domain.ErrBreakInheritanceFailed
 	}
@@ -357,7 +360,7 @@ func (s *PermissionService) clearRoleInheritance(ctx context.Context, role *doma
 func (s *PermissionService) WildcardList() ([]WildcardPermissionItem, error) {
 	policies, err := s.enforcer.GetPolicy()
 	if err != nil {
-		zap.L().Error("读取权限策略失败", zap.Error(err))
+		s.logger.Error("读取权限策略失败", zap.Error(err))
 
 		return nil, domain.ErrGetWildcardFailed
 	}
@@ -408,7 +411,7 @@ func (s *PermissionService) WildcardList() ([]WildcardPermissionItem, error) {
 func (s *PermissionService) ResourceList(ctx context.Context) ([]APIResourceItem, error) {
 	resources, err := s.resources.ListOrdered(ctx)
 	if err != nil {
-		zap.L().Error("读取资源表失败", zap.Error(err))
+		s.logger.Error("读取资源表失败", zap.Error(err))
 
 		return nil, domain.ErrGetResourceFailed
 	}

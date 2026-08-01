@@ -19,7 +19,7 @@ func (h *Handler) AssetProxyView(c *gin.Context) {
 
 	resp, err := h.service.OpenAssetStream(c.Request.Context(), req.URL, c.Request.Header)
 	if err != nil {
-		failWithAIError(c, "open AI asset stream failed", err)
+		h.failWithAIError(c, "open AI asset stream failed", err)
 
 		return
 	}
@@ -30,6 +30,6 @@ func (h *Handler) AssetProxyView(c *gin.Context) {
 	c.Status(resp.StatusCode)
 
 	if _, err = io.Copy(c.Writer, resp.Body); err != nil && !errors.Is(err, io.EOF) {
-		zap.L().Warn("write AI asset stream failed", zap.Error(err))
+		h.log().Warn("write AI asset stream failed", zap.Error(err))
 	}
 }

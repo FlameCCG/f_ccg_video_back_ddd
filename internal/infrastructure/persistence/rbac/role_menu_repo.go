@@ -108,6 +108,23 @@ func (r *RoleMenuRepository) EnsureRoleMenu(ctx context.Context, roleID, menuID 
 	return gormx.DB(ctx, r.db).FirstOrCreate(&row, row).Error
 }
 
+// GrantDirect 幂等授予直连菜单；已有继承关联时改为直连。
+func (r *RoleMenuRepository) GrantDirect(ctx context.Context, roleID, menuID uint) error {
+	row := po.RoleMenu{
+		RoleID:      roleID,
+		MenuID:      menuID,
+		IsInherited: false,
+	}
+
+	return gormx.DB(ctx, r.db).Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "role_id"},
+			{Name: "menu_id"},
+		},
+		DoUpdates: clause.Assignments(map[string]any{"is_inherited": false}),
+	}).Create(&row).Error
+}
+
 // DeleteDirectByRole 删除角色的全部直连关联。
 func (r *RoleMenuRepository) DeleteDirectByRole(ctx context.Context, roleID uint) error {
 	return gormx.DB(ctx, r.db).

@@ -21,7 +21,8 @@ const (
 
 // DB 包装 *gorm.DB，负责连接池生命周期。
 type DB struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *zap.Logger
 }
 
 // Gorm 返回底层 *gorm.DB。
@@ -34,27 +35,31 @@ func (d *DB) Gorm() *gorm.DB {
 }
 
 // New 连接 MySQL 并配置连接池；失败时 zap.Panic（与原 core.InitDB 一致）。
-func New(cfg *config.Mysql) *DB {
+func New(cfg *config.Mysql, logger *zap.Logger) *DB {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	db, err := gorm.Open(mysql.Open(cfg.GetDSN()), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 		DefaultContextTimeout:                    defaultContextTimeout,
 	})
 	if err != nil {
-		zap.L().Panic("连接数据库失败", zap.Error(err))
+		logger.Panic("连接数据库失败", zap.Error(err))
 	}
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		zap.L().Panic("获取数据库连接失败", zap.Error(err))
+		logger.Panic("获取数据库连接失败", zap.Error(err))
 	}
 
 	sqlDB.SetMaxOpenConns(maxOpenConns)
 	sqlDB.SetMaxIdleConns(maxIdleConns)
 	sqlDB.SetConnMaxLifetime(connMaxLifetime)
 
-	zap.L().Info("mysql连接成功", zap.String("database", cfg.DBName))
+	logger.Info("mysql连接成功", zap.String("database", cfg.DBName))
 
-	return &DB{db: db}
+	return &DB{db: db, logger: logger}
 }
 
 // Stop 关闭 MySQL 连接池。
@@ -65,20 +70,20 @@ func (d *DB) Stop() {
 
 	sqlDB, err := d.db.DB()
 	if err != nil {
-		zap.L().Warn("获取数据库连接失败", zap.Error(err))
+		d.logger.Warn("获取数据库连接失败", zap.Error(err))
 
 		return
 	}
 
 	if err := sqlDB.Close(); err != nil {
-		zap.L().Warn("mysql close failed", zap.Error(err))
+		d.logger.Warn("mysql close failed", zap.Error(err))
 
 		return
 	}
 
 	d.db = nil
 
-	zap.L().Info("mysql连接已关闭")
+	d.logger.Info("mysql连接已关闭")
 }
 
 // ProvideGorm 从 DB 包装中取出 *gorm.DB 供仓储注入。
@@ -87,8 +92,8 @@ func ProvideGorm(d *DB) *gorm.DB {
 }
 
 // Provide 供 wire 使用的 provider：返回连接池与其资源关闭函数。
-func Provide(cfg *config.Mysql) (*DB, func()) {
-	db := New(cfg)
+func Provide(cfg *config.Mysql, logger *zap.Logger) (*DB, func()) {
+	db := New(cfg, logger)
 
 	return db, db.Stop
 }

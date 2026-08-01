@@ -7,7 +7,6 @@ import (
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	arkmodel "github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/schema"
@@ -17,30 +16,29 @@ import (
 
 // ImageModel 豆包文生图/图生图适配器（Eino 官方 ImageGenerationModel）。
 type ImageModel struct {
-	cfgProvider *config.Provider
+	logger *zap.Logger
 }
 
 var _ aiapp.ImageGenerator = (*ImageModel)(nil)
 
 // NewImageModel 构造图片生成适配器。
-func NewImageModel(cfgProvider *config.Provider) *ImageModel {
-	return &ImageModel{cfgProvider: cfgProvider}
+func NewImageModel(logger *zap.Logger) *ImageModel {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &ImageModel{logger: logger}
 }
 
 // Generate 通过 Eino 官方 ImageGenerationModel 调用豆包文生图/图生图。
 func (m *ImageModel) Generate(ctx context.Context, inv aiapp.ImageInvocation) (any, error) {
-	cfg, err := aiConfig(m.cfgProvider)
-	if err != nil {
-		return nil, err
-	}
-
 	size := domain.ResolveImageSize(inv.Model, inv.Size, inv.Resolution, inv.AspectRatio)
 	responseFormat := domain.FirstNonEmpty(inv.ResponseFormat, "url")
 
 	genConfig := &arkmodel.ImageGenerationConfig{
-		APIKey:           doubaoAPIKey(cfg),
+		APIKey:           doubaoAPIKey(inv.Runtime),
 		Model:            inv.Model,
-		Timeout:          arkTimeout(cfg),
+		Timeout:          arkTimeout(inv.Runtime),
 		Size:             size,
 		ResponseFormat:   arkmodel.ImageResponseFormat(responseFormat),
 		DisableWatermark: true,
@@ -61,7 +59,7 @@ func (m *ImageModel) Generate(ctx context.Context, inv aiapp.ImageInvocation) (a
 
 	msg, err := model.Generate(ctx, buildImageGenerationMessages(inv.Prompt, inv.Refs))
 	if err != nil {
-		zap.L().Error("generate AI image failed", zap.String("model", inv.Model), zap.Error(err))
+		m.logger.Error("generate AI image failed", zap.String("model", inv.Model), zap.Error(err))
 
 		return nil, wrapArkError(err)
 	}

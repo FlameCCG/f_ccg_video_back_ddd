@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -101,7 +100,8 @@ func (u User) AfterCreate(tx *gorm.DB) error {
 		BannerID: DefaultUserBannerIDFromContext(tx.Statement.Context),
 	}
 	if err := tx.Create(&userConf).Error; err != nil {
-		zap.L().Error("create user conf failed", zap.Error(err))
+		tx.Logger.Error(tx.Statement.Context, "create user conf failed: %v", err)
+
 		return err
 	}
 	// 默认收藏夹
@@ -111,7 +111,8 @@ func (u User) AfterCreate(tx *gorm.DB) error {
 		IsDefault: true,
 	}
 	if err := tx.Create(&defaultFolder).Error; err != nil {
-		zap.L().Error("create default favorite folder failed", zap.Error(err))
+		tx.Logger.Error(tx.Statement.Context, "create default favorite folder failed: %v", err)
+
 		return err
 	}
 

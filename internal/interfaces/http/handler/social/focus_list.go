@@ -30,7 +30,7 @@ func (h *Handler) FocusListView(c *gin.Context) {
 	}
 
 	uid, err := strconv.Atoi(userID)
-	if err != nil {
+	if err != nil || uid <= 0 {
 		res.FailWithMsg("用户ID格式错误", c)
 		return
 	}

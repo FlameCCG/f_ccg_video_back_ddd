@@ -15,7 +15,7 @@ func (h *Handler) GenerateVideoView(c *gin.Context) {
 
 	data, err := h.service.GenerateVideo(c.Request.Context(), req)
 	if err != nil {
-		failWithAIError(c, "generate AI video failed", err)
+		h.failWithAIError(c, "generate AI video failed", err)
 
 		return
 	}
@@ -35,7 +35,7 @@ func (h *Handler) VideoStatusView(c *gin.Context) {
 
 	data, err := h.service.GetVideo(c.Request.Context(), requestID)
 	if err != nil {
-		failWithAIError(c, "get AI video status failed", err)
+		h.failWithAIError(c, "get AI video status failed", err)
 
 		return
 	}

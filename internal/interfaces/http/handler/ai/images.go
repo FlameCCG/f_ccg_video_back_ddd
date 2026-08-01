@@ -13,7 +13,7 @@ func (h *Handler) GenerateImageView(c *gin.Context) {
 
 	data, err := h.service.GenerateImage(c.Request.Context(), req)
 	if err != nil {
-		failWithAIError(c, "generate AI image failed", err)
+		h.failWithAIError(c, "generate AI image failed", err)
 
 		return
 	}
@@ -27,7 +27,7 @@ func (h *Handler) EditImageView(c *gin.Context) {
 
 	data, err := h.service.EditImage(c.Request.Context(), req)
 	if err != nil {
-		failWithAIError(c, "edit AI image failed", err)
+		h.failWithAIError(c, "edit AI image failed", err)
 
 		return
 	}

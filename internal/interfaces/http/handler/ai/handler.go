@@ -6,6 +6,7 @@ import (
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // Handler AI HTTP 处理器。
@@ -14,11 +15,28 @@ import (
 // 新架构由 wire 注入应用服务。
 type Handler struct {
 	service *aiapp.Service
+	logger  *zap.Logger
 }
 
 // NewHandler 构造 AI HTTP 处理器。
-func NewHandler(service *aiapp.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *aiapp.Service, logger *zap.Logger) *Handler {
+	return &Handler{service: service, logger: loggerOrNop(logger)}
+}
+
+func (h *Handler) log() *zap.Logger {
+	if h == nil {
+		return zap.NewNop()
+	}
+
+	return loggerOrNop(h.logger)
+}
+
+func loggerOrNop(logger *zap.Logger) *zap.Logger {
+	if logger == nil {
+		return zap.NewNop()
+	}
+
+	return logger
 }
 
 // bound 读取中间件已绑定的请求参数。

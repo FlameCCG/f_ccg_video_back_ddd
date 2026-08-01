@@ -10,6 +10,7 @@ import (
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
+	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 )
 
@@ -29,6 +30,12 @@ type Service struct {
 	assets      AssetFetcher
 	prompts     PromptVideoQuery
 	vectors     VideoVectorSearch
+	logger      *zap.Logger
+}
+
+type configSnapshot struct {
+	settings config.AI
+	runtime  RuntimeConfig
 }
 
 // NewService 构造 AI 用例服务。
@@ -40,6 +47,7 @@ func NewService(
 	assets AssetFetcher,
 	prompts PromptVideoQuery,
 	vectors VideoVectorSearch,
+	logger *zap.Logger,
 ) *Service {
 	return &Service{
 		cfgProvider: cfgProvider,
@@ -49,19 +57,26 @@ func NewService(
 		assets:      assets,
 		prompts:     prompts,
 		vectors:     vectors,
+		logger:      logger,
 	}
 }
 
 // CreateResponse 调用聊天模型生成非流式文本响应.
 func (s *Service) CreateResponse(ctx context.Context, req ResponsesRequest) (any, error) {
-	prepared, err := s.prepareResponsesRequest(ctx, req)
+	snapshot, err := s.snapshot()
 	if err != nil {
 		return nil, err
 	}
 
-	text, raw, err := s.text.InvokeText(ctx, TextInvocation{
+	prepared, conv, err := s.prepareResponsesRequest(ctx, &snapshot.settings, snapshot.runtime, req)
+	if err != nil {
+		return nil, err
+	}
+
+	text, err := s.text.InvokeText(ctx, TextInvocation{
+		Runtime:        snapshot.runtime,
 		Model:          prepared.Model,
-		Input:          prepared.Input,
+		Messages:       conv.modelMessages(),
 		Thinking:       prepared.Thinking,
 		ThinkingEffort: prepared.ThinkingEffort,
 		MaxTokens:      defaultMaxOutputTokens,
@@ -70,23 +85,28 @@ func (s *Service) CreateResponse(ctx context.Context, req ResponsesRequest) (any
 		return nil, err
 	}
 
-	if text == "" {
-		text = strings.TrimSpace(string(raw))
-	}
-
 	return buildResponsesCompatiblePayload(prepared.Model, text), nil
 }
 
 // OpenResponseStream 打开聊天模型流式响应.
-func (s *Service) OpenResponseStream(ctx context.Context, req ResponsesRequest) (*http.Response, error) {
-	prepared, err := s.prepareResponsesRequest(ctx, req)
+func (s *Service) OpenResponseStream(
+	ctx context.Context,
+	req ResponsesRequest,
+) (*schema.StreamReader[*schema.Message], error) {
+	snapshot, err := s.snapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	prepared, conv, err := s.prepareResponsesRequest(ctx, &snapshot.settings, snapshot.runtime, req)
 	if err != nil {
 		return nil, err
 	}
 
 	return s.text.OpenStream(ctx, TextInvocation{
+		Runtime:        snapshot.runtime,
 		Model:          prepared.Model,
-		Input:          prepared.Input,
+		Messages:       conv.modelMessages(),
 		Thinking:       prepared.Thinking,
 		ThinkingEffort: prepared.ThinkingEffort,
 		MaxTokens:      defaultMaxOutputTokens,
@@ -95,22 +115,32 @@ func (s *Service) OpenResponseStream(ctx context.Context, req ResponsesRequest) 
 
 // GenerateImage 调用上游文生图接口.
 func (s *Service) GenerateImage(ctx context.Context, req ImageGenerationRequest) (any, error) {
-	prepared, err := s.prepareImageGenerationRequest(req)
+	snapshot, err := s.snapshot()
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := s.images.Generate(ctx, toImageInvocation(prepared, nil))
+	prepared, err := prepareImageGenerationRequest(&snapshot.settings, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.ensureImageResultCount(ctx, prepared, nil, result)
+	result, err := s.images.Generate(ctx, toImageInvocation(snapshot.runtime, prepared, nil))
+	if err != nil {
+		return nil, err
+	}
+
+	return s.ensureImageResultCount(ctx, snapshot.runtime, prepared, nil, result)
 }
 
 // EditImage 调用上游图生图/图片编辑接口.
 func (s *Service) EditImage(ctx context.Context, req ImageEditRequest) (any, error) {
-	prepared, err := s.prepareImageEditRequest(req)
+	snapshot, err := s.snapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	prepared, err := prepareImageEditRequest(&snapshot.settings, req)
 	if err != nil {
 		return nil, err
 	}
@@ -126,27 +156,32 @@ func (s *Service) EditImage(ctx context.Context, req ImageEditRequest) (any, err
 	}
 	refs := imageRefsForEdit(prepared)
 
-	result, err := s.images.Generate(ctx, toImageInvocation(imageReq, refs))
+	result, err := s.images.Generate(ctx, toImageInvocation(snapshot.runtime, imageReq, refs))
 	if err != nil {
 		return nil, err
 	}
 
-	return s.ensureImageResultCount(ctx, imageReq, refs, result)
+	return s.ensureImageResultCount(ctx, snapshot.runtime, imageReq, refs, result)
 }
 
 // GenerateVideo 创建上游视频生成任务.
 func (s *Service) GenerateVideo(ctx context.Context, req VideoGenerationRequest) (any, error) {
-	prepared, err := s.prepareVideoGenerationRequest(req)
+	snapshot, err := s.snapshot()
 	if err != nil {
 		return nil, err
 	}
 
-	return s.videos.Create(ctx, toVideoInvocation(prepared))
+	prepared, err := prepareVideoGenerationRequest(&snapshot.settings, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.videos.Create(ctx, toVideoInvocation(snapshot.runtime, prepared))
 }
 
 // GetVideo 查询视频生成任务状态.
 func (s *Service) GetVideo(ctx context.Context, requestID string) (any, error) {
-	cfg, err := s.config()
+	snapshot, err := s.snapshot()
 	if err != nil {
 		return nil, err
 	}
@@ -155,11 +190,11 @@ func (s *Service) GetVideo(ctx context.Context, requestID string) (any, error) {
 		return nil, domain.ErrEmptyRequestID
 	}
 
-	if err = requireDoubaoAPIKey(cfg); err != nil {
+	if err = requireDoubaoAPIKey(&snapshot.settings); err != nil {
 		return nil, err
 	}
 
-	return s.videos.Get(ctx, requestID)
+	return s.videos.Get(ctx, snapshot.runtime, requestID)
 }
 
 // OpenAssetStream 代理拉取上游资源流（仅放行白名单域名，防 SSRF）.
@@ -168,7 +203,8 @@ func (s *Service) OpenAssetStream(
 	assetURL string,
 	incomingHeaders http.Header,
 ) (*http.Response, error) {
-	if _, err := s.config(); err != nil {
+	snapshot, err := s.snapshot()
+	if err != nil {
 		return nil, err
 	}
 
@@ -185,15 +221,16 @@ func (s *Service) OpenAssetStream(
 		return nil, domain.ErrAssetHostNotAllowed
 	}
 
-	return s.assets.Open(ctx, parsed.String(), incomingHeaders)
+	return s.assets.Open(ctx, snapshot.runtime, parsed.String(), incomingHeaders)
 }
 
 // PublicOptions 返回前台可用的模型与思考配置（脱敏）.
 func (s *Service) PublicOptions() (PublicOptions, error) {
-	cfg, err := s.config()
+	snapshot, err := s.snapshot()
 	if err != nil {
 		return PublicOptions{}, err
 	}
+	cfg := &snapshot.settings
 
 	return PublicOptions{
 		ChatModel:       strings.TrimSpace(cfg.ChatModel),
@@ -209,57 +246,65 @@ func (s *Service) PublicOptions() (PublicOptions, error) {
 }
 
 // prepareResponsesRequest 校验并补全聊天请求：模型白名单、思考选项与系统提示词注入。
-func (s *Service) prepareResponsesRequest(ctx context.Context, req ResponsesRequest) (ResponsesRequest, error) {
-	cfg, err := s.config()
-	if err != nil {
-		return req, err
-	}
+func (s *Service) prepareResponsesRequest(
+	ctx context.Context,
+	cfg *config.AI,
+	runtime RuntimeConfig,
+	req ResponsesRequest,
+) (ResponsesRequest, conversation, error) {
+	var conv conversation
 
-	if err = requireChatAPIKey(cfg); err != nil {
-		return req, err
+	if err := requireChatAPIKey(cfg); err != nil {
+		return req, conv, err
 	}
 
 	if !domain.HasRawJSON(req.Input) {
-		return req, domain.ErrEmptyInput
+		return req, conv, domain.ErrEmptyInput
 	}
 
+	var err error
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ChatModel, toOptions(cfg.ChatModels), "聊天")
 	if err != nil {
-		return req, err
+		return req, conv, err
 	}
 
 	req, err = normalizeThinkingOptions(cfg, req)
 	if err != nil {
-		return req, err
+		return req, conv, err
 	}
 
-	prompt, promptErr := s.buildResponsesSystemPrompt(ctx, cfg, req.Input, req.Model)
-	if promptErr != nil {
-		zap.L().Warn("build AI responses system prompt failed", zap.Error(promptErr))
-	}
-
-	req.Input, err = domain.InjectSystemPrompt(req.Input, domain.FirstNonEmpty(prompt, cfg.SystemPrompt))
+	conv, err = parseConversation(req.Input)
 	if err != nil {
-		return req, err
+		return req, conv, err
+	}
+	conv = conv.trimHistory(cfg)
+	if !conv.HasMessages() {
+		return req, conv, domain.ErrNoUserMessage
 	}
 
-	return req, nil
+	prompt, promptErr := s.buildResponsesSystemPrompt(ctx, cfg, runtime, conv, req.Model)
+	if promptErr != nil {
+		s.logger.Warn("build AI responses system prompt failed", zap.Error(promptErr))
+	}
+
+	conv = conv.prependSystem(domain.FirstNonEmpty(prompt, cfg.SystemPrompt))
+
+	return req, conv, nil
 }
 
-func (s *Service) prepareImageGenerationRequest(req ImageGenerationRequest) (ImageGenerationRequest, error) {
-	cfg, err := s.config()
-	if err != nil {
+func prepareImageGenerationRequest(
+	cfg *config.AI,
+	req ImageGenerationRequest,
+) (ImageGenerationRequest, error) {
+	if err := requireDoubaoAPIKey(cfg); err != nil {
 		return req, err
 	}
 
-	if err = requireDoubaoAPIKey(cfg); err != nil {
+	if err := domain.ValidateImageGeneration(req.Prompt, req.N); err != nil {
 		return req, err
 	}
 
-	if err = domain.ValidateImageGeneration(req.Prompt, req.N); err != nil {
-		return req, err
-	}
-
+	var err error
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
 	if err != nil {
 		return req, err
@@ -268,21 +313,17 @@ func (s *Service) prepareImageGenerationRequest(req ImageGenerationRequest) (Ima
 	return req, nil
 }
 
-func (s *Service) prepareImageEditRequest(req ImageEditRequest) (ImageEditRequest, error) {
-	cfg, err := s.config()
-	if err != nil {
-		return req, err
-	}
-
-	if err = requireDoubaoAPIKey(cfg); err != nil {
+func prepareImageEditRequest(cfg *config.AI, req ImageEditRequest) (ImageEditRequest, error) {
+	if err := requireDoubaoAPIKey(cfg); err != nil {
 		return req, err
 	}
 
 	hasImage := req.Image != nil && !req.Image.IsZero()
-	if err = domain.ValidateImageEdit(req.Prompt, hasImage, len(req.Images), req.N); err != nil {
+	if err := domain.ValidateImageEdit(req.Prompt, hasImage, len(req.Images), req.N); err != nil {
 		return req, err
 	}
 
+	var err error
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
 	if err != nil {
 		return req, err
@@ -291,23 +332,22 @@ func (s *Service) prepareImageEditRequest(req ImageEditRequest) (ImageEditReques
 	return req, nil
 }
 
-func (s *Service) prepareVideoGenerationRequest(req VideoGenerationRequest) (VideoGenerationRequest, error) {
-	cfg, err := s.config()
-	if err != nil {
-		return req, err
-	}
-
-	if err = requireDoubaoAPIKey(cfg); err != nil {
+func prepareVideoGenerationRequest(
+	cfg *config.AI,
+	req VideoGenerationRequest,
+) (VideoGenerationRequest, error) {
+	if err := requireDoubaoAPIKey(cfg); err != nil {
 		return req, err
 	}
 
 	hasImage := (req.Image != nil && !req.Image.IsZero()) ||
 		(req.InputReference != nil && !req.InputReference.IsZero())
 
-	if err = domain.ValidateVideoGeneration(req.Prompt, hasImage, len(req.ReferenceImages)); err != nil {
+	if err := domain.ValidateVideoGeneration(req.Prompt, hasImage, len(req.ReferenceImages)); err != nil {
 		return req, err
 	}
 
+	var err error
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.VideoModel, toOptions(cfg.VideoModels), "视频")
 	if err != nil {
 		return req, err
@@ -325,6 +365,7 @@ func (s *Service) prepareVideoGenerationRequest(req VideoGenerationRequest) (Vid
 // ensureImageResultCount 上游一次未返回足够张数时逐张补图，最多补 want 次。
 func (s *Service) ensureImageResultCount(
 	ctx context.Context,
+	runtime RuntimeConfig,
 	req ImageGenerationRequest,
 	refs []string,
 	result any,
@@ -339,7 +380,7 @@ func (s *Service) ensureImageResultCount(
 		one := 1
 		singleReq.N = &one
 
-		next, err := s.images.Generate(ctx, toImageInvocation(singleReq, refs))
+		next, err := s.images.Generate(ctx, toImageInvocation(runtime, singleReq, refs))
 		if err != nil {
 			return nil, err
 		}
@@ -355,22 +396,34 @@ func (s *Service) ensureImageResultCount(
 	return result, nil
 }
 
-// config 取当前配置快照中的 AI 段（副本），并规范化聊天 BaseURL。
-func (s *Service) config() (*config.AI, error) {
+// snapshot 在公开用例入口捕获一份 AI 配置，后续链路不再读 Provider。
+func (s *Service) snapshot() (configSnapshot, error) {
 	root := s.cfgProvider.Get()
 	if root == nil {
-		return nil, domain.ErrConfigMissing
+		return configSnapshot{}, domain.ErrConfigMissing
 	}
 
 	source := root.AI
 	if source == nil {
-		return nil, domain.ErrConfigMissing
+		return configSnapshot{}, domain.ErrConfigMissing
 	}
 
 	cfg := *source
+	cfg.ChatModels = append([]config.AIModel{}, source.ChatModels...)
+	cfg.ThinkingEfforts = append([]config.AIModel{}, source.ThinkingEfforts...)
+	cfg.ImageModels = append([]config.AIModel{}, source.ImageModels...)
+	cfg.VideoModels = append([]config.AIModel{}, source.VideoModels...)
 	cfg.ChatModelBaseURL = domain.NormalizeBaseURL(cfg.ChatModelBaseURL)
 
-	return &cfg, nil
+	return configSnapshot{
+		settings: cfg,
+		runtime: RuntimeConfig{
+			ChatModelBaseURL: cfg.ChatModelBaseURL,
+			ChatModelAPIKey:  strings.TrimSpace(cfg.ChatModelAPIKey),
+			DoubaoAPIKey:     strings.TrimSpace(cfg.DoubaoModelAPIKey),
+			TimeoutSec:       cfg.TimeoutSec,
+		},
+	}, nil
 }
 
 func requireChatAPIKey(cfg *config.AI) error {
@@ -484,8 +537,9 @@ func videoImageRefs(req VideoGenerationRequest) []string {
 	return out
 }
 
-func toImageInvocation(req ImageGenerationRequest, refs []string) ImageInvocation {
+func toImageInvocation(runtime RuntimeConfig, req ImageGenerationRequest, refs []string) ImageInvocation {
 	return ImageInvocation{
+		Runtime:        runtime,
 		Model:          req.Model,
 		Prompt:         req.Prompt,
 		N:              req.N,
@@ -497,8 +551,9 @@ func toImageInvocation(req ImageGenerationRequest, refs []string) ImageInvocatio
 	}
 }
 
-func toVideoInvocation(req VideoGenerationRequest) VideoInvocation {
+func toVideoInvocation(runtime RuntimeConfig, req VideoGenerationRequest) VideoInvocation {
 	return VideoInvocation{
+		Runtime:       runtime,
 		Model:         req.Model,
 		Prompt:        req.Prompt,
 		Duration:      req.Duration,

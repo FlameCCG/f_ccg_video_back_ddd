@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -52,7 +51,6 @@ func Md5Str(filepath string) (string, error) {
 func FileHashEqualsData(path string, data []byte) bool {
 	hashExisting, size, err := HashFileSHA256(path)
 	if err != nil {
-		zap.L().Error("Failed to hash file", zap.String("path", path), zap.Error(err))
 		return false
 	}
 

@@ -15,6 +15,7 @@ type InitService struct {
 	menus     domain.MenuRepository
 	roleMenus domain.RoleMenuRepository
 	enforcer  Enforcer
+	logger    *zap.Logger
 }
 
 // NewInitService 构造默认 RBAC 初始化用例。
@@ -23,8 +24,9 @@ func NewInitService(
 	menus domain.MenuRepository,
 	roleMenus domain.RoleMenuRepository,
 	enforcer Enforcer,
+	logger *zap.Logger,
 ) *InitService {
-	return &InitService{roles: roles, menus: menus, roleMenus: roleMenus, enforcer: enforcer}
+	return &InitService{roles: roles, menus: menus, roleMenus: roleMenus, enforcer: enforcer, logger: logger}
 }
 
 // InitDefaultRBAC 初始化默认角色、菜单和权限策略。
@@ -47,7 +49,7 @@ func (s *InitService) InitDefaultRBAC(ctx context.Context) error {
 		count, _ := s.roles.CountByName(ctx, role.Name)
 		if count == 0 {
 			if err := s.roles.Create(ctx, role); err != nil {
-				zap.L().Error("create role failed", zap.Error(err))
+				s.logger.Error("create role failed", zap.Error(err))
 
 				return err
 			}
@@ -118,7 +120,7 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 	for _, seed := range buildMenuSeeds() {
 		pid, err := parentID(seed.ParentTitle)
 		if err != nil {
-			zap.L().Error("query parent menu failed", zap.Error(err),
+			s.logger.Error("query parent menu failed", zap.Error(err),
 				zap.String("title", seed.Title), zap.String("parent", seed.ParentTitle))
 
 			return err
@@ -126,7 +128,7 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 
 		menuModel, err := s.menus.FindByTitle(ctx, seed.Title)
 		if err != nil {
-			zap.L().Error("query menu failed", zap.Error(err))
+			s.logger.Error("query menu failed", zap.Error(err))
 
 			return err
 		}
@@ -137,7 +139,7 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 				seed.Path, seed.Name, seed.Component, seed.KeepAlive, pid, seed.SortOrder,
 			)
 			if err := s.menus.Create(ctx, menu); err != nil {
-				zap.L().Error("create menu failed", zap.Error(err))
+				s.logger.Error("create menu failed", zap.Error(err))
 
 				return err
 			}
@@ -148,7 +150,7 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 		update := seedMenuUpdate(seed, menuModel, pid)
 		if !update.IsEmpty() {
 			if err := s.menus.UpdateFields(ctx, menuModel.ID, update); err != nil {
-				zap.L().Error("update menu failed", zap.Error(err))
+				s.logger.Error("update menu failed", zap.Error(err))
 
 				return err
 			}
@@ -157,22 +159,22 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 		menuIDByTitle[seed.Title] = menuModel.ID
 
 		if err := s.roleMenus.EnsureRoleMenu(ctx, adminRoleID, menuModel.ID); err != nil {
-			zap.L().Error("bind admin menu failed", zap.Error(err))
+			s.logger.Error("bind admin menu failed", zap.Error(err))
 
 			return err
 		}
 
-		if _, ok := commonRoleMenuTitles[menuModel.Title]; ok {
+		if commonRoleMenuTitle(menuModel.Title) {
 			if err := s.roleMenus.EnsureRoleMenu(ctx, userRoleID, menuModel.ID); err != nil {
-				zap.L().Error("bind user menu failed", zap.Error(err))
+				s.logger.Error("bind user menu failed", zap.Error(err))
 
 				return err
 			}
 		}
 
-		if _, ok := vipRoleMenuTitles[menuModel.Title]; ok {
+		if vipRoleMenuTitle(menuModel.Title) {
 			if err := s.roleMenus.EnsureRoleMenu(ctx, vipRoleID, menuModel.ID); err != nil {
-				zap.L().Error("bind vip menu failed", zap.Error(err))
+				s.logger.Error("bind vip menu failed", zap.Error(err))
 
 				return err
 			}

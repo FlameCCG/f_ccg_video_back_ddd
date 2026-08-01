@@ -143,7 +143,7 @@ func (q *PromptVideoQuery) Load(ctx context.Context, ids []uint) ([]domain.Video
 	if err := gormx.DB(ctx, q.db).
 		Model(&po.Video{}).
 		Select("id", "title", "description", "cover", "partition_id", "status", "created_at").
-		Where("id IN ?", ids).
+		Where("id IN ? AND status = ?", ids, enum.VideoStatusPublished).
 		Preload("Tags", func(db *gorm.DB) *gorm.DB {
 			return db.Select("id", "name")
 		}).

@@ -12,6 +12,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -574,6 +575,104 @@ func TestFeedQueryOwnerViewIncludesUnpublished(t *testing.T) {
 	rows, err = f.feed.ListAuthorWorks(ctx, params)
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("本人视角 = %d 行, %v; want 2", len(rows), err)
+	}
+}
+
+func TestFeedServiceFollowingAggregate(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	now := time.Now().Add(time.Hour).Truncate(time.Second)
+	session := f.db.Session(&gorm.Session{SkipHooks: true})
+
+	for _, video := range []po.Video{
+		{
+			Model: po.Model{ID: 2, CreatedAt: now}, Title: "self review", AuthorUsername: "bob",
+			PartitionID: 1, Status: enum.VideoStatusReview,
+		},
+		{
+			Model: po.Model{ID: 3, CreatedAt: now.Add(time.Minute)}, Title: "followed review", AuthorUsername: "alice",
+			PartitionID: 1, Status: enum.VideoStatusReview,
+		},
+	} {
+		if err := session.Create(&video).Error; err != nil {
+			t.Fatalf("create aggregate video: %v", err)
+		}
+	}
+
+	for _, item := range []po.Dynamic{
+		{Model: po.Model{ID: 3, CreatedAt: now.Add(2 * time.Minute)}, UserID: 2, Content: "self dynamic"},
+		{Model: po.Model{ID: 4, CreatedAt: now.Add(3 * time.Minute)}, UserID: 3, Content: "stranger dynamic"},
+	} {
+		if err := session.Create(&item).Error; err != nil {
+			t.Fatalf("create aggregate dynamic: %v", err)
+		}
+	}
+
+	service := app.NewFeedService(f.users, f.feed, zap.NewNop())
+	firstPage, total, err := service.ListFeed(ctx, 2, 0, 0, 1, 2)
+	if err != nil {
+		t.Fatalf("ListFeed first following page: %v", err)
+	}
+
+	if total != 5 || len(firstPage) != 2 {
+		t.Fatalf("first following page = %d items total=%d, want 2 and 5", len(firstPage), total)
+	}
+
+	items, total, err := service.ListFeed(ctx, 2, 0, 0, 1, 20)
+	if err != nil {
+		t.Fatalf("ListFeed following aggregate: %v", err)
+	}
+
+	if total != 5 || len(items) != 5 {
+		t.Fatalf("following aggregate = %d items total=%d, want 5", len(items), total)
+	}
+
+	var foundSelfReview bool
+	for _, item := range items {
+		if item.Author.ID == 3 {
+			t.Fatalf("aggregate leaked stranger work: %+v", item)
+		}
+
+		if item.Video != nil && item.Video.ID == 3 {
+			t.Fatalf("aggregate leaked followed author's unpublished video: %+v", item)
+		}
+
+		if item.Video != nil && item.Video.ID == 2 {
+			foundSelfReview = true
+		}
+	}
+
+	if !foundSelfReview {
+		t.Fatal("aggregate should include viewer's own unpublished video")
+	}
+
+	filters := []struct {
+		name     string
+		workType int
+		want     int
+	}{
+		{name: "videos", workType: int(enum.WorkTypeVideo), want: 2},
+		{name: "dynamics", workType: int(enum.WorkTypeDynamic), want: 3},
+	}
+	for _, filter := range filters {
+		t.Run(filter.name, func(t *testing.T) {
+			filtered, filteredTotal, filterErr := service.ListFeed(ctx, 2, 0, filter.workType, 1, 20)
+			if filterErr != nil {
+				t.Fatalf("ListFeed filtered: %v", filterErr)
+			}
+			if len(filtered) != filter.want || filteredTotal != int64(filter.want) {
+				t.Fatalf("filtered = %d total=%d, want %d", len(filtered), filteredTotal, filter.want)
+			}
+			for _, item := range filtered {
+				if int(item.WorkType) != filter.workType {
+					t.Fatalf("work type = %d, want %d: %+v", item.WorkType, filter.workType, item)
+				}
+			}
+		})
+	}
+
+	if _, _, err := service.ListFeed(ctx, 0, 0, 0, 1, 20); err != domain.ErrUserNotLogin {
+		t.Fatalf("anonymous following feed error = %v, want %v", err, domain.ErrUserNotLogin)
 	}
 }
 

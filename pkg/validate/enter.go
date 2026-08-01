@@ -1,4 +1,4 @@
-// Package validate provides package functionality.
+// Package validate configures and renders Gin request-validation errors.
 package validate
 
 import (
@@ -7,59 +7,87 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/locales/zh"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/go-playground/validator/v10"
-	zh_translations "github.com/go-playground/validator/v10/translations/zh"
+	zhtranslations "github.com/go-playground/validator/v10/translations/zh"
 )
 
-var trans ut.Translator
+const ginTranslatorKey = "request_validation_translator"
 
-func init() {
-	// 创建翻译器
-	uni := ut.New(zh.New())
-	trans, _ = uni.GetTranslator("zh")
-	// 注册翻译器
-	v, ok := binding.Validator.Engine().(*validator.Validate)
-	if ok {
-		_ = zh_translations.RegisterDefaultTranslations(v, trans)
-	}
-	//v.RegisterTagNameFunc(func(field reflect.StructField) string {
-	//	label := field.Tag.Get("label")
-	//	if label == "" {
-	//		return field.Name
-	//	}
-	//	return label
-	//})
-	v.RegisterTagNameFunc(func(field reflect.StructField) string {
-		label := field.Tag.Get("label")
-		if label == "" {
-			label = field.Name
-		}
-
-		name := field.Tag.Get("json")
-
-		return fmt.Sprintf("%s---%s", name, label)
-	})
+// Translator 持有请求参数校验错误的中文翻译器。
+// 实例由组合根注入，不通过 init 或包级可变单例装配。
+type Translator struct {
+	translator ut.Translator
 }
 
-// ValidateError 导出符号.
-func ValidateError(err error) (msg string) {
-	var errs validator.ValidationErrors
-	if !errors.As(err, &errs) {
+// New 构造翻译器，并显式配置 Gin 使用的 validator 实例。
+func New() *Translator {
+	universal := ut.New(zh.New())
+	translator, _ := universal.GetTranslator("zh")
+
+	if engine, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		_ = zhtranslations.RegisterDefaultTranslations(engine, translator)
+		engine.RegisterTagNameFunc(func(field reflect.StructField) string {
+			label := field.Tag.Get("label")
+			if label == "" {
+				label = field.Name
+			}
+
+			return fmt.Sprintf("%s---%s", field.Tag.Get("json"), label)
+		})
+	}
+
+	return &Translator{translator: translator}
+}
+
+// Middleware 把显式注入的翻译器放入当前 Gin 请求作用域。
+func (translator *Translator) Middleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(ginTranslatorKey, translator)
+		c.Next()
+	}
+}
+
+// Error 返回与原 ValidateError 相同的中文校验错误文本。
+func (translator *Translator) Error(err error) string {
+	var validationErrors validator.ValidationErrors
+	if !errors.As(err, &validationErrors) || translator == nil || translator.translator == nil {
 		return "请求参数错误"
 	}
 
-	var msgList []string
+	messages := make([]string, 0, len(validationErrors))
+	for _, fieldError := range validationErrors {
+		translated := fieldError.Translate(translator.translator)
+		parts := strings.SplitN(translated, "---", 2)
+		if len(parts) == 2 {
+			messages = append(messages, parts[1])
 
-	for _, e := range errs {
-		m := e.Translate(trans)
-		_list := strings.Split(m, "---")
-		msgList = append(msgList, _list[1])
+			continue
+		}
+		messages = append(messages, translated)
 	}
 
-	msg = strings.Join(msgList, ";")
+	return strings.Join(messages, ";")
+}
 
-	return msg
+// ErrorFromContext 使用当前请求中由 Router 注入的翻译器。
+func ErrorFromContext(c *gin.Context, err error) string {
+	if c == nil {
+		return "请求参数错误"
+	}
+
+	value, ok := c.Get(ginTranslatorKey)
+	if !ok {
+		return "请求参数错误"
+	}
+
+	translator, ok := value.(*Translator)
+	if !ok {
+		return "请求参数错误"
+	}
+
+	return translator.Error(err)
 }

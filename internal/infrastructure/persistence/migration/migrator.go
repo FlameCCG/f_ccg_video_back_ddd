@@ -17,12 +17,17 @@ import (
 //
 // 原实现为 flags 包里的包级函数直读 global.DB；新架构改为注入 *gorm.DB 的实例。
 type Migrator struct {
-	db *gorm.DB
+	db     *gorm.DB
+	logger *zap.Logger
 }
 
 // NewMigrator 构造数据库迁移器。
-func NewMigrator(db *gorm.DB) *Migrator {
-	return &Migrator{db: db}
+func NewMigrator(db *gorm.DB, logger *zap.Logger) *Migrator {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &Migrator{db: db, logger: logger}
 }
 
 // AutoMigrate 执行数据库迁移；失败返回 error，由调用方以非 0 退出码结束进程。
@@ -30,7 +35,7 @@ func NewMigrator(db *gorm.DB) *Migrator {
 func (m *Migrator) AutoMigrate() error {
 	if m == nil || m.db == nil {
 		err := fmt.Errorf("数据库未初始化")
-		zap.L().Error("数据库迁移失败!", zap.Error(err))
+		m.logger.Error("数据库迁移失败!", zap.Error(err))
 
 		return err
 	}
@@ -74,18 +79,18 @@ func (m *Migrator) AutoMigrate() error {
 		po.ApiResource{},
 	)
 	if err != nil {
-		zap.L().Error("数据库迁移失败!", zap.Error(err))
+		m.logger.Error("数据库迁移失败!", zap.Error(err))
 
 		return fmt.Errorf("数据库迁移失败: %w", err)
 	}
 
 	if err := ensureUsersOAuthUniqueIndex(m.db); err != nil {
-		zap.L().Error("创建 OAuth 唯一索引失败!", zap.Error(err))
+		m.logger.Error("创建 OAuth 唯一索引失败!", zap.Error(err))
 
 		return fmt.Errorf("创建 OAuth 唯一索引失败: %w", err)
 	}
 
-	zap.L().Info("数据库迁移成功!")
+	m.logger.Info("数据库迁移成功!")
 
 	return nil
 }

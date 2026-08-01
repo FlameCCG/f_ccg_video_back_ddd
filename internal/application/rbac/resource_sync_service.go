@@ -14,6 +14,7 @@ type ResourceSyncService struct {
 	resources domain.ApiResourceRepository
 	routes    RouteLister
 	meta      ResourceMetaLoader
+	logger    *zap.Logger
 }
 
 // NewResourceSyncService 构造接口资源同步用例。
@@ -21,8 +22,9 @@ func NewResourceSyncService(
 	resources domain.ApiResourceRepository,
 	routes RouteLister,
 	meta ResourceMetaLoader,
+	logger *zap.Logger,
 ) *ResourceSyncService {
-	return &ResourceSyncService{resources: resources, routes: routes, meta: meta}
+	return &ResourceSyncService{resources: resources, routes: routes, meta: meta, logger: logger}
 }
 
 // SyncApiResources 把引擎路由清单全量同步进接口资源表（新增/更新说明与标签/删除失效项）。
@@ -34,7 +36,7 @@ func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyn
 
 	metaMap, err := s.meta.Load()
 	if err != nil {
-		zap.L().Warn("加载 OpenAPI 资源失败，使用默认说明", zap.Error(err))
+		s.logger.Warn("加载 OpenAPI 资源失败，使用默认说明", zap.Error(err))
 	}
 
 	items := domain.BuildApiResources(routes, metaMap)
