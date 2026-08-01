@@ -59,6 +59,23 @@ func (r *UserRepository) FindByID(ctx context.Context, userID uint) (*domain.Use
 	return toDomainUser(&row), nil
 }
 
+// FindWithConfByID 一次 LEFT JOIN 读取用户及其一对一配置；不存在时返回 (nil, nil, nil)。
+func (r *UserRepository) FindWithConfByID(
+	ctx context.Context,
+	userID uint,
+) (*domain.User, *domain.UserConf, error) {
+	var row po.User
+	if err := gormx.DB(ctx, r.db).Joins("UserConf").First(&row, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, nil
+		}
+
+		return nil, nil, err
+	}
+
+	return toDomainUser(&row), toDomainUserConf(row.UserConf), nil
+}
+
 // FindStatusByID 只读 id/status/username；不存在时返回 (nil, nil)。
 func (r *UserRepository) FindStatusByID(ctx context.Context, userID uint) (*domain.User, error) {
 	var row po.User
@@ -112,6 +129,19 @@ func (r *UserRepository) UpdateStatus(ctx context.Context, userID uint, status e
 		Model(&po.User{}).
 		Where("id = ?", userID).
 		Update("status", status).Error
+}
+
+// ActivateIfBanned 仅当用户仍处于限时封禁态时置为正常，返回是否更新成功。
+func (r *UserRepository) ActivateIfBanned(ctx context.Context, userID uint) (bool, error) {
+	result := gormx.DB(ctx, r.db).
+		Model(&po.User{}).
+		Where("id = ? AND status = ?", userID, enum.UserStatusBanned).
+		Update("status", enum.UserStatusActive)
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected > 0, nil
 }
 
 // CoinBalanceForUpdate 以行锁读取硬币余额（要求在事务内调用）。

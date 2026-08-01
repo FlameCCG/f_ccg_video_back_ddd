@@ -18,6 +18,7 @@ type RegistrationService struct {
 	users  domain.UserAccountRepository
 	roles  UserRoleQuery
 	binder UserRoleBinder
+	logger *zap.Logger
 }
 
 // NewRegistrationService 构造邮箱注册服务。
@@ -26,8 +27,9 @@ func NewRegistrationService(
 	users domain.UserAccountRepository,
 	roles UserRoleQuery,
 	binder UserRoleBinder,
+	logger *zap.Logger,
 ) *RegistrationService {
-	return &RegistrationService{txm: txm, users: users, roles: roles, binder: binder}
+	return &RegistrationService{txm: txm, users: users, roles: roles, binder: binder, logger: logger}
 }
 
 // EmailRegister 邮箱注册：写用户 + 默认角色关联（同一事务），提交后再绑定 Casbin 角色。
@@ -39,7 +41,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	if err != nil {
 		// 原实现只在「查到记录」时拦截，查询报错会继续走注册流程
 		// （唯一索引兜底 → 落库失败回「注册失败」）。此处保持同样语义。
-		zap.L().Warn("查询用户名/邮箱占用失败", zap.Error(err))
+		s.logger.Warn("查询用户名/邮箱占用失败", zap.Error(err))
 	}
 
 	if exists {
@@ -49,7 +51,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	// bcrypt 放在事务外，避免长时间占用连接。
 	passwordHash, err := encrypt.GenPasswordHash([]byte(in.Password))
 	if err != nil {
-		zap.L().Error("密码加密失败", zap.Error(err))
+		s.logger.Error("密码加密失败", zap.Error(err))
 
 		return domain.ErrPasswordHashFailed
 	}
@@ -70,7 +72,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	if err = s.txm.Do(createCtx, func(txCtx context.Context) error {
 		roleID, roleErr := s.roles.RoleIDByName(txCtx, constants.CommonUserRole)
 		if roleErr != nil {
-			zap.L().Error("查找默认角色失败", zap.Error(roleErr))
+			s.logger.Error("查找默认角色失败", zap.Error(roleErr))
 
 			return roleErr
 		}
@@ -78,7 +80,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 		user.CurrentRoleID = roleID
 
 		if createErr := s.users.Create(txCtx, user, roleID); createErr != nil {
-			zap.L().Error("创建用户失败", zap.Error(createErr))
+			s.logger.Error("创建用户失败", zap.Error(createErr))
 
 			return createErr
 		}
@@ -90,10 +92,10 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 
 	// Casbin 在 Commit 之后写入，避免 Commit 失败留下幽灵权限。
 	if err = s.binder.AddRoleForUser(user.ID, constants.CommonUserRole); err != nil {
-		zap.L().Error("添加 Casbin 角色关联失败，尝试补偿删除用户", zap.Error(err), zap.Uint("userId", user.ID))
+		s.logger.Error("添加 Casbin 角色关联失败，尝试补偿删除用户", zap.Error(err), zap.Uint("userId", user.ID))
 		// 补偿：清理已提交用户，避免无角色半成品账号。
 		if delErr := s.users.DeleteByID(ctx, user.ID); delErr != nil {
-			zap.L().Error("补偿删除注册用户失败", zap.Error(delErr), zap.Uint("userId", user.ID))
+			s.logger.Error("补偿删除注册用户失败", zap.Error(delErr), zap.Uint("userId", user.ID))
 		}
 
 		return ErrRegisterFailed

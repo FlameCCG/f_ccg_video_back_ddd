@@ -6,10 +6,12 @@ import (
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ExpRecordRepository 经验流水仓储的 GORM 实现。
@@ -119,11 +121,11 @@ func (r *BanRecordRepository) Create(ctx context.Context, record *domain.BanReco
 	return nil
 }
 
-// FindLatestByUserID 读取用户最近一条封禁记录；无记录时返回 (nil, nil)。
+// FindLatestByUserID 读取用户最近一条未解封封禁记录；无记录时返回 (nil, nil)。
 func (r *BanRecordRepository) FindLatestByUserID(ctx context.Context, userID uint) (*domain.BanRecord, error) {
 	var row po.UserBanRecord
 	if err := gormx.DB(ctx, r.db).
-		Where("user_id = ?", userID).
+		Where("user_id = ? AND is_unbanned = ?", userID, false).
 		Order("created_at DESC, id DESC").
 		First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -134,6 +136,36 @@ func (r *BanRecordRepository) FindLatestByUserID(ctx context.Context, userID uin
 	}
 
 	return toDomainBanRecord(&row), nil
+}
+
+// FindLatestUnreleasedForUpdate 锁定并读取指定状态中最近一条未解封记录。
+func (r *BanRecordRepository) FindLatestUnreleasedForUpdate(
+	ctx context.Context,
+	userID uint,
+	statuses []enum.UserStatus,
+) (*domain.BanRecord, error) {
+	var row po.UserBanRecord
+	if err := gormx.DB(ctx, r.db).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND status IN ? AND is_unbanned = ?", userID, statuses, false).
+		Order("created_at DESC, id DESC").
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	return toDomainBanRecord(&row), nil
+}
+
+// MarkUnbanned 标记原封禁记录已解封。
+func (r *BanRecordRepository) MarkUnbanned(ctx context.Context, recordID uint) error {
+	return gormx.DB(ctx, r.db).
+		Model(&po.UserBanRecord{}).
+		Where("id = ?", recordID).
+		Update("is_unbanned", true).Error
 }
 
 // LoginRecordRepository 登录记录仓储的 GORM 实现。

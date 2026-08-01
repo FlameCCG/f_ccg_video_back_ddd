@@ -48,6 +48,7 @@ type EmailCaptchaSendService struct {
 	sender   EmailCaptchaSender
 	limiter  RateLimiter
 	tasks    *ctxutil.DetachedTaskGroup
+	logger   *zap.Logger
 }
 
 // NewEmailCaptchaSendService 构造邮箱验证码发送服务。
@@ -58,6 +59,7 @@ func NewEmailCaptchaSendService(
 	sender EmailCaptchaSender,
 	limiter RateLimiter,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *EmailCaptchaSendService {
 	return &EmailCaptchaSendService{
 		users:    users,
@@ -66,6 +68,7 @@ func NewEmailCaptchaSendService(
 		sender:   sender,
 		limiter:  limiter,
 		tasks:    tasks,
+		logger:   logger,
 	}
 }
 
@@ -75,7 +78,7 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 
 	if ok, err := s.allowSend(ctx, in); err != nil || !ok {
 		if err != nil {
-			zap.L().Warn("email captcha send rate limit failed", zap.Error(err))
+			s.logger.Warn("email captcha send rate limit failed", zap.Error(err))
 		}
 
 		return nil, ErrEmailCaptchaRateLimited
@@ -94,7 +97,7 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 	id := base64Captcha.RandomId()
 
 	if err := s.captcha.StoreEmailCaptcha(ctx, id, in.Email, code); err != nil {
-		zap.L().Error("验证码保存失败", zap.Int("type", in.Type), zap.String("emailID", id), zap.Error(err))
+		s.logger.Error("验证码保存失败", zap.Int("type", in.Type), zap.String("emailID", id), zap.Error(err))
 
 		return nil, ErrEmailCaptchaStoreFailed
 	}
@@ -103,7 +106,7 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 
 	cost := time.Since(startAt)
 
-	zap.L().Info("邮箱验证码异步发送已提交",
+	s.logger.Info("邮箱验证码异步发送已提交",
 		zap.Int("type", in.Type),
 		zap.String("email", in.Email),
 		zap.String("emailID", id),
@@ -144,25 +147,25 @@ func (s *EmailCaptchaSendService) allowSend(ctx context.Context, in EmailCaptcha
 func (s *EmailCaptchaSendService) verifyEmailAddress(email string) error {
 	ret, err := s.verifier.Verify(email)
 	if err != nil {
-		zap.L().Error("验证邮箱失败", zap.Error(err))
+		s.logger.Error("验证邮箱失败", zap.Error(err))
 
 		return ErrEmailVerifyFailed
 	}
 
 	if !ret.SyntaxValid {
-		zap.L().Error("邮箱格式错误")
+		s.logger.Error("邮箱格式错误")
 
 		return ErrEmailSyntaxInvalid
 	}
 
 	if ret.HasSMTPResult && !ret.SMTPHostExists {
-		zap.L().Error("邮箱服务器不存在")
+		s.logger.Error("邮箱服务器不存在")
 
 		return ErrEmailHostNotExists
 	}
 
 	if !ret.HasMXRecords {
-		zap.L().Error("邮箱服务器无MX记录")
+		s.logger.Error("邮箱服务器无MX记录")
 
 		return ErrEmailNoMXRecords
 	}
@@ -180,19 +183,19 @@ func (s *EmailCaptchaSendService) checkBusinessPrecondition(ctx context.Context,
 	switch in.Type {
 	case EmailCaptchaTypeRegister:
 		if err == nil && user != nil {
-			zap.L().Error("该邮箱已注册")
+			s.logger.Error("该邮箱已注册")
 
 			return ErrEmailAlreadyRegistered
 		}
 	case EmailCaptchaTypeResetPassword:
 		if err != nil || user == nil {
-			zap.L().Error("该邮箱未注册", zap.Error(err))
+			s.logger.Error("该邮箱未注册", zap.Error(err))
 
 			return ErrEmailCaptchaEmailNotRegistered
 		}
 	case EmailCaptchaTypeBindEmail:
 		if err == nil && user != nil {
-			zap.L().Error("该邮箱已被绑定")
+			s.logger.Error("该邮箱已被绑定")
 
 			return ErrEmailAlreadyBound
 		}
@@ -209,7 +212,7 @@ func (s *EmailCaptchaSendService) queueDelivery(ctx context.Context, captchaType
 
 	s.tasks.Go(ctx, ctxutil.AsyncLongTimeout, func(_ context.Context) {
 		if err := s.sender.SendEmailCaptcha(captchaType, email, code); err != nil {
-			zap.L().Warn("异步发送邮箱验证码失败",
+			s.logger.Warn("异步发送邮箱验证码失败",
 				zap.Int("type", captchaType),
 				zap.String("email", email),
 				zap.String("emailID", id),

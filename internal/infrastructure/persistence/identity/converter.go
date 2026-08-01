@@ -54,6 +54,7 @@ func toDomainBanRecord(row *po.UserBanRecord) *domain.BanRecord {
 		StartAt:    row.StartAt,
 		EndAt:      row.EndAt,
 		OperatorID: row.OperatorID,
+		IsUnbanned: row.IsUnbanned,
 	}
 }
 
@@ -76,5 +77,6 @@ func toPOBanRecord(record *domain.BanRecord) *po.UserBanRecord {
 		StartAt:    record.StartAt,
 		EndAt:      record.EndAt,
 		OperatorID: record.OperatorID,
+		IsUnbanned: record.IsUnbanned,
 	}
 }
