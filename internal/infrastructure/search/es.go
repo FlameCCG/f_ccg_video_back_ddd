@@ -35,6 +35,7 @@ type ES struct {
 	v7         *elastic.Client
 	v8         *elasticsearch8.Client
 	httpClient *http.Client
+	logger     *zap.Logger
 }
 
 // V7 返回 olivere/elastic v7 客户端（可能为 nil）。
@@ -56,11 +57,15 @@ func (e *ES) V8() *elasticsearch8.Client {
 }
 
 // New 连接 Elasticsearch（带 Ping 重试）；失败时 zap.Panic（与原 core.InitES 一致）。
-func New(cfg *config.ES) *ES {
-	if cfg == nil || cfg.Host == "" || cfg.Port == 0 {
-		zap.L().Warn("ES 配置为空，跳过初始化")
+func New(cfg *config.ES, logger *zap.Logger) *ES {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 
-		return &ES{}
+	if cfg == nil || cfg.Host == "" || cfg.Port == 0 {
+		logger.Warn("ES 配置为空，跳过初始化")
+
+		return &ES{logger: logger}
 	}
 
 	scheme := "http"
@@ -82,7 +87,7 @@ func New(cfg *config.ES) *ES {
 	}
 
 	if cfg.IsHTTPS && cfg.InsecureSkipVerify {
-		zap.L().Warn("ES TLS certificate verification is disabled; use only in development")
+		logger.Warn("ES TLS certificate verification is disabled; use only in development")
 
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // 仅开发环境显式开启
 	}
@@ -97,7 +102,7 @@ func New(cfg *config.ES) *ES {
 		// 关键：在 ES 8.x 或 Docker 环境下，强烈建议将以下两项设为 false
 		elastic.SetSniff(false),       // 禁用嗅探，防止其获取容器内部无法访问的 IP
 		elastic.SetHealthcheck(false), // 禁用启动时的强制健康检查，改由下文手动 Ping
-		elastic.SetErrorLog(zap.NewStdLog(zap.L())),
+		elastic.SetErrorLog(zap.NewStdLog(logger)),
 	}
 
 	// 填充账号密码
@@ -115,7 +120,7 @@ func New(cfg *config.ES) *ES {
 	// 3. 初始化客户端
 	client, err := elastic.NewClient(opts...)
 	if err != nil {
-		zap.L().Panic("ES 客户端创建失败 (配置错误)", zap.Error(err))
+		logger.Panic("ES 客户端创建失败 (配置错误)", zap.Error(err))
 	}
 
 	// 4. 手动测试连接 (带重试逻辑)
@@ -129,7 +134,7 @@ func New(cfg *config.ES) *ES {
 		pingErr error
 	)
 
-	zap.L().Info("正在尝试连接 Elasticsearch...", zap.String("url", url))
+	logger.Info("正在尝试连接 Elasticsearch...", zap.String("url", url))
 
 	for i := range pingRetries {
 		pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
@@ -141,14 +146,14 @@ func New(cfg *config.ES) *ES {
 			break
 		}
 
-		zap.L().Warn("ES 尚未就绪或连接被拒绝，正在重试...",
+		logger.Warn("ES 尚未就绪或连接被拒绝，正在重试...",
 			zap.Int("retry", i+1),
 			zap.Error(pingErr))
 		time.Sleep(pingRetryInterval)
 	}
 
 	if pingErr != nil {
-		zap.L().Panic("ES 连接最终失败",
+		logger.Panic("ES 连接最终失败",
 			zap.Error(pingErr),
 			zap.String("url", url),
 			zap.String("tips", "请检查 ES 是否开启了 HTTPS 但你使用了 http，或者账号密码错误"))
@@ -156,15 +161,15 @@ func New(cfg *config.ES) *ES {
 
 	es8Client, err := elasticsearch8.NewClient(es8Config)
 	if err != nil {
-		zap.L().Panic("ES8 客户端创建失败 (配置错误)", zap.Error(err))
+		logger.Panic("ES8 客户端创建失败 (配置错误)", zap.Error(err))
 	}
 
-	zap.L().Info("ES 连接成功",
+	logger.Info("ES 连接成功",
 		zap.String("cluster", info.ClusterName),
 		zap.String("version", info.Version.Number),
 		zap.Int("code", code))
 
-	return &ES{v7: client, v8: es8Client, httpClient: httpClient}
+	return &ES{v7: client, v8: es8Client, httpClient: httpClient, logger: logger}
 }
 
 // Stop 停止 ES v7 后台协程并释放 HTTP 空闲连接。
@@ -189,7 +194,7 @@ func (e *ES) Stop() {
 	}
 
 	if had {
-		zap.L().Info("elasticsearch 连接已关闭")
+		e.logger.Info("elasticsearch 连接已关闭")
 	}
 }
 
@@ -204,8 +209,8 @@ func ProvideV8(e *ES) *elasticsearch8.Client {
 }
 
 // Provide 供 wire 使用的 provider：返回 ES 客户端集合与其资源关闭函数。
-func Provide(cfg *config.ES) (*ES, func()) {
-	es := New(cfg)
+func Provide(cfg *config.ES, logger *zap.Logger) (*ES, func()) {
+	es := New(cfg, logger)
 
 	return es, es.Stop
 }

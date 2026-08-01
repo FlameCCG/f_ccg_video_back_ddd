@@ -23,6 +23,7 @@ type RiverComponent struct {
 	mysqlCfg *config.Mysql
 	esCfg    *config.ES
 	db       *gorm.DB
+	logger   *zap.Logger
 
 	mu      sync.Mutex
 	started bool
@@ -35,12 +36,18 @@ func NewRiverComponent(
 	mysqlCfg *config.Mysql,
 	esCfg *config.ES,
 	db *gorm.DB,
+	logger *zap.Logger,
 ) *RiverComponent {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &RiverComponent{
 		riverCfg: riverCfg,
 		mysqlCfg: mysqlCfg,
 		esCfg:    esCfg,
 		db:       db,
+		logger:   logger,
 	}
 }
 
@@ -58,14 +65,14 @@ func (c *RiverComponent) Start(_ context.Context) error {
 	c.mu.Unlock()
 
 	if c.riverCfg == nil || !c.riverCfg.Enable {
-		zap.L().Info("river disabled")
+		c.logger.Info("river disabled")
 
 		return nil
 	}
 
 	r, err := NewRiver(c.riverCfg, c.mysqlCfg, c.esCfg, c.db)
 	if err != nil {
-		zap.L().Error("init river failed", zap.Error(err))
+		c.logger.Error("init river failed", zap.Error(err))
 
 		return nil
 	}
@@ -76,11 +83,11 @@ func (c *RiverComponent) Start(_ context.Context) error {
 
 	go func() {
 		if err := r.Run(); err != nil {
-			zap.L().Error("river stopped", zap.Error(err))
+			c.logger.Error("river stopped", zap.Error(err))
 		}
 	}()
 
-	zap.L().Info("river started")
+	c.logger.Info("river started")
 
 	return nil
 }
@@ -97,7 +104,7 @@ func (c *RiverComponent) Stop(_ context.Context) error {
 	}
 
 	r.Close()
-	zap.L().Info("river stopped")
+	c.logger.Info("river stopped")
 
 	return nil
 }

@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func TestApplyVideoMeta(t *testing.T) {
@@ -67,7 +69,7 @@ func TestSearchFallsBackToDatabaseWhenESUnavailable(t *testing.T) {
 		userTotal:  3,
 		countUsers: 3,
 	}
-	svc := NewSearchService(&fakeKeywordSearch{available: false}, fallback)
+	svc := NewSearchService(&fakeKeywordSearch{available: false}, fallback, zap.NewNop())
 
 	result, err := svc.Search(context.Background(), SearchOptions{Keyword: "教程", Page: 1, PageSize: 20})
 	if err != nil {
@@ -88,7 +90,7 @@ func TestSearchFallsBackToDatabaseWhenESUnavailable(t *testing.T) {
 }
 
 func TestSearchReturnsEmptySlicesForBlankKeywordOnFallback(t *testing.T) {
-	svc := NewSearchService(&fakeKeywordSearch{available: false}, &fakeSearchFallback{available: true})
+	svc := NewSearchService(&fakeKeywordSearch{available: false}, &fakeSearchFallback{available: true}, zap.NewNop())
 
 	result, err := svc.Search(context.Background(), SearchOptions{Keyword: "   ", Page: 1, PageSize: 20})
 	if err != nil {
@@ -106,7 +108,7 @@ func TestSearchReturnsEmptySlicesForBlankKeywordOnFallback(t *testing.T) {
 
 func TestSearchPropagatesMultiSearchContractError(t *testing.T) {
 	index := &fakeKeywordSearch{available: true, multiErr: ErrUnexpectedMultiSearchSize}
-	svc := NewSearchService(index, &fakeSearchFallback{available: true})
+	svc := NewSearchService(index, &fakeSearchFallback{available: true}, zap.NewNop())
 
 	if _, err := svc.Search(context.Background(), SearchOptions{Keyword: "x", Page: 1, PageSize: 20}); !errors.Is(err, ErrUnexpectedMultiSearchSize) {
 		t.Fatalf("err = %v, want ErrUnexpectedMultiSearchSize", err)
@@ -126,7 +128,7 @@ func TestSearchHydratesMissingAuthorAndCreatedAt(t *testing.T) {
 		available: true,
 		meta:      []VideoSearchMeta{{ID: 9, AuthorUsername: "alice", CreatedAt: createdAt}},
 	}
-	svc := NewSearchService(index, fallback)
+	svc := NewSearchService(index, fallback, zap.NewNop())
 
 	result, err := svc.Search(context.Background(), SearchOptions{Keyword: "t", Page: 1, PageSize: 20})
 	if err != nil {
@@ -149,7 +151,7 @@ func TestSearchVideosUsesESUserTotalAndSkipsDBCount(t *testing.T) {
 		userTotal: 42,
 	}
 	fallback := &fakeSearchFallback{available: true, countUsers: 7}
-	svc := NewSearchService(index, fallback)
+	svc := NewSearchService(index, fallback, zap.NewNop())
 
 	result, err := svc.SearchVideos(context.Background(), SearchOptions{Keyword: "a", Page: 1, PageSize: 20})
 	if err != nil {
@@ -169,7 +171,7 @@ func TestSearchVideosFallsBackWhenESFails(t *testing.T) {
 		videoTotal: 1,
 		countUsers: 4,
 	}
-	svc := NewSearchService(index, fallback)
+	svc := NewSearchService(index, fallback, zap.NewNop())
 
 	result, err := svc.SearchVideos(context.Background(), SearchOptions{Keyword: "b", Page: 1, PageSize: 20})
 	if err != nil {
@@ -187,7 +189,7 @@ func TestSearchUsersNormalizesOptionsBeforeFallback(t *testing.T) {
 		users:     []SearchUserHit{{ID: 1, Username: "alice"}},
 		userTotal: 1,
 	}
-	svc := NewSearchService(&fakeKeywordSearch{available: false}, fallback)
+	svc := NewSearchService(&fakeKeywordSearch{available: false}, fallback, zap.NewNop())
 
 	result, err := svc.SearchUsers(context.Background(), SearchOptions{Keyword: "alice"})
 	if err != nil {
@@ -202,7 +204,7 @@ func TestSearchUsersNormalizesOptionsBeforeFallback(t *testing.T) {
 func TestUserTotalBestEffortFallsBackToDatabase(t *testing.T) {
 	index := &fakeKeywordSearch{available: true, countErr: errors.New("es down")}
 	fallback := &fakeSearchFallback{available: true, countUsers: 11}
-	svc := NewSearchService(index, fallback)
+	svc := NewSearchService(index, fallback, zap.NewNop())
 
 	if got := svc.userTotalBestEffort(context.Background(), "x"); got != 11 {
 		t.Fatalf("user total = %d, want 11", got)

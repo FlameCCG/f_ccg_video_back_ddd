@@ -31,11 +31,12 @@ const (
 type SearchService struct {
 	index    KeywordSearch
 	fallback SearchFallbackQuery
+	logger   *zap.Logger
 }
 
 // NewSearchService 构造站内搜索服务。
-func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery) *SearchService {
-	return &SearchService{index: index, fallback: fallback}
+func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery, logger *zap.Logger) *SearchService {
+	return &SearchService{index: index, fallback: fallback, logger: logger}
 }
 
 // Search 同时查询视频/用户/标签三个维度（标签由视频命中派生）。
@@ -61,7 +62,7 @@ func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*Search
 			return nil, err
 		}
 
-		zap.L().Warn("multi search fallback to mysql", zap.String("keyword", opts.Keyword), zap.Error(err))
+		s.logger.Warn("multi search fallback to mysql", zap.String("keyword", opts.Keyword), zap.Error(err))
 
 		// 用未附加 ES 超时的父上下文回退，避免 ES 超时把回退查询一起拖死（见 report.md）。
 		return s.fallbackSearch(parent, opts)
@@ -125,7 +126,7 @@ func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*
 	})
 
 	if err := group.Wait(); err != nil {
-		zap.L().Warn("video search fallback to mysql", zap.String("keyword", opts.Keyword), zap.Error(err))
+		s.logger.Warn("video search fallback to mysql", zap.String("keyword", opts.Keyword), zap.Error(err))
 
 		return s.fallbackSearchVideos(parent, opts)
 	}
@@ -156,7 +157,7 @@ func (s *SearchService) SearchUsers(ctx context.Context, opts SearchOptions) (*U
 
 	hits, err := s.index.SearchUsers(esCtx, opts, page.Offset())
 	if err != nil {
-		zap.L().Warn("user search fallback to mysql", zap.String("keyword", opts.Keyword), zap.Error(err))
+		s.logger.Warn("user search fallback to mysql", zap.String("keyword", opts.Keyword), zap.Error(err))
 
 		return s.fallbackSearchUsers(parent, opts)
 	}
@@ -264,7 +265,7 @@ func (s *SearchService) userTotalBestEffort(ctx context.Context, keyword string)
 			return total
 		}
 
-		zap.L().Warn("user total fallback to mysql", zap.String("keyword", keyword), zap.Error(err))
+		s.logger.Warn("user total fallback to mysql", zap.String("keyword", keyword), zap.Error(err))
 	}
 
 	dbCtx, cancel := context.WithTimeout(ctx, videoUserCountTimeout)
@@ -272,7 +273,7 @@ func (s *SearchService) userTotalBestEffort(ctx context.Context, keyword string)
 
 	total, err := s.fallback.CountUsers(dbCtx, keyword)
 	if err != nil {
-		zap.L().Warn("user total count failed", zap.String("keyword", keyword), zap.Error(err))
+		s.logger.Warn("user total count failed", zap.String("keyword", keyword), zap.Error(err))
 
 		return 0
 	}
@@ -309,7 +310,7 @@ func (s *SearchService) hydrateVideoList(ctx context.Context, hits []SearchVideo
 
 	rows, err := s.fallback.VideoMetaByIDs(ctx, ids)
 	if err != nil {
-		zap.L().Warn("hydrate search videos failed", zap.Error(err))
+		s.logger.Warn("hydrate search videos failed", zap.Error(err))
 
 		return
 	}

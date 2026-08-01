@@ -14,10 +14,14 @@ import (
 )
 
 // parseVideoHits 解析视频索引的一页响应；分片级错误只告警并返回零值（与原实现一致）。
-func parseVideoHits(res *elastic.SearchResult) app.VideoHits {
+func parseVideoHits(res *elastic.SearchResult, logger *zap.Logger) app.VideoHits {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if res == nil || res.Error != nil {
 		if res != nil && res.Error != nil {
-			zap.L().Warn("video search error", zap.Any("error", res.Error))
+			logger.Warn("video search error", zap.Any("error", res.Error))
 		}
 
 		return app.VideoHits{}
@@ -27,10 +31,14 @@ func parseVideoHits(res *elastic.SearchResult) app.VideoHits {
 }
 
 // parseUserHits 解析用户索引的一页响应；分片级错误只告警并返回零值（与原实现一致）。
-func parseUserHits(res *elastic.SearchResult) app.UserHits {
+func parseUserHits(res *elastic.SearchResult, logger *zap.Logger) app.UserHits {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if res == nil || res.Error != nil {
 		if res != nil && res.Error != nil {
-			zap.L().Warn("user search error", zap.Any("error", res.Error))
+			logger.Warn("user search error", zap.Any("error", res.Error))
 		}
 
 		return app.UserHits{}
