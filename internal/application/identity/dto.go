@@ -55,6 +55,7 @@ type AdminBanRecordItem struct {
 	EndAt            *time.Time      `json:"endAt"`
 	OperatorID       uint            `json:"operatorId"`
 	OperatorUsername string          `json:"operatorUsername"`
+	IsUnbanned       bool            `json:"isUnbanned"`
 	CreatedAt        time.Time       `json:"createdAt"`
 }
 

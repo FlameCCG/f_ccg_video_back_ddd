@@ -152,7 +152,11 @@ func (q *BanRecordQuery) AdminList(
 
 	query := gormx.DB(ctx, q.db).Table("user_ban_records as r").
 		Joins("LEFT JOIN users u ON u.id = r.user_id").
-		Joins("LEFT JOIN users op ON op.id = r.operator_id")
+		Joins("LEFT JOIN users op ON op.id = r.operator_id").
+		Where("r.status IN ?", []enum.UserStatus{
+			enum.UserStatusBanned,
+			enum.UserStatusPermanentlyBanned,
+		})
 
 	if params.UserID > 0 {
 		query = query.Where("r.user_id = ?", params.UserID)
@@ -186,12 +190,27 @@ func (q *BanRecordQuery) AdminList(
 		EndAt            *time.Time `gorm:"column:end_at"`
 		OperatorID       uint       `gorm:"column:operator_id"`
 		OperatorUsername string     `gorm:"column:operator_username"`
+		IsUnbanned       bool       `gorm:"column:is_unbanned"`
 		CreatedAt        time.Time  `gorm:"column:created_at"`
 	}
 
 	var rows []row
 	if err := query.
-		Select("r.id, r.user_id, r.status, r.reason, r.days, r.start_at, r.end_at, r.operator_id, r.created_at, u.username as username, op.username as operator_username").
+		Select(`
+			r.id, r.user_id, r.status, r.reason, r.days, r.start_at, r.end_at,
+			r.operator_id, r.created_at, u.username as username,
+			op.username as operator_username,
+			CASE
+				WHEN r.is_unbanned = 1 OR EXISTS (
+					SELECT 1
+					FROM user_ban_records ur
+					WHERE ur.user_id = r.user_id
+						AND ur.status = ?
+						AND (ur.created_at > r.created_at OR (ur.created_at = r.created_at AND ur.id > r.id))
+				)
+				THEN 1 ELSE 0
+			END AS is_unbanned
+		`, enum.UserStatusActive).
 		Order("r.created_at DESC, r.id DESC").
 		Offset((params.Page - 1) * params.PageSize).
 		Limit(params.PageSize).
@@ -212,6 +231,7 @@ func (q *BanRecordQuery) AdminList(
 			EndAt:            r.EndAt,
 			OperatorID:       r.OperatorID,
 			OperatorUsername: r.OperatorUsername,
+			IsUnbanned:       r.IsUnbanned,
 			CreatedAt:        r.CreatedAt,
 		})
 	}

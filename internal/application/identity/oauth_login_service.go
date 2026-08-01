@@ -46,6 +46,7 @@ type OAuthLoginService struct {
 	github       GitHubOAuthClient
 	linuxdo      LinuxDoOAuthClient
 	x            XOAuthClient
+	logger       *zap.Logger
 }
 
 // NewOAuthLoginService 构造第三方登录服务。
@@ -64,6 +65,7 @@ func NewOAuthLoginService(
 	github GitHubOAuthClient,
 	linuxdo LinuxDoOAuthClient,
 	x XOAuthClient,
+	logger *zap.Logger,
 ) *OAuthLoginService {
 	return &OAuthLoginService{
 		cfgProvider:  cfgProvider,
@@ -80,6 +82,7 @@ func NewOAuthLoginService(
 		github:       github,
 		linuxdo:      linuxdo,
 		x:            x,
+		logger:       logger,
 	}
 }
 
@@ -125,7 +128,7 @@ func (s *OAuthLoginService) Login(ctx context.Context, in OAuthLoginInput) (*jwt
 
 	info, err := s.fetchUser(ctx, in)
 	if err != nil {
-		zap.L().Error(label+" Login Error", zap.Error(err))
+		s.logger.Error(label+" Login Error", zap.Error(err))
 
 		return nil, ErrOAuthProviderFailed
 	}
@@ -140,7 +143,7 @@ func (s *OAuthLoginService) Login(ctx context.Context, in OAuthLoginInput) (*jwt
 		RegisterAddr:   in.Addr,
 	})
 	if err != nil {
-		zap.L().Error(label+" Login Find Or Create User Failed", zap.Error(err))
+		s.logger.Error(label+" Login Find Or Create User Failed", zap.Error(err))
 
 		return nil, ErrOAuthProviderFailed
 	}
@@ -229,7 +232,7 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain
 	if err = s.binder.AddRoleForUser(created.ID, constants.CommonUserRole); err != nil {
 		// 补偿删除已提交用户，避免无 Casbin 角色的半成品账号。
 		if delErr := s.users.DeleteByID(ctx, created.ID); delErr != nil {
-			zap.L().Error("compensate delete oauth user failed",
+			s.logger.Error("compensate delete oauth user failed",
 				zap.Error(delErr),
 				zap.Uint("userId", created.ID),
 				zap.NamedError("casbinErr", err),
@@ -256,16 +259,26 @@ func (s *OAuthLoginService) completeLogin(
 	// 唯一作用是「角色关联不可读时拒绝登录」。保留该校验以维持错误分支 1:1，
 	// 见 report.md FIND-013。
 	if _, err := s.roles.LoadRoles(ctx, user.ID); err != nil {
-		zap.L().Error("获取用户角色失败", zap.Error(err))
+		s.logger.Error("获取用户角色失败", zap.Error(err))
 
 		return nil, ErrLoginFailed
 	}
 
-	recordLoginAsync(ctx, s.tasks, s.loginRecords, user.ID, in.IP, in.Addr, in.UserAgent, in.Provider)
+	recordLoginAsync(
+		ctx,
+		s.tasks,
+		s.loginRecords,
+		user.ID,
+		in.IP,
+		in.Addr,
+		in.UserAgent,
+		in.Provider,
+		s.logger,
+	)
 
 	token, err := s.tokens.Issue(user.ID, user.Username)
 	if err != nil {
-		zap.L().Error("create jwt token failed", zap.Error(err))
+		s.logger.Error("create jwt token failed", zap.Error(err))
 
 		return nil, ErrLoginFailed
 	}

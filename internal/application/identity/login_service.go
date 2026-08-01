@@ -29,6 +29,7 @@ type LoginService struct {
 	folders      DefaultFolderEnsurer
 	loginRecords *LoginRecordService
 	tasks        *ctxutil.DetachedTaskGroup
+	logger       *zap.Logger
 }
 
 // NewLoginService 构造密码登录服务。
@@ -40,6 +41,7 @@ func NewLoginService(
 	folders DefaultFolderEnsurer,
 	loginRecords *LoginRecordService,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *LoginService {
 	return &LoginService{
 		cfgProvider:  cfgProvider,
@@ -49,6 +51,7 @@ func NewLoginService(
 		folders:      folders,
 		loginRecords: loginRecords,
 		tasks:        tasks,
+		logger:       logger,
 	}
 }
 
@@ -79,14 +82,14 @@ func (s *LoginService) AdminPwdLogin(ctx context.Context, in PwdLoginInput) (*jw
 
 	adminRoleID, err := s.roles.RoleIDByName(ctx, constants.AdminUserRole)
 	if err != nil {
-		zap.L().Error("query admin role error", zap.Error(err))
+		s.logger.Error("query admin role error", zap.Error(err))
 
 		return nil, ErrAdminRoleMissing
 	}
 
 	hasRole, err := s.roles.HasRole(ctx, user.ID, adminRoleID)
 	if err != nil {
-		zap.L().Error("check admin role error", zap.Error(err))
+		s.logger.Error("check admin role error", zap.Error(err))
 
 		return nil, ErrRoleCheckFailed
 	}
@@ -127,19 +130,19 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, logScope string) (*domain.User, error) {
 	user, err := s.users.FindByUsernameOrEmail(ctx, in.Identifier)
 	if err != nil {
-		zap.L().Error("query user error", zap.Error(err))
+		s.logger.Error("query user error", zap.Error(err))
 
 		return nil, ErrQueryUserFailed
 	}
 
 	if user == nil {
-		zap.L().Warn(logScope+" user not found", zap.String("username", in.Identifier))
+		s.logger.Warn(logScope+" user not found", zap.String("username", in.Identifier))
 
 		return nil, domain.ErrCredentialsInvalid
 	}
 
 	if !encrypt.ValidatePasswordHash(in.Password, user.Password) {
-		zap.L().Warn(logScope+" password error", zap.String("username", in.Identifier))
+		s.logger.Warn(logScope+" password error", zap.String("username", in.Identifier))
 
 		return nil, domain.ErrCredentialsInvalid
 	}
@@ -167,7 +170,7 @@ func (s *LoginService) finishLogin(
 
 	token, err := s.tokens.Issue(user.ID, user.Username)
 	if err != nil {
-		zap.L().Error("create jwt token failed", zap.Error(err))
+		s.logger.Error("create jwt token failed", zap.Error(err))
 
 		return nil, ErrLoginFailed
 	}
@@ -177,7 +180,7 @@ func (s *LoginService) finishLogin(
 
 // RecordLoginAsync 以 detached 任务写登录记录（原 api/user_api/login_async.go）。
 func (s *LoginService) RecordLoginAsync(ctx context.Context, userID uint, ip, addr, userAgent, loginType string) {
-	recordLoginAsync(ctx, s.tasks, s.loginRecords, userID, ip, addr, userAgent, loginType)
+	recordLoginAsync(ctx, s.tasks, s.loginRecords, userID, ip, addr, userAgent, loginType, s.logger)
 }
 
 // recordLoginAsync 把登录记录写入放到 detached 任务里（原 ctxutil.GoDetached + AsyncQuickTimeout）。
@@ -189,6 +192,7 @@ func recordLoginAsync(
 	records *LoginRecordService,
 	userID uint,
 	ip, addr, userAgent, loginType string,
+	logger *zap.Logger,
 ) {
 	if tasks == nil || records == nil {
 		return
@@ -196,7 +200,7 @@ func recordLoginAsync(
 
 	tasks.Go(ctx, ctxutil.AsyncQuickTimeout, func(taskCtx context.Context) {
 		if err := records.Record(taskCtx, userID, ip, addr, userAgent, loginType); err != nil {
-			zap.L().Warn("记录登录IP失败", zap.Error(err))
+			logger.Warn("记录登录IP失败", zap.Error(err))
 		}
 	})
 }

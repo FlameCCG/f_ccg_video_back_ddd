@@ -17,9 +17,6 @@ import (
 // siteConfigSection 站点配置在 YAML 中的段名。
 const siteConfigSection = "site"
 
-// userBannerObjectPrefix 用户横幅在存储中的相对目录（与原实现一致）。
-var userBannerObjectPrefix = []string{"banners", "user"}
-
 // UserBannerService 用户主页横幅用例服务
 // （原 api/user_api/user_default_banner.go、user_banner_setting.go、upload_banner.go）。
 type UserBannerService struct {
@@ -28,6 +25,7 @@ type UserBannerService struct {
 	banners      UserBannerCatalog
 	configWriter ConfigFileWriter
 	storage      BannerStorage
+	logger       *zap.Logger
 }
 
 // NewUserBannerService 构造用户横幅服务。
@@ -37,6 +35,7 @@ func NewUserBannerService(
 	banners UserBannerCatalog,
 	configWriter ConfigFileWriter,
 	storage BannerStorage,
+	logger *zap.Logger,
 ) *UserBannerService {
 	return &UserBannerService{
 		cfgProvider:  cfgProvider,
@@ -44,6 +43,7 @@ func NewUserBannerService(
 		banners:      banners,
 		configWriter: configWriter,
 		storage:      storage,
+		logger:       logger,
 	}
 }
 
@@ -191,11 +191,11 @@ func (s *UserBannerService) UploadBanner(ctx context.Context, in UploadBannerInp
 		return "", ErrStorageConfigInvalid
 	}
 
-	relativePath := path.Join(append(append([]string{}, userBannerObjectPrefix...), in.FileHash+ext)...)
+	relativePath := path.Join("banners", "user", in.FileHash+ext)
 
 	bannerURL, err := s.storage.SaveBanner(ctx, relativePath, in.Size, in.File, contentType)
 	if err != nil {
-		zap.L().Error("save banner failed", zap.Error(err))
+		s.logger.Error("save banner failed", zap.Error(err))
 
 		return "", ErrBannerUploadFailed
 	}

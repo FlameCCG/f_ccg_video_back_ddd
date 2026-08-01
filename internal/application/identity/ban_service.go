@@ -56,7 +56,33 @@ func (s *BanService) Apply(ctx context.Context, action domain.BanAction) (*domai
 			return updateErr
 		}
 
-		return s.records.Create(txCtx, record)
+		if normalized.Status != enum.UserStatusActive {
+			return s.records.Create(txCtx, record)
+		}
+
+		latest, findErr := s.records.FindLatestUnreleasedForUpdate(
+			txCtx,
+			user.ID,
+			[]enum.UserStatus{
+				enum.UserStatusBanned,
+				enum.UserStatusPermanentlyBanned,
+			},
+		)
+		if findErr != nil {
+			return findErr
+		}
+
+		if latest == nil {
+			return nil
+		}
+
+		if markErr := s.records.MarkUnbanned(txCtx, latest.ID); markErr != nil {
+			return markErr
+		}
+
+		record.ID = latest.ID
+
+		return nil
 	}); err != nil {
 		return nil, err
 	}
@@ -118,23 +144,53 @@ func banStatusContent(record *domain.BanRecord) string {
 	return content
 }
 
-// ReleaseExpired 限时封禁到期后自动解封：置为正常状态并写穿状态缓存。
-//
-// 原实现散落在 pkg/middlewares/user_ban_check.go 中直连 global.DB 更新用户状态，
-// 新架构收敛到应用层，interfaces 层不再直接访问数据库。
-func (s *BanService) ReleaseExpired(ctx context.Context, userID uint) error {
+// ReleaseExpired 原子地解封到期用户并标记原封禁记录，返回本次是否完成解封。
+func (s *BanService) ReleaseExpired(ctx context.Context, userID uint, now time.Time) (bool, error) {
 	if userID == 0 {
-		return domain.ErrBanUserIDRequired
+		return false, domain.ErrBanUserIDRequired
 	}
 
-	if err := s.users.UpdateStatus(ctx, userID, enum.UserStatusActive); err != nil {
-		return err
+	unbanned := false
+	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		record, findErr := s.records.FindLatestUnreleasedForUpdate(
+			txCtx,
+			userID,
+			[]enum.UserStatus{enum.UserStatusBanned},
+		)
+		if findErr != nil {
+			return findErr
+		}
+
+		if record == nil || record.EndAt == nil || record.EndAt.After(now) {
+			return nil
+		}
+
+		activated, activateErr := s.users.ActivateIfBanned(txCtx, userID)
+		if activateErr != nil {
+			return activateErr
+		}
+
+		if !activated {
+			return nil
+		}
+
+		if markErr := s.records.MarkUnbanned(txCtx, record.ID); markErr != nil {
+			return markErr
+		}
+
+		unbanned = true
+
+		return nil
+	}); err != nil {
+		return false, err
 	}
 
-	// P1-3: 到期解封 write-through Active。
-	s.statuses.Write(userID, enum.UserStatusActive)
+	if unbanned {
+		// P1-3: 到期解封 write-through Active。
+		s.statuses.Write(userID, enum.UserStatusActive)
+	}
 
-	return nil
+	return unbanned, nil
 }
 
 // BanRecordService 封禁记录查询用例服务（原 service/user_service/ban_record_service.go
@@ -149,7 +205,7 @@ func NewBanRecordService(records domain.BanRecordRepository, query BanRecordQuer
 	return &BanRecordService{records: records, query: query}
 }
 
-// Latest 读取用户最近一条封禁记录；无记录时返回 (nil, nil)。
+// Latest 读取用户最近一条未解封封禁记录；无记录时返回 (nil, nil)。
 func (s *BanRecordService) Latest(ctx context.Context, userID uint) (*domain.BanRecord, error) {
 	if userID == 0 {
 		return nil, domain.ErrBanUserIDRequired

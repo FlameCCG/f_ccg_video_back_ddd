@@ -56,21 +56,24 @@ func NewProfileService(
 
 // UserInfo 当前登录用户信息（含关注/粉丝/动态计数与横幅）。
 func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoResult, error) {
-	user, err := s.users.FindByID(ctx, userID)
+	user, conf, err := s.users.FindWithConfByID(ctx, userID)
 	if err != nil || user == nil {
 		return nil, domain.ErrUserNotFound
 	}
 
-	conf, err := s.confs.FindByUserID(ctx, userID)
-	if err != nil {
-		conf = nil
-	}
-
-	var counts UserRelationCounts
+	var (
+		counts    UserRelationCounts
+		bannerURL string
+	)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
 		counts = s.relations.RelationCounts(groupCtx, userID, true)
+
+		return nil
+	})
+	group.Go(func() error {
+		bannerURL = s.ResolveUserBannerURL(groupCtx, conf)
 
 		return nil
 	})
@@ -81,7 +84,7 @@ func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoRe
 		Username:       user.Username,
 		Email:          user.Email,
 		Avatar:         user.Avatar,
-		BannerURL:      s.ResolveUserBannerURL(ctx, conf),
+		BannerURL:      bannerURL,
 		Description:    user.Description,
 		Gender:         user.Gender,
 		Birthday:       domain.FormatBirthday(user.Birthday),
@@ -107,7 +110,8 @@ func (s *ProfileService) UserDetail(ctx context.Context, userID uint) (*UserDeta
 
 	conf, err := s.confs.FindByUserID(ctx, userID)
 	if err != nil {
-		conf = nil
+		// 原 GORM Preload 链路中，配置查询失败会使整个用户详情查询失败。
+		return nil, domain.ErrUserNotFound
 	}
 
 	var (
