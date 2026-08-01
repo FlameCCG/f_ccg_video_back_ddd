@@ -57,18 +57,22 @@ const (
 	progressFlushTimeout = 2 * time.Second
 )
 
-// stageOrder 定义展示顺序与默认权重（总和 = 100）。
-var stageOrder = []struct {
+type progressStageWeight struct {
 	name   string
 	weight float64
-}{
-	{TranscodeStagePrepare, 5},
-	{TranscodeStageProbe, 5},
-	{TranscodeStageSaveOriginal, 5},
-	{TranscodeStageNormalize, 20},
-	{TranscodeStageMultiRes, 45},
-	{TranscodeStageDash, 15},
-	{TranscodeStageCleanup, 5},
+}
+
+// progressStageOrder 定义展示顺序与默认权重（总和 = 100）。
+func progressStageOrder() [7]progressStageWeight {
+	return [7]progressStageWeight{
+		{TranscodeStagePrepare, 5},
+		{TranscodeStageProbe, 5},
+		{TranscodeStageSaveOriginal, 5},
+		{TranscodeStageNormalize, 20},
+		{TranscodeStageMultiRes, 45},
+		{TranscodeStageDash, 15},
+		{TranscodeStageCleanup, 5},
+	}
 }
 
 // TranscodeProgress 是单个视频/分P 任务的进度快照（Redis 中存储的结构）。
@@ -502,7 +506,7 @@ func (t *TranscodeProgressTracker) Succeed(ctx context.Context) {
 
 	t.mu.Lock()
 
-	for _, s := range stageOrder {
+	for _, s := range progressStageOrder() {
 		t.completed[s.name] = true
 	}
 
@@ -527,10 +531,11 @@ func (t *TranscodeProgressTracker) Fail(ctx context.Context, errMsg string) {
 	t.message = "转码失败"
 	t.errMsg = TruncateErr(errMsg, 500)
 
-	percent := t.calcPercentLocked()
-	if len(t.pipelines) > 0 {
-		percent = legacyPipelinePercent(clonePipelineProgress(t.pipelines))
-	}
+	percent := aggregateProgressPercent(
+		t.status,
+		t.calcPercentLocked(),
+		clonePipelineProgress(t.pipelines),
+	)
 
 	snapshot := TranscodeProgress{
 		VideoID:    t.videoID,
@@ -559,10 +564,11 @@ func (t *TranscodeProgressTracker) DiagnosticSnapshot() (percent float64, stage,
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	percent = t.calcPercentLocked()
-	if len(t.pipelines) > 0 {
-		percent = legacyPipelinePercent(clonePipelineProgress(t.pipelines))
-	}
+	percent = aggregateProgressPercent(
+		t.status,
+		t.calcPercentLocked(),
+		clonePipelineProgress(t.pipelines),
+	)
 
 	return percent, t.stage, t.status, t.outTimeSec
 }
@@ -574,7 +580,8 @@ func (t *TranscodeProgressTracker) flush(ctx context.Context, force bool) {
 
 	t.mu.Lock()
 
-	percent := t.calcPercentLocked()
+	pipelines := clonePipelineProgress(t.pipelines)
+	percent := aggregateProgressPercent(t.status, t.calcPercentLocked(), pipelines)
 	snapshot := TranscodeProgress{
 		VideoID:      t.videoID,
 		PartID:       t.partID,
@@ -587,11 +594,7 @@ func (t *TranscodeProgressTracker) flush(ctx context.Context, force bool) {
 		OutTimeSec:   t.outTimeSec,
 		Error:        t.errMsg,
 		StartedAt:    t.startedAt,
-		Pipelines:    clonePipelineProgress(t.pipelines),
-	}
-
-	if len(snapshot.Pipelines) > 0 {
-		snapshot.Percent = legacyPipelinePercent(snapshot.Pipelines)
+		Pipelines:    pipelines,
 	}
 
 	now := time.Now()
@@ -657,6 +660,22 @@ func legacyPipelinePercent(pipelines []TranscodePipelineProgress) float64 {
 	return total / float64(len(pipelines))
 }
 
+func aggregateProgressPercent(
+	status string,
+	fallback float64,
+	pipelines []TranscodePipelineProgress,
+) float64 {
+	if status == TranscodeStatusSucceeded {
+		return 100
+	}
+
+	if len(pipelines) > 0 {
+		return legacyPipelinePercent(pipelines)
+	}
+
+	return fallback
+}
+
 func (t *TranscodeProgressTracker) calcPercentLocked() float64 {
 	if t.status == TranscodeStatusSucceeded {
 		return 100
@@ -668,7 +687,7 @@ func (t *TranscodeProgressTracker) calcPercentLocked() float64 {
 
 	var totalWeight float64
 
-	for _, s := range stageOrder {
+	for _, s := range progressStageOrder() {
 		if t.skipped[s.name] {
 			continue
 		}
@@ -686,7 +705,7 @@ func (t *TranscodeProgressTracker) calcPercentLocked() float64 {
 		currentWeight float64
 	)
 
-	for _, s := range stageOrder {
+	for _, s := range progressStageOrder() {
 		if t.skipped[s.name] {
 			continue
 		}

@@ -13,6 +13,8 @@ import (
 
 	media "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/infrastructure/config"
+
+	"go.uber.org/zap"
 )
 
 // TopicTranscode 是视频转码任务的逻辑 topic 名。
@@ -31,14 +33,19 @@ type Driver interface {
 type MQService struct {
 	cfg       *config.Kafka
 	producers *ProducerPool
+	logger    *zap.Logger
 }
 
 // 编译期断言：满足领域侧任务投递端口。
 var _ media.TaskPublisher = (*MQService)(nil)
 
 // NewMQService 构造 MQ 服务。
-func NewMQService(cfg *config.Kafka, producers *ProducerPool) *MQService {
-	return &MQService{cfg: cfg, producers: producers}
+func NewMQService(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logger) *MQService {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &MQService{cfg: cfg, producers: producers, logger: logger}
 }
 
 // resolve 解析驱动与业务主题表，错误顺序与原 NewMQService 完全一致。
@@ -52,7 +59,7 @@ func (s *MQService) resolve() (Driver, map[string]string, error) {
 		return nil, nil, errors.New("mq service disabled")
 	}
 
-	driver, err := NewKafkaDriver(cfg, s.producers)
+	driver, err := NewKafkaDriver(cfg, s.producers, s.logger)
 	if err != nil {
 		return nil, nil, err
 	}

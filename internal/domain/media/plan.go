@@ -104,7 +104,7 @@ func PlanPipelines(task TranscodeTask, meta VideoMeta, policy *TranscodePolicy) 
 	}
 
 	if dashEnable {
-		plan.DashResolutions = policy.BuildDashResolutions(targetRes, pixelHeight)
+		plan.DashResolutions = policy.BuildDashResolutions(targetRes, pixelHeight, classHeight)
 	}
 
 	return plan

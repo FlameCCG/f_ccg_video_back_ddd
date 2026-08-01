@@ -50,6 +50,7 @@ const (
 type transcodeCheckpoint struct {
 	root      string
 	ephemeral bool
+	logger    *zap.Logger
 	// audioMu 串行化共享音轨的生成：MP4 与 DASH 管线并发调用 ensureCheckpointAudioTrack。
 	audioMu sync.Mutex
 }
@@ -59,11 +60,16 @@ type transcodeCheckpoint struct {
 // 原实现直接读 global.Config()；新架构由构造函数注入 *config.Provider（支持热更新）。
 type checkpointManager struct {
 	cfgProvider *config.Provider
+	logger      *zap.Logger
 }
 
 // newCheckpointManager 构造断点目录管理器。
-func newCheckpointManager(cfgProvider *config.Provider) *checkpointManager {
-	return &checkpointManager{cfgProvider: cfgProvider}
+func newCheckpointManager(cfgProvider *config.Provider, logger *zap.Logger) *checkpointManager {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &checkpointManager{cfgProvider: cfgProvider, logger: logger}
 }
 
 // transcodeConf 读取当前转码配置（可能为 nil）。
@@ -107,7 +113,7 @@ func (m *checkpointManager) open(task media.TranscodeTask) (*transcodeCheckpoint
 			return nil, fmt.Errorf("create ephemeral transcode dir: %w", err)
 		}
 
-		return &transcodeCheckpoint{root: dir, ephemeral: true}, nil
+		return &transcodeCheckpoint{root: dir, ephemeral: true, logger: m.logger}, nil
 	}
 
 	root := filepath.Join(m.base(), task.CheckpointKey())
@@ -115,7 +121,7 @@ func (m *checkpointManager) open(task media.TranscodeTask) (*transcodeCheckpoint
 		return nil, fmt.Errorf("create transcode checkpoint dir: %w", err)
 	}
 
-	return &transcodeCheckpoint{root: root}, nil
+	return &transcodeCheckpoint{root: root, logger: m.logger}, nil
 }
 
 // startJanitor 启动断点目录清扫：立即扫一次，此后周期扫，随 ctx 退出。
@@ -127,7 +133,7 @@ func (m *checkpointManager) startJanitor(ctx context.Context) {
 	base := m.base()
 
 	go func() {
-		removeExpiredTranscodeCheckpoints(base, transcodeCheckpointMaxAge)
+		removeExpiredTranscodeCheckpoints(base, transcodeCheckpointMaxAge, m.logger)
 
 		ticker := time.NewTicker(transcodeCheckpointSweepInterval)
 		defer ticker.Stop()
@@ -137,7 +143,7 @@ func (m *checkpointManager) startJanitor(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				removeExpiredTranscodeCheckpoints(base, transcodeCheckpointMaxAge)
+				removeExpiredTranscodeCheckpoints(base, transcodeCheckpointMaxAge, m.logger)
 			}
 		}
 	}()
@@ -207,7 +213,7 @@ func (c *transcodeCheckpoint) CommittedDirPath(name string) (string, bool) {
 func (c *transcodeCheckpoint) DiscardCommitted(name string) {
 	dest := filepath.Join(c.root, filepath.Base(name))
 	if err := os.RemoveAll(dest); err != nil {
-		zap.L().Warn("discard invalid transcode checkpoint artifact failed",
+		c.logger.Warn("discard invalid transcode checkpoint artifact failed",
 			zap.String("path", dest),
 			zap.Error(err),
 		)
@@ -221,7 +227,7 @@ func (c *transcodeCheckpoint) Remove() {
 	}
 
 	if err := os.RemoveAll(c.root); err != nil {
-		zap.L().Warn("remove transcode checkpoint dir failed",
+		c.logger.Warn("remove transcode checkpoint dir failed",
 			zap.String("dir", c.root),
 			zap.Error(err),
 		)
@@ -233,6 +239,11 @@ func (c *transcodeCheckpoint) persistent() bool {
 	return c != nil && !c.ephemeral
 }
 
+// Persistent 实现应用层的 Checkpoint 端口，语义同 persistent。
+func (c *transcodeCheckpoint) Persistent() bool {
+	return c.persistent()
+}
+
 // -----------------------------------------------------------------------------
 // L2 本地已编码产物的复用校验
 // -----------------------------------------------------------------------------
@@ -241,9 +252,9 @@ func (c *transcodeCheckpoint) persistent() bool {
 type transcodeOutputValidator func(ctx context.Context, outputPath string) error
 
 // mp4CheckpointValidator 返回 MP4 提交产物的校验器：probe 成功且时长与源片吻合。
-func mp4CheckpointValidator(sourceDuration int) transcodeOutputValidator {
+func mp4CheckpointValidator(sourceDuration int, logger *zap.Logger) transcodeOutputValidator {
 	return func(ctx context.Context, outputPath string) error {
-		meta, err := ProbeVideo(ctx, outputPath)
+		meta, err := ProbeVideo(ctx, outputPath, logger)
 		if err != nil {
 			return fmt.Errorf("probe committed output: %w", err)
 		}
@@ -275,7 +286,7 @@ func reusableCommittedOutput(
 
 	if validate != nil {
 		if err := validate(ctx, committedPath); err != nil {
-			zap.L().Warn("committed transcode output invalid, will re-encode",
+			ckpt.logger.Warn("committed transcode output invalid, will re-encode",
 				zap.String("targetId", target.ID),
 				zap.String("path", committedPath),
 				zap.Error(err),
@@ -301,15 +312,8 @@ func reusableCommittedDashDir(ctx context.Context, ckpt *transcodeCheckpoint, so
 		return "", false
 	}
 
-	mpdPath := filepath.Join(dir, media.DashManifestName)
-
-	meta, err := ProbeVideo(ctx, mpdPath)
-	if err == nil {
-		err = media.ValidateTranscodedDuration(sourceDuration, meta.Duration)
-	}
-
-	if err != nil {
-		zap.L().Warn("committed dash checkpoint invalid, will re-encode",
+	if err := validateDASHOutput(ctx, dir, sourceDuration, ckpt.logger); err != nil {
+		ckpt.logger.Warn("committed dash checkpoint invalid, will re-encode",
 			zap.String("dir", dir),
 			zap.Error(err),
 		)
@@ -335,7 +339,12 @@ func transcodeTargetPersisted(
 	task media.TranscodeTask,
 	target media.TranscodeTarget,
 	driver media.StorageDriver,
+	logger *zap.Logger,
 ) (string, bool) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if driver == nil || resources == nil || strings.TrimSpace(target.RelativePath) == "" {
 		return "", false
 	}
@@ -348,7 +357,7 @@ func transcodeTargetPersisted(
 
 	urls, err := resources.PersistedResourceURLs(ctx, task, resolution, target.IsSource)
 	if err != nil {
-		zap.L().Debug("lookup persisted transcode resource failed",
+		logger.Debug("lookup persisted transcode resource failed",
 			zap.String("targetId", target.ID),
 			zap.Error(err),
 		)
@@ -363,7 +372,7 @@ func transcodeTargetPersisted(
 
 		size, statErr := driver.StatStoredFile(ctx, storedURL)
 		if statErr != nil || size <= 0 {
-			zap.L().Warn("persisted transcode output missing in storage, will redo",
+			logger.Warn("persisted transcode output missing in storage, will redo",
 				zap.String("targetId", target.ID),
 				zap.String("fileUrl", storedURL),
 				zap.Error(statErr),
@@ -386,7 +395,12 @@ func dashOutputPersisted(
 	resources media.TranscodeResourceRepository,
 	task media.TranscodeTask,
 	driver media.StorageDriver,
+	logger *zap.Logger,
 ) bool {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if driver == nil || resources == nil || strings.TrimSpace(task.OutputPath) == "" {
 		return false
 	}
@@ -395,7 +409,7 @@ func dashOutputPersisted(
 
 	urls, err := resources.PersistedResourceURLs(ctx, task, enum.ResolutionAuto, false)
 	if err != nil {
-		zap.L().Debug("lookup persisted dash resource failed",
+		logger.Debug("lookup persisted dash resource failed",
 			zap.Uint("videoId", task.VideoID),
 			zap.Error(err),
 		)
@@ -410,7 +424,7 @@ func dashOutputPersisted(
 
 		size, statErr := driver.StatStoredFile(ctx, storedURL)
 		if statErr != nil || size <= 0 {
-			zap.L().Warn("persisted dash manifest missing in storage, will redo",
+			logger.Warn("persisted dash manifest missing in storage, will redo",
 				zap.Uint("videoId", task.VideoID),
 				zap.String("fileUrl", storedURL),
 				zap.Error(statErr),
@@ -430,11 +444,15 @@ func dashOutputPersisted(
 // -----------------------------------------------------------------------------
 
 // removeExpiredTranscodeCheckpoints 删除 base 下超龄的断点目录，返回删除数量。
-func removeExpiredTranscodeCheckpoints(base string, maxAge time.Duration) int {
+func removeExpiredTranscodeCheckpoints(base string, maxAge time.Duration, logger *zap.Logger) int {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	entries, err := os.ReadDir(base)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			zap.L().Warn("read transcode checkpoint base failed", zap.String("dir", base), zap.Error(err))
+			logger.Warn("read transcode checkpoint base failed", zap.String("dir", base), zap.Error(err))
 		}
 
 		return 0
@@ -455,14 +473,14 @@ func removeExpiredTranscodeCheckpoints(base string, maxAge time.Duration) int {
 
 		full := filepath.Join(base, entry.Name())
 		if err := os.RemoveAll(full); err != nil {
-			zap.L().Warn("remove expired transcode checkpoint failed", zap.String("dir", full), zap.Error(err))
+			logger.Warn("remove expired transcode checkpoint failed", zap.String("dir", full), zap.Error(err))
 
 			continue
 		}
 
 		removed++
 
-		zap.L().Info("expired transcode checkpoint removed",
+		logger.Info("expired transcode checkpoint removed",
 			zap.String("dir", full),
 			zap.Time("modTime", info.ModTime()),
 		)
@@ -472,9 +490,15 @@ func removeExpiredTranscodeCheckpoints(base string, maxAge time.Duration) int {
 }
 
 // ensureTranscodeCheckpoint 保证管线始终有可用断点目录；调用方未提供时创建一次性目录。
-func ensureTranscodeCheckpoint(ckpt *transcodeCheckpoint) (*transcodeCheckpoint, func(), error) {
+func ensureTranscodeCheckpoint(
+	ckpt *transcodeCheckpoint,
+	logger *zap.Logger,
+) (*transcodeCheckpoint, func(), error) {
 	if ckpt != nil {
 		return ckpt, func() {}, nil
+	}
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 
 	dir, err := os.MkdirTemp("", "transcode-ephemeral-*")
@@ -482,7 +506,7 @@ func ensureTranscodeCheckpoint(ckpt *transcodeCheckpoint) (*transcodeCheckpoint,
 		return nil, nil, fmt.Errorf("create transcode temp dir failed: %w", err)
 	}
 
-	ephemeral := &transcodeCheckpoint{root: dir, ephemeral: true}
+	ephemeral := &transcodeCheckpoint{root: dir, ephemeral: true, logger: logger}
 
 	return ephemeral, ephemeral.Remove, nil
 }
@@ -529,7 +553,7 @@ func discardTranscodeChunks(ckpt *transcodeCheckpoint, pipeline string) {
 		}
 
 		if err := os.RemoveAll(filepath.Join(ckpt.root, entry.Name())); err != nil {
-			zap.L().Warn("discard transcode chunk dir failed",
+			ckpt.logger.Warn("discard transcode chunk dir failed",
 				zap.String("dir", entry.Name()),
 				zap.Error(err),
 			)

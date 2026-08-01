@@ -24,16 +24,25 @@ type ProducerPool struct {
 	mu      sync.Mutex
 	shared  sarama.SyncProducer
 	factory ProducerFactory
+	logger  *zap.Logger
 }
 
 // NewProducerPool 创建生产者缓存（使用 sarama.NewSyncProducer）。
-func NewProducerPool() *ProducerPool {
-	return &ProducerPool{factory: sarama.NewSyncProducer}
+func NewProducerPool(logger *zap.Logger) *ProducerPool {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &ProducerPool{factory: sarama.NewSyncProducer, logger: logger}
 }
 
 // newProducerPoolWithFactory 用自定义工厂创建生产者缓存（测试用）。
-func newProducerPoolWithFactory(factory ProducerFactory) *ProducerPool {
-	return &ProducerPool{factory: factory}
+func newProducerPoolWithFactory(factory ProducerFactory, logger *zap.Logger) *ProducerPool {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &ProducerPool{factory: factory, logger: logger}
 }
 
 // Producer 初始化（或复用）Kafka 同步生产者。
@@ -65,7 +74,7 @@ func (p *ProducerPool) Producer(cfg *config.Kafka) (sarama.SyncProducer, error) 
 	if v := strings.TrimSpace(cfg.Version); v != "" {
 		version, err := sarama.ParseKafkaVersion(v)
 		if err != nil {
-			zap.L().Warn("parse kafka version failed, use default", zap.Error(err))
+			p.logger.Warn("parse kafka version failed, use default", zap.Error(err))
 		} else {
 			kCfg.Version = version
 		}
@@ -112,16 +121,21 @@ func (p *ProducerPool) Close() error {
 type kafkaDriver struct {
 	cfg      *config.Kafka
 	producer sarama.SyncProducer
+	logger   *zap.Logger
 }
 
 // NewKafkaDriver 创建 Kafka 驱动。
-func NewKafkaDriver(cfg *config.Kafka, producers *ProducerPool) (Driver, error) {
+func NewKafkaDriver(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logger) (Driver, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	if cfg == nil || len(cfg.Brokers) == 0 {
 		return nil, errors.New("kafka brokers not configured")
 	}
 
 	if producers == nil {
-		producers = NewProducerPool()
+		producers = NewProducerPool(logger)
 	}
 
 	producer, err := producers.Producer(cfg)
@@ -132,6 +146,7 @@ func NewKafkaDriver(cfg *config.Kafka, producers *ProducerPool) (Driver, error) 
 	return &kafkaDriver{
 		cfg:      cfg,
 		producer: producer,
+		logger:   logger,
 	}, nil
 }
 
@@ -159,7 +174,7 @@ func (k *kafkaDriver) Publish(_ context.Context, topic string, payload []byte) e
 		return fmt.Errorf("send kafka message failed: %w", err)
 	}
 
-	zap.L().Debug("kafka message sent",
+	k.logger.Debug("kafka message sent",
 		zap.Int32("partition", partition),
 		zap.Int64("offset", offset),
 		zap.String("topic", topic),

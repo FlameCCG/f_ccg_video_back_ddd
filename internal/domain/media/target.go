@@ -175,7 +175,18 @@ func BuildMP4SuperTargets(
 		))
 	}
 
-	seen := make(map[uint16]struct{}, len(resolutions))
+	seen := make(map[uint16]struct{}, len(resolutions)+1)
+	sourceClassHeight := CanonicalResolutionHeight(sourceResolution)
+	if sourceClassHeight > 0 {
+		// 原文件已承担其归属档位：例如可播 496p 源直接作为 360p，不再重复编码 360p MP4。
+		seen[sourceClassHeight] = struct{}{}
+	}
+
+	for _, target := range targets {
+		if target.IsSource && target.Resolution > 0 {
+			seen[target.Resolution] = struct{}{}
+		}
+	}
 
 	for _, resolution := range resolutions {
 		if resolution == 0 {
@@ -211,18 +222,24 @@ func BuildMP4SuperTargets(
 	return targets
 }
 
-// BuildDashResolutions 计算 DASH 阶梯：配置/target 中严格低于真实像素高的档 + 始终追加原生顶档。
-// pixelHeight 为 ffprobe 真实高度；禁止出现 2160 配置把 1632 源上采样。
-func (p *TranscodePolicy) BuildDashResolutions(targetRes []uint16, pixelHeight uint16) []uint16 {
+// BuildDashResolutions 计算 DASH 阶梯：非标准源高度向下归入站点支持的标准档位。
+// classHeight 与 MP4 的宽高分类一致；按宽度归为 4K 的超宽源保留 2160 档位，
+// 实际像素由 shouldKeepDASHSourcePixels 保持不变，绝不把源高上采样到 2160。
+func (p *TranscodePolicy) BuildDashResolutions(
+	targetRes []uint16,
+	pixelHeight uint16,
+	classHeight uint16,
+) []uint16 {
 	set := make(map[uint16]struct{})
+	topHeight := dashTopResolutionHeight(pixelHeight, classHeight)
 
-	addBelowNative := func(r uint16) {
+	addAtOrBelowTop := func(r uint16) {
 		if r == 0 {
 			return
 		}
 
-		if pixelHeight > 0 && r >= pixelHeight {
-			return // 顶档单独追加，避免重复/上采样
+		if topHeight > 0 && r > topHeight {
+			return
 		}
 
 		set[r] = struct{}{}
@@ -230,17 +247,16 @@ func (p *TranscodePolicy) BuildDashResolutions(targetRes []uint16, pixelHeight u
 
 	if p != nil && len(p.TranscodeResolutions) > 0 {
 		for _, r := range p.TranscodeResolutions {
-			addBelowNative(r)
+			addAtOrBelowTop(r)
 		}
 	} else {
 		for _, r := range targetRes {
-			addBelowNative(r)
+			addAtOrBelowTop(r)
 		}
 	}
 
-	// 原生顶档：保持源像素尺寸（KeepSource），绝不 scale 到更高。
-	if pixelHeight > 0 {
-		set[pixelHeight] = struct{}{}
+	if topHeight > 0 {
+		set[topHeight] = struct{}{}
 	}
 
 	out := make([]uint16, 0, len(set))
@@ -253,10 +269,53 @@ func (p *TranscodePolicy) BuildDashResolutions(targetRes []uint16, pixelHeight u
 	return out
 }
 
+// dashTopResolutionHeight 返回源对应的最高标准 DASH 档位。
+// 低于最低 360p 档的源保持原高；按宽度归为 4K 的源沿用 MP4 的 2160 分类。
+func dashTopResolutionHeight(pixelHeight, classHeight uint16) uint16 {
+	var topHeight uint16
+
+	switch {
+	case pixelHeight == 0:
+		return 0
+	case pixelHeight < 360:
+		topHeight = pixelHeight
+	case pixelHeight < 720:
+		topHeight = 360
+	case pixelHeight < 1080:
+		topHeight = 720
+	case pixelHeight < 2160:
+		topHeight = 1080
+	default:
+		topHeight = 2160
+	}
+
+	if classHeight == 2160 && topHeight < classHeight {
+		return classHeight
+	}
+
+	return topHeight
+}
+
+// shouldKeepDASHSourcePixels 判断某档位是否代表源片原生像素。
+// 3840×1632 等超宽 4K 使用 2160 作为档位标签，但滤镜保持实际 3840×1632。
+func shouldKeepDASHSourcePixels(resolution, pixelHeight, classHeight uint16) bool {
+	if pixelHeight == 0 {
+		return false
+	}
+
+	if resolution == pixelHeight {
+		return true
+	}
+
+	return classHeight == 2160 &&
+		resolution == classHeight &&
+		pixelHeight < classHeight
+}
+
 // BuildDashTargets 构造 DASH 各 representation 目标。
 //
 // pixelHeight=真实帧高；classHeight=档位分类高（用于画质档位选择）。
-// 非高码率原生顶档：KeepSource + remux maxrate；高码率 4K/1080 仍走 High/Medium。
+// 标准档位恰好等于源高时 KeepSource；按宽度归类的超宽 4K 顶档同样保持源像素。
 func BuildDashTargets(dashRes []uint16, pixelHeight, classHeight uint16, isHighBitrateSource bool) []TranscodeTarget {
 	targets := make([]TranscodeTarget, 0, len(dashRes)+1)
 	has1080 := false
@@ -271,7 +330,8 @@ func BuildDashTargets(dashRes []uint16, pixelHeight, classHeight uint16, isHighB
 			continue
 		}
 
-		if pixelHeight > 0 && r > pixelHeight {
+		isNativeTop := shouldKeepDASHSourcePixels(r, pixelHeight, classHeight)
+		if pixelHeight > 0 && r > pixelHeight && !isNativeTop {
 			continue
 		}
 
@@ -282,7 +342,6 @@ func BuildDashTargets(dashRes []uint16, pixelHeight, classHeight uint16, isHighB
 			Resolution: r,
 		}
 
-		isNativeTop := pixelHeight > 0 && r == pixelHeight
 		if isNativeTop {
 			target.KeepSource = true // null 滤镜，不上采样
 		}

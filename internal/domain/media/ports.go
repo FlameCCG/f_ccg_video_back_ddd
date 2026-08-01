@@ -52,6 +52,10 @@ type StorageResolver interface {
 	ResolveByType(storageType enum.VideoStorageType) (StorageDriver, error)
 	// CheckStorageTyped 返回当前站点启用的存储类型。
 	CheckStorageTyped() enum.VideoStorageType
+	// ValidateUploadID 校验上传标识，阻止路径穿越与非法对象键。
+	ValidateUploadID(uploadID string) error
+	// ValidateChunkIndex 校验分片索引。
+	ValidateChunkIndex(index string) error
 }
 
 // TranscodeResourceRepository 转码任务的数据库读写端口。
