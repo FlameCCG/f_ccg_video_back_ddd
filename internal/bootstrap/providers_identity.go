@@ -32,6 +32,7 @@ var IdentityProviderSet = wire.NewSet(
 	// 持久化实现
 	identityrepo.NewUserRepository,
 	wire.Bind(new(identitydomain.UserRepository), new(*identityrepo.UserRepository)),
+	wire.Bind(new(identitydomain.UserAccountRepository), new(*identityrepo.UserRepository)),
 	// CLI 建号任务复用同一份「默认横幅 ID 注入 ctx」逻辑（见 report.md FIND-002）
 	wire.Bind(new(provisioningrepo.UserContextDecorator), new(*identityrepo.UserRepository)),
 	identityrepo.NewExpRecordRepository,
@@ -58,6 +59,15 @@ var IdentityProviderSet = wire.NewSet(
 	wire.Bind(new(identityapp.CreatorVideoStatsQuery), new(*identityrepo.CreatorVideoStatsQuery)),
 	identityrepo.NewFansCounter,
 	wire.Bind(new(identityapp.FansCounter), new(*identityrepo.FansCounter)),
+	identityrepo.NewUserBannerQuery,
+	wire.Bind(new(identityapp.UserBannerCatalog), new(*identityrepo.UserBannerQuery)),
+	identityrepo.NewUserConfRepository,
+	wire.Bind(new(identitydomain.UserConfRepository), new(*identityrepo.UserConfRepository)),
+	wire.Bind(new(identityapp.UserConfQuery), new(*identityrepo.UserConfRepository)),
+	identityrepo.NewUserRelationQuery,
+	wire.Bind(new(identityapp.UserRelationQuery), new(*identityrepo.UserRelationQuery)),
+	identityrepo.NewUserRoleQuery,
+	wire.Bind(new(identityapp.UserRoleQuery), new(*identityrepo.UserRoleQuery)),
 
 	// 缓存实现
 	identitycache.NewUserStatusCache,
@@ -75,18 +85,8 @@ var IdentityProviderSet = wire.NewSet(
 	wire.Bind(new(identityapp.EmailCaptchaStore), new(*captcha.EmailCaptchaStore)),
 
 	// 应用服务
-	identityapp.NewUserStatusService,
+	identityapp.ProviderSet,
 	wire.Bind(new(identityapp.UserStatusReader), new(*identityapp.UserStatusService)),
-	identityapp.NewExpService,
-	identityapp.NewCoinService,
-	identityapp.NewBanService,
-	identityapp.NewBanRecordService,
-	identityapp.NewCoinRecordService,
-	identityapp.NewExpRecordService,
-	identityapp.NewLoginRecordService,
-	identityapp.NewAdminUserService,
-	identityapp.NewCreatorAnalyticsService,
-	identityapp.NewCaptchaService,
 )
 
 // NotificationProviderSet 通知上下文：仓储与角标缓存 + 应用服务 + 跨上下文端口绑定。
@@ -95,7 +95,9 @@ var NotificationProviderSet = wire.NewSet(
 	wire.Bind(new(notificationdomain.Repository), new(*notificationrepo.Repository)),
 	notificationcache.NewCountCache,
 	wire.Bind(new(notificationapp.CountCache), new(*notificationcache.CountCache)),
-	notificationapp.NewService,
+	notificationrepo.NewActorQuery,
+	wire.Bind(new(notificationapp.ActorProfileProvider), new(*notificationrepo.ActorQuery)),
+	notificationapp.ProviderSet,
 	// identity 的封禁通知端口由通知应用服务实现（跨上下文协调在应用层完成）
 	wire.Bind(new(identityapp.BanNotifier), new(*notificationapp.Service)),
 )
@@ -109,6 +111,5 @@ var ProvisioningProviderSet = wire.NewSet(
 	wire.Bind(new(provisioningapp.CasbinRoleBinder), new(*provisioningrepo.CasbinRoleBinder)),
 	provisioningrepo.NewBannerRepository,
 	wire.Bind(new(provisioningapp.BannerRepository), new(*provisioningrepo.BannerRepository)),
-	provisioningapp.NewSuperUserService,
-	provisioningapp.NewBannerService,
+	provisioningapp.ProviderSet,
 )

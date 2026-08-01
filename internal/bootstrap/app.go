@@ -4,6 +4,7 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -77,6 +78,7 @@ type App struct {
 	lg          *logger.Logger
 	router      *router.Router
 	detached    *ctxutil.DetachedTaskGroup
+	runtime     *RuntimeComponents
 	infra       *Infrastructure
 }
 
@@ -90,29 +92,51 @@ func NewApp(
 	lg *logger.Logger,
 	httpRouter *router.Router,
 	detached *ctxutil.DetachedTaskGroup,
+	runtime *RuntimeComponents,
 ) *App {
 	return &App{
 		cfgProvider: cfgProvider,
 		lg:          lg,
 		router:      httpRouter,
 		detached:    detached,
+		runtime:     runtime,
 		infra:       infra,
 	}
 }
 
 // Start 启动后台组件，语义与原 core.InitCore 尾部的后台启动序列一致。
 // 单个组件启动失败只记录日志、不阻断 HTTP 服务启动（与原实现一致）。
-func (a *App) Start(_ context.Context) error {
+
+func (a *App) Start(ctx context.Context) error {
+	a.runtime.Start(ctx)
+
 	return nil
 }
 
+func (a *App) log() *zap.Logger {
+	if a == nil || a.lg == nil {
+		return zap.NewNop()
+	}
+
+	return a.lg.Zap()
+}
+
 // Serve 启动 HTTP 服务，并在收到 SIGINT/SIGTERM 后执行优雅关闭。
-// 语义与原 router.Run 完全一致：ListenAndServe 异常时 zap.Fatal 直接退出进程。
-func (a *App) Serve() {
+// 监听与关闭错误返回给 main 统一转换退出码，确保后台组件和基础设施仍会显式停机。
+func (a *App) Serve() error {
+	if a == nil || a.router == nil || a.cfgProvider == nil {
+		return errors.New("HTTP server is not initialized")
+	}
+
+	rootConfig := a.cfgProvider.Get()
+	if rootConfig == nil || rootConfig.Server == nil {
+		return errors.New("server config is not initialized")
+	}
+
 	engine := a.router.BuildEngine()
 
 	srv := &http.Server{
-		Addr:              a.cfgProvider.Get().Server.Addr,
+		Addr:              rootConfig.Server.Addr,
 		Handler:           engine,
 		ReadHeaderTimeout: ctxutil.HTTPReadHeaderTimeout,
 		ReadTimeout:       ctxutil.HTTPReadTimeout,
@@ -124,7 +148,7 @@ func (a *App) Serve() {
 	errCh := make(chan error, 1)
 
 	go func() {
-		zap.L().Info("http server starting", zap.String("addr", srv.Addr))
+		a.log().Info("http server starting", zap.String("addr", srv.Addr))
 
 		err := srv.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -144,37 +168,51 @@ func (a *App) Serve() {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			zap.L().Fatal("http server run error", zap.Error(err))
+			a.log().Error("http server run error", zap.Error(err))
+
+			return fmt.Errorf("run HTTP server: %w", err)
 		}
 
-		return
+		return nil
 	case sig := <-quit:
-		zap.L().Info("received shutdown signal", zap.String("signal", sig.String()))
+		a.log().Info("received shutdown signal", zap.String("signal", sig.String()))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), ctxutil.HTTPShutdownTimeout)
 	defer cancel()
 
+	var shutdownErr error
 	if err := srv.Shutdown(ctx); err != nil {
-		zap.L().Error("http server shutdown error", zap.Error(err))
+		shutdownErr = fmt.Errorf("shutdown HTTP server: %w", err)
+		a.log().Error("http server shutdown error", zap.Error(err))
+
+		if closeErr := srv.Close(); closeErr != nil {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("close HTTP server: %w", closeErr))
+		}
 	}
 
-	if err := <-errCh; err != nil {
-		zap.L().Error("http server exit error", zap.Error(err))
+	serveErr := <-errCh
+	if serveErr != nil {
+		a.log().Error("http server exit error", zap.Error(serveErr))
+		serveErr = fmt.Errorf("exit HTTP server: %w", serveErr)
 	}
 
-	zap.L().Info("http server stopped")
+	a.log().Info("http server stopped")
+
+	return errors.Join(shutdownErr, serveErr)
 }
 
 // Stop 在 HTTP 关闭后按序停止后台任务与基础设施。
 // 顺序与原 core.GracefulStop 一致：
 // 转码消费者 → 视频调度 → River → Cron → detached 任务 → Mongo → MySQL → Redis → ES → IPDB → Logger。
-func (a *App) Stop(_ context.Context) error {
-	zap.L().Info("graceful stop starting")
+func (a *App) Stop(ctx context.Context) error {
+	a.log().Info("graceful stop starting")
+
+	a.runtime.Stop(ctx)
 
 	detachedCtx, cancel := context.WithTimeout(context.Background(), ctxutil.AsyncLongTimeout)
 	if err := a.detached.Stop(detachedCtx); err != nil {
-		zap.L().Warn("stop detached tasks timed out", zap.Error(err))
+		a.log().Warn("stop detached tasks timed out", zap.Error(err))
 	}
 
 	cancel()

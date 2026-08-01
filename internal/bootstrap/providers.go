@@ -10,8 +10,10 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
 	"f_ccg_video_back_ddd/internal/infrastructure/search"
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/internal/interfaces/http/router"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/validate"
 
 	"github.com/google/wire"
 )
@@ -37,50 +39,31 @@ var ConfigProviderSet = wire.NewSet(
 
 // InfrastructureProviderSet 基础设施客户端 provider（按技术分组）。
 var InfrastructureProviderSet = wire.NewSet(
-	logger.Provide,
-	logger.ProvideZap,
-	mysql.Provide,
-	mysql.ProvideGorm,
-	cache.Provide,
-	cache.ProvideClient,
-	mongodb.Provide,
-	mongodb.ProvideDatabase,
-	search.Provide,
-	search.ProvideV7,
-	search.ProvideV8,
-	ipregion.Provide,
-	ipregion.ProvideXDB,
-	ipregion.NewResolver,
-	auth.NewEnforcer,
+	logger.ProviderSet,
+	mysql.ProviderSet,
+	cache.ProviderSet,
+	mongodb.ProviderSet,
+	search.ProviderSet,
+	ipregion.ProviderSet,
+	auth.ProviderSet,
 	ctxutil.NewDetachedTaskGroup,
 	NewInfrastructure,
 )
 
 // InterfacesProviderSet 接口层 provider（HTTP 路由装配、处理器）。
 var InterfacesProviderSet = wire.NewSet(
+	validate.New,
+	middlewares.New,
 	router.New,
-)
-
-// DBTasksProviderSet 数据库类运维任务的 provider 集合。
-var DBTasksProviderSet = wire.NewSet(
-	ConfigProviderSet,
-	logger.Provide,
-	mysql.Provide,
-	mysql.ProvideGorm,
-	auth.NewEnforcer,
-	SharedProviderSet,
-	IdentityProviderSet,
-	NotificationProviderSet,
-	ProvisioningProviderSet,
-	cache.Provide,
-	cache.ProvideClient,
-	NewDBTasks,
+	NewRuntimeComponents,
 )
 
 // AppProviderSet 应用组合根的完整 provider 集合。
 var AppProviderSet = wire.NewSet(
-	ConfigProviderSet,
-	InfrastructureProviderSet,
+	ProvisioningProviderSet,
+	CrossContextProviderSet,
+	IdentityHTTPProviderSet,
+	NotificationHTTPProviderSet,
 	InterfacesProviderSet,
 	NewApp,
 )

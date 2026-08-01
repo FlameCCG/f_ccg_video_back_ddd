@@ -26,15 +26,44 @@ const minJWTSecretLen = 32
 //	use cfg.Site / cfg.Jwt ...
 type Provider struct {
 	config atomic.Pointer[Config]
+	logger atomic.Pointer[zap.Logger]
 	path   string
 }
 
 // NewProvider 用给定配置快照构造 Provider（测试与 CLI 可直接使用）。
 func NewProvider(c *Config) *Provider {
 	p := new(Provider)
+	p.SetLogger(nil)
 	p.Set(c)
 
 	return p
+}
+
+// SetLogger 原子替换热更新监听使用的日志器；nil 会归一化为无输出日志器。
+// 配置必须先于正式日志器加载，因此由组合根在日志器构造完成后显式接入。
+func (p *Provider) SetLogger(logger *zap.Logger) {
+	if p == nil {
+		return
+	}
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	p.logger.Store(logger)
+}
+
+func (p *Provider) log() *zap.Logger {
+	if p == nil {
+		return zap.NewNop()
+	}
+
+	logger := p.logger.Load()
+	if logger == nil {
+		return zap.NewNop()
+	}
+
+	return logger
 }
 
 // Get 返回当前配置快照指针（可能为 nil）。
@@ -104,8 +133,8 @@ func Load(filePath string) (*Provider, error) {
 		panic(fmt.Errorf("config validation error: %w", err))
 	}
 
-	provider := &Provider{path: filePath}
-	provider.Set(c)
+	provider := NewProvider(c)
+	provider.path = filePath
 
 	// 开启热更新监听
 	v.WatchConfig()
@@ -113,11 +142,11 @@ func Load(filePath string) (*Provider, error) {
 		// 稍微等待一下，确保文件写入完成
 		time.Sleep(500 * time.Millisecond)
 
-		zap.L().Info("配置文件热更新", zap.String("filename", e.Name))
+		provider.log().Info("配置文件热更新", zap.String("filename", e.Name))
 
 		// 显式重新读取配置，防止 viper 内部缓存未更新或读取到空文件
 		if err := v.ReadInConfig(); err != nil {
-			zap.L().Error("配置文件热更新读取失败", zap.Error(err))
+			provider.log().Error("配置文件热更新读取失败", zap.Error(err))
 
 			return
 		}
@@ -125,7 +154,7 @@ func Load(filePath string) (*Provider, error) {
 		// 重新读取配置
 		newConf := new(Config)
 		if err := v.Unmarshal(newConf); err != nil {
-			zap.L().Error("配置文件热更新失败", zap.Error(err))
+			provider.log().Error("配置文件热更新失败", zap.Error(err))
 
 			return
 		}
@@ -133,13 +162,13 @@ func Load(filePath string) (*Provider, error) {
 		newConf.Normalize()
 
 		if err := ValidateRequired(newConf); err != nil {
-			zap.L().Error("配置文件热更新校验失败，继续使用上一份有效配置", zap.Error(err))
+			provider.log().Error("配置文件热更新校验失败，继续使用上一份有效配置", zap.Error(err))
 
 			return
 		}
 
 		provider.Set(newConf)
-		zap.L().Info("配置文件热更新成功!")
+		provider.log().Info("配置文件热更新成功!")
 	})
 
 	return provider, nil
