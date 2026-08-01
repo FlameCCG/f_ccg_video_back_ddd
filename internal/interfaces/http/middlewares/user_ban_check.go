@@ -9,7 +9,6 @@ import (
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // UserBanCheck 禁言/封禁校验（用于发视频/评论/弹幕等内容操作）.
@@ -49,15 +48,21 @@ func (m *Middlewares) UserBanCheck() gin.HandlerFunc {
 			// 允许到期自动解封
 			record, err := m.banRecords.Latest(c.Request.Context(), uid)
 			if err == nil && record != nil && record.Status == enum.UserStatusBanned && record.EndAt != nil {
-				if record.EndAt.Before(time.Now()) {
-					// 到期自动解封（状态更新 + write-through 状态缓存）收敛到应用层。
-					if err := m.bans.ReleaseExpired(c.Request.Context(), uid); err != nil {
-						zap.L().Warn("release expired ban failed", zap.Uint("userId", uid), zap.Error(err))
+				now := time.Now()
+				if record.EndAt.Before(now) {
+					unbanned, unbanErr := m.bans.ReleaseExpired(c.Request.Context(), uid, now)
+					if unbanErr != nil {
+						res.FailWithMsg("自动解封失败", c)
+						c.Abort()
+
+						return
 					}
 
-					c.Next()
+					if unbanned {
+						c.Next()
 
-					return
+						return
+					}
 				}
 
 				msg := "账号已被封禁"

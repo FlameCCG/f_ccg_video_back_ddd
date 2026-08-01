@@ -56,15 +56,26 @@ func ResolveTask(opts *Options) Task {
 
 // NeedsDBOnly 报告该任务是否只需要「配置 + 日志 + MySQL」这一层基础设施。
 //
-// 与原实现一致：-db/-vp/-br/-su 在 InitDB 之后、InitES 之前执行，
-// 因此不要求 ES / Redis / Mongo / IPDB / Casbin 在线。
+// -db/-vp 在原 flags.RunDBTasks 中不访问其它基础设施。
 func NeedsDBOnly(task Task) bool {
 	switch task {
-	case TaskMigrateDB, TaskVideoPartitions, TaskBanner, TaskSuperUser:
+	case TaskMigrateDB, TaskVideoPartitions:
 		return true
 	default:
 		return false
 	}
+}
+
+// NeedsStorage 报告任务是否在数据库基础上还需要站点存储驱动。
+// 原 -br 会在任务内部 ResolveDriver，但不会初始化 ES/Redis/Mongo/IPDB/Casbin。
+func NeedsStorage(task Task) bool {
+	return task == TaskBanner
+}
+
+// NeedsCasbin 报告任务是否在数据库基础上还需要 Casbin。
+// 原 -su 仅在自身执行路径按需创建 enforcer，不应让其它早期数据库任务承担该依赖。
+func NeedsCasbin(task Task) bool {
+	return task == TaskSuperUser
 }
 
 // NeedsES 报告该任务是否需要「配置 + 日志 + MySQL + ES」。

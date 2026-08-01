@@ -31,7 +31,7 @@ func (m *Middlewares) ClickCaptchaVerify() gin.HandlerFunc {
 
 		body, err := c.GetRawData()
 		if err != nil {
-			zap.L().Error("read request body failed", zap.Error(err))
+			m.log().Error("read request body failed", zap.Error(err))
 			res.FailWithMsg("invalid request body", c)
 			c.Abort()
 
@@ -42,7 +42,7 @@ func (m *Middlewares) ClickCaptchaVerify() gin.HandlerFunc {
 
 		var req clickCaptchaVerifyReq
 		if err = json.Unmarshal(body, &req); err != nil {
-			zap.L().Error("unmarshal click captcha payload failed", zap.Error(err))
+			m.log().Error("unmarshal click captcha payload failed", zap.Error(err))
 			res.FailWithMsg("invalid captcha payload", c)
 			c.Abort()
 
@@ -62,7 +62,7 @@ func (m *Middlewares) ClickCaptchaVerify() gin.HandlerFunc {
 			case errors.Is(verifyErr, captcha.ErrCaptchaExpired):
 				res.FailWithMsg(captcha.ErrCaptchaExpired.Error(), c)
 			default:
-				zap.L().Error("点击验证码验证失败", zap.Error(verifyErr))
+				m.log().Error("点击验证码验证失败", zap.Error(verifyErr))
 				res.FailWithMsg("验证码验证失败", c)
 			}
 

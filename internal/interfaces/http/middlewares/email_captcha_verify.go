@@ -48,7 +48,7 @@ func (m *Middlewares) emailCaptchaVerify(force bool) gin.HandlerFunc {
 
 		body, err := c.GetRawData()
 		if err != nil {
-			zap.L().Error("read request body failed", zap.Error(err))
+			m.log().Error("read request body failed", zap.Error(err))
 			res.FailWithMsg("invalid request body", c)
 			c.Abort()
 
@@ -59,7 +59,7 @@ func (m *Middlewares) emailCaptchaVerify(force bool) gin.HandlerFunc {
 
 		var req EmailCaptchaVerifyReq
 		if err = c.ShouldBindJSON(&req); err != nil {
-			zap.L().Error("bind email captcha payload failed", zap.Error(err))
+			m.log().Error("bind email captcha payload failed", zap.Error(err))
 			res.FailWithError(err, c)
 			c.Abort()
 
@@ -68,7 +68,7 @@ func (m *Middlewares) emailCaptchaVerify(force bool) gin.HandlerFunc {
 
 		if ok, rateErr := m.allowEmailCaptchaVerify(c, req); rateErr != nil || !ok {
 			if rateErr != nil {
-				zap.L().Warn("email captcha verify rate limit failed", zap.Error(rateErr))
+				m.log().Warn("email captcha verify rate limit failed", zap.Error(rateErr))
 			}
 
 			res.FailWithMsg("验证码验证过于频繁，请稍后再试", c)
@@ -86,7 +86,7 @@ func (m *Middlewares) emailCaptchaVerify(force bool) gin.HandlerFunc {
 		}
 
 		if payload.Email != req.Email {
-			zap.L().Error("email captcha mismatch", zap.String("captchaEmail", payload.Email), zap.String("requestEmail", req.Email))
+			m.log().Error("email captcha mismatch", zap.String("captchaEmail", payload.Email), zap.String("requestEmail", req.Email))
 			res.FailWithMsg("email captcha mismatch", c)
 			c.Abort()
 

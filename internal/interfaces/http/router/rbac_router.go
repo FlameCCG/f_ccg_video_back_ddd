@@ -38,6 +38,8 @@ func registerRbacRoutes(g *gin.RouterGroup, mw *middlewares.Middlewares, h *rbac
 	{
 		authGroup.POST("/menu", middlewares.JsonBindParams[rbachandler.CreateMenuReq], h.CreateMenuView)              // 创建菜单
 		authGroup.PUT("/menu", middlewares.JsonBindParams[rbachandler.UpdateMenuReq], h.UpdateMenuView)               // 更新菜单
+		authGroup.PUT("/menu/move", middlewares.JsonBindParams[rbachandler.MoveMenuReq], h.MoveMenuView)              // 拖拽排序菜单
+		authGroup.POST("/menu/generate", middlewares.JsonBindParams[rbachandler.GenerateMenuReq], h.GenerateMenuView) // AI 生成菜单字段
 		authGroup.DELETE("/menu", h.DeleteMenuView)                                                                   // 删除菜单 ?id=
 		authGroup.POST("/menu/assign", middlewares.JsonBindParams[rbachandler.AssignMenuReq], h.AssignMenuView)       // 分配菜单
 		authGroup.GET("/menus", h.GetMenuListView)                                                                    // 获取所有菜单

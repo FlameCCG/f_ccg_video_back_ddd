@@ -48,6 +48,7 @@ GET     /v1/admin/video/partitions
 GET     /v1/admin/video/report/list
 GET     /v1/admin/video/transcode/progress
 GET     /v1/admin/video/transcode/progress/stream
+GET     /v1/admin/video/vector/status
 GET     /v1/common/ai/assets
 GET     /v1/common/ai/options
 GET     /v1/common/ai/responses/stream
@@ -112,6 +113,7 @@ POST    /v1/admin/banner
 POST    /v1/admin/notification
 POST    /v1/admin/rbac/menu
 POST    /v1/admin/rbac/menu/assign
+POST    /v1/admin/rbac/menu/generate
 POST    /v1/admin/rbac/permission
 POST    /v1/admin/rbac/role
 POST    /v1/admin/rbac/role/assign
@@ -119,6 +121,7 @@ POST    /v1/admin/rbac/role/inherit
 POST    /v1/admin/user/ban
 POST    /v1/admin/user/login/pwd
 POST    /v1/admin/video/partition
+POST    /v1/admin/video/vector/rebuild
 POST    /v1/common/ai/images/edits
 POST    /v1/common/ai/images/generations
 POST    /v1/common/ai/responses
@@ -163,6 +166,7 @@ POST    /v1/common/video/view
 PUT     /v1/admin/banner
 PUT     /v1/admin/notification
 PUT     /v1/admin/rbac/menu
+PUT     /v1/admin/rbac/menu/move
 PUT     /v1/admin/rbac/role
 PUT     /v1/admin/rbac/role/permissions
 PUT     /v1/admin/rbac/user/roles

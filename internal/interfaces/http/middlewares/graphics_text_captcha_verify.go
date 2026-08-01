@@ -29,7 +29,7 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 
 		body, err := c.GetRawData()
 		if err != nil {
-			zap.L().Error("read request body failed", zap.Error(err))
+			m.log().Error("read request body failed", zap.Error(err))
 			res.FailWithMsg("请求体无效", c)
 			c.Abort()
 
@@ -40,7 +40,7 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 
 		var payload CaptchaMiddlewareRequest
 		if err = c.ShouldBind(&payload); err != nil {
-			zap.L().Error("bind graphics captcha payload failed", zap.Error(err))
+			m.log().Error("bind graphics captcha payload failed", zap.Error(err))
 			res.FailWithMsg("图形验证码参数错误", c)
 			c.Abort()
 
@@ -59,7 +59,7 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 		}
 
 		if ok := m.captcha.VerifyGraphic(captchaID, captchaCode); !ok {
-			zap.L().Error("graphics captcha verify failed")
+			m.log().Error("graphics captcha verify failed")
 			res.FailWithMsg("图形验证码错误", c)
 			c.Abort()
 

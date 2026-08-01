@@ -81,7 +81,7 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 
 	uid, username, err := jwts.ParseJwtTokenWithRole(token, m.accessSecret())
 	if err != nil {
-		zap.L().Error("JwtAuth ParseJwtToken failed", zap.Error(err))
+		m.log().Error("JwtAuth ParseJwtToken failed", zap.Error(err))
 		res.FailWithMsg("token无效或已过期", c)
 		c.Abort()
 

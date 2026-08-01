@@ -26,11 +26,16 @@ type MinIOClientPool struct {
 	client     *minio.Client
 	initKey    string // endpoint|accessKey|secretKey|bucket|ssl，配置变更时重新初始化
 	policyOnce sync.Once
+	logger     *zap.Logger
 }
 
 // NewMinIOClientPool 创建 MinIO 客户端缓存。
-func NewMinIOClientPool() *MinIOClientPool {
-	return &MinIOClientPool{}
+func NewMinIOClientPool(logger *zap.Logger) *MinIOClientPool {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &MinIOClientPool{logger: logger}
 }
 
 // minioConfigKey 生成客户端缓存键；配置（含密钥）变更后需要重新建连。
@@ -113,7 +118,7 @@ func (p *MinIOClientPool) applyPublicPolicy(client *minio.Client, cfg *site.MinI
 
 		policy, err := buildPublicPolicy(cfg)
 		if err != nil {
-			zap.L().Warn("build minio policy failed", zap.Error(err))
+			p.logger.Warn("build minio policy failed", zap.Error(err))
 
 			return
 		}
@@ -123,9 +128,9 @@ func (p *MinIOClientPool) applyPublicPolicy(client *minio.Client, cfg *site.MinI
 		}
 
 		if err := client.SetBucketPolicy(ctx, cfg.Bucket, policy); err != nil {
-			zap.L().Warn("set minio bucket policy failed", zap.Error(err))
+			p.logger.Warn("set minio bucket policy failed", zap.Error(err))
 		} else {
-			zap.L().Info("minio bucket policy applied", zap.Strings("prefixes", cfg.PublicPrefixes))
+			p.logger.Info("minio bucket policy applied", zap.Strings("prefixes", cfg.PublicPrefixes))
 		}
 	})
 }

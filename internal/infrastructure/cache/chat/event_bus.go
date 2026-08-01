@@ -21,12 +21,17 @@ const publishTimeout = 2 * time.Second
 // Redis 频道格式 chat:user:{userId} 与原实现完全一致；client 为 nil 时整体降级为单实例模式
 // （只在本进程内派发，不跨实例广播）。
 type EventBus struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 // NewEventBus 构造私信事件总线；redisClient 允许为 nil。
-func NewEventBus(redisClient *redis.Client) *EventBus {
-	return &EventBus{redis: redisClient}
+func NewEventBus(redisClient *redis.Client, logger *zap.Logger) *EventBus {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &EventBus{redis: redisClient, logger: logger}
 }
 
 // Available 报告 Redis 是否可用。
@@ -53,7 +58,7 @@ func (b *EventBus) Publish(ctx context.Context, userID uint, payload []byte) {
 	defer cancel()
 
 	if err := b.redis.Publish(pubCtx, userChannel(userID), payload).Err(); err != nil {
-		zap.L().Warn("publish chat event failed", zap.Error(err), zap.Uint("userId", userID))
+		b.logger.Warn("publish chat event failed", zap.Error(err), zap.Uint("userId", userID))
 	}
 }
 
@@ -85,7 +90,7 @@ func (b *EventBus) Subscribe(userID uint, handler func(payload []byte)) func() {
 			cancel()
 
 			if err := pubsub.Close(); err != nil {
-				zap.L().Warn("close chat redis subscriber failed",
+				b.logger.Warn("close chat redis subscriber failed",
 					zap.Error(err),
 					zap.Uint("userId", userID),
 				)
