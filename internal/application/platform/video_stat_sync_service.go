@@ -13,11 +13,16 @@ const videoStatsSyncBatchSize = 200
 type VideoStatSyncService struct {
 	cache      VideoStatsCache
 	projection VideoStatsProjection
+	logger     *zap.Logger
 }
 
 // NewVideoStatSyncService 构造视频统计回写用例服务。
-func NewVideoStatSyncService(cache VideoStatsCache, projection VideoStatsProjection) *VideoStatSyncService {
-	return &VideoStatSyncService{cache: cache, projection: projection}
+func NewVideoStatSyncService(
+	cache VideoStatsCache,
+	projection VideoStatsProjection,
+	logger *zap.Logger,
+) *VideoStatSyncService {
+	return &VideoStatSyncService{cache: cache, projection: projection, logger: logger}
 }
 
 // Run 将 Redis 中的脏视频统计同步到数据库，按游标分批直到扫描一轮结束。
@@ -26,7 +31,7 @@ func NewVideoStatSyncService(cache VideoStatsCache, projection VideoStatsProject
 // （与原实现一致：loadErr 不中断本批同步）。
 func (s *VideoStatSyncService) Run(ctx context.Context) {
 	if !s.cache.Available() {
-		zap.L().Warn("skip SyncVideoStat: redis not configured")
+		s.logger.Warn("skip SyncVideoStat: redis not configured")
 
 		return
 	}
@@ -41,7 +46,7 @@ func (s *VideoStatSyncService) Run(ctx context.Context) {
 	for {
 		ids, nextCursor, err := s.cache.ScanDirty(ctx, cursor, videoStatsSyncBatchSize)
 		if err != nil {
-			zap.L().Warn("scan dirty video stats failed", zap.Error(err))
+			s.logger.Warn("scan dirty video stats failed", zap.Error(err))
 
 			return
 		}
@@ -49,7 +54,7 @@ func (s *VideoStatSyncService) Run(ctx context.Context) {
 		if len(ids) > 0 {
 			snapshots, loadErr := s.cache.LoadSnapshots(ctx, ids)
 			if loadErr != nil {
-				zap.L().Warn("load dirty video stats failed", zap.Error(loadErr))
+				s.logger.Warn("load dirty video stats failed", zap.Error(loadErr))
 			}
 
 			s.syncSnapshots(ctx, snapshots)
@@ -70,13 +75,13 @@ func (s *VideoStatSyncService) syncSnapshots(ctx context.Context, snapshots []Vi
 		}
 
 		if err := s.projection.PersistStats(ctx, snapshot.VideoID, *snapshot.Stats); err != nil {
-			zap.L().Error("persist video stats failed", zap.Uint("videoId", snapshot.VideoID), zap.Error(err))
+			s.logger.Error("persist video stats failed", zap.Uint("videoId", snapshot.VideoID), zap.Error(err))
 
 			continue
 		}
 
 		if err := s.cache.AckVersion(ctx, snapshot.MemberID, snapshot.Version); err != nil {
-			zap.L().Warn("ack dirty video stats version failed", zap.Uint("videoId", snapshot.VideoID), zap.Error(err))
+			s.logger.Warn("ack dirty video stats version failed", zap.Uint("videoId", snapshot.VideoID), zap.Error(err))
 		}
 	}
 }

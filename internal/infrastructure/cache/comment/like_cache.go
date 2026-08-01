@@ -77,15 +77,21 @@ end
 type LikeCache struct {
 	redis  *redis.Client
 	toggle *redis.Script
+	logger *zap.Logger
 }
 
 var _ app.LikeCache = (*LikeCache)(nil)
 
 // NewLikeCache 构造评论点赞缓存适配器。
-func NewLikeCache(redisClient *redis.Client) *LikeCache {
+func NewLikeCache(redisClient *redis.Client, logger *zap.Logger) *LikeCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	return &LikeCache{
 		redis:  redisClient,
 		toggle: redis.NewScript(toggleLikeScriptSource),
+		logger: logger,
 	}
 }
 
@@ -208,7 +214,7 @@ func (c *LikeCache) Drop(ctx context.Context, commentID uint) {
 		likeCountKey(commentID),
 		likeUserSetKey(commentID),
 	).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		zap.L().Warn("clear comment like cache failed", zap.Uint("commentId", commentID), zap.Error(err))
+		c.logger.Warn("clear comment like cache failed", zap.Uint("commentId", commentID), zap.Error(err))
 	}
 }
 
@@ -261,7 +267,7 @@ func (c *LikeCache) Counts(ctx context.Context, commentIDs []uint) (map[uint]int
 
 	values, err := c.redis.MGet(cacheCtx, keys...).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		zap.L().Warn("fetch comment like count cache failed", zap.Error(err))
+		c.logger.Warn("fetch comment like count cache failed", zap.Error(err))
 
 		return nil, append([]uint(nil), commentIDs...)
 	}
@@ -380,7 +386,7 @@ func (c *LikeCache) LikedFlags(
 	}
 
 	if _, err := pipe2.Exec(cacheCtx); err != nil && !errors.Is(err, redis.Nil) {
-		zap.L().Warn("fetch comment like flags cache failed", zap.Error(err))
+		c.logger.Warn("fetch comment like flags cache failed", zap.Error(err))
 
 		return nil, append([]uint(nil), commentIDs...)
 	}

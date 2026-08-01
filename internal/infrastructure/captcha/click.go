@@ -55,8 +55,19 @@ type ClickCaptcha struct {
 var _ app.ClickCaptchaPort = (*ClickCaptcha)(nil)
 
 // NewClickCaptcha 构造点击验证码适配器。
-func NewClickCaptcha(redisClient *redis.Client, cfgProvider *config.Provider) *ClickCaptcha {
-	return &ClickCaptcha{store: payloadStore{redis: redisClient}, cfgProvider: cfgProvider}
+func NewClickCaptcha(
+	redisClient *redis.Client,
+	cfgProvider *config.Provider,
+	logger *zap.Logger,
+) *ClickCaptcha {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &ClickCaptcha{
+		store:       payloadStore{redis: redisClient, logger: logger},
+		cfgProvider: cfgProvider,
+	}
 }
 
 // Generate 生成点击验证码，并把答案写入 Redis。
@@ -144,7 +155,7 @@ func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.Cl
 
 		// 校验点击是否落在容错范围内
 		if !click.Validate(point.X, point.Y, target.X, target.Y, target.Width, target.Height, padding) {
-			zap.L().Error("点击位置不在答案区域内",
+			c.store.logger.Error("点击位置不在答案区域内",
 				zap.Int("index", point.Index), zap.Int("x", point.X), zap.Int("y", point.Y))
 
 			success = false

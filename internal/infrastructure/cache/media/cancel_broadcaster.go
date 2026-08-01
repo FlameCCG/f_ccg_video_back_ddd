@@ -73,6 +73,7 @@ func (b *CancelBroadcaster) PublishVideoDeleted(ctx context.Context, videoIDs []
 type CancelSubscriber struct {
 	client   *redis.Client
 	registry *domain.TaskRegistry
+	logger   *zap.Logger
 
 	mu      sync.Mutex
 	cancel  context.CancelFunc
@@ -82,8 +83,16 @@ type CancelSubscriber struct {
 }
 
 // NewCancelSubscriber 创建进程级取消事件订阅者。
-func NewCancelSubscriber(client *redis.Client, registry *domain.TaskRegistry) *CancelSubscriber {
-	return &CancelSubscriber{client: client, registry: registry}
+func NewCancelSubscriber(
+	client *redis.Client,
+	registry *domain.TaskRegistry,
+	logger *zap.Logger,
+) *CancelSubscriber {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &CancelSubscriber{client: client, registry: registry, logger: logger}
 }
 
 // Start 在返回前完成订阅，避免消费者启动与监听就绪之间丢事件。
@@ -140,14 +149,14 @@ func (s *CancelSubscriber) run(ctx context.Context, pubsub *redis.PubSub) {
 
 			var event cancelEvent
 			if err := json.Unmarshal([]byte(message.Payload), &event); err != nil {
-				zap.L().Warn("decode transcode cancel event failed", zap.Error(err))
+				s.logger.Warn("decode transcode cancel event failed", zap.Error(err))
 
 				continue
 			}
 
 			canceled := s.registry.CancelVideos(event.VideoIDs)
 			if canceled > 0 {
-				zap.L().Info("remote transcode tasks canceled",
+				s.logger.Info("remote transcode tasks canceled",
 					zap.Int("tasks", canceled),
 					zap.Ints("videoIds", uintsToInts(event.VideoIDs)),
 				)

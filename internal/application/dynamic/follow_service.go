@@ -26,6 +26,7 @@ type FollowService struct {
 	cache    UnreadFollowCountCache
 	tasks    *ctxutil.DetachedTaskGroup
 	countSFG singleflight.Group
+	logger   *zap.Logger
 }
 
 // NewFollowService 构造关注流用例服务。
@@ -34,8 +35,15 @@ func NewFollowService(
 	activity ActivityQuery,
 	cache UnreadFollowCountCache,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *FollowService {
-	return &FollowService{follows: follows, activity: activity, cache: cache, tasks: tasks}
+	return &FollowService{
+		follows:  follows,
+		activity: activity,
+		cache:    cache,
+		tasks:    tasks,
+		logger:   logger,
+	}
 }
 
 // unreadCountKey 未读数的缓存/并发合并键（与原 unreadFollowCountCacheKey 格式一致）。
@@ -210,7 +218,7 @@ func (s *FollowService) refreshUnreadCount(ctx context.Context, userID uint) (in
 func (s *FollowService) refreshUnreadCountAsync(userID uint) {
 	s.tasks.Go(context.TODO(), ctxutil.AsyncQuickTimeout, func(bg context.Context) {
 		if _, err := s.refreshUnreadCount(bg, userID); err != nil {
-			zap.L().Warn("refresh unread follow count failed", zap.Uint("userId", userID), zap.Error(err))
+			s.logger.Warn("refresh unread follow count failed", zap.Uint("userId", userID), zap.Error(err))
 		}
 	})
 }

@@ -49,14 +49,19 @@ return 1
 //
 // Redis key 格式与 TTL 与原实现完全一致（user:status: / user:status:gen:）。
 type UserStatusCache struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 var _ domain.UserStatusCache = (*UserStatusCache)(nil)
 
 // NewUserStatusCache 构造用户状态缓存适配器。
-func NewUserStatusCache(redisClient *redis.Client) *UserStatusCache {
-	return &UserStatusCache{redis: redisClient}
+func NewUserStatusCache(redisClient *redis.Client, logger *zap.Logger) *UserStatusCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &UserStatusCache{redis: redisClient, logger: logger}
 }
 
 func userStatusRedisKey(userID uint) string {
@@ -83,7 +88,7 @@ func (c *UserStatusCache) Load(ctx context.Context, userID uint) (enum.UserStatu
 	raw, err := c.redis.Get(cacheCtx, userStatusRedisKey(userID)).Result()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			zap.L().Warn("get user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+			c.logger.Warn("get user status cache failed", zap.Uint("userId", userID), zap.Error(err))
 		}
 
 		return 0, false
@@ -116,7 +121,7 @@ func (c *UserStatusCache) Generation(ctx context.Context, userID uint) int64 {
 	val, err := c.redis.Get(cacheCtx, userStatusGenRedisKey(userID)).Int64()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			zap.L().Warn("get user status generation failed", zap.Uint("userId", userID), zap.Error(err))
+			c.logger.Warn("get user status generation failed", zap.Uint("userId", userID), zap.Error(err))
 		}
 
 		return 0
@@ -150,13 +155,13 @@ func (c *UserStatusCache) StoreIfGenerationMatch(
 		userStatusRedisKey(userID),
 	}, strconv.FormatInt(expectedGen, 10), strconv.Itoa(int(status)), strconv.Itoa(ttlSeconds)).Int()
 	if err != nil {
-		zap.L().Warn("set user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("set user status cache failed", zap.Uint("userId", userID), zap.Error(err))
 
 		return
 	}
 
 	if ok == 0 {
-		zap.L().Debug("skip user status cache write: generation changed",
+		c.logger.Debug("skip user status cache write: generation changed",
 			zap.Uint("userId", userID), zap.Int64("gen", expectedGen))
 	}
 }
@@ -179,7 +184,7 @@ func (c *UserStatusCache) Write(userID uint, status enum.UserStatus) {
 	pipe.Set(cacheCtx, statusKey, strconv.Itoa(int(status)), userStatusCacheTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		zap.L().Warn("write user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("write user status cache failed", zap.Uint("userId", userID), zap.Error(err))
 	}
 }
 
@@ -201,6 +206,6 @@ func (c *UserStatusCache) Invalidate(userID uint) {
 	pipe.Expire(cacheCtx, genKey, userStatusGenTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		zap.L().Warn("invalidate user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("invalidate user status cache failed", zap.Uint("userId", userID), zap.Error(err))
 	}
 }

@@ -43,6 +43,30 @@ func TestNormalizeAnalysisKeywords(t *testing.T) {
 	}
 }
 
+func TestVideoQueryAnalysisWantsVideoSearch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		analysis VideoQueryAnalysis
+		want     bool
+	}{
+		{name: "explicit find video", analysis: VideoQueryAnalysis{Intent: "find_video"}, want: true},
+		{name: "explicit chat wins", analysis: VideoQueryAnalysis{Intent: "chat", Keywords: []string{"go"}}, want: false},
+		{name: "legacy keywords", analysis: VideoQueryAnalysis{Keywords: []string{"go"}}, want: true},
+		{name: "empty legacy", analysis: VideoQueryAnalysis{}, want: false},
+		{name: "image only intent", analysis: VideoQueryAnalysis{Intent: " FIND_VIDEO "}, want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := test.analysis.WantsVideoSearch(); got != test.want {
+				t.Fatalf("WantsVideoSearch() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestBuildVideoRoute(t *testing.T) {
 	t.Parallel()
 

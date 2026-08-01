@@ -8,8 +8,8 @@ import (
 
 // NewGraphicStore 提供图形验证码存储。
 //
-// 取代原 global.CaptchaStore 包级单例；实现仍为 base64Captcha 的默认内存存储，
-// 行为（容量、过期策略）与原实现完全一致。
+// 取代原 global.CaptchaStore 与依赖库 DefaultMemStore 两层包级单例；
+// 每个应用实例得到独立存储，容量与过期策略仍使用依赖库默认值。
 func NewGraphicStore() app.GraphicCaptchaStore {
-	return base64Captcha.DefaultMemStore
+	return base64Captcha.NewMemoryStore(base64Captcha.GCLimitNumber, base64Captcha.Expiration)
 }

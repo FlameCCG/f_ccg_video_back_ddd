@@ -5,22 +5,6 @@ import (
 	"strings"
 )
 
-// EmbedInput 描述一次多模态向量化输入。
-//
-// 文本与图片可同时给出，方舟 /embeddings/multimodal 会把它们融合成同一个向量，
-// 因此「文本 query」「图片 query」「文本+图片 query」落在同一向量空间，可互相召回。
-type EmbedInput struct {
-	// Text 参与向量化的文本。
-	Text string
-	// ImageURL 支持 http(s) 绝对地址或 data:image/xxx;base64,... 数据 URI。
-	ImageURL string
-}
-
-// IsZero 判断输入是否为空。
-func (in EmbedInput) IsZero() bool {
-	return strings.TrimSpace(in.Text) == "" && strings.TrimSpace(in.ImageURL) == ""
-}
-
 // VideoVectorInput 是构造视频向量文本内容所需的业务字段.
 type VideoVectorInput struct {
 	Title       string

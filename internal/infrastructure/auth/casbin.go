@@ -2,6 +2,8 @@
 package auth
 
 import (
+	"fmt"
+
 	"github.com/casbin/casbin/v2"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
 	"go.uber.org/zap"
@@ -12,24 +14,28 @@ import (
 const casbinModelPath = "conf/rbac_model.conf"
 
 // NewEnforcer 基于 GORM adapter 构建 Casbin SyncedEnforcer 并加载策略。
-// 语义与原 core.InitCasbin 一致：任一步失败均 zap.Fatal。
-func NewEnforcer(db *gorm.DB) *casbin.SyncedEnforcer {
+// 初始化失败向组合根返回错误，由 CLI/server 入口决定退出策略。
+func NewEnforcer(db *gorm.DB, logger *zap.Logger) (*casbin.SyncedEnforcer, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	// 使用 GORM adapter
 	adapter, err := gormadapter.NewAdapterByDB(db)
 	if err != nil {
-		zap.L().Fatal("初始化 Casbin adapter 失败", zap.Error(err))
+		return nil, fmt.Errorf("初始化 Casbin adapter 失败: %w", err)
 	}
 
 	// 加载模型配置文件（matchers 使用内置 globMatch，无需自定义 pathMatch）
 	enforcer, err := casbin.NewSyncedEnforcer(casbinModelPath, adapter)
 	if err != nil {
-		zap.L().Fatal("初始化 Casbin enforcer 失败", zap.Error(err))
+		return nil, fmt.Errorf("初始化 Casbin enforcer 失败: %w", err)
 	}
 
 	// 加载策略
 	if err := enforcer.LoadPolicy(); err != nil {
-		zap.L().Fatal("加载 Casbin 策略失败", zap.Error(err))
+		return nil, fmt.Errorf("加载 Casbin 策略失败: %w", err)
 	}
 
-	return enforcer
+	return enforcer, nil
 }

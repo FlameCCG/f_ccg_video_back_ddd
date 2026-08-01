@@ -14,6 +14,7 @@ const dbPath = "pkg/xdb/ip2region.xdb"
 // 初始化失败时 searcher 为 nil（与原实现一致：仅打错误日志，不阻断启动）。
 type Searcher struct {
 	searcher *xdb.Searcher
+	logger   *zap.Logger
 }
 
 // XDB 返回底层查询器（可能为 nil）。
@@ -26,15 +27,19 @@ func (s *Searcher) XDB() *xdb.Searcher {
 }
 
 // New 打开 ip2region 数据文件。
-func New() *Searcher {
-	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, dbPath)
-	if err != nil {
-		zap.L().Error("初始化ip数据库失败", zap.Error(err))
-
-		return &Searcher{}
+func New(logger *zap.Logger) *Searcher {
+	if logger == nil {
+		logger = zap.NewNop()
 	}
 
-	return &Searcher{searcher: searcher}
+	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, dbPath)
+	if err != nil {
+		logger.Error("初始化ip数据库失败", zap.Error(err))
+
+		return &Searcher{logger: logger}
+	}
+
+	return &Searcher{searcher: searcher, logger: logger}
 }
 
 // Stop 关闭 ip2region 文件句柄。
@@ -53,8 +58,8 @@ func ProvideXDB(s *Searcher) *xdb.Searcher {
 }
 
 // Provide 供 wire 使用的 provider：返回 ip2region 查询器与其资源关闭函数。
-func Provide() (*Searcher, func()) {
-	s := New()
+func Provide(logger *zap.Logger) (*Searcher, func()) {
+	s := New(logger)
 
 	return s, s.Stop
 }

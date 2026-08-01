@@ -76,12 +76,19 @@
 - 背景：原 `core.InitCore` 把 CLI 运维任务夹在基础设施初始化中间
   （`InitDB` → `RunDBTasks` → `InitES` → `RunESTasks` → … → Casbin → `-rs`/`-rbac`），
   任务执行后 `os.Exit`。这意味着 `-db` 不需要 Redis/Mongo/ES 在线。
-- 决策：为运维任务提供三个独立注入器，覆盖范围严格等于原执行点之前已初始化的组件：
-  - `InitializeDBTasks`（config、logger、MySQL）——服务 `-db`/`-vp`/`-br`/`-su`；
-  - `InitializeESTasks`（+ ES）——服务 `-es`；
-  - `InitializeRBACTasks`（+ Redis、Mongo、IPDB、Casbin）——服务 `-rs`/`-rbac`。
-  `cmd/server/main.go` 按原优先级 `db > vp > br > su > es > rs > rbac` 分派，退出码逐一对齐。
-- 影响：CLI 对中间件的依赖范围与退出码与原项目一致。
+- 决策：七个一次性任务各有独立 Wire 注入器，且只构造该任务实际需要的依赖：
+  - `InitializeMigrateDBTask`（`-db`）：config、logger、MySQL；
+  - `InitializeVideoPartitionsTask`（`-vp`）：config、logger、MySQL；
+  - `InitializeBannerTask`（`-br`）：config、logger、MySQL、当前配置选中的存储驱动；
+  - `InitializeSuperUserTask`（`-su`）：config、logger、MySQL、Casbin；
+  - `InitializeESIndexTask`（`-es`）：config、logger、MySQL、Elasticsearch；
+  - `InitializeResourceSyncTask`（`-rs`）：原命令执行点之前的完整基础设施，外加与服务启动
+    共用注册逻辑的真实 HTTP Router；只用空 handler 壳枚举路由，不构造 App、Kafka 或后台组件；
+  - `InitializeRBACInitTask`（`-rbac`）：原命令执行点之前的完整基础设施与 RBAC 初始化用例。
+  `cmd/server/main.go` 严格按 `db > vp > br > su > es > rs > rbac` 选择唯一任务；
+  任务用例只返回 `error`，最终退出由 `main` 统一映射为成功 0、失败 1，并保证 cleanup 可执行。
+- 影响：各命令不会因无关中间件离线而失败；`-rs` 同步的是实际 189 条 Gin 路由，
+  依赖范围、任务优先级、输出与退出语义均与原项目当前工作树一致。
 
 ## D-009 `enum` 作为共享内核置于 `domain/shared/enum`
 
@@ -132,34 +139,33 @@
   规范第 7 节的 DI 验收项是「application/domain 层零 gin 依赖」，本决策不违反该项。
 - 影响：无外部行为变化；领域层保持纯净可测。
 
-## D-014 路由奇偶校验采用「原项目静态提取 + 新项目引擎实测」双侧比对
+## D-014 路由奇偶校验采用双侧 Gin 引擎实测
 
 - 背景：验收要求「分别从新旧两边路由代码提取 method+path 全量清单并 diff，差异为零」。
   原项目目录只读，不能在其中新增测试程序来 dump `engine.Routes()`。
-- 决策：原侧用脚本静态解析 `router/*.go` 的 `Group`/`METHOD` 调用链提取清单
-  （交叉校验：183 处显式注册 + `/uploads` 静态目录的 GET/HEAD 共 185 条，
-  与 `grep` 计数完全吻合）；新侧在 `internal/interfaces/http/router` 内写测试，
-  用 nil handler 构造 `*Router` 并调 `BuildEngine()`，读 `engine.Routes()` 得到真实注册清单，
-  与 `testdata/routes_golden.txt` 逐条比对。比对结果写入 report.md 附录。
-- 影响：新侧清单来自 gin 引擎实测，比静态解析更可信；差异会在 `go test` 中直接失败。
+- 决策：原侧在仓外临时模块中 import 原当前工作树的 public router，构造真实 Gin engine，
+  从 `engine.Routes()` 导出清单；该模块不在原目录生成任何文件，审计后立即删除。
+  新侧在 `internal/interfaces/http/router` 内用 nil handler 构造 `*Router` 并调 `BuildEngine()`，
+  同样读取 `engine.Routes()`，再与 `testdata/routes_golden.txt` 逐条比对。
+  静态扫描仅作为数量交叉检查：187 处显式注册 + `/uploads` 静态目录的 GET/HEAD 共 189 条；
+  其中本轮原工作树增量包含 RBAC 菜单 `generate`/`move` 与视频向量索引 `status`/`rebuild`
+  四条管理端路由。最终清单与散列写入 report.md 附录。
+- 影响：2026-08-01 原磁盘当前工作树与目标仓均为 189 条；两侧清单均来自 Gin 引擎实测，
+  method/path 差异为零，目标侧任何后续漂移都会在 `go test` 中直接失败。
 
-## D-015 迁移源固定为开工基线的只读快照（应对原项目被并发修改）
+## D-015 撤销旧 HEAD 冻结，原磁盘当前工作树是唯一权威基线
 
-- 背景：迁移进行中检测到原项目工作区被本次重构以外的进程修改
-  （`conf/conf_ai.go`、`service/ai_service/{enter.go,types.go}`、
-  `service/search_service/video_vector.go` 被改，并新增
-  `service/ai_service/conversation.go`、
-  `service/search_service/{ark_embedding.go,cover_image.go,video_vector_rebuild.go}`）。
-  规范第 0 节把基线定义为「原项目磁盘当前工作区状态」，而开工时该状态是干净的
-  git HEAD `481e4e35a3f2c3f6e4c6b617aa76a8cfe1152362`（532 个在范围内的 .go 文件）。
-- 决策：
-  1. 迁移源固定为**开工基线**，并用 `git archive HEAD` 导出只读快照到会话临时目录，
-     所有迁移任务改从快照读取，避免读到半成品状态、避免 1:1 校验对着移动目标。
-  2. **绝不**回滚或改写原项目的这些改动——它们可能是他人正在进行的开发成果，
-     规范要求原项目目录零写入，回滚同样属于写入。
-  3. 上述 8 个文件的新内容**明确列为本次交付范围之外**，在 report.md 顶部
-     「基线漂移告警」中完整记录，并给出增量迁移建议。
-- 影响：新仓库对 ai / search 上下文复刻的是基线版本；不影响其余上下文。
+- 背景：旧决策曾把迁移源冻结到开工时的 git HEAD，并把迁移期间出现的修改与未跟踪文件
+  排除在交付范围外。这与规范「以原项目磁盘当前工作区状态为基线」冲突，也会漏掉已落盘的
+  AI、多模态搜索、RBAC、封禁、Feed、转码、River 等有效增量。
+- 决策：旧的 HEAD/`git archive` 冻结与“增量另行迁移”结论自 2026-08-01 起正式撤销。
+  唯一权威输入是原仓 `E:\f_ccg_video_final\f_ccg_video_back` 当日磁盘当前工作树：
+  - 原仓共 43 个 modified，其中 `AGENTS.md` 不在迁移范围；范围内为 **42 modified + 29 untracked**；
+  - 范围内共 **561 个 Go 文件（其中 85 个测试）+ 45 个资产/文档 = 606 项**；
+  - 所有已修改与未跟踪增量均须迁入目标仓并纳入行为、契约和测试验收，不再设置漂移例外。
+  原仓继续绝对只读；只读审计可在隔离副本运行，不得在原目录生成、格式化、提交或清理文件。
+- 影响：目标仓复刻完整的 2026-08-01 当前工作树，而不是旧 HEAD；迁移清单、路由金丝雀、
+  报告和依赖对比都以 606 项基线为准。
 
 ## D-016 继承文档保留原文 + 集中式路径映射表
 
@@ -190,18 +196,29 @@
   验收扫描无需为测试文件开例外。
 - 影响：断言与覆盖范围不变（4 个用例全部保留），领域层依赖方向更干净。
 
-## D-018 `pkg/validate` 的包级 translator 与 `init()` 属平移件，保持原样
+## D-018 `pkg/validate` 使用注入式 Translator，取消 `init()` 与包级翻译器
 
-- 背景：规范禁止包级可变单例与 `init()` 里做业务装配。
-  `pkg/validate` 有 `var trans ut.Translator` 与一个 `init()`，在其中注册
-  gin binding 校验器的中文翻译与 `label` tag 名解析。
-- 决策：**原样平移，不改造**。理由：
-  1. 它注册的是 `gin/binding.Validator` 这个**库自身的全局校验器**——
-     翻译器必须与该全局校验器同生命周期，改成注入式无法生效；
-  2. `init()` 里没有任何业务装配，只有第三方库的本地化配置，
-     不构成规范所禁止的「service locator / 业务单例」；
-  3. 错误消息格式（`json---label` 拆分）属于外部契约，任何改造都有回归风险；
-  4. 规范第 1 节明确「与业务无关的工具代码不要为了 DDD 而重写，直接平移」。
-- 影响：`pkg/validate/enter.go` 与原项目逐字一致。验收项「除 bootstrap 外无包级可变单例」
-  按「业务状态单例」口径判定：全仓库除本项（第三方库本地化）外，
-  其余包级 `var` 均为不可变查表 / 正则 / 错误哨兵 / Lua 脚本 / 编译期断言。
+- 背景：旧平移方案保留了包级 `ut.Translator` 与 `init()`，虽然错误文案正确，仍违反
+  「无包级可变单例、无隐式装配」硬约束，也让翻译器的创建与请求使用点不可见。
+- 决策：`validate.New()` 显式创建 `*validate.Translator`，注册既有中文翻译与
+  `json---label` tag 解析；Wire 把同一实例注入 `router.Router`，Router 挂载其 middleware，
+  middleware 再把实例放入请求上下文，handler 的统一错误响应从当前请求显式取得翻译器。
+  包内不再声明可变 translator，也不再用 `init()` 装配。
+- 影响：中文校验文案、字段 label 拆分、分号拼接及非校验错误的“请求参数错误”回退契约不变；
+  初始化顺序可见、翻译器实例可注入测试，生产代码扫描中 `func init()` 与全局 translator 均为零。
+
+## D-019 ProviderSet 按依赖方向划分，接口绑定留在组合根
+
+- 背景：每个限界上下文需要可复用的 Wire provider 集，但若 application 为了声明
+  `wire.Bind(domain.Port, infrastructure.Impl)` 而 import infrastructure，会形成
+  `application → infrastructure` 反向依赖，破坏 `interfaces → application → domain`
+  与 `infrastructure → domain/application port` 的硬方向。
+- 决策：
+  1. 每个 `internal/application/<ctx>` 导出自己的 `ProviderSet`，**只包含该应用包的构造器**；
+  2. logger、MySQL、Mongo、Redis、ES、MQ、storage、auth、IPDB 等基础设施技术包各自导出
+     `ProviderSet`，只聚合本技术包的 provider；
+  3. `domain/application port → infrastructure implementation` 的 `wire.Bind`、仓储/缓存/外部适配器
+     构造器，以及跨上下文 DTO 转换适配器，统一留在 `internal/bootstrap` 的 adapter/context sets；
+  4. `wire.go` 只声明完整 App 与七个 CLI 注入器，生成的 `wire_gen.go` 提交但禁止手改。
+- 影响：ProviderSet 可按上下文与技术能力复用，同时 application/domain 不反向依赖 infrastructure；
+  所有具体实现选择集中在组合根，依赖图可由 `wire check` 在编译期验证。

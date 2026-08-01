@@ -14,6 +14,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/glebarez/sqlite"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -118,7 +119,11 @@ func TestSyncVideoStatUpdatesOnlyDirtyEntries(t *testing.T) {
 		t.Fatalf("seed dirty set failed: %v", err)
 	}
 
-	service := app.NewVideoStatSyncService(NewVideoStatsCache(redisClient), NewVideoStatsProjection(db))
+	service := app.NewVideoStatSyncService(
+		NewVideoStatsCache(redisClient, zap.NewNop()),
+		NewVideoStatsProjection(db),
+		zap.NewNop(),
+	)
 	service.Run(context.Background())
 
 	var updated po.Video
@@ -153,7 +158,7 @@ func TestAckDirtyVideoStatsVersionKeepsDirtyOnVersionMismatch(t *testing.T) {
 		t.Fatalf("seed redis version failed: %v", err)
 	}
 
-	cache := NewVideoStatsCache(redisClient)
+	cache := NewVideoStatsCache(redisClient, zap.NewNop())
 	if err := cache.AckVersion(context.Background(), "8", 1); err != nil {
 		t.Fatalf("ack dirty version failed: %v", err)
 	}
@@ -189,6 +194,7 @@ func TestSyncCommentLikeRecoversProcessingQueue(t *testing.T) {
 		gormx.NewTxManager(db),
 		NewCommentLikeQueue(redisClient),
 		NewCommentLikeProjection(db),
+		zap.NewNop(),
 	)
 	service.Run(context.Background())
 

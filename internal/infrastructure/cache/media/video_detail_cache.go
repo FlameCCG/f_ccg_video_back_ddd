@@ -26,14 +26,19 @@ const (
 // 改为 Del meta + bump generation，由读路径重建；generation 阻止在途旧 DB 快照 CAS 回填。
 // 这些 key 属于 video 上下文，原实现同样在 mq_service 内直接操作（避免包循环依赖）。
 type VideoDetailCache struct {
-	redis *redis.Client
+	redis  *redis.Client
+	logger *zap.Logger
 }
 
 var _ domain.VideoDetailCacheInvalidator = (*VideoDetailCache)(nil)
 
 // NewVideoDetailCache 构造视频详情缓存失效适配器。
-func NewVideoDetailCache(redisClient *redis.Client) *VideoDetailCache {
-	return &VideoDetailCache{redis: redisClient}
+func NewVideoDetailCache(redisClient *redis.Client, logger *zap.Logger) *VideoDetailCache {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &VideoDetailCache{redis: redisClient, logger: logger}
 }
 
 // InvalidateVideoDetailMeta 删除详情 meta 缓存并 bump generation。
@@ -61,7 +66,7 @@ func (c *VideoDetailCache) InvalidateVideoDetailMeta(ctx context.Context, videoI
 	pipe.Expire(cacheCtx, genKey, videoDetailMetaGenTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		zap.L().Warn("invalidate video detail meta cache failed",
+		c.logger.Warn("invalidate video detail meta cache failed",
 			zap.Error(err),
 			zap.Uint("videoId", videoID),
 		)

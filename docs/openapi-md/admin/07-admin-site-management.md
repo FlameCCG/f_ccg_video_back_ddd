@@ -34,6 +34,10 @@ Base URL：/v1
 | data.daily.visitUsers.x | array<string> | - |
 | data.daily.visitUsers.values | array<integer(int64)> | - |
 | data.daily.visitUsers.rates | array<number(float)> | - |
+| data.daily.loginUsers | TrendSeries | - |
+| data.daily.loginUsers.x | array<string> | - |
+| data.daily.loginUsers.values | array<integer(int64)> | - |
+| data.daily.loginUsers.rates | array<number(float)> | - |
 | data.daily.publishVideos | TrendSeries | - |
 | data.daily.publishVideos.x | array<string> | - |
 | data.daily.publishVideos.values | array<integer(int64)> | - |
@@ -64,6 +68,11 @@ Base URL：/v1
     },
     "daily": {
       "visitUsers": {
+        "x": ["2024-06-01"],
+        "values": [1],
+        "rates": [0.5]
+      },
+      "loginUsers": {
         "x": ["2024-06-01"],
         "values": [1],
         "rates": [0.5]

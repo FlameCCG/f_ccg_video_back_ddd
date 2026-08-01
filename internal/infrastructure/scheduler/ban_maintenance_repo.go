@@ -27,8 +27,9 @@ func NewBanMaintenanceRepository(db *gorm.DB) *BanMaintenanceRepository {
 
 // expiredBanRow 到期封禁查询的扫描行。
 type expiredBanRow struct {
-	UserID uint       `gorm:"column:user_id"`
-	EndAt  *time.Time `gorm:"column:end_at"`
+	RecordID uint       `gorm:"column:record_id"`
+	UserID   uint       `gorm:"column:user_id"`
+	EndAt    *time.Time `gorm:"column:end_at"`
 }
 
 // ListExpiredBans 查询每个用户最新一条封禁记录中已到期、且用户仍处于封禁态的条目。
@@ -45,12 +46,15 @@ func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time
 	var rows []expiredBanRow
 	if err := db.
 		Table("user_ban_records as r").
-		Select("r.user_id, r.end_at").
+		Select("r.id as record_id, r.user_id, r.end_at").
 		Joins("JOIN users u ON u.id = r.user_id").
 		Where("r.id IN (?)", subQuery).
 		Where(
-			"u.status = ? AND r.status = ? AND r.end_at IS NOT NULL AND r.end_at <= ?",
-			enum.UserStatusBanned, enum.UserStatusBanned, now,
+			"u.status = ? AND r.status = ? AND r.is_unbanned = ? AND r.end_at IS NOT NULL AND r.end_at <= ?",
+			enum.UserStatusBanned,
+			enum.UserStatusBanned,
+			false,
+			now,
 		).
 		Scan(&rows).Error; err != nil {
 		return nil, err
@@ -58,7 +62,11 @@ func (r *BanMaintenanceRepository) ListExpiredBans(ctx context.Context, now time
 
 	expired := make([]domain.ExpiredBan, 0, len(rows))
 	for _, row := range rows {
-		expired = append(expired, domain.ExpiredBan{UserID: row.UserID, EndAt: row.EndAt})
+		expired = append(expired, domain.ExpiredBan{
+			RecordID: row.RecordID,
+			UserID:   row.UserID,
+			EndAt:    row.EndAt,
+		})
 	}
 
 	return expired, nil
@@ -76,23 +84,14 @@ func (r *BanMaintenanceRepository) ActivateBannedUsers(ctx context.Context, user
 		Update("status", enum.UserStatusActive).Error
 }
 
-// CreateUnbanRecords 批量补写解封记录。
-func (r *BanMaintenanceRepository) CreateUnbanRecords(ctx context.Context, records []domain.UnbanRecord) error {
-	if len(records) == 0 {
+// MarkBanRecordsUnbanned 批量标记原封禁记录已解封。
+func (r *BanMaintenanceRepository) MarkBanRecordsUnbanned(ctx context.Context, recordIDs []uint) error {
+	if len(recordIDs) == 0 {
 		return nil
 	}
 
-	rows := make([]po.UserBanRecord, 0, len(records))
-	for _, record := range records {
-		rows = append(rows, po.UserBanRecord{
-			UserID:     record.UserID,
-			Status:     record.Status,
-			Reason:     record.Reason,
-			Days:       record.Days,
-			StartAt:    record.StartAt,
-			OperatorID: record.OperatorID,
-		})
-	}
-
-	return gormx.DB(ctx, r.db).Create(&rows).Error
+	return gormx.DB(ctx, r.db).
+		Model(&po.UserBanRecord{}).
+		Where("id IN ?", recordIDs).
+		Update("is_unbanned", true).Error
 }

@@ -1,10 +1,10 @@
 # 迁移逐文件核对表
 
 > 唯一进度事实来源。每个 commit 必须同步更新本文件。
-> `- [ ]` = pending，`- [x] ` = done。验收要求：0 个 pending。
+> `- [ ]` = pending，`- [x]` = done。验收要求：0 个 pending。
 > 箭头右侧为目标落点（规划值，落地后校正为实际路径）。
 
-统计：共 577 个待迁移条目，其中 .go 文件 532 个（含 _test.go 68 个），资产/文档 45 个。
+统计：共 606 个待迁移条目，其中 .go 文件 561 个（含 _test.go 85 个），资产/文档 45 个。
 
 ## (根目录)
 
@@ -15,77 +15,77 @@
 - [x] `docker-compose.yaml` → 仓库根目录（原样复制）
 - [x] `go.mod` → 仓库根目录（原样复制）
 - [x] `go.sum` → 仓库根目录（原样复制）
-- [ ] `main.go` → cmd/server
+- [x] `main.go` → cmd/server
 
 ## api
 
-- [ ] `api/enter.go` → interfaces/http/router
+- [x] `api/enter.go` → interfaces/http/router
 
 ## api/ai_api
 
-- [ ] `api/ai_api/assets.go` → interfaces/http/handler/ai
-- [ ] `api/ai_api/enter.go` → interfaces/http/handler/ai
-- [ ] `api/ai_api/helpers.go` → interfaces/http/handler/ai
-- [ ] `api/ai_api/images.go` → interfaces/http/handler/ai
-- [ ] `api/ai_api/options.go` → interfaces/http/handler/ai
-- [ ] `api/ai_api/responses.go` → interfaces/http/handler/ai
-- [ ] `api/ai_api/videos.go` → interfaces/http/handler/ai
+- [x] `api/ai_api/assets.go` → interfaces/http/handler/ai
+- [x] `api/ai_api/enter.go` → interfaces/http/handler/ai
+- [x] `api/ai_api/helpers.go` → interfaces/http/handler/ai
+- [x] `api/ai_api/images.go` → interfaces/http/handler/ai
+- [x] `api/ai_api/options.go` → interfaces/http/handler/ai
+- [x] `api/ai_api/responses.go` → interfaces/http/handler/ai
+- [x] `api/ai_api/videos.go` → interfaces/http/handler/ai
 
 ## api/banner_api
 
-- [ ] `api/banner_api/admin_create.go` → interfaces/http/handler/contentops
-- [ ] `api/banner_api/admin_delete.go` → interfaces/http/handler/contentops
-- [ ] `api/banner_api/admin_list.go` → interfaces/http/handler/contentops
-- [ ] `api/banner_api/admin_update.go` → interfaces/http/handler/contentops
-- [ ] `api/banner_api/enter.go` → interfaces/http/handler/contentops
-- [ ] `api/banner_api/helper.go` → interfaces/http/handler/contentops
-- [ ] `api/banner_api/list.go` → interfaces/http/handler/contentops
+- [x] `api/banner_api/admin_create.go` → interfaces/http/handler/contentops
+- [x] `api/banner_api/admin_delete.go` → interfaces/http/handler/contentops
+- [x] `api/banner_api/admin_list.go` → interfaces/http/handler/contentops
+- [x] `api/banner_api/admin_update.go` → interfaces/http/handler/contentops
+- [x] `api/banner_api/enter.go` → interfaces/http/handler/contentops
+- [x] `api/banner_api/helper.go` → interfaces/http/handler/contentops
+- [x] `api/banner_api/list.go` → interfaces/http/handler/contentops
 
 ## api/captcha_api
 
-- [ ] `api/captcha_api/click_captcha.go` → interfaces/http/handler/identity
-- [ ] `api/captcha_api/email_captcha.go` → interfaces/http/handler/identity
-- [ ] `api/captcha_api/email_captcha_test.go` → interfaces/http/handler/identity
-- [ ] `api/captcha_api/enter.go` → interfaces/http/handler/identity
-- [ ] `api/captcha_api/graphics_text_captcha.go` → interfaces/http/handler/identity
-- [ ] `api/captcha_api/slide_captcha.go` → interfaces/http/handler/identity
+- [x] `api/captcha_api/click_captcha.go` → interfaces/http/handler/identity
+- [x] `api/captcha_api/email_captcha.go` → interfaces/http/handler/identity
+- [x] `api/captcha_api/email_captcha_test.go` → interfaces/http/handler/identity
+- [x] `api/captcha_api/enter.go` → interfaces/http/handler/identity
+- [x] `api/captcha_api/graphics_text_captcha.go` → interfaces/http/handler/identity
+- [x] `api/captcha_api/slide_captcha.go` → interfaces/http/handler/identity
 
 ## api/chat_api
 
-- [ ] `api/chat_api/conversations.go` → interfaces/http/handler/chat
-- [ ] `api/chat_api/create_conversation.go` → interfaces/http/handler/chat
-- [ ] `api/chat_api/delete_conversation.go` → interfaces/http/handler/chat
-- [ ] `api/chat_api/enter.go` → interfaces/http/handler/chat
-- [ ] `api/chat_api/messages.go` → interfaces/http/handler/chat
-- [ ] `api/chat_api/read.go` → interfaces/http/handler/chat
-- [ ] `api/chat_api/ws.go` → interfaces/http/handler/chat
+- [x] `api/chat_api/conversations.go` → interfaces/http/handler/chat
+- [x] `api/chat_api/create_conversation.go` → interfaces/http/handler/chat
+- [x] `api/chat_api/delete_conversation.go` → interfaces/http/handler/chat
+- [x] `api/chat_api/enter.go` → interfaces/http/handler/chat
+- [x] `api/chat_api/messages.go` → interfaces/http/handler/chat
+- [x] `api/chat_api/read.go` → interfaces/http/handler/chat
+- [x] `api/chat_api/ws.go` → interfaces/http/handler/chat
 
 ## api/comment_api
 
-- [ ] `api/comment_api/admin_delete.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/admin_list.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/create.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/creator_list.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/delete.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/enter.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/like.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/list.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/pin.go` → interfaces/http/handler/comment
-- [ ] `api/comment_api/replies.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/admin_delete.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/admin_list.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/create.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/creator_list.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/delete.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/enter.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/like.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/list.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/pin.go` → interfaces/http/handler/comment
+- [x] `api/comment_api/replies.go` → interfaces/http/handler/comment
 
 ## api/dynamic_api
 
-- [ ] `api/dynamic_api/admin_delete.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/admin_list.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/counts.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/create.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/delete.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/enter.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/follows.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/like.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/list.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/pin.go` → interfaces/http/handler/dynamic
-- [ ] `api/dynamic_api/read.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/admin_delete.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/admin_list.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/counts.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/create.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/delete.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/enter.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/follows.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/like.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/list.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/pin.go` → interfaces/http/handler/dynamic
+- [x] `api/dynamic_api/read.go` → interfaces/http/handler/dynamic
 
 ## api/notification_api
 
@@ -100,163 +100,163 @@
 
 ## api/rbac_api
 
-- [ ] `api/rbac_api/add_permission.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/assign_menu.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/assign_role.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/create_menu.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/create_role.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/delete_menu.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/delete_role.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/enter.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/menu_list.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/permission_helpers.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/permission_helpers_test.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/remove_menu.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/remove_permission.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/remove_role.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/resources.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_inherit.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_inherit_helpers.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_inherit_helpers_test.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_inherit_list.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_inherit_tree.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_list.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_menu_helper.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_menus.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/role_permissions.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/update_menu.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/update_role.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/update_role_permissions.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/update_user_roles.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/user_menus.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/user_permissions.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/user_roles.go` → interfaces/http/handler/rbac
-- [ ] `api/rbac_api/wildcard_list.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/add_permission.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/assign_menu.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/assign_role.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/create_menu.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/create_role.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/delete_menu.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/delete_role.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/enter.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/menu_list.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/permission_helpers.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/permission_helpers_test.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/remove_menu.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/remove_permission.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/remove_role.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/resources.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_inherit.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_inherit_helpers.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_inherit_helpers_test.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_inherit_list.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_inherit_tree.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_list.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_menu_helper.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_menus.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/role_permissions.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/update_menu.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/update_role.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/update_role_permissions.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/update_user_roles.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/user_menus.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/user_permissions.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/user_roles.go` → interfaces/http/handler/rbac
+- [x] `api/rbac_api/wildcard_list.go` → interfaces/http/handler/rbac
 
 ## api/site_api
 
-- [ ] `api/site_api/admin_config.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/admin_config_test.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/admin_cors_normalize_test.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/admin_stats.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/enter.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/github_url.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/google_url.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/google_url_test.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/linuxdo_url.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/oauth_state_test.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/qq_url.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/stat_heartbeat.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/stat_touch.go` → interfaces/http/handler/contentops
-- [ ] `api/site_api/x_url.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/admin_config.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/admin_config_test.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/admin_cors_normalize_test.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/admin_stats.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/enter.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/github_url.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/google_url.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/google_url_test.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/linuxdo_url.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/oauth_state_test.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/qq_url.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/stat_heartbeat.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/stat_touch.go` → interfaces/http/handler/contentops
+- [x] `api/site_api/x_url.go` → interfaces/http/handler/contentops
 
 ## api/social_api
 
-- [ ] `api/social_api/enter.go` → interfaces/http/handler/social
-- [ ] `api/social_api/fans_list.go` → interfaces/http/handler/social
-- [ ] `api/social_api/focus_list.go` → interfaces/http/handler/social
-- [ ] `api/social_api/focus_status.go` → interfaces/http/handler/social
-- [ ] `api/social_api/focus_user.go` → interfaces/http/handler/social
-- [ ] `api/social_api/unfocus_user.go` → interfaces/http/handler/social
+- [x] `api/social_api/enter.go` → interfaces/http/handler/social
+- [x] `api/social_api/fans_list.go` → interfaces/http/handler/social
+- [x] `api/social_api/focus_list.go` → interfaces/http/handler/social
+- [x] `api/social_api/focus_status.go` → interfaces/http/handler/social
+- [x] `api/social_api/focus_user.go` → interfaces/http/handler/social
+- [x] `api/social_api/unfocus_user.go` → interfaces/http/handler/social
 
 ## api/user_api
 
-- [ ] `api/user_api/admin_ban.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/admin_ban_records.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/admin_info.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/admin_list.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/admin_pwd_login.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/admin_update_user_info.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/bind_email.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/change_password.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/change_password_test.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/coin_records.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/create_tag.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/creator_analytics.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/delete_video.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/enter.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/exp_records.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/github_login.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/google_login.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/linuxdo_login.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/login_async.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/login_ip_records.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/mention_suggest.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/oauth_email_test.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/oauth_login_helper.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/oauth_state_test.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/pwd_login.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/qq_login.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/recent_actions.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/refresh_token.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/register.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/reset_password.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/search_user.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/switch_role.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/update_user_info.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/upload_banner.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_banner_helper.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_banner_setting.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_banner_setting_test.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_conf.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_default_banner.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_detail.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_info.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_like_tags_helper.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/user_videos.go` → interfaces/http/handler/identity
-- [ ] `api/user_api/x_login.go` → interfaces/http/handler/identity
+- [x] `api/user_api/admin_ban.go` → interfaces/http/handler/identity
+- [x] `api/user_api/admin_ban_records.go` → interfaces/http/handler/identity
+- [x] `api/user_api/admin_info.go` → interfaces/http/handler/identity
+- [x] `api/user_api/admin_list.go` → interfaces/http/handler/identity
+- [x] `api/user_api/admin_pwd_login.go` → interfaces/http/handler/identity
+- [x] `api/user_api/admin_update_user_info.go` → interfaces/http/handler/identity
+- [x] `api/user_api/bind_email.go` → interfaces/http/handler/identity
+- [x] `api/user_api/change_password.go` → interfaces/http/handler/identity
+- [x] `api/user_api/change_password_test.go` → interfaces/http/handler/identity
+- [x] `api/user_api/coin_records.go` → interfaces/http/handler/identity
+- [x] `api/user_api/create_tag.go` → interfaces/http/handler/identity
+- [x] `api/user_api/creator_analytics.go` → interfaces/http/handler/identity
+- [x] `api/user_api/delete_video.go` → interfaces/http/handler/identity
+- [x] `api/user_api/enter.go` → interfaces/http/handler/identity
+- [x] `api/user_api/exp_records.go` → interfaces/http/handler/identity
+- [x] `api/user_api/github_login.go` → interfaces/http/handler/identity
+- [x] `api/user_api/google_login.go` → interfaces/http/handler/identity
+- [x] `api/user_api/linuxdo_login.go` → interfaces/http/handler/identity
+- [x] `api/user_api/login_async.go` → interfaces/http/handler/identity
+- [x] `api/user_api/login_ip_records.go` → interfaces/http/handler/identity
+- [x] `api/user_api/mention_suggest.go` → interfaces/http/handler/identity
+- [x] `api/user_api/oauth_email_test.go` → interfaces/http/handler/identity
+- [x] `api/user_api/oauth_login_helper.go` → interfaces/http/handler/identity
+- [x] `api/user_api/oauth_state_test.go` → interfaces/http/handler/identity
+- [x] `api/user_api/pwd_login.go` → interfaces/http/handler/identity
+- [x] `api/user_api/qq_login.go` → interfaces/http/handler/identity
+- [x] `api/user_api/recent_actions.go` → interfaces/http/handler/identity
+- [x] `api/user_api/refresh_token.go` → interfaces/http/handler/identity
+- [x] `api/user_api/register.go` → interfaces/http/handler/identity
+- [x] `api/user_api/reset_password.go` → interfaces/http/handler/identity
+- [x] `api/user_api/search_user.go` → interfaces/http/handler/identity
+- [x] `api/user_api/switch_role.go` → interfaces/http/handler/identity
+- [x] `api/user_api/update_user_info.go` → interfaces/http/handler/identity
+- [x] `api/user_api/upload_banner.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_banner_helper.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_banner_setting.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_banner_setting_test.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_conf.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_default_banner.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_detail.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_info.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_like_tags_helper.go` → interfaces/http/handler/identity
+- [x] `api/user_api/user_videos.go` → interfaces/http/handler/identity
+- [x] `api/user_api/x_login.go` → interfaces/http/handler/identity
 
 ## api/video_api
 
-- [ ] `api/video_api/admin_delete.go` → interfaces/http/handler/video
-- [ ] `api/video_api/admin_detail.go` → interfaces/http/handler/video
-- [ ] `api/video_api/admin_list.go` → interfaces/http/handler/video
-- [ ] `api/video_api/admin_report_handle.go` → interfaces/http/handler/video
-- [ ] `api/video_api/admin_report_list.go` → interfaces/http/handler/video
-- [ ] `api/video_api/admin_restore.go` → interfaces/http/handler/video
-- [ ] `api/video_api/admin_review.go` → interfaces/http/handler/video
-- [ ] `api/video_api/coin.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_admin_delete.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_admin_list.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_creator_list.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_delete.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_history.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_like.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_report.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_room_list.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_send.go` → interfaces/http/handler/video
-- [ ] `api/video_api/danmu_ws.go` → interfaces/http/handler/video
-- [ ] `api/video_api/detail.go` → interfaces/http/handler/video
-- [ ] `api/video_api/enter.go` → interfaces/http/handler/video
-- [ ] `api/video_api/favorite.go` → interfaces/http/handler/video
-- [ ] `api/video_api/folder_create.go` → interfaces/http/handler/video
-- [ ] `api/video_api/folder_delete.go` → interfaces/http/handler/video
-- [ ] `api/video_api/folder_list.go` → interfaces/http/handler/video
-- [ ] `api/video_api/folder_videos.go` → interfaces/http/handler/video
-- [ ] `api/video_api/helpers.go` → interfaces/http/handler/video
-- [ ] `api/video_api/history.go` → interfaces/http/handler/video
-- [ ] `api/video_api/home.go` → interfaces/http/handler/video
-- [ ] `api/video_api/hot.go` → interfaces/http/handler/video
-- [ ] `api/video_api/like.go` → interfaces/http/handler/video
-- [ ] `api/video_api/partition_admin.go` → interfaces/http/handler/video
-- [ ] `api/video_api/partitions.go` → interfaces/http/handler/video
-- [ ] `api/video_api/publish.go` → interfaces/http/handler/video
-- [ ] `api/video_api/publish_private_test.go` → interfaces/http/handler/video
-- [ ] `api/video_api/publish_resource_test.go` → interfaces/http/handler/video
-- [ ] `api/video_api/rank.go` → interfaces/http/handler/video
-- [ ] `api/video_api/recommend.go` → interfaces/http/handler/video
-- [ ] `api/video_api/report.go` → interfaces/http/handler/video
-- [ ] `api/video_api/search_hot.go` → interfaces/http/handler/video
-- [ ] `api/video_api/search_video.go` → interfaces/http/handler/video
-- [ ] `api/video_api/transcode_progress.go` → interfaces/http/handler/video
-- [ ] `api/video_api/triple.go` → interfaces/http/handler/video
-- [ ] `api/video_api/update.go` → interfaces/http/handler/video
-- [ ] `api/video_api/upload_chunk.go` → interfaces/http/handler/video
-- [ ] `api/video_api/upload_complete.go` → interfaces/http/handler/video
-- [ ] `api/video_api/upload_cover.go` → interfaces/http/handler/video
-- [ ] `api/video_api/upload_cover_test.go` → interfaces/http/handler/video
-- [ ] `api/video_api/upload_status.go` → interfaces/http/handler/video
-- [ ] `api/video_api/view.go` → interfaces/http/handler/video
+- [x] `api/video_api/admin_delete.go` → interfaces/http/handler/video
+- [x] `api/video_api/admin_detail.go` → interfaces/http/handler/video
+- [x] `api/video_api/admin_list.go` → interfaces/http/handler/video
+- [x] `api/video_api/admin_report_handle.go` → interfaces/http/handler/video
+- [x] `api/video_api/admin_report_list.go` → interfaces/http/handler/video
+- [x] `api/video_api/admin_restore.go` → interfaces/http/handler/video
+- [x] `api/video_api/admin_review.go` → interfaces/http/handler/video
+- [x] `api/video_api/coin.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_admin_delete.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_admin_list.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_creator_list.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_delete.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_history.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_like.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_report.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_room_list.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_send.go` → interfaces/http/handler/video
+- [x] `api/video_api/danmu_ws.go` → interfaces/http/handler/video
+- [x] `api/video_api/detail.go` → interfaces/http/handler/video
+- [x] `api/video_api/enter.go` → interfaces/http/handler/video
+- [x] `api/video_api/favorite.go` → interfaces/http/handler/video
+- [x] `api/video_api/folder_create.go` → interfaces/http/handler/video
+- [x] `api/video_api/folder_delete.go` → interfaces/http/handler/video
+- [x] `api/video_api/folder_list.go` → interfaces/http/handler/video
+- [x] `api/video_api/folder_videos.go` → interfaces/http/handler/video
+- [x] `api/video_api/helpers.go` → interfaces/http/handler/video
+- [x] `api/video_api/history.go` → interfaces/http/handler/video
+- [x] `api/video_api/home.go` → interfaces/http/handler/video
+- [x] `api/video_api/hot.go` → interfaces/http/handler/video
+- [x] `api/video_api/like.go` → interfaces/http/handler/video
+- [x] `api/video_api/partition_admin.go` → interfaces/http/handler/video
+- [x] `api/video_api/partitions.go` → interfaces/http/handler/video
+- [x] `api/video_api/publish.go` → interfaces/http/handler/video
+- [x] `api/video_api/publish_private_test.go` → interfaces/http/handler/video
+- [x] `api/video_api/publish_resource_test.go` → interfaces/http/handler/video
+- [x] `api/video_api/rank.go` → interfaces/http/handler/video
+- [x] `api/video_api/recommend.go` → interfaces/http/handler/video
+- [x] `api/video_api/report.go` → interfaces/http/handler/video
+- [x] `api/video_api/search_hot.go` → interfaces/http/handler/video
+- [x] `api/video_api/search_video.go` → interfaces/http/handler/video
+- [x] `api/video_api/transcode_progress.go` → interfaces/http/handler/video
+- [x] `api/video_api/triple.go` → interfaces/http/handler/video
+- [x] `api/video_api/update.go` → interfaces/http/handler/video
+- [x] `api/video_api/upload_chunk.go` → interfaces/http/handler/video
+- [x] `api/video_api/upload_complete.go` → interfaces/http/handler/video
+- [x] `api/video_api/upload_cover.go` → interfaces/http/handler/video
+- [x] `api/video_api/upload_cover_test.go` → interfaces/http/handler/video
+- [x] `api/video_api/upload_status.go` → interfaces/http/handler/video
+- [x] `api/video_api/view.go` → interfaces/http/handler/video
 
 ## conf
 
@@ -291,21 +291,21 @@
 
 ## core
 
-- [ ] `core/enter.go` → bootstrap + infrastructure
-- [ ] `core/graceful_stop.go` → bootstrap + infrastructure
-- [ ] `core/graceful_stop_test.go` → bootstrap + infrastructure
+- [x] `core/enter.go` → bootstrap + infrastructure
+- [x] `core/graceful_stop.go` → bootstrap + infrastructure
+- [x] `core/graceful_stop_test.go` → bootstrap + infrastructure
 - [x] `core/init_casbin.go` → internal/infrastructure/auth/casbin.go
 - [x] `core/init_conf.go` → internal/infrastructure/config/provider.go（+ provider_test.go）
 - [x] `core/init_conf_test.go` → internal/infrastructure/config/provider.go（+ provider_test.go）
 - [x] `core/init_db.go` → internal/infrastructure/persistence/mysql/mysql.go
 - [x] `core/init_es.go` → internal/infrastructure/search/es.go
 - [x] `core/init_ip_db.go` → internal/infrastructure/ipregion（searcher.go + resolver.go）
-- [ ] `core/init_mongo.go` → bootstrap + infrastructure
+- [x] `core/init_mongo.go` → bootstrap + infrastructure
 - [x] `core/init_redis.go` → internal/infrastructure/cache/redis.go
-- [ ] `core/init_river.go` → bootstrap + infrastructure
-- [ ] `core/init_transcode_consumer.go` → bootstrap + infrastructure
-- [ ] `core/init_transcode_consumer_test.go` → bootstrap + infrastructure
-- [ ] `core/init_video_scheduler.go` → bootstrap + infrastructure
+- [x] `core/init_river.go` → bootstrap + infrastructure
+- [x] `core/init_transcode_consumer.go` → bootstrap + infrastructure
+- [x] `core/init_transcode_consumer_test.go` → bootstrap + infrastructure
+- [x] `core/init_video_scheduler.go` → bootstrap + infrastructure
 - [x] `core/init_zap.go` → internal/infrastructure/logger/logger.go + internal/interfaces/http/middlewares/zap_gin.go
 
 ## docs
@@ -349,14 +349,14 @@
 ## flags
 
 - [x] `flags/enter.go` → internal/interfaces/cli/task.go（分派）+ 各任务实现
-- [ ] `flags/flag_banner.go` → interfaces/cli
+- [x] `flags/flag_banner.go` → interfaces/cli
 - [x] `flags/flag_db.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
 - [x] `flags/flag_db_exit_test.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
 - [x] `flags/flag_db_test.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
-- [ ] `flags/flag_es.go` → interfaces/cli
-- [ ] `flags/flag_rbac.go` → interfaces/cli
-- [ ] `flags/flag_resource.go` → interfaces/cli
-- [ ] `flags/flag_su.go` → interfaces/cli
+- [x] `flags/flag_es.go` → interfaces/cli
+- [x] `flags/flag_rbac.go` → interfaces/cli
+- [x] `flags/flag_resource.go` → interfaces/cli
+- [x] `flags/flag_su.go` → interfaces/cli
 - [x] `flags/flag_video_partitions.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
 - [x] `flags/flag_video_partitions_test.go` → internal/infrastructure/persistence/migration（CLI 分派待 interfaces/cli 落地）
 
@@ -446,7 +446,7 @@
 
 ## pkg
 
-- [ ] `pkg/enter.go` → infrastructure/storage
+- [x] `pkg/enter.go` → infrastructure/storage
 
 ## pkg/casbins
 
@@ -500,7 +500,7 @@
 
 ## pkg/mq
 
-- [ ] `pkg/mq/enter.go` → infrastructure/mq
+- [x] `pkg/mq/enter.go` → infrastructure/mq
 
 ## pkg/ratelimit
 
@@ -508,7 +508,7 @@
 
 ## pkg/recursion
 
-- [ ] `pkg/recursion/enter.go` → domain/rbac
+- [x] `pkg/recursion/enter.go` → domain/rbac
 
 ## pkg/res
 
@@ -546,7 +546,7 @@
 
 ## pkg/wsorigin
 
-- [ ] `pkg/wsorigin/enter.go` → interfaces/ws/wsorigin
+- [x] `pkg/wsorigin/enter.go` → interfaces/ws/wsorigin
 
 ## pkg/xdb
 
@@ -554,39 +554,39 @@
 
 ## router
 
-- [ ] `router/ai_router.go` → interfaces/http/router
-- [ ] `router/banner_admin_router.go` → interfaces/http/router
-- [ ] `router/banner_router.go` → interfaces/http/router
-- [ ] `router/captcha_router.go` → interfaces/http/router
-- [ ] `router/chat_router.go` → interfaces/http/router
-- [ ] `router/comment_admin_router.go` → interfaces/http/router
-- [ ] `router/comment_router.go` → interfaces/http/router
-- [ ] `router/dynamic_admin_router.go` → interfaces/http/router
-- [ ] `router/dynamic_router.go` → interfaces/http/router
-- [ ] `router/enter.go` → interfaces/http/router
+- [x] `router/ai_router.go` → interfaces/http/router
+- [x] `router/banner_admin_router.go` → interfaces/http/router
+- [x] `router/banner_router.go` → interfaces/http/router
+- [x] `router/captcha_router.go` → interfaces/http/router
+- [x] `router/chat_router.go` → interfaces/http/router
+- [x] `router/comment_admin_router.go` → interfaces/http/router
+- [x] `router/comment_router.go` → interfaces/http/router
+- [x] `router/dynamic_admin_router.go` → interfaces/http/router
+- [x] `router/dynamic_router.go` → interfaces/http/router
+- [x] `router/enter.go` → interfaces/http/router
 - [x] `router/notification_admin_router.go` → internal/interfaces/http/router/notification_router.go
 - [x] `router/notification_router.go` → internal/interfaces/http/router/notification_router.go
-- [ ] `router/rbac_router.go` → interfaces/http/router
-- [ ] `router/site_admin_router.go` → interfaces/http/router
-- [ ] `router/site_router.go` → interfaces/http/router
-- [ ] `router/social_router.go` → interfaces/http/router
-- [ ] `router/user_admin_router.go` → interfaces/http/router
-- [ ] `router/user_router.go` → interfaces/http/router
-- [ ] `router/user_router_test.go` → interfaces/http/router
-- [ ] `router/video_admin_router.go` → interfaces/http/router
-- [ ] `router/video_router.go` → interfaces/http/router
+- [x] `router/rbac_router.go` → interfaces/http/router
+- [x] `router/site_admin_router.go` → interfaces/http/router
+- [x] `router/site_router.go` → interfaces/http/router
+- [x] `router/social_router.go` → interfaces/http/router
+- [x] `router/user_admin_router.go` → interfaces/http/router
+- [x] `router/user_router.go` → interfaces/http/router
+- [x] `router/user_router_test.go` → interfaces/http/router
+- [x] `router/video_admin_router.go` → interfaces/http/router
+- [x] `router/video_router.go` → interfaces/http/router
 
 ## service/ai_service
 
-- [ ] `service/ai_service/ark_provider.go` → application/ai + infrastructure/external/ark
-- [ ] `service/ai_service/enter.go` → application/ai + infrastructure/external/ark
-- [ ] `service/ai_service/types.go` → application/ai + infrastructure/external/ark
-- [ ] `service/ai_service/video_prompt.go` → application/ai + infrastructure/external/ark
+- [x] `service/ai_service/ark_provider.go` → application/ai + infrastructure/external/ark
+- [x] `service/ai_service/enter.go` → application/ai + infrastructure/external/ark
+- [x] `service/ai_service/types.go` → application/ai + infrastructure/external/ark
+- [x] `service/ai_service/video_prompt.go` → application/ai + infrastructure/external/ark
 
 ## service/banner_service
 
-- [ ] `service/banner_service/banner_service.go` → domain/contentops + application/contentops
-- [ ] `service/banner_service/cache.go` → domain/contentops + application/contentops
+- [x] `service/banner_service/banner_service.go` → domain/contentops + application/contentops
+- [x] `service/banner_service/cache.go` → domain/contentops + application/contentops
 
 ## service/captcha_service
 
@@ -595,101 +595,101 @@
 
 ## service/chat_service
 
-- [ ] `service/chat_service/chat_service.go` → domain/chat + application/chat + interfaces/ws
-- [ ] `service/chat_service/conversation_manage.go` → domain/chat + application/chat + interfaces/ws
-- [ ] `service/chat_service/conversation_repo.go` → domain/chat + application/chat + interfaces/ws
-- [ ] `service/chat_service/fields.go` → domain/chat + application/chat + interfaces/ws
-- [ ] `service/chat_service/page_test.go` → domain/chat + application/chat + interfaces/ws
-- [ ] `service/chat_service/send_limit.go` → domain/chat + application/chat + interfaces/ws
-- [ ] `service/chat_service/ws_hub.go` → domain/chat + application/chat + interfaces/ws
+- [x] `service/chat_service/chat_service.go` → domain/chat + application/chat + interfaces/ws
+- [x] `service/chat_service/conversation_manage.go` → domain/chat + application/chat + interfaces/ws
+- [x] `service/chat_service/conversation_repo.go` → domain/chat + application/chat + interfaces/ws
+- [x] `service/chat_service/fields.go` → domain/chat + application/chat + interfaces/ws
+- [x] `service/chat_service/page_test.go` → domain/chat + application/chat + interfaces/ws
+- [x] `service/chat_service/send_limit.go` → domain/chat + application/chat + interfaces/ws
+- [x] `service/chat_service/ws_hub.go` → domain/chat + application/chat + interfaces/ws
 
 ## service/comment_service
 
-- [ ] `service/comment_service/admin_service.go` → domain/comment + application/comment
-- [ ] `service/comment_service/comment_service.go` → domain/comment + application/comment
-- [ ] `service/comment_service/like_cache.go` → domain/comment + application/comment
+- [x] `service/comment_service/admin_service.go` → domain/comment + application/comment
+- [x] `service/comment_service/comment_service.go` → domain/comment + application/comment
+- [x] `service/comment_service/like_cache.go` → domain/comment + application/comment
 
 ## service/cron_service
 
-- [ ] `service/cron_service/auto_unban_user.go` → infrastructure/scheduler
-- [ ] `service/cron_service/decay_video_hot.go` → infrastructure/scheduler
-- [ ] `service/cron_service/enter.go` → infrastructure/scheduler
-- [ ] `service/cron_service/enter_test.go` → infrastructure/scheduler
-- [ ] `service/cron_service/sync_cache_test.go` → infrastructure/scheduler
-- [ ] `service/cron_service/sync_comment_like.go` → infrastructure/scheduler
-- [ ] `service/cron_service/sync_video_stat.go` → infrastructure/scheduler
+- [x] `service/cron_service/auto_unban_user.go` → infrastructure/scheduler
+- [x] `service/cron_service/decay_video_hot.go` → infrastructure/scheduler
+- [x] `service/cron_service/enter.go` → infrastructure/scheduler
+- [x] `service/cron_service/enter_test.go` → infrastructure/scheduler
+- [x] `service/cron_service/sync_cache_test.go` → infrastructure/scheduler
+- [x] `service/cron_service/sync_comment_like.go` → infrastructure/scheduler
+- [x] `service/cron_service/sync_video_stat.go` → infrastructure/scheduler
 
 ## service/dynamic_service
 
-- [ ] `service/dynamic_service/admin_service.go` → domain/dynamic + application/dynamic
-- [ ] `service/dynamic_service/cache.go` → domain/dynamic + application/dynamic
-- [ ] `service/dynamic_service/dynamic_service.go` → domain/dynamic + application/dynamic
-- [ ] `service/dynamic_service/feed_service.go` → domain/dynamic + application/dynamic
-- [ ] `service/dynamic_service/follow_service.go` → domain/dynamic + application/dynamic
-- [ ] `service/dynamic_service/like_service.go` → domain/dynamic + application/dynamic
-- [ ] `service/dynamic_service/read_service.go` → domain/dynamic + application/dynamic
+- [x] `service/dynamic_service/admin_service.go` → domain/dynamic + application/dynamic
+- [x] `service/dynamic_service/cache.go` → domain/dynamic + application/dynamic
+- [x] `service/dynamic_service/dynamic_service.go` → domain/dynamic + application/dynamic
+- [x] `service/dynamic_service/feed_service.go` → domain/dynamic + application/dynamic
+- [x] `service/dynamic_service/follow_service.go` → domain/dynamic + application/dynamic
+- [x] `service/dynamic_service/like_service.go` → domain/dynamic + application/dynamic
+- [x] `service/dynamic_service/read_service.go` → domain/dynamic + application/dynamic
 
 ## service/email_service
 
-- [ ] `service/email_service/enter.go` → infrastructure/external/email
-- [ ] `service/email_service/send_emailCode.go` → infrastructure/external/email
-- [ ] `service/email_service/send_emailCode_test.go` → infrastructure/external/email
+- [x] `service/email_service/enter.go` → infrastructure/external/email
+- [x] `service/email_service/send_emailCode.go` → infrastructure/external/email
+- [x] `service/email_service/send_emailCode_test.go` → infrastructure/external/email
 
 ## service/es_service
 
-- [ ] `service/es_service/index.go` → infrastructure/search
+- [x] `service/es_service/index.go` → infrastructure/search
 
 ## service/login_service
 
-- [ ] `service/login_service/http_retry.go` → application/identity + infrastructure/external/oauth
-- [ ] `service/login_service/http_retry_test.go` → application/identity + infrastructure/external/oauth
-- [ ] `service/login_service/oauth_state.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/http_retry.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/http_retry_test.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/oauth_state.go` → application/identity + infrastructure/external/oauth
 
 ## service/login_service/github_service
 
-- [ ] `service/login_service/github_service/enter.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/github_service/enter.go` → application/identity + infrastructure/external/oauth
 
 ## service/login_service/google_service
 
-- [ ] `service/login_service/google_service/enter.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/google_service/enter.go` → application/identity + infrastructure/external/oauth
 
 ## service/login_service/linuxdo_service
 
-- [ ] `service/login_service/linuxdo_service/enter.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/linuxdo_service/enter.go` → application/identity + infrastructure/external/oauth
 
 ## service/login_service/qq_service
 
-- [ ] `service/login_service/qq_service/enter.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/qq_service/enter.go` → application/identity + infrastructure/external/oauth
 
 ## service/login_service/x_service
 
-- [ ] `service/login_service/x_service/enter.go` → application/identity + infrastructure/external/oauth
-- [ ] `service/login_service/x_service/enter_test.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/x_service/enter.go` → application/identity + infrastructure/external/oauth
+- [x] `service/login_service/x_service/enter_test.go` → application/identity + infrastructure/external/oauth
 
 ## service/mq_service
 
-- [ ] `service/mq_service/enter.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/ffmpeg_progress.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/ffmpeg_progress_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/kafka_consumer.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/kafka_consumer_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/kafka_driver.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/kafka_driver_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_bitrate_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_checkpoint.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_checkpoint_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_chunked.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_chunked_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_consumer.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_consumer_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_pipeline_coordinator.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_pipeline_coordinator_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_progress.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_resource_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_task_state_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_timeout.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/transcode_timeout_test.go` → domain/media + application/media + infrastructure/mq
-- [ ] `service/mq_service/video_meta_cache.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/enter.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/ffmpeg_progress.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/ffmpeg_progress_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/kafka_consumer.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/kafka_consumer_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/kafka_driver.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/kafka_driver_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_bitrate_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_checkpoint.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_checkpoint_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_chunked.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_chunked_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_consumer.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_consumer_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_pipeline_coordinator.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_pipeline_coordinator_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_progress.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_resource_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_task_state_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_timeout.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/transcode_timeout_test.go` → domain/media + application/media + infrastructure/mq
+- [x] `service/mq_service/video_meta_cache.go` → domain/media + application/media + infrastructure/mq
 
 ## service/notification_service
 
@@ -698,16 +698,16 @@
 
 ## service/rbac_service
 
-- [ ] `service/rbac_service/init_service.go` → domain/rbac + application/rbac
-- [ ] `service/rbac_service/resource_sync.go` → domain/rbac + application/rbac
+- [x] `service/rbac_service/init_service.go` → domain/rbac + application/rbac
+- [x] `service/rbac_service/resource_sync.go` → domain/rbac + application/rbac
 
 ## service/river_service
 
-- [ ] `service/river_service/master.go` → infrastructure/river
-- [ ] `service/river_service/master_test.go` → infrastructure/river
-- [ ] `service/river_service/river.go` → infrastructure/river
-- [ ] `service/river_service/river_test.go` → infrastructure/river
-- [ ] `service/river_service/sync.go` → infrastructure/river
+- [x] `service/river_service/master.go` → infrastructure/river
+- [x] `service/river_service/master_test.go` → infrastructure/river
+- [x] `service/river_service/river.go` → infrastructure/river
+- [x] `service/river_service/river_test.go` → infrastructure/river
+- [x] `service/river_service/sync.go` → infrastructure/river
 
 ## service/river_service/rule
 
@@ -716,38 +716,38 @@
 
 ## service/search_service
 
-- [ ] `service/search_service/base.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/cache.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/enter.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/fallback.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/hot_keywords.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/mention.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/mention_test.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/search.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/search_test.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/suggest.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/suggest_test.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/user_sync.go` → domain/search + application/search + infrastructure/search
-- [ ] `service/search_service/video_vector.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/base.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/cache.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/enter.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/fallback.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/hot_keywords.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/mention.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/mention_test.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/search.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/search_test.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/suggest.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/suggest_test.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/user_sync.go` → domain/search + application/search + infrastructure/search
+- [x] `service/search_service/video_vector.go` → domain/search + application/search + infrastructure/search
 
 ## service/site_service
 
-- [ ] `service/site_service/admin_stats_service.go` → domain/contentops + application/contentops
-- [ ] `service/site_service/stat_service.go` → domain/contentops + application/contentops
+- [x] `service/site_service/admin_stats_service.go` → domain/contentops + application/contentops
+- [x] `service/site_service/stat_service.go` → domain/contentops + application/contentops
 
 ## service/storage_service
 
-- [ ] `service/storage_service/local_storage.go` → infrastructure/storage
-- [ ] `service/storage_service/local_storage_test.go` → infrastructure/storage
-- [ ] `service/storage_service/minio_storage.go` → infrastructure/storage
-- [ ] `service/storage_service/progress.go` → infrastructure/storage
-- [ ] `service/storage_service/safety.go` → infrastructure/storage
-- [ ] `service/storage_service/storage.go` → infrastructure/storage
+- [x] `service/storage_service/local_storage.go` → infrastructure/storage
+- [x] `service/storage_service/local_storage_test.go` → infrastructure/storage
+- [x] `service/storage_service/minio_storage.go` → infrastructure/storage
+- [x] `service/storage_service/progress.go` → infrastructure/storage
+- [x] `service/storage_service/safety.go` → infrastructure/storage
+- [x] `service/storage_service/storage.go` → infrastructure/storage
 
 ## service/transcode_cancel_service
 
-- [ ] `service/transcode_cancel_service/coordinator.go` → domain/media + infrastructure/mq
-- [ ] `service/transcode_cancel_service/coordinator_test.go` → domain/media + infrastructure/mq
+- [x] `service/transcode_cancel_service/coordinator.go` → domain/media + infrastructure/mq
+- [x] `service/transcode_cancel_service/coordinator_test.go` → domain/media + infrastructure/mq
 
 ## service/user_service
 
@@ -757,81 +757,109 @@
 - [x] `service/user_service/coin_record_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 - [x] `service/user_service/coin_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 - [x] `service/user_service/creator_analytics_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
-- [ ] `service/user_service/enter.go` → domain/identity + application/identity
+- [x] `service/user_service/enter.go` → domain/identity + application/identity
 - [x] `service/user_service/exp_record_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 - [x] `service/user_service/exp_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 - [x] `service/user_service/exp_service_test.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
-- [ ] `service/user_service/focus_service.go` → domain/identity + application/identity
+- [x] `service/user_service/focus_service.go` → domain/identity + application/identity
 - [x] `service/user_service/login_record_service.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 - [x] `service/user_service/status_cache.go` → domain/identity + application/identity + infrastructure/{persistence,cache}/identity
 
 ## service/video_service
 
-- [ ] `service/video_service/admin_delete_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/admin_delete_service_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/admin_restore_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/admin_video_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/async_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/author_cache.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_admin_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_creator_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_delete.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_hub.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_like.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_room_list.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_room_list_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/danmu_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/dash_mpd.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/dash_mpd_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/delete_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/detail_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/detail_service_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/enter.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/feed_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/folder_cache.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/folder_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/history_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/hot_rank_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/hot_score.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/interact_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/like_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/like_service_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/partition_cache.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/partition_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/recommend_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/report_admin_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/report_handle_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/report_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/scheduler_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/scheduler_service_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/stats_cache.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/stats_cache_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/status_resolve.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/status_resolve_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/tag_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/test_fixtures_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/transcode_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/triple_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/triple_service_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/update_private_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/update_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/upload_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/upload_service_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/user_stat_cache.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/user_stat_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/user_video_service.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/user_video_service_test.go` → domain/video + application/video + infrastructure/persistence/video
-- [ ] `service/video_service/vector_sync.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/admin_delete_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/admin_delete_service_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/admin_restore_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/admin_video_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/async_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/author_cache.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_admin_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_creator_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_delete.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_hub.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_like.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_room_list.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_room_list_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/danmu_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/dash_mpd.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/dash_mpd_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/delete_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/detail_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/detail_service_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/enter.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/feed_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/folder_cache.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/folder_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/history_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/hot_rank_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/hot_score.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/interact_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/like_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/like_service_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/partition_cache.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/partition_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/recommend_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/report_admin_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/report_handle_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/report_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/scheduler_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/scheduler_service_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/stats_cache.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/stats_cache_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/status_resolve.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/status_resolve_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/tag_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/test_fixtures_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/transcode_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/triple_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/triple_service_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/update_private_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/update_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/upload_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/upload_service_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/user_stat_cache.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/user_stat_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/user_video_service.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/user_video_service_test.go` → domain/video + application/video + infrastructure/persistence/video
+- [x] `service/video_service/vector_sync.go` → domain/video + application/video + infrastructure/persistence/video
 
 ---
 
-## 未完成项备注（防止误判为已完成）
+## 当前工作树新增的 29 个未跟踪 Go 文件（均已纳入）
 
-- `main.go`：`cmd/server/main.go` 已建立并可运行 App，但 CLI 运维任务
-  （`-db`/`-vp`/`-br`/`-su`/`-es`/`-rs`/`-rbac`）的分派待 `internal/interfaces/cli` 落地后接线。
-- `core/init_mongo.go`：Mongo 客户端已迁移到 `internal/infrastructure/persistence/mongodb`，
-  但原实现在连接成功后顺带执行的聊天集合索引初始化（`chat_service.EnsureIndexes`）
-  需在 chat 上下文落地时重新接线，届时才标记 done。
-- `core/enter.go` / `core/graceful_stop.go` / `core/init_river.go` /
-  `core/init_transcode_consumer.go` / `core/init_video_scheduler.go`：
-  对应 `App.Start` / `App.Stop` 的后台组件序列，随各上下文后台组件落地后补齐。
+- [x] `api/ai_api/responses_stream_test.go` → `internal/interfaces/http/handler/ai/responses_stream_test.go`
+- [x] `api/rbac_api/generate_menu.go` → `internal/interfaces/http/handler/rbac/menu.go`
+- [x] `api/rbac_api/menu_error.go` → `internal/domain/rbac/errors.go` + `internal/interfaces/http/handler/rbac/menu.go`
+- [x] `api/rbac_api/move_menu.go` → `internal/interfaces/http/handler/rbac/menu.go` + `internal/application/rbac/menu_service.go`
+- [x] `api/social_api/social_list_privacy_test.go` → `internal/interfaces/http/handler/social/social_list_privacy_test.go`
+- [x] `api/user_api/user_info_query_test.go` → `internal/application/identity/profile_service_user_info_test.go` + `internal/infrastructure/persistence/identity/user_profile_repo_test.go`
+- [x] `api/video_api/admin_vector_index.go` → `internal/interfaces/http/handler/video/admin_vector.go`
+- [x] `conf/conf_mysql_test.go` → `internal/infrastructure/config/conf_mysql_test.go`
+- [x] `service/ai_service/chat_model.go` → `internal/infrastructure/external/ark/chat_model.go`
+- [x] `service/ai_service/chat_model_test.go` → `internal/infrastructure/external/ark/chat_model_test.go`
+- [x] `service/ai_service/conversation.go` → `internal/application/ai/conversation.go`
+- [x] `service/ai_service/conversation_test.go` → `internal/application/ai/conversation_test.go`
+- [x] `service/ai_service/menu_generation.go` → `internal/application/ai/menu_generation.go` + `internal/domain/rbac/menu_suggestion.go`
+- [x] `service/ai_service/menu_generation_test.go` → `internal/application/ai/menu_generation_test.go`
+- [x] `service/ai_service/video_prompt_test.go` → `internal/application/ai/prompt_service_test.go` + `internal/domain/ai/prompt_test.go`
+- [x] `service/dynamic_service/feed_service_test.go` → `internal/infrastructure/persistence/dynamic/repo_test.go`
+- [x] `service/menu_service/menu_service.go` → `internal/application/rbac/menu_service.go` + `internal/infrastructure/persistence/rbac`
+- [x] `service/menu_service/menu_service_test.go` → `internal/application/rbac/menu_service_latest_test.go`
+- [x] `service/mq_service/dash_validation.go` → `internal/infrastructure/mq/dash_validation.go`
+- [x] `service/mq_service/dash_validation_test.go` → `internal/infrastructure/mq/dash_validation_test.go`
+- [x] `service/mq_service/transcode_progress_percent_test.go` → `internal/domain/media/progress_test.go`
+- [x] `service/river_service/sync_bulk_test.go` → `internal/infrastructure/river/sync_bulk_test.go`
+- [x] `service/search_service/ark_embedding.go` → `internal/infrastructure/search/ark_embedding.go`
+- [x] `service/search_service/cover_image.go` → `internal/infrastructure/search/cover_image.go`
+- [x] `service/search_service/cover_image_test.go` → `internal/infrastructure/search/cover_image_test.go`
+- [x] `service/search_service/video_vector_rebuild.go` → `internal/application/search/vector_rebuild_service.go` + `internal/infrastructure/persistence/search/vector_source_query.go`
+- [x] `service/search_service/video_vector_test.go` → `internal/application/search/vector_service_test.go` + `internal/infrastructure/search/video_vector_test.go`
+- [x] `service/user_service/ban_service_unban_test.go` → `internal/application/identity/ban_service_unban_test.go` + `internal/infrastructure/scheduler/auto_unban_test.go`
+- [x] `service/video_service/feed_service_test.go` → `internal/application/video/feed_service_test.go` + `internal/infrastructure/persistence/video/feed_query_test.go`
+
+## 收口说明
+
+- `main.go` 与七类 CLI 运维任务均已由独立 Wire injector 接线，分派优先级和退出码与原项目一致。
+- Mongo 初始化后的聊天集合索引由 chat `IndexInitializer` 显式纳入启动图。
+- River、视频调度器、转码消费者、cron、Chat/Danmu Hub 与 detached tasks 均由 `App` 显式管理启停。
+- 本表 606 项全部完成；最终验收必须保持 `pending = 0`。

@@ -20,6 +20,7 @@ type StatService struct {
 	detached *ctxutil.DetachedTaskGroup
 	exp      LoginExpGranter
 	coin     LoginCoinGranter
+	logger   *zap.Logger
 }
 
 // NewStatService 构造站点统计用例服务。
@@ -29,8 +30,16 @@ func NewStatService(
 	detached *ctxutil.DetachedTaskGroup,
 	exp LoginExpGranter,
 	coin LoginCoinGranter,
+	logger *zap.Logger,
 ) *StatService {
-	return &StatService{store: store, query: query, detached: detached, exp: exp, coin: coin}
+	return &StatService{
+		store:    store,
+		query:    query,
+		detached: detached,
+		exp:      exp,
+		coin:     coin,
+		logger:   logger,
+	}
 }
 
 // Touch 站点打点：累加 PV、记录当日 UV、维护在线用户，
@@ -73,13 +82,13 @@ func (s *StatService) grantDailyLoginReward(ctx context.Context, userID uint) {
 	s.detached.Go(ctx, ctxutil.AsyncDefaultTimeout, func(bg context.Context) {
 		if s.exp != nil {
 			if err := s.exp.LoginExp(bg, userID); err != nil {
-				zap.L().Warn("apply login exp failed", zap.Uint("uid", userID), zap.Error(err))
+				s.logger.Warn("apply login exp failed", zap.Uint("uid", userID), zap.Error(err))
 			}
 		}
 
 		if s.coin != nil {
 			if err := s.coin.LoginCoin(bg, userID); err != nil {
-				zap.L().Warn("apply login coin failed", zap.Uint("uid", userID), zap.Error(err))
+				s.logger.Warn("apply login coin failed", zap.Uint("uid", userID), zap.Error(err))
 			}
 		}
 	})

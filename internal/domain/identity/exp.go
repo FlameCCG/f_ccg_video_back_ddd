@@ -22,12 +22,10 @@ const (
 	level6Need = 20000
 )
 
-// levelSteps 各等级所需累计经验（下标 i 对应等级 i+1）。
-var levelSteps = []int64{0, level2Need, level3Need, level4Need, level5Need, level6Need}
-
 // CalcLevel 根据经验计算等级（1-6）.
 func CalcLevel(exp int64) int {
 	level := 1
+	levelSteps := [...]int64{0, level2Need, level3Need, level4Need, level5Need, level6Need}
 
 	for i := 1; i < len(levelSteps); i++ {
 		if exp >= levelSteps[i] {

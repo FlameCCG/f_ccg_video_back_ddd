@@ -19,6 +19,8 @@ type UserRepository interface {
 	UsernameByID(ctx context.Context, userID uint) (string, error)
 	// UpdateStatus 更新用户状态。
 	UpdateStatus(ctx context.Context, userID uint, status enum.UserStatus) error
+	// ActivateIfBanned 仅当用户仍处于限时封禁态时置为正常，返回是否更新成功。
+	ActivateIfBanned(ctx context.Context, userID uint) (bool, error)
 	// CoinBalanceForUpdate 以行锁读取硬币余额（要求在事务内调用）。
 	CoinBalanceForUpdate(ctx context.Context, userID uint) (float64, error)
 	// CoinBalance 读取硬币余额（无锁）。
@@ -51,8 +53,16 @@ type CoinRecordRepository interface {
 type BanRecordRepository interface {
 	// Create 写入封禁记录，并回填自增 ID。
 	Create(ctx context.Context, record *BanRecord) error
-	// FindLatestByUserID 读取用户最近一条封禁记录；无记录时返回 (nil, nil)。
+	// FindLatestByUserID 读取用户最近一条未解封封禁记录；无记录时返回 (nil, nil)。
 	FindLatestByUserID(ctx context.Context, userID uint) (*BanRecord, error)
+	// FindLatestUnreleasedForUpdate 锁定并读取指定状态中最近一条未解封记录。
+	FindLatestUnreleasedForUpdate(
+		ctx context.Context,
+		userID uint,
+		statuses []enum.UserStatus,
+	) (*BanRecord, error)
+	// MarkUnbanned 标记原封禁记录已解封。
+	MarkUnbanned(ctx context.Context, recordID uint) error
 }
 
 // LoginRecordRepository 登录记录仓储。

@@ -18,8 +18,8 @@ const (
 // AdminStats 管理端站点统计（总览 + 日维度趋势 + 月维度趋势）。
 //
 // 错误处理语义与原实现完全一致：
-// 四项总量统计失败直接返回错误；在线人数、当日登录去重数、
-// 以及日/月循环内的逐项统计失败一律忽略并记 0，保证接口整体可用。
+// 四项总量统计失败直接返回错误；在线人数、以及日/月循环内的逐项统计
+// 失败一律忽略并记 0（含当日登录去重数），保证接口整体可用。
 func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 	now := time.Now()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
@@ -50,11 +50,10 @@ func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 		onlineUsers = v
 	}
 
-	todayLoginUsers, _ := s.query.CountDistinctLoginUsersBetween(ctx, todayStart, tomorrowStart)
-
 	// daily (最近一周，含今天，共 7 天)
 	dailyLabels := make([]string, 0, adminStatsDailyDays)
 	visitValues := make([]int64, 0, adminStatsDailyDays)
+	loginValues := make([]int64, 0, adminStatsDailyDays)
 	videoValues := make([]int64, 0, adminStatsDailyDays)
 	userValues := make([]int64, 0, adminStatsDailyDays)
 
@@ -70,12 +69,19 @@ func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 
 		visitValues = append(visitValues, uv)
 
+		loginUsers, _ := s.query.CountDistinctLoginUsersBetween(ctx, dayStart, dayEnd)
+		loginValues = append(loginValues, loginUsers)
+
 		publishVideos, _ := s.query.CountPublishedVideosCreatedBetween(ctx, dayStart, dayEnd)
 		videoValues = append(videoValues, publishVideos)
 
 		newUsers, _ := s.query.CountUsersCreatedBetween(ctx, dayStart, dayEnd)
 		userValues = append(userValues, newUsers)
 	}
+
+	// 今日登录数就是日序列的末位（循环最后一轮 i=0 即今天），
+	// 单独再查一次只会多一条 SQL，还可能与趋势末位对不上。
+	todayLoginUsers := loginValues[len(loginValues)-1]
 
 	// monthly (最近一年，含本月，共 12 月)
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
@@ -106,6 +112,11 @@ func (s *StatService) AdminStats(ctx context.Context) (*AdminSiteStats, error) {
 				X:      dailyLabels,
 				Values: visitValues,
 				Rates:  domain.CalcRates(visitValues),
+			},
+			LoginUsers: TrendSeries{
+				X:      dailyLabels,
+				Values: loginValues,
+				Rates:  domain.CalcRates(loginValues),
 			},
 			PublishVideos: TrendSeries{
 				X:      dailyLabels,

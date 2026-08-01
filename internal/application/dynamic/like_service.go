@@ -19,6 +19,7 @@ type LikeService struct {
 	users    UserProfileQuery
 	notifier DynamicLikeNotifier
 	tasks    *ctxutil.DetachedTaskGroup
+	logger   *zap.Logger
 }
 
 // NewLikeService 构造动态点赞用例服务。
@@ -29,6 +30,7 @@ func NewLikeService(
 	users UserProfileQuery,
 	notifier DynamicLikeNotifier,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *LikeService {
 	return &LikeService{
 		txm:      txm,
@@ -37,6 +39,7 @@ func NewLikeService(
 		users:    users,
 		notifier: notifier,
 		tasks:    tasks,
+		logger:   logger,
 	}
 }
 
@@ -140,7 +143,7 @@ func (s *LikeService) sendLikeNotification(ctx context.Context, actionUserID, dy
 		domain.LikeNoticeTitle,
 		domain.LikeNoticeContent(target.Content),
 	); err != nil {
-		zap.L().Warn("create dynamic like notification failed", zap.Error(err))
+		s.logger.Warn("create dynamic like notification failed", zap.Error(err))
 
 		return
 	}

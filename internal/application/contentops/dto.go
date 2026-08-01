@@ -92,8 +92,13 @@ type TrendSeries struct {
 }
 
 // AdminDailyStats 管理端日维度统计（读模型）.
+//
+// LoginUsers 与 VisitUsers 不是同一个量：VisitUsers 取自站点打点的日 UV
+// （含未登录访客），LoginUsers 是当日去重的登录用户数，与 AdminOverview.TodayLoginUsers
+// 同口径 —— 管理端「今日登录」卡片的环比必须用它，用 UV 会给出另一个数。
 type AdminDailyStats struct {
 	VisitUsers    TrendSeries `json:"visitUsers"`
+	LoginUsers    TrendSeries `json:"loginUsers"`
 	PublishVideos TrendSeries `json:"publishVideos"`
 	NewUsers      TrendSeries `json:"newUsers"`
 }

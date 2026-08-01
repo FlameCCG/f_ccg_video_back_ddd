@@ -10,6 +10,7 @@ import (
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 func TestDecayVideoHotScoreDecaysAndClears(t *testing.T) {
@@ -24,7 +25,7 @@ func TestDecayVideoHotScoreDecaysAndClears(t *testing.T) {
 		t.Fatalf("seed hot rank failed: %v", err)
 	}
 
-	app.NewHotRankDecayService(NewHotRankStore(redisClient)).Run(ctx)
+	app.NewHotRankDecayService(NewHotRankStore(redisClient), zap.NewNop()).Run(ctx)
 
 	// 低于清理阈值的成员被移出榜单。
 	if score, err := redisClient.ZScore(ctx, constants.VideoHotRankZSetKey, "2").Result(); err == nil {
@@ -58,7 +59,7 @@ func TestDecayVideoHotScoreTrimsOverflow(t *testing.T) {
 		t.Fatalf("seed hot rank failed: %v", err)
 	}
 
-	app.NewHotRankDecayService(NewHotRankStore(redisClient)).Run(ctx)
+	app.NewHotRankDecayService(NewHotRankStore(redisClient), zap.NewNop()).Run(ctx)
 
 	total, err := redisClient.ZCard(ctx, constants.VideoHotRankZSetKey).Result()
 	if err != nil {
@@ -79,5 +80,5 @@ func TestDecayVideoHotScoreTrimsOverflow(t *testing.T) {
 
 func TestDecayVideoHotScoreSkipsWhenRedisMissing(t *testing.T) {
 	// Redis 未配置时只告警跳过，不 panic。
-	app.NewHotRankDecayService(NewHotRankStore(nil)).Run(context.Background())
+	app.NewHotRankDecayService(NewHotRankStore(nil), zap.NewNop()).Run(context.Background())
 }

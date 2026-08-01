@@ -27,8 +27,8 @@ type BanMaintenanceRepository interface {
 	ListExpiredBans(ctx context.Context, now time.Time) ([]domain.ExpiredBan, error)
 	// ActivateBannedUsers 将仍处于封禁态的指定用户批量置为正常状态。
 	ActivateBannedUsers(ctx context.Context, userIDs []uint) error
-	// CreateUnbanRecords 批量补写解封记录。
-	CreateUnbanRecords(ctx context.Context, records []domain.UnbanRecord) error
+	// MarkBanRecordsUnbanned 批量标记原封禁记录已解封。
+	MarkBanRecordsUnbanned(ctx context.Context, recordIDs []uint) error
 }
 
 // HotRankStore 热门榜单存储端口（Redis 有序集合）。

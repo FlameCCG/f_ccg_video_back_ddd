@@ -10,6 +10,8 @@ import (
 type Repository interface {
 	// Create 写入通知并回填自增 ID。
 	Create(ctx context.Context, notice *Notification) error
+	// CreateBatch 一次性批量写入通知（失败则整批不生效）。
+	CreateBatch(ctx context.Context, notices []Notification) error
 	// FindByID 按主键读取通知；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, id uint) (*Notification, error)
 	// ListForReceiver 按接收者与类型集合分页查询（含全员广播）。
