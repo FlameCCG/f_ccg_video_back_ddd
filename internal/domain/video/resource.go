@@ -27,26 +27,19 @@ type ResourceBrief struct {
 	Variants []DASHVariant `json:"variants,omitempty"`
 }
 
-// DedupeResourceBriefs 按（分辨率, 是否源片）去重，保留「更优」的一条。
+// DedupeResourceBriefs 按分辨率去重，保留「更优」的一条。
 //
-// 与原 dedupeResourceBriefs 完全一致：文件更大优先，其次码率更高，最后 ID 更大。
+// 同分辨率下源片优先，其次文件更大、码率更高、ID 更大。
 func DedupeResourceBriefs(list []ResourceBrief) []ResourceBrief {
 	if len(list) <= 1 {
 		return list
 	}
 
-	type key struct {
-		res      enum.VideoResolution
-		isSource bool
-	}
-
-	keep := make(map[key]ResourceBrief, len(list))
+	keep := make(map[enum.VideoResolution]ResourceBrief, len(list))
 	for _, item := range list {
-		k := key{res: item.Resolution, isSource: item.IsSource}
-
-		prev, ok := keep[k]
+		prev, ok := keep[item.Resolution]
 		if !ok || isBetterResourceBrief(item, prev) {
-			keep[k] = item
+			keep[item.Resolution] = item
 		}
 	}
 
@@ -59,6 +52,10 @@ func DedupeResourceBriefs(list []ResourceBrief) []ResourceBrief {
 }
 
 func isBetterResourceBrief(a, b ResourceBrief) bool {
+	if a.IsSource != b.IsSource {
+		return a.IsSource
+	}
+
 	if a.FileSize != b.FileSize {
 		return a.FileSize > b.FileSize
 	}

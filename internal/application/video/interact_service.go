@@ -33,6 +33,7 @@ type InteractionService struct {
 	notifier VideoNotifier
 	notify   NotifySourceQuery
 	tasks    *ctxutil.DetachedTaskGroup
+	logger   *zap.Logger
 }
 
 // NewInteractionService 构造视频互动用例服务。
@@ -52,6 +53,7 @@ func NewInteractionService(
 	notifier VideoNotifier,
 	notify NotifySourceQuery,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *InteractionService {
 	return &InteractionService{
 		txm:      txm,
@@ -69,6 +71,7 @@ func NewInteractionService(
 		notifier: notifier,
 		notify:   notify,
 		tasks:    tasks,
+		logger:   logger,
 	}
 }
 
@@ -136,7 +139,7 @@ func (s *InteractionService) Coin(ctx context.Context, videoID, userID uint, coi
 		stats, statsErr := s.stats.ApplyCommittedDelta(ctx, videoID, domain.StatsDelta{CoinCount: delta})
 		if statsErr != nil {
 			// 账本已提交：不回滚硬币；尽量返回当前可读计数。
-			zap.L().Error("coin committed but stats update failed",
+			s.logger.Error("coin committed but stats update failed",
 				zap.Uint("videoId", videoID),
 				zap.Uint("userId", userID),
 				zap.Int64("delta", delta),

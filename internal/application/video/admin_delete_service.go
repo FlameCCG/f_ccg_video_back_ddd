@@ -47,7 +47,7 @@ func (s *AdminVideoService) softDelete(ctx context.Context, videoIDs []uint) (*d
 
 	s.cleanupVideoCache(ctx, videoIDs)
 	s.vectors.SyncBatchAsync(ctx, videoIDs, enum.VideoStatusDeleted)
-	zap.L().Info("admin soft delete video ok", zap.Int("count", int(result.Videos)))
+	s.logger.Info("admin soft delete video ok", zap.Int("count", int(result.Videos)))
 
 	return result, nil
 }
@@ -78,7 +78,7 @@ func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*d
 	result.StorageFiles, result.StorageFilesSkipped, result.StorageDeleteFailed =
 		s.deleteStorageFiles(ctx, storageTargets)
 
-	zap.L().Info("admin hard delete video ok",
+	s.logger.Info("admin hard delete video ok",
 		zap.Int64("videos", result.Videos),
 		zap.Int64("comments", result.Comments),
 		zap.Int64("commentLikes", result.CommentLikes),
@@ -104,7 +104,7 @@ func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*d
 
 func (s *AdminVideoService) notifyDeletedVideoTranscodes(ctx context.Context, videoIDs []uint) {
 	if err := s.canceller.NotifyVideoDeleted(ctx, videoIDs); err != nil {
-		zap.L().Warn("notify transcode cancellation failed",
+		s.logger.Warn("notify transcode cancellation failed",
 			zap.Int("videoCount", len(videoIDs)),
 			zap.Error(err),
 		)
@@ -141,7 +141,7 @@ func (s *AdminVideoService) deleteStorageFiles(
 				if err != nil {
 					failed++
 
-					zap.L().Warn("resolve storage driver for dash prefix delete failed",
+					s.logger.Warn("resolve storage driver for dash prefix delete failed",
 						zap.Error(err),
 						zap.String("prefix", target.DashDirPrefix),
 						zap.String("storageType", string(target.StorageType)))
@@ -157,7 +157,7 @@ func (s *AdminVideoService) deleteStorageFiles(
 			if err != nil {
 				failed++
 
-				zap.L().Warn("delete dash prefix failed",
+				s.logger.Warn("delete dash prefix failed",
 					zap.Error(err),
 					zap.String("prefix", target.DashDirPrefix),
 					zap.String("storageType", string(target.StorageType)))
@@ -175,7 +175,7 @@ func (s *AdminVideoService) deleteStorageFiles(
 		if err != nil {
 			failed++
 
-			zap.L().Warn("check storage reference before delete failed",
+			s.logger.Warn("check storage reference before delete failed",
 				zap.Error(err),
 				zap.String("path", target.Path),
 				zap.String("storageType", string(target.StorageType)))
@@ -195,7 +195,7 @@ func (s *AdminVideoService) deleteStorageFiles(
 			if resolveErr != nil {
 				failed++
 
-				zap.L().Warn("resolve storage driver for hard delete failed",
+				s.logger.Warn("resolve storage driver for hard delete failed",
 					zap.Error(resolveErr),
 					zap.String("path", target.Path),
 					zap.String("storageType", string(target.StorageType)))
@@ -210,7 +210,7 @@ func (s *AdminVideoService) deleteStorageFiles(
 		if err := driver.DeleteStoredFile(cleanupCtx, target.Path); err != nil {
 			failed++
 
-			zap.L().Warn("delete video storage file failed",
+			s.logger.Warn("delete video storage file failed",
 				zap.Error(err),
 				zap.String("path", target.Path),
 				zap.String("storageType", string(target.StorageType)))
@@ -250,6 +250,6 @@ func (s *AdminVideoService) cleanupVideoCache(ctx context.Context, videoIDs []ui
 }
 
 // logAdminRestore 记录恢复上架结果（抽出便于 admin_video_service.go 复用）。
-func logAdminRestore(rows int64) {
-	zap.L().Info("admin restore video ok", zap.Int64("count", rows))
+func (s *AdminVideoService) logAdminRestore(rows int64) {
+	s.logger.Info("admin restore video ok", zap.Int64("count", rows))
 }

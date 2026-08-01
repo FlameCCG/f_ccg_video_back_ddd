@@ -6,6 +6,8 @@ import (
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
+
+	"go.uber.org/zap"
 )
 
 // AdminVideoService 管理端视频用例服务
@@ -24,6 +26,7 @@ type AdminVideoService struct {
 	canceller TranscodeCanceller
 	storage   StorageResolver
 	uploads   *UploadService
+	logger    *zap.Logger
 }
 
 // NewAdminVideoService 构造管理端视频用例服务。
@@ -40,6 +43,7 @@ func NewAdminVideoService(
 	canceller TranscodeCanceller,
 	storage StorageResolver,
 	uploads *UploadService,
+	logger *zap.Logger,
 ) *AdminVideoService {
 	return &AdminVideoService{
 		videos:    videos,
@@ -54,6 +58,7 @@ func NewAdminVideoService(
 		canceller: canceller,
 		storage:   storage,
 		uploads:   uploads,
+		logger:    logger,
 	}
 }
 
@@ -256,7 +261,7 @@ func (s *AdminVideoService) Restore(ctx context.Context, videoIDs []uint) (int64
 		s.vectors.SyncBatchAsync(ctx, videoIDs, enum.VideoStatusPublished)
 	}
 
-	logAdminRestore(rows)
+	s.logAdminRestore(rows)
 
 	return rows, nil
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 
 	domain "f_ccg_video_back_ddd/internal/domain/video"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -38,6 +40,10 @@ func (s *FeedService) HomepageFeed(
 	userID, partitionID uint,
 	page, pageSize int,
 ) ([]FeedItem, int64, error) {
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+
 	if page <= 0 {
 		page = 1
 	}
@@ -50,8 +56,36 @@ func (s *FeedService) HomepageFeed(
 		pageSize = maxFeedPageSize
 	}
 
-	historyVideoIDs := s.history.RecentVideoIDs(ctx, userID, maxHistoryCount)
-	preferredPartitions := s.query.PreferredPartitionIDs(ctx, userID)
+	var (
+		historyVideoIDs     []uint
+		preferredPartitions []uint
+	)
+
+	if partitionID > 0 {
+		var err error
+		historyVideoIDs, err = s.history.RecentVideoIDs(ctx, userID, maxHistoryCount)
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		group, groupCtx := errgroup.WithContext(ctx)
+		group.Go(func() error {
+			var err error
+			historyVideoIDs, err = s.history.RecentVideoIDs(groupCtx, userID, maxHistoryCount)
+
+			return err
+		})
+		group.Go(func() error {
+			var err error
+			preferredPartitions, err = s.query.PreferredPartitionIDs(groupCtx, userID)
+
+			return err
+		})
+
+		if err := group.Wait(); err != nil {
+			return nil, 0, err
+		}
+	}
 
 	var (
 		items []FeedItem

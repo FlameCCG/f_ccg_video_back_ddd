@@ -32,13 +32,17 @@ type DASHVariantResolver interface {
 // 超时值保持一致，避免包级单例同时减少连接建立开销。
 type HTTPDASHVariantResolver struct {
 	client *http.Client
+	logger *zap.Logger
 }
 
 var _ DASHVariantResolver = (*HTTPDASHVariantResolver)(nil)
 
 // NewHTTPDASHVariantResolver 构造基于 HTTP 的 MPD 解析器。
-func NewHTTPDASHVariantResolver() *HTTPDASHVariantResolver {
-	return &HTTPDASHVariantResolver{client: &http.Client{Timeout: dashMPDFetchTimeout}}
+func NewHTTPDASHVariantResolver(logger *zap.Logger) *HTTPDASHVariantResolver {
+	return &HTTPDASHVariantResolver{
+		client: &http.Client{Timeout: dashMPDFetchTimeout},
+		logger: logger,
+	}
 }
 
 // Variants 拉取并解析 MPD。
@@ -49,7 +53,7 @@ func (r *HTTPDASHVariantResolver) Variants(
 ) ([]domain.DASHVariant, error) {
 	variants, err := r.fetch(ctx, mpdURL)
 	if err != nil {
-		zap.L().Warn("parse DASH mpd variants failed",
+		r.logger.Warn("parse DASH mpd variants failed",
 			zap.Uint("resourceId", resourceID),
 			zap.String("url", mpdURL),
 			zap.Error(err),

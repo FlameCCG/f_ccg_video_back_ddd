@@ -27,6 +27,7 @@ type StatsService struct {
 	hotRank  HotRankCache
 	authors  *AuthorService
 	creators CreatorAnalytics
+	logger   *zap.Logger
 }
 
 // NewStatsService 构造视频统计用例服务。
@@ -36,6 +37,7 @@ func NewStatsService(
 	hotRank HotRankCache,
 	authors *AuthorService,
 	creators CreatorAnalytics,
+	logger *zap.Logger,
 ) *StatsService {
 	return &StatsService{
 		videos:   videos,
@@ -43,6 +45,7 @@ func NewStatsService(
 		hotRank:  hotRank,
 		authors:  authors,
 		creators: creators,
+		logger:   logger,
 	}
 }
 
@@ -116,7 +119,7 @@ func (s *StatsService) ApplyDelta(ctx context.Context, videoID uint, delta domai
 				return nil, fmt.Errorf("stats base load failed: %w; db fallback: %v", err, dbErr)
 			}
 
-			zap.L().Warn("apply video stats delta: base load failed, wrote DB and invalidated redis",
+			s.logger.Warn("apply video stats delta: base load failed, wrote DB and invalidated redis",
 				zap.Uint("videoId", videoID), zap.Error(err))
 			s.cache.Clear(ctx, videoID)
 
@@ -145,7 +148,7 @@ func (s *StatsService) ApplyDelta(ctx context.Context, videoID uint, delta domai
 
 	// 禁止 Lua 失败后 clear Redis、禁止用 DB 增量回填覆盖权威计数。
 	// 仅记录错误，让调用方感知；权威值仍以 Redis 为准（若 key 仍在）。
-	zap.L().Error("apply video stats delta via redis failed; leave redis intact (no clear, no db overwrite)",
+	s.logger.Error("apply video stats delta via redis failed; leave redis intact (no clear, no db overwrite)",
 		zap.Uint("videoId", videoID), zap.Error(lastErr))
 
 	// 尽量返回当前 Redis 值，便于接口继续响应。
@@ -185,7 +188,7 @@ func (s *StatsService) ApplyCommittedDelta(
 
 	dbStats, dbErr := s.applyDeltaToDB(ctx, videoID, delta)
 	if dbErr != nil {
-		zap.L().Error("committed video stats: redis and db both failed",
+		s.logger.Error("committed video stats: redis and db both failed",
 			zap.Uint("videoId", videoID),
 			zap.Error(err),
 			zap.NamedError("dbErr", dbErr),
@@ -201,7 +204,7 @@ func (s *StatsService) ApplyCommittedDelta(
 		return nil, dbErr
 	}
 
-	zap.L().Error("committed video stats: redis failed, applied db delta and invalidated redis",
+	s.logger.Error("committed video stats: redis failed, applied db delta and invalidated redis",
 		zap.Uint("videoId", videoID),
 		zap.Error(err),
 	)
@@ -241,7 +244,7 @@ func (s *StatsService) ApplyDeltaIfCached(
 
 	stats, existed, err := s.cache.ApplyDeltaIfExists(ctx, videoID, delta)
 	if err != nil {
-		zap.L().Warn("apply video stats delta if-cached failed", zap.Uint("videoId", videoID), zap.Error(err))
+		s.logger.Warn("apply video stats delta if-cached failed", zap.Uint("videoId", videoID), zap.Error(err))
 
 		return s.Load(ctx, videoID)
 	}
@@ -290,7 +293,7 @@ func (s *StatsService) RecordHotScoreForComment(ctx context.Context, videoID uin
 func (s *StatsService) UpdateCommentCount(ctx context.Context, videoID uint, delta int64) {
 	if _, err := s.ApplyDelta(ctx, videoID, domain.StatsDelta{CommentCount: delta}); err != nil {
 		// 仅记录错误，不 clear redis，避免丢失并发增量。
-		zap.L().Warn("update comment count failed",
+		s.logger.Warn("update comment count failed",
 			zap.Error(err),
 			zap.Uint("videoId", videoID),
 			zap.Int64("delta", delta),
