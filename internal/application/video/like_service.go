@@ -48,7 +48,7 @@ func (s *InteractionService) ToggleLike(ctx context.Context, videoID, userID uin
 	if err != nil {
 		// Redis/DB stats 与关系表非同一事务：失败时回滚关系，避免 likes 漂移。
 		if compErr := s.compensateLikeFlip(ctx, videoID, userID, delta); compErr != nil {
-			zap.L().Error("compensate video like flip failed",
+			s.logger.Error("compensate video like flip failed",
 				zap.Uint("videoId", videoID),
 				zap.Uint("userId", userID),
 				zap.Int64("delta", delta),
@@ -111,7 +111,7 @@ func (s *InteractionService) awardLikeExpAsync(parent context.Context, userID ui
 
 	s.tasks.Go(parent, likeActionAsyncGrace, func(expCtx context.Context) {
 		if err := s.exp.LikeExp(expCtx, userID); err != nil {
-			zap.L().Warn("apply like exp failed", zap.Uint("userId", userID), zap.Error(err))
+			s.logger.Warn("apply like exp failed", zap.Uint("userId", userID), zap.Error(err))
 		}
 	})
 }

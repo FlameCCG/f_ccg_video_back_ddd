@@ -63,7 +63,7 @@ func (s *InteractionService) Triple(
 
 	stats, statsErr := s.stats.ApplyCommittedDelta(ctx, videoID, statsDelta)
 	if statsErr != nil {
-		zap.L().Error("triple committed but stats update failed",
+		s.logger.Error("triple committed but stats update failed",
 			zap.Uint("videoId", videoID),
 			zap.Uint("userId", userID),
 			zap.Error(statsErr),

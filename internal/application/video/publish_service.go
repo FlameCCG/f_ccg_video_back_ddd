@@ -13,9 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// defaultTranscodeResolutions 转码分辨率兜底（与原 dispatchTranscodeTask 一致）。
-var defaultTranscodeResolutions = []uint16{360, 720, 1080}
-
 // PublishService 投稿用例服务（原 api/video_api/publish.go 的业务部分）。
 //
 // 原实现把投稿编排写在 handler 里（直接用 global.DB 建事务、直接读全局配置、
@@ -30,6 +27,7 @@ type PublishService struct {
 	scheduler   *Scheduler
 	cfgProvider *config.Provider
 	tasks       *ctxutil.DetachedTaskGroup
+	logger      *zap.Logger
 }
 
 // NewPublishService 构造投稿用例服务。
@@ -42,6 +40,7 @@ func NewPublishService(
 	scheduler *Scheduler,
 	cfgProvider *config.Provider,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *PublishService {
 	return &PublishService{
 		videos:      videos,
@@ -52,6 +51,7 @@ func NewPublishService(
 		scheduler:   scheduler,
 		cfgProvider: cfgProvider,
 		tasks:       tasks,
+		logger:      logger,
 	}
 }
 
@@ -126,7 +126,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 		// 处理定时发布（开启审核时也会写入 ZSet，过审后按点发布）
 		if domain.ShouldScheduleVideoPublish(now, publishTime, cmd.IsPrivate) {
 			if err := s.scheduler.SchedulePublish(asyncCtx, video.ID, publishTime); err != nil {
-				zap.L().Error("schedule publish failed", zap.Error(err))
+				s.logger.Error("schedule publish failed", zap.Error(err))
 			}
 		}
 
@@ -143,7 +143,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 					asyncCtx, video.ID, parts[idx].ID,
 					input.FilePath, input.FileName, input.FileHash, storageType,
 				); err != nil {
-					zap.L().Error("dispatch transcode task failed",
+					s.logger.Error("dispatch transcode task failed",
 						zap.Error(err), zap.Uint("videoId", video.ID), zap.Uint("partId", parts[idx].ID))
 				}
 			}
@@ -152,7 +152,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 		}
 
 		if err := s.dispatchTranscodeTask(asyncCtx, video, cmd, storageType); err != nil {
-			zap.L().Error("dispatch transcode task failed", zap.Error(err))
+			s.logger.Error("dispatch transcode task failed", zap.Error(err))
 		}
 	})
 
@@ -241,7 +241,7 @@ func (s *PublishService) persistVideo(
 				}
 			}
 
-			zap.L().Error("标签ID不存在", zap.Uints("missing", missing))
+			s.logger.Error("标签ID不存在", zap.Uints("missing", missing))
 
 			return fmt.Errorf("标签ID不存在: %v", missing)
 		}
@@ -336,7 +336,7 @@ func (s *PublishService) transcodeResolutions() []uint16 {
 		return cfg.Transcode.TranscodeResolutions
 	}
 
-	return defaultTranscodeResolutions
+	return []uint16{360, 720, 1080}
 }
 
 // transcodeOutputPath 按存储类型推导转码产物输出前缀（与原实现逐分支一致）。

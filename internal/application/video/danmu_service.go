@@ -20,6 +20,7 @@ type DanmuService struct {
 	authors     *AuthorService
 	creators    CreatorAnalytics
 	broadcaster DanmuBroadcaster
+	logger      *zap.Logger
 }
 
 // NewDanmuService 构造弹幕用例服务。
@@ -33,6 +34,7 @@ func NewDanmuService(
 	stats *StatsService,
 	authors *AuthorService,
 	creators CreatorAnalytics,
+	logger *zap.Logger,
 ) *DanmuService {
 	return &DanmuService{
 		videos:   videos,
@@ -42,6 +44,7 @@ func NewDanmuService(
 		stats:    stats,
 		authors:  authors,
 		creators: creators,
+		logger:   logger,
 	}
 }
 
@@ -106,7 +109,7 @@ func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuPa
 
 	if _, err := s.stats.ApplyDelta(ctx, cmd.VideoID, domain.StatsDelta{DanmuCount: 1}); err != nil {
 		// 弹幕已落库，stats 失败不回滚发送结果，仅告警。
-		zap.L().Warn("apply video stats delta after send danmu failed",
+		s.logger.Warn("apply video stats delta after send danmu failed",
 			zap.Error(err),
 			zap.Uint("videoId", cmd.VideoID),
 		)
@@ -158,7 +161,7 @@ func (s *DanmuService) History(ctx context.Context, params DanmuHistoryParams) (
 		if len(ids) > 0 {
 			likedSet, likeErr := s.danmus.LikedSet(ctx, params.UserID, ids)
 			if likeErr != nil {
-				zap.L().Warn("load user danmu likes failed",
+				s.logger.Warn("load user danmu likes failed",
 					zap.Error(likeErr),
 					zap.Uint("userId", params.UserID),
 					zap.Uint("videoId", params.VideoID),
@@ -246,7 +249,7 @@ func (s *DanmuService) RoomList(
 
 		likedSet, likeErr := s.danmus.LikedSet(ctx, params.UserID, ids)
 		if likeErr != nil {
-			zap.L().Warn("load user danmu likes failed", zap.Error(likeErr), zap.Uint("userId", params.UserID))
+			s.logger.Warn("load user danmu likes failed", zap.Error(likeErr), zap.Uint("userId", params.UserID))
 			// 点赞状态失败时仍返回弹幕列表，仅 isLiked 保持默认 false
 		} else {
 			for idx := range items {
@@ -430,7 +433,7 @@ func (s *DanmuService) deleteDanmus(ctx context.Context, danmus []domain.Danmu) 
 		}
 
 		if _, err := s.stats.ApplyDelta(ctx, videoID, domain.StatsDelta{DanmuCount: -dec}); err != nil {
-			zap.L().Warn("apply video stats delta after delete danmu failed",
+			s.logger.Warn("apply video stats delta after delete danmu failed",
 				zap.Error(err),
 				zap.Uint("videoId", videoID),
 				zap.Int64("danmuDelta", -dec),

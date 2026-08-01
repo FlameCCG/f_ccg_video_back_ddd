@@ -18,6 +18,7 @@ type DeleteService struct {
 	canceller TranscodeCanceller
 	schedule  ScheduleStore
 	authors   *AuthorService
+	logger    *zap.Logger
 }
 
 // NewDeleteService 构造作者删稿用例服务。
@@ -28,6 +29,7 @@ func NewDeleteService(
 	canceller TranscodeCanceller,
 	schedule ScheduleStore,
 	authors *AuthorService,
+	logger *zap.Logger,
 ) *DeleteService {
 	return &DeleteService{
 		txm:       txm,
@@ -36,6 +38,7 @@ func NewDeleteService(
 		canceller: canceller,
 		schedule:  schedule,
 		authors:   authors,
+		logger:    logger,
 	}
 }
 
@@ -92,13 +95,13 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 	}
 
 	if err := s.canceller.NotifyVideoDeleted(ctx, []uint{videoID}); err != nil {
-		zap.L().Warn("notify transcode cancellation failed",
+		s.logger.Warn("notify transcode cancellation failed",
 			zap.Uint("videoId", videoID),
 			zap.Error(err),
 		)
 	}
 
-	zap.L().Info("delete video ok",
+	s.logger.Info("delete video ok",
 		zap.Uint("videoId", videoID),
 		zap.Int64("commentDeleted", deletedComments),
 		zap.Int64("commentLikeDeleted", deletedCommentLikes),

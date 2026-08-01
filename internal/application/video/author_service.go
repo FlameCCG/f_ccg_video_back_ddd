@@ -18,6 +18,7 @@ type AuthorService struct {
 	authorIDs AuthorIDCache
 	meta      DetailMetaCache
 	usernames UsernameCache
+	logger    *zap.Logger
 }
 
 // NewAuthorService 构造作者解析与缓存失效服务。
@@ -26,8 +27,9 @@ func NewAuthorService(
 	authorIDs AuthorIDCache,
 	meta DetailMetaCache,
 	usernames UsernameCache,
+	logger *zap.Logger,
 ) *AuthorService {
-	return &AuthorService{videos: videos, authorIDs: authorIDs, meta: meta, usernames: usernames}
+	return &AuthorService{videos: videos, authorIDs: authorIDs, meta: meta, usernames: usernames, logger: logger}
 }
 
 // AuthorID 获取视频作者 userID。
@@ -118,7 +120,7 @@ func (s *AuthorService) InvalidateVideoMetaCacheByPartition(ctx context.Context,
 
 	videoIDs, err := s.videos.IDsByPartition(ctx, partitionID)
 	if err != nil {
-		zap.L().Warn("list videos by partition for meta invalidate failed",
+		s.logger.Warn("list videos by partition for meta invalidate failed",
 			zap.Uint("partitionId", partitionID), zap.Error(err))
 
 		return
@@ -126,6 +128,37 @@ func (s *AuthorService) InvalidateVideoMetaCacheByPartition(ctx context.Context,
 
 	for _, videoID := range videoIDs {
 		s.InvalidateVideoMetaCache(ctx, videoID)
+	}
+}
+
+// InvalidateVideosByAuthor 批量失效该作者名下视频的详情缓存。
+//
+// 与原 api/user_api/update_user_info.go 的收尾逻辑一致：
+// 用户名/头像/简介会嵌入视频详情 meta，变更后需批量失效；
+// usernameChanged 为 true 时连同 authorID 缓存一起清（author_username 也变了）。
+func (s *AuthorService) InvalidateVideosByAuthor(ctx context.Context, authorUsername string, usernameChanged bool) {
+	if authorUsername == "" {
+		return
+	}
+
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+
+	videoIDs, err := s.videos.IDsByAuthor(ctx, authorUsername)
+	if err != nil {
+		s.logger.Warn("list videos by author for cache invalidate failed",
+			zap.String("authorUsername", authorUsername), zap.Error(err))
+
+		return
+	}
+
+	for _, videoID := range videoIDs {
+		if usernameChanged {
+			s.InvalidateVideoAuthorCache(ctx, videoID)
+		} else {
+			s.InvalidateVideoMetaCache(ctx, videoID)
+		}
 	}
 }
 

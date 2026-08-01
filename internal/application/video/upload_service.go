@@ -36,15 +36,21 @@ type UploadService struct {
 	cfgProvider *config.Provider
 	mergeLocks  *mergeLockManager
 	statusCache *uploadStatusCache
+	logger      *zap.Logger
 }
 
 // NewUploadService 构造分片上传用例服务。
-func NewUploadService(storage StorageResolver, cfgProvider *config.Provider) *UploadService {
+func NewUploadService(
+	storage StorageResolver,
+	cfgProvider *config.Provider,
+	logger *zap.Logger,
+) *UploadService {
 	return &UploadService{
 		storage:     storage,
 		cfgProvider: cfgProvider,
 		mergeLocks:  newMergeLockManager(),
 		statusCache: newUploadStatusCache(uploadStatusCacheTTL),
+		logger:      logger,
 	}
 }
 
@@ -167,7 +173,7 @@ func (s *UploadService) GetUploadStatus(ctx context.Context, fileHash string) (*
 	}
 
 	if isTransientUploadStatusError(completedRes.err) || isTransientUploadStatusError(chunksRes.err) {
-		zap.L().Warn("upload status degraded due to transient storage error",
+		s.logger.Warn("upload status degraded due to transient storage error",
 			zap.String("fileHash", fileHash),
 			zap.Error(completedRes.err),
 			zap.Error(chunksRes.err))
@@ -218,7 +224,7 @@ func (s *UploadService) CompleteUpload(
 	// 最终对象已在存储中：直接复用（分片可能已在上次 complete 后清理）
 	if existing, ok, probeErr := driver.GetCompletedFile(ctx, fileHash); probeErr == nil && ok && trimSpace(existing) != "" {
 		s.statusCache.rememberCompleted(fileHash, existing)
-		zap.L().Info("complete upload reused existing object",
+		s.logger.Info("complete upload reused existing object",
 			zap.String("fileHash", fileHash),
 			zap.String("filePath", existing))
 
@@ -233,7 +239,7 @@ func (s *UploadService) CompleteUpload(
 
 	finalPath, err := driver.MergeChunks(ctx, fileHash, fileName, totalChunks)
 	if err != nil {
-		zap.L().Warn("complete upload failed",
+		s.logger.Warn("complete upload failed",
 			zap.String("fileHash", fileHash),
 			zap.String("fileName", fileName),
 			zap.Int("totalChunks", totalChunks),
@@ -243,7 +249,7 @@ func (s *UploadService) CompleteUpload(
 		return "", err
 	}
 
-	zap.L().Info("complete upload succeeded",
+	s.logger.Info("complete upload succeeded",
 		zap.String("fileHash", fileHash),
 		zap.String("fileName", fileName),
 		zap.Int("totalChunks", totalChunks),
@@ -284,13 +290,13 @@ func (s *UploadService) ResolveCompletedUpload(ctx context.Context, fileHash str
 
 	filePath, completed, err := driver.GetCompletedFile(probeCtx, trimSpace(fileHash))
 	if err != nil {
-		zap.L().Warn("resolve completed upload failed", zap.String("fileHash", fileHash), zap.Error(err))
+		s.logger.Warn("resolve completed upload failed", zap.String("fileHash", fileHash), zap.Error(err))
 
 		return "", errCheckUploadFailed
 	}
 
 	if !completed || trimSpace(filePath) == "" {
-		zap.L().Warn("publish blocked: completed upload object missing",
+		s.logger.Warn("publish blocked: completed upload object missing",
 			zap.String("fileHash", trimSpace(fileHash)))
 
 		return "", errUploadIncomplete
@@ -318,6 +324,16 @@ func (s *UploadService) SaveImage(
 // ValidateUploadID 暴露上传标识校验，供 handler 在读取 multipart 前做前置校验。
 func (s *UploadService) ValidateUploadID(id string) error {
 	return s.storage.ValidateUploadID(id)
+}
+
+// EnsureStorageReady 校验存储驱动配置可用。
+//
+// 对应原 saveReportImages 中「ResolveDriver 失败 → 存储配置错误」的前置分支：
+// handler 需要在遍历上传文件之前先失败，避免部分文件已落盘后才报错。
+func (s *UploadService) EnsureStorageReady() error {
+	_, err := s.resolve()
+
+	return err
 }
 
 func (s *UploadService) resolve() (StorageDriver, error) {

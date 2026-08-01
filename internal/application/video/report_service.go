@@ -22,6 +22,7 @@ type ReportService struct {
 	notify   NotifySourceQuery
 	notifier VideoNotifier
 	tasks    *ctxutil.DetachedTaskGroup
+	logger   *zap.Logger
 }
 
 // NewReportService 构造举报用例服务。
@@ -33,6 +34,7 @@ func NewReportService(
 	notify NotifySourceQuery,
 	notifier VideoNotifier,
 	tasks *ctxutil.DetachedTaskGroup,
+	logger *zap.Logger,
 ) *ReportService {
 	return &ReportService{
 		videos:   videos,
@@ -42,6 +44,7 @@ func NewReportService(
 		notify:   notify,
 		notifier: notifier,
 		tasks:    tasks,
+		logger:   logger,
 	}
 }
 
@@ -256,7 +259,7 @@ func (s *ReportService) notifyReportHandled(
 
 	usernames, err := s.reports.ReporterUsernames(ctx, handleType, reportIDs)
 	if err != nil {
-		zap.L().Warn("load report reporters failed", zap.Error(err), zap.String("type", string(handleType)))
+		s.logger.Warn("load report reporters failed", zap.Error(err), zap.String("type", string(handleType)))
 
 		return
 	}
@@ -285,7 +288,7 @@ func (s *ReportService) notifyReportHandled(
 
 	userIDMap, err := s.notify.UserIDsByUsernames(ctx, unique)
 	if err != nil {
-		zap.L().Warn("load report users failed", zap.Error(err))
+		s.logger.Warn("load report users failed", zap.Error(err))
 
 		return
 	}

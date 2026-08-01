@@ -41,6 +41,8 @@ type VideoRepository interface {
 	UpdateStatusBatch(ctx context.Context, videoIDs []uint, status enum.VideoStatus) (int64, error)
 	// UpdateStatusBatchFrom 批量条件更新视频状态，返回影响行数。
 	UpdateStatusBatchFrom(ctx context.Context, videoIDs []uint, from, to enum.VideoStatus) (int64, error)
+	// IDsByAuthor 读取该作者名下的全部视频 ID（用于批量失效详情缓存）。
+	IDsByAuthor(ctx context.Context, authorUsername string) ([]uint, error)
 	// IDsByStatus 过滤出指定状态的视频 ID。
 	IDsByStatus(ctx context.Context, videoIDs []uint, status enum.VideoStatus) ([]uint, error)
 	// IDsByPartition 列出某分区下的全部视频 ID。
@@ -148,7 +150,7 @@ type HistoryRepository interface {
 	// DeleteByVideoIDs 批量删除用户的历史记录。
 	DeleteByVideoIDs(ctx context.Context, userID uint, videoIDs []uint) error
 	// RecentVideoIDs 读取用户最近观看的视频 ID（按时间倒序，最多 limit 条）。
-	RecentVideoIDs(ctx context.Context, userID uint, limit int) []uint
+	RecentVideoIDs(ctx context.Context, userID uint, limit int) ([]uint, error)
 	// ProgressByVideoIDs 批量读取用户在给定视频上的进度（仅返回 >0 的项）。
 	ProgressByVideoIDs(ctx context.Context, userID uint, videoIDs []uint) map[uint]int
 }

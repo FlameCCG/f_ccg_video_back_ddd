@@ -14,6 +14,7 @@ type PartitionService struct {
 	videos     domain.VideoRepository
 	cache      PartitionCache
 	authors    *AuthorService
+	logger     *zap.Logger
 }
 
 // NewPartitionService 构造分区用例服务。
@@ -22,8 +23,9 @@ func NewPartitionService(
 	videos domain.VideoRepository,
 	cache PartitionCache,
 	authors *AuthorService,
+	logger *zap.Logger,
 ) *PartitionService {
-	return &PartitionService{partitions: partitions, videos: videos, cache: cache, authors: authors}
+	return &PartitionService{partitions: partitions, videos: videos, cache: cache, authors: authors, logger: logger}
 }
 
 // Create 创建分区。
@@ -79,7 +81,7 @@ func (s *PartitionService) Delete(ctx context.Context, id uint) error {
 	}
 
 	s.cache.Invalidate()
-	zap.L().Info("delete partition ok", zap.Uint("partitionId", id), zap.Int64("rows", rows))
+	s.logger.Info("delete partition ok", zap.Uint("partitionId", id), zap.Int64("rows", rows))
 
 	return nil
 }

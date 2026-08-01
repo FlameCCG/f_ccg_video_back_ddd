@@ -27,6 +27,7 @@ type Scheduler struct {
 	vectors     *VectorSyncService
 	cfgProvider *config.Provider
 	interval    time.Duration
+	logger      *zap.Logger
 
 	mu      sync.Mutex
 	cancel  context.CancelFunc
@@ -40,6 +41,7 @@ func NewScheduler(
 	store ScheduleStore,
 	vectors *VectorSyncService,
 	cfgProvider *config.Provider,
+	logger *zap.Logger,
 ) *Scheduler {
 	return &Scheduler{
 		videos:      videos,
@@ -47,6 +49,7 @@ func NewScheduler(
 		vectors:     vectors,
 		cfgProvider: cfgProvider,
 		interval:    defaultSchedulerInterval,
+		logger:      logger,
 	}
 }
 
@@ -63,7 +66,7 @@ func (s *Scheduler) Start(_ context.Context) error {
 	}
 
 	if !s.store.Available() {
-		zap.L().Warn("redis not configured, skip video scheduler")
+		s.logger.Warn("redis not configured, skip video scheduler")
 
 		return nil
 	}
@@ -141,7 +144,7 @@ func (s *Scheduler) loop(ctx context.Context) {
 func (s *Scheduler) flushDue(ctx context.Context) {
 	members, err := s.store.DueMembers(ctx, time.Now().Unix())
 	if err != nil {
-		zap.L().Error("fetch scheduled videos failed", zap.Error(err))
+		s.logger.Error("fetch scheduled videos failed", zap.Error(err))
 
 		return
 	}
@@ -156,13 +159,13 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 
 		drop, pubErr := s.ProcessDueScheduledVideo(ctx, uint(videoID))
 		if pubErr != nil {
-			zap.L().Error("scheduled publish failed", zap.Error(pubErr), zap.Uint("videoId", uint(videoID)))
+			s.logger.Error("scheduled publish failed", zap.Error(pubErr), zap.Uint("videoId", uint(videoID)))
 		}
 
 		// 成功发布、不可自动发布（待审/终态）时移除任务；瞬时失败则保留重试。
 		if drop {
 			if err := s.store.RemoveMember(ctx, member); err != nil {
-				zap.L().Error("remove schedule member failed", zap.Error(err), zap.Uint("videoId", uint(videoID)))
+				s.logger.Error("remove schedule member failed", zap.Error(err), zap.Uint("videoId", uint(videoID)))
 			}
 		}
 	}
@@ -187,7 +190,7 @@ func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) 
 	case domain.ScheduledPublishFromReview:
 		return s.publishIfStatus(ctx, videoID, enum.VideoStatusReview)
 	case domain.ScheduledPublishKeepReview:
-		zap.L().Info("skip auto-publish: video still in review",
+		s.logger.Info("skip auto-publish: video still in review",
 			zap.Uint("videoId", videoID),
 		)
 
