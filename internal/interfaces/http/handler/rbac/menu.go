@@ -296,6 +296,8 @@ func (h *Handler) respondMenuMutationError(
 		domain.ErrMenuCreatorRoleMissing,
 		domain.ErrMenuMoveAcrossLevels,
 		domain.ErrMenuMovePosition,
+		domain.ErrMenuIconUnsafe,
+		domain.ErrMenuIconTooLong,
 	} {
 		if errors.Is(err, businessErr) {
 			res.FailWithMsg(businessErr.Error(), c)

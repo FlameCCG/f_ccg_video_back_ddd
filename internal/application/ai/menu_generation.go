@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	domainai "f_ccg_video_back_ddd/internal/domain/ai"
@@ -25,8 +24,6 @@ const defaultMenuGenerationSystemPrompt = `你是企业后台 RBAC 菜单配置�
 3. sortOrder 必须是大于 0 的整数，并结合父菜单下现有同级菜单给出合理插入位置。
 4. icon 必须是长度不超过 2048 字节的安全 SVG 字符串，不得包含 script、事件处理器、外链或 foreignObject。
 5. titleEn/titleJa/name/path/component 均不得为空。`
-
-var menuSVGEventAttribute = regexp.MustCompile(`(?i)\son[a-z]+\s*=`)
 
 // GenerateMenuSuggestion 使用独立系统提示词生成菜单表单字段。
 func (s *Service) GenerateMenuSuggestion(
@@ -121,12 +118,10 @@ func parseMenuSuggestion(text string) (*domainrbac.MenuSuggestion, error) {
 		return nil, errors.New("AI 返回的菜单字段超过数据库长度限制")
 	}
 
-	iconLower := strings.ToLower(suggestion.Icon)
-	if !strings.HasPrefix(iconLower, "<svg") ||
-		strings.Contains(iconLower, "<script") ||
-		strings.Contains(iconLower, "<foreignobject") ||
-		strings.Contains(iconLower, "javascript:") ||
-		menuSVGEventAttribute.MatchString(suggestion.Icon) {
+	// 与手工创建/更新共用同一份安全校验（domainrbac.ValidateMenuIcon）；
+	// AI 额外要求图标必须是 SVG。
+	if !strings.HasPrefix(strings.ToLower(suggestion.Icon), "<svg") ||
+		domainrbac.ValidateMenuIcon(suggestion.Icon) != nil {
 		return nil, errors.New("AI 返回了不安全的菜单 SVG")
 	}
 

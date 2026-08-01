@@ -3,6 +3,8 @@ package rbac_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
@@ -108,6 +110,84 @@ func TestMenuServiceCreateOrdersAndGrantsCreatorRole(t *testing.T) {
 		if roleMenu.IsInherited {
 			t.Fatal("creator menu permission must be direct")
 		}
+	}
+}
+
+func TestMenuServiceCreateRejectsUnsafeIcon(t *testing.T) {
+	s := newSuite(t)
+	ctx := context.Background()
+
+	for _, icon := range []string{
+		"<script>alert(1)</script>",
+		"<svg onload=\"alert(1)\"></svg>",
+		"<a href=\"javascript:alert(1)\">x</a>",
+	} {
+		err := s.menus.Create(ctx, app.CreateMenuParams{Title: "X", Icon: icon})
+		if !errors.Is(err, domain.ErrMenuIconUnsafe) {
+			t.Fatalf("create with icon %q: err = %v, want ErrMenuIconUnsafe", icon, err)
+		}
+	}
+
+	var count int64
+	if err := s.db.Model(&po.Menu{}).Count(&count).Error; err != nil {
+		t.Fatalf("count menus: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("menu rows = %d, want 0 (unsafe icons must not persist)", count)
+	}
+}
+
+func TestMenuServiceUpdateRejectsUnsafeIcon(t *testing.T) {
+	s := newSuite(t)
+	ctx := context.Background()
+
+	unsafe := "<script>alert(1)</script>"
+	err := s.menus.Update(ctx, app.UpdateMenuParams{ID: 1, Icon: &unsafe})
+	if !errors.Is(err, domain.ErrMenuIconUnsafe) {
+		t.Fatalf("update with unsafe icon: err = %v, want ErrMenuIconUnsafe", err)
+	}
+
+	tooLong := strings.Repeat("a", 2049)
+	err = s.menus.Update(ctx, app.UpdateMenuParams{ID: 1, Icon: &tooLong})
+	if !errors.Is(err, domain.ErrMenuIconTooLong) {
+		t.Fatalf("update with oversized icon: err = %v, want ErrMenuIconTooLong", err)
+	}
+}
+
+func TestMenuServiceCreateAcceptsSafeIconAndPersists(t *testing.T) {
+	s := newSuite(t)
+	ctx := context.Background()
+
+	role := domain.NewRole("创建者", "")
+	if err := s.roleRepo.Create(ctx, role); err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+
+	user := po.User{
+		Username:      "icon_creator",
+		Email:         "icon_creator@example.com",
+		Password:      "x",
+		CurrentRoleID: role.ID,
+	}
+	if err := s.db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error; err != nil {
+		t.Fatalf("seed creator: %v", err)
+	}
+
+	icon := "  <svg viewBox=\"0 0 24 24\"><path d=\"M0 0h24v24H0z\"/></svg>  "
+	if err := s.menus.Create(ctx, app.CreateMenuParams{
+		Title:     "SafeIcon",
+		Icon:      icon,
+		CreatorID: user.ID,
+	}); err != nil {
+		t.Fatalf("create with safe icon: %v", err)
+	}
+
+	var menu po.Menu
+	if err := s.db.First(&menu).Error; err != nil {
+		t.Fatalf("load menu: %v", err)
+	}
+	if menu.Icon != strings.TrimSpace(icon) {
+		t.Fatalf("persisted icon = %q, want trimmed %q", menu.Icon, strings.TrimSpace(icon))
 	}
 }
 
