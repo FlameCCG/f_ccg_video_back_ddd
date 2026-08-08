@@ -156,7 +156,7 @@ func (m *MinIOStorage) GetCompletedFile(ctx context.Context, fileHash string) (s
 	if exists, err := m.objectExists(ctx, finalKey); err != nil {
 		return "", false, fmt.Errorf("检查最终文件失败: %w", err)
 	} else if exists {
-		return m.publicURL(finalKey), true, nil
+		return m.publicPath(finalKey), true, nil
 	}
 
 	return "", false, nil
@@ -182,7 +182,7 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 			zap.String("fileHash", fileHash),
 			zap.String("key", finalKey))
 
-		return m.publicURL(finalKey), nil
+		return m.publicPath(finalKey), nil
 	}
 
 	if ok, err := m.composeChunks(ctx, finalKey, fileHash, fileName, totalChunks); err != nil {
@@ -194,7 +194,7 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 			zap.String("key", finalKey),
 			zap.Int("totalChunks", totalChunks))
 
-		return m.publicURL(finalKey), nil
+		return m.publicPath(finalKey), nil
 	}
 
 	m.logger.Info("complete upload falling back to stream merge",
@@ -291,7 +291,7 @@ func (m *MinIOStorage) streamMergeChunks(
 
 	m.cleanupChunksAsync(ctx, fileHash)
 
-	return m.publicURL(finalKey), nil
+	return m.publicPath(finalKey), nil
 }
 
 func (m *MinIOStorage) objectExists(ctx context.Context, objectKey string) (bool, error) {
@@ -376,7 +376,7 @@ func (m *MinIOStorage) SaveTranscodeVideo(
 		return "", 0, errors.New("转码输出为空，已拒绝提交")
 	}
 
-	return m.publicURL(key), info.Size, nil
+	return m.publicPath(key), info.Size, nil
 }
 
 // StatStoredFile 返回对象字节数；对象缺失时返回 error（转码断点续传用它校验历史产物）。
@@ -578,11 +578,22 @@ func (m *MinIOStorage) SaveFile(
 		return "", fmt.Errorf("上传文件失败: %w", err)
 	}
 
-	return m.publicURL(key), nil
+	return m.publicPath(key), nil
 }
 
-// publicURL 根据 endpoint、bucket 和对象 key 生成访问地址。
-func (m *MinIOStorage) publicURL(objectKey string) string {
+// publicPath 根据对象 key 生成根相对访问路径（host 由前端按环境拼接，见 docs）。
+// 对外返回 /<key>，例如 /user_files/images/x.jpg；缺少配置时原样返回 key。
+func (m *MinIOStorage) publicPath(objectKey string) string {
+	key := strings.TrimSpace(objectKey)
+	if key == "" {
+		return ""
+	}
+
+	return "/" + strings.TrimPrefix(key, "/")
+}
+
+// absoluteURL 根据 endpoint、bucket 和对象 key 生成后端直连的完整 URL（ffmpeg 等内部消费）。
+func (m *MinIOStorage) absoluteURL(objectKey string) string {
 	if m.cfg == nil || m.cfg.MinIO == nil { // 缺少配置时直接返回 key
 		return objectKey
 	}
@@ -595,7 +606,31 @@ func (m *MinIOStorage) publicURL(objectKey string) string {
 	endpoint := strings.TrimPrefix(m.cfg.MinIO.Endpoint, "https://") // 去掉协议前缀，防止重复
 	endpoint = strings.TrimPrefix(endpoint, "http://")
 
-	return fmt.Sprintf("%s://%s/%s/%s", scheme, endpoint, m.bucket, objectKey)
+	return fmt.Sprintf("%s://%s/%s/%s", scheme, endpoint, m.bucket, strings.TrimPrefix(objectKey, "/"))
+}
+
+// ResolveSource 把根相对路径解析为后端直连的完整 URL；已是 http(s) URL 时原样返回。
+func (m *MinIOStorage) ResolveSource(_ context.Context, storedPath string) (string, error) {
+	trimmed := strings.TrimSpace(storedPath)
+	if trimmed == "" {
+		return "", nil
+	}
+
+	low := strings.ToLower(trimmed)
+	if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
+		return trimmed, nil
+	}
+
+	key, err := m.objectKeyFromPath(trimmed)
+	if err != nil {
+		return "", err
+	}
+
+	if key == "" {
+		return "", nil
+	}
+
+	return m.absoluteURL(key), nil
 }
 
 // isNotFoundError 判断错误是否为对象不存在类型。
