@@ -207,10 +207,20 @@ func (s *TranscodeService) ProcessTask(ctx context.Context, task domain.Transcod
 		return err
 	}
 
+	// 源路径是根相对路径（对外契约，保持原样落库），
+	// 解析为 ffmpeg 可读的绝对 URL/路径后仅用于 stager 取源。
+	srcPath, err := driver.ResolveSource(ctx, task.SourcePath)
+	if err != nil {
+		return err
+	}
+
+	stagingTask := task
+	stagingTask.SourcePath = srcPath
+
 	// 准备源（本地/HTTP）；远程源暂存到断点目录，重试时免重复下载
 	pt.EnterStage(ctx, domain.TranscodeStagePrepare, "准备源文件")
 
-	preparedSrcPath, cleanup, err := s.stager.PrepareSource(ctx, task, ckpt)
+	preparedSrcPath, cleanup, err := s.stager.PrepareSource(ctx, stagingTask, ckpt)
 	if err != nil {
 		return err
 	}

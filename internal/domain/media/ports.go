@@ -33,6 +33,9 @@ type StorageDriver interface {
 		reader io.Reader,
 		contentType, label string,
 	) (string, int64, error)
+	// ResolveSource 把存储中的相对路径/对象 key 解析为 ffmpeg 可直接读取的
+	// 本地绝对路径（本地存储）或可访问 URL（MinIO）。已持有绝对形式时原样返回。
+	ResolveSource(ctx context.Context, storedPath string) (string, error)
 	// StatStoredFile 返回已存储文件的字节数；文件不存在或不可访问时返回 error。
 	// 供转码断点续传在复用历史产物前校验远端对象仍然有效。
 	StatStoredFile(ctx context.Context, storedPath string) (int64, error)
