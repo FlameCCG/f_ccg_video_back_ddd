@@ -129,6 +129,8 @@ type FolderRepository interface {
 	Create(ctx context.Context, folder *FavoriteFolder) error
 	// FindByIDAndUser 读取用户名下的收藏夹；不存在时返回 ErrRecordNotFound。
 	FindByIDAndUser(ctx context.Context, userID, folderID uint) (*FavoriteFolder, error)
+	// Update 更新收藏夹（目前仅名称）。
+	Update(ctx context.Context, folder *FavoriteFolder) error
 	// DeleteWithVideos 删除收藏夹：先扣减受影响视频的 favorite_count，再清关联与夹本体。
 	DeleteWithVideos(ctx context.Context, userID uint, folder *FavoriteFolder) ([]uint, error)
 	// LinkExists 判断某收藏夹内是否已含该视频。

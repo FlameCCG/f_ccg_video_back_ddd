@@ -61,6 +61,8 @@ var (
 	ErrFolderNameEmpty = errors.New("收藏夹名称不能为空")
 	// ErrDefaultFolderUndeletable 默认收藏夹不可删除.
 	ErrDefaultFolderUndeletable = errors.New("默认收藏夹不可删除")
+	// ErrFolderNotFoundOrForbidden 收藏夹不存在或无权限修改.
+	ErrFolderNotFoundOrForbidden = errors.New("收藏夹不存在或无权限修改")
 
 	// ErrPartitionNotFound 选择的分区不存在.
 	ErrPartitionNotFound = errors.New("选择的分区不存在")

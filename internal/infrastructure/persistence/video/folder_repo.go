@@ -72,6 +72,18 @@ func (r *FolderRepository) FindByIDAndUser(
 	return toDomainFolder(&row), nil
 }
 
+// Update 更新收藏夹（目前仅名称）。
+func (r *FolderRepository) Update(ctx context.Context, folder *domain.FavoriteFolder) error {
+	if folder == nil || folder.ID == 0 {
+		return domain.ErrParamInvalid
+	}
+
+	return gormx.DB(ctx, r.db).
+		Model(&po.FavoriteFolder{}).
+		Where("id = ?", folder.ID).
+		Update("name", folder.Name).Error
+}
+
 // DeleteWithVideos 删除收藏夹：先扣减受影响视频的 favorite_count，再清关联与夹本体。
 //
 // 受影响视频 = 该夹内、且用户其它夹中不再收藏的视频（与原 collectFavoriteCountAffectedVideoIDs 一致）。
