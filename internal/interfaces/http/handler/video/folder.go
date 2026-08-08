@@ -39,6 +39,38 @@ func (h *Handler) CreateFolderView(c *gin.Context) {
 	}, c)
 }
 
+// UpdateFolderReq is an exported API type.
+type UpdateFolderReq struct {
+	FolderID uint   `json:"folderId" binding:"required"`
+	Name     string `json:"name" binding:"required,min=1,max=50"`
+}
+
+// UpdateFolderView handles the corresponding HTTP request.
+func (h *Handler) UpdateFolderView(c *gin.Context) {
+	req := middlewares.GetBound[UpdateFolderReq](c)
+
+	uid, ok := getUID(c)
+	if !ok {
+		res.FailWithMsg("请先登录", c)
+
+		return
+	}
+
+	folder, err := h.folders.UpdateFolder(c.Request.Context(), uid, req.FolderID, req.Name)
+	if err != nil {
+		res.FailWithMsg(err.Error(), c)
+
+		return
+	}
+
+	res.OkWithData(app.FolderDTO{
+		ID:        folder.ID,
+		UserID:    folder.UserID,
+		Name:      folder.Name,
+		IsDefault: folder.IsDefault,
+	}, c)
+}
+
 // DeleteFolderReq is an exported API type.
 type DeleteFolderReq struct {
 	FolderID uint `json:"folderId" binding:"required"`
