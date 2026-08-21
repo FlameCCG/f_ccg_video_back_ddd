@@ -36,10 +36,6 @@ func (d *DB) Gorm() *gorm.DB {
 
 // New 连接 MySQL 并配置连接池；失败时 zap.Panic（与原 core.InitDB 一致）。
 func New(cfg *config.Mysql, logger *zap.Logger) *DB {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	db, err := gorm.Open(mysql.Open(cfg.GetDSN()), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 		DefaultContextTimeout:                    defaultContextTimeout,

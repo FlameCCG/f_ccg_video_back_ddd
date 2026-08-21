@@ -47,10 +47,6 @@ func NewSlideCaptcha(
 	cfgProvider *config.Provider,
 	logger *zap.Logger,
 ) *SlideCaptcha {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &SlideCaptcha{
 		store:       payloadStore{redis: redisClient, logger: logger},
 		cfgProvider: cfgProvider,

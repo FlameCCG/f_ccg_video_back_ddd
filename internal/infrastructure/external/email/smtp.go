@@ -62,10 +62,6 @@ var _ app.EmailCaptchaSender = (*Sender)(nil)
 
 // NewSender 构造 SMTP 邮件发送器。
 func NewSender(cfgProvider *config.Provider, logger *zap.Logger) *Sender {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &Sender{cfgProvider: cfgProvider, logger: logger}
 }
 
@@ -251,10 +247,6 @@ func buildSMTPEnvelope(e *emaillib.Email) (*smtpEnvelope, error) {
 }
 
 func dialSMTP(targetAddr string, logger *zap.Logger) (net.Conn, error) {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	if proxyURL, ok := smtpProxyURLFromEnv(); ok {
 		conn, err := dialSMTPViaHTTPProxy(proxyURL, targetAddr, smtpDialTimeout)
 		if err == nil {

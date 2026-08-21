@@ -50,10 +50,6 @@ func ProbeVideoMeta(ctx context.Context, p string, logger *zap.Logger) (media.Vi
 
 // ProbeVideo 调用 ffprobe 解析视频元数据（分辨率、码率、编码、容器 brand、时长等）。
 func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoMeta, error) {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	cmd := exec.CommandContext(ctx, "ffprobe",
 		"-v", "error",
 		"-show_streams",

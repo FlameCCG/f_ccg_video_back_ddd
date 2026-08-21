@@ -27,10 +27,6 @@ type EventBus struct {
 
 // NewEventBus 构造私信事件总线；redisClient 允许为 nil。
 func NewEventBus(redisClient *redis.Client, logger *zap.Logger) *EventBus {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &EventBus{redis: redisClient, logger: logger}
 }
 

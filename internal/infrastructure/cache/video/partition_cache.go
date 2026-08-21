@@ -32,10 +32,6 @@ var _ app.PartitionCache = (*PartitionCache)(nil)
 
 // NewPartitionCache 构造分区列表缓存适配器；redisClient 允许为 nil。
 func NewPartitionCache(redisClient *redis.Client, logger *zap.Logger) *PartitionCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &PartitionCache{redis: redisClient, logger: logger}
 }
 

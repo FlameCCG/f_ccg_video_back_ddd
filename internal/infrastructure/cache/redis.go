@@ -28,10 +28,6 @@ func (r *Redis) Client() *redis.Client {
 
 // New 连接 Redis 并 Ping 探活；失败时 zap.Panic（与原 core.InitRedis 一致）。
 func New(cfg *config.Redis, logger *zap.Logger) *Redis {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Host + ":" + cfg.Port,
 		Password: cfg.Password,

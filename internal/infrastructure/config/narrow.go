@@ -33,7 +33,6 @@ func ProvideMysqlConf(p *Provider) *Mysql {
 	if cfg == nil {
 		return nil
 	}
-
 	return cfg.Mysql
 }
 
@@ -43,7 +42,6 @@ func ProvideRedisConf(p *Provider) *Redis {
 	if cfg == nil {
 		return nil
 	}
-
 	return cfg.Redis
 }
 

@@ -23,10 +23,6 @@ var _ aiapp.ImageGenerator = (*ImageModel)(nil)
 
 // NewImageModel 构造图片生成适配器。
 func NewImageModel(logger *zap.Logger) *ImageModel {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &ImageModel{logger: logger}
 }
 

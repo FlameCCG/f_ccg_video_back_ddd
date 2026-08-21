@@ -25,10 +25,6 @@ type IndexManager struct {
 
 // NewIndexManager 构造索引管理器（client 允许为 nil，方法将返回 ErrIndexClientUnavailable）。
 func NewIndexManager(client *elastic.Client, logger *zap.Logger) *IndexManager {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &IndexManager{client: client, logger: logger}
 }
 

@@ -60,10 +60,6 @@ func NewClickCaptcha(
 	cfgProvider *config.Provider,
 	logger *zap.Logger,
 ) *ClickCaptcha {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &ClickCaptcha{
 		store:       payloadStore{redis: redisClient, logger: logger},
 		cfgProvider: cfgProvider,

@@ -42,10 +42,6 @@ var _ app.CountCache = (*CountCache)(nil)
 
 // NewCountCache 构造角标计数缓存适配器。
 func NewCountCache(redisClient *redis.Client, logger *zap.Logger) *CountCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &CountCache{redis: redisClient, logger: logger}
 }
 

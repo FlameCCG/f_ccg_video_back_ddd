@@ -29,10 +29,6 @@ var _ app.DanmuRecentCache = (*DanmuRecentCache)(nil)
 
 // NewDanmuRecentCache 构造最近弹幕缓存适配器；redisClient 允许为 nil。
 func NewDanmuRecentCache(redisClient *redis.Client, logger *zap.Logger) *DanmuRecentCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &DanmuRecentCache{redis: redisClient, logger: logger}
 }
 

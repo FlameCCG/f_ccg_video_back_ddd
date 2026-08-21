@@ -78,11 +78,7 @@ func NewVideoVectorRebuildService(
 
 // StartRebuild 异步启动全量回填；已有任务在运行时返回 (false, nil)。
 func (s *VideoVectorRebuildService) StartRebuild(options RebuildOptions) (bool, error) {
-	if s == nil || s.vectors == nil || s.source == nil || s.index == nil || s.tasks == nil {
-		return false, errors.New("数据库或 ES 未初始化")
-	}
-
-	if !s.source.Available() || !s.index.Available() {
+	if s == nil || s.source == nil || s.index == nil || !s.source.Available() || !s.index.Available() {
 		return false, errors.New("数据库或 ES 未初始化")
 	}
 

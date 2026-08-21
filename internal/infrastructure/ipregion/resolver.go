@@ -26,10 +26,6 @@ var _ ipUtils.RegionResolver = (*Resolver)(nil)
 
 // NewResolver 构造归属地解析器；searcher 为 nil 时所有公网 IP 返回「未知地址」。
 func NewResolver(searcher *xdb.Searcher, logger *zap.Logger) *Resolver {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &Resolver{searcher: searcher, logger: logger}
 }
 

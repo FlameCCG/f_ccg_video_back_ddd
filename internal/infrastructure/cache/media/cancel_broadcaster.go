@@ -88,10 +88,6 @@ func NewCancelSubscriber(
 	registry *domain.TaskRegistry,
 	logger *zap.Logger,
 ) *CancelSubscriber {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &CancelSubscriber{client: client, registry: registry, logger: logger}
 }
 

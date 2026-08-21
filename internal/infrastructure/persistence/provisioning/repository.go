@@ -55,10 +55,6 @@ func NewSuperUserRepository(
 	userRepoCtx UserContextDecorator,
 	logger *zap.Logger,
 ) *SuperUserRepository {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &SuperUserRepository{db: db, userRepoCtx: userRepoCtx, logger: logger}
 }
 
@@ -157,10 +153,6 @@ var _ app.CasbinRoleBinder = (*CasbinRoleBinder)(nil)
 
 // NewCasbinRoleBinder 构造 Casbin 角色绑定器。
 func NewCasbinRoleBinder(enforcer *casbin.SyncedEnforcer, logger *zap.Logger) *CasbinRoleBinder {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &CasbinRoleBinder{enforcer: enforcer, logger: logger}
 }
 

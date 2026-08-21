@@ -24,10 +24,6 @@ type IndexInitializer struct {
 
 // NewIndexInitializer 构造索引初始化组件。
 func NewIndexInitializer(repo domain.Repository, logger *zap.Logger) *IndexInitializer {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &IndexInitializer{repo: repo, logger: logger}
 }
 
