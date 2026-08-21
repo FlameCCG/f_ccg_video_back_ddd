@@ -53,10 +53,6 @@ func NewTranscodeConsumerComponent(
 	producers *ProducerPool,
 	logger *zap.Logger,
 ) *TranscodeConsumerComponent {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &TranscodeConsumerComponent{
 		cfg:        cfg,
 		service:    service,

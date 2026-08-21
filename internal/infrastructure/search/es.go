@@ -58,10 +58,6 @@ func (e *ES) V8() *elasticsearch8.Client {
 
 // New 连接 Elasticsearch（带 Ping 重试）；失败时 zap.Panic（与原 core.InitES 一致）。
 func New(cfg *config.ES, logger *zap.Logger) *ES {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	if cfg == nil || cfg.Host == "" || cfg.Port == 0 {
 		logger.Warn("ES 配置为空，跳过初始化")
 

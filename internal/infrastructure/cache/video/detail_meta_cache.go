@@ -57,10 +57,6 @@ var _ app.DetailMetaCache = (*DetailMetaCache)(nil)
 
 // NewDetailMetaCache 构造详情 meta 缓存适配器；redisClient 允许为 nil。
 func NewDetailMetaCache(redisClient *redis.Client, logger *zap.Logger) *DetailMetaCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &DetailMetaCache{redis: redisClient, logger: logger}
 }
 

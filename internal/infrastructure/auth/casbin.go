@@ -15,11 +15,7 @@ const casbinModelPath = "conf/rbac_model.conf"
 
 // NewEnforcer 基于 GORM adapter 构建 Casbin SyncedEnforcer 并加载策略。
 // 初始化失败向组合根返回错误，由 CLI/server 入口决定退出策略。
-func NewEnforcer(db *gorm.DB, logger *zap.Logger) (*casbin.SyncedEnforcer, error) {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
+func NewEnforcer(db *gorm.DB, _ *zap.Logger) (*casbin.SyncedEnforcer, error) {
 	// 使用 GORM adapter
 	adapter, err := gormadapter.NewAdapterByDB(db)
 	if err != nil {

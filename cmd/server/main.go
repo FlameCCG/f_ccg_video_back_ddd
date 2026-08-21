@@ -42,18 +42,14 @@ func runMaintenanceTaskWithInitializer(
 	executor, cleanup, err := initialize(task, opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "初始化运维任务失败: %v\n", err)
-
 		return 1
 	}
-
 	if cleanup != nil {
 		defer cleanup()
 	}
-
 	if err := executor.Execute(ctx, opts.Args); err != nil {
 		return 1
 	}
-
 	return 0
 }
 
@@ -88,7 +84,6 @@ func runServer(ctx context.Context, opts *cli.Options) int {
 	app, cleanup, err := bootstrap.InitializeApp(opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "初始化应用失败: %v\n", err)
-
 		return 1
 	}
 

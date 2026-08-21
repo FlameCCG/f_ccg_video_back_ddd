@@ -38,10 +38,6 @@ var _ app.BannerCache = (*BannerCache)(nil)
 
 // NewBannerCache 构造可见轮播图缓存适配器。
 func NewBannerCache(redisClient *redis.Client, logger *zap.Logger) *BannerCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &BannerCache{redis: redisClient, logger: logger}
 }
 

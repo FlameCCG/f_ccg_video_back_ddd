@@ -28,10 +28,6 @@ func (s *Searcher) XDB() *xdb.Searcher {
 
 // New 打开 ip2region 数据文件。
 func New(logger *zap.Logger) *Searcher {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, dbPath)
 	if err != nil {
 		logger.Error("初始化ip数据库失败", zap.Error(err))

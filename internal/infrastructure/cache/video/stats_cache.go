@@ -134,10 +134,6 @@ var _ app.StatsCache = (*StatsCache)(nil)
 
 // NewStatsCache 构造视频统计缓存适配器；redisClient 允许为 nil（整体降级为直写 DB）。
 func NewStatsCache(redisClient *redis.Client, logger *zap.Logger) *StatsCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &StatsCache{redis: redisClient, logger: logger}
 }
 

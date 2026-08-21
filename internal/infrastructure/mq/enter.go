@@ -41,10 +41,6 @@ var _ media.TaskPublisher = (*MQService)(nil)
 
 // NewMQService 构造 MQ 服务。
 func NewMQService(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logger) *MQService {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &MQService{cfg: cfg, producers: producers, logger: logger}
 }
 

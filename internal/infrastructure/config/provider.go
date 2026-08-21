@@ -81,7 +81,6 @@ func (p *Provider) Set(c *Config) {
 	if p == nil {
 		return
 	}
-
 	p.config.Store(c)
 }
 
@@ -166,11 +165,9 @@ func Load(filePath string) (*Provider, error) {
 
 			return
 		}
-
 		provider.Set(newConf)
 		provider.log().Info("配置文件热更新成功!")
 	})
-
 	return provider, nil
 }
 

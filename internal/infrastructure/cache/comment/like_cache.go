@@ -84,10 +84,6 @@ var _ app.LikeCache = (*LikeCache)(nil)
 
 // NewLikeCache 构造评论点赞缓存适配器。
 func NewLikeCache(redisClient *redis.Client, logger *zap.Logger) *LikeCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &LikeCache{
 		redis:  redisClient,
 		toggle: redis.NewScript(toggleLikeScriptSource),

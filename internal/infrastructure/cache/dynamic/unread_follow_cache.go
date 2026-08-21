@@ -40,10 +40,6 @@ var _ app.UnreadFollowCountCache = (*UnreadFollowCountCache)(nil)
 
 // NewUnreadFollowCountCache 构造关注未读数缓存适配器。
 func NewUnreadFollowCountCache(redisClient *redis.Client, logger *zap.Logger) *UnreadFollowCountCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &UnreadFollowCountCache{redis: redisClient, logger: logger}
 }
 

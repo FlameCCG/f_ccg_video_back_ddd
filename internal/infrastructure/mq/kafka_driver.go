@@ -29,19 +29,11 @@ type ProducerPool struct {
 
 // NewProducerPool 创建生产者缓存（使用 sarama.NewSyncProducer）。
 func NewProducerPool(logger *zap.Logger) *ProducerPool {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &ProducerPool{factory: sarama.NewSyncProducer, logger: logger}
 }
 
 // newProducerPoolWithFactory 用自定义工厂创建生产者缓存（测试用）。
 func newProducerPoolWithFactory(factory ProducerFactory, logger *zap.Logger) *ProducerPool {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &ProducerPool{factory: factory, logger: logger}
 }
 
@@ -126,10 +118,6 @@ type kafkaDriver struct {
 
 // NewKafkaDriver 创建 Kafka 驱动。
 func NewKafkaDriver(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logger) (Driver, error) {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	if cfg == nil || len(cfg.Brokers) == 0 {
 		return nil, errors.New("kafka brokers not configured")
 	}

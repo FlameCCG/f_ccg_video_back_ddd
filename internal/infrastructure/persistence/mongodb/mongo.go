@@ -52,10 +52,6 @@ func (m *Mongo) Database() *mongo.Database {
 // 后台组件启动流程（见 internal/infrastructure/persistence/chat 索引初始化），
 // 避免基础设施客户端反向依赖具体业务上下文。
 func New(cfg *config.Mongo, logger *zap.Logger) *Mongo {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	if cfg == nil {
 		logger.Warn("Mongo 配置为空，跳过初始化")
 

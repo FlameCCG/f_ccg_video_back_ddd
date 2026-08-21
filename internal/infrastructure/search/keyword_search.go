@@ -32,10 +32,6 @@ var (
 
 // NewAdapter 构造 Elasticsearch 检索适配器（client 允许为 nil）。
 func NewAdapter(client *elastic.Client, logger *zap.Logger) *Adapter {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &Adapter{client: client, logger: logger}
 }
 

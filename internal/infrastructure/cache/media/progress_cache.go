@@ -33,10 +33,6 @@ var (
 
 // NewProgressCache 构造转码进度缓存适配器。
 func NewProgressCache(redisClient *redis.Client, logger *zap.Logger) *ProgressCache {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &ProgressCache{redis: redisClient, logger: logger}
 }
 
@@ -264,10 +260,6 @@ type progressSubscription struct {
 var _ domain.ProgressSubscription = (*progressSubscription)(nil)
 
 func newProgressSubscription(pubsub *redis.PubSub, logger *zap.Logger) *progressSubscription {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	s := &progressSubscription{
 		pubsub: pubsub,
 		events: make(chan domain.TranscodeProgress, 32),

@@ -23,10 +23,6 @@ type Migrator struct {
 
 // NewMigrator 构造数据库迁移器。
 func NewMigrator(db *gorm.DB, logger *zap.Logger) *Migrator {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &Migrator{db: db, logger: logger}
 }
 

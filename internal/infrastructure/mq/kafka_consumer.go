@@ -67,10 +67,6 @@ func NewKafkaConsumer(
 	producers *ProducerPool,
 	logger *zap.Logger,
 ) (*KafkaConsumer, error) {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	if cfg == nil || len(cfg.Brokers) == 0 {
 		return nil, errors.New("kafka brokers not configured")
 	}
@@ -118,10 +114,6 @@ func newConsumerGroup(cfg *config.Kafka, logger *zap.Logger) (sarama.ConsumerGro
 // newConsumerGroupConfig 构建 Sarama Consumer Group 客户端配置。
 // 下列每一项都对应 Kafka 消费组协议中的具体行为，影响连接稳定性、rebalance 与 offset 语义。
 func newConsumerGroupConfig(cfg *config.Kafka, logger *zap.Logger) *sarama.Config {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	// 创建带 Sarama 默认值的基础配置（例如 AutoCommit.Enable=true、AutoCommit.Interval=1s 等）。
 	kCfg := sarama.NewConfig()
 

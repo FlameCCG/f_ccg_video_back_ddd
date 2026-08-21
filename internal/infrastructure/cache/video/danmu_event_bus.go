@@ -32,10 +32,6 @@ type DanmuEventBus struct {
 
 // NewDanmuEventBus 构造弹幕事件总线；redisClient 允许为 nil。
 func NewDanmuEventBus(redisClient *redis.Client, logger *zap.Logger) *DanmuEventBus {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
 	return &DanmuEventBus{redis: redisClient, logger: logger}
 }
 
