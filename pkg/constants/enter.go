@@ -8,6 +8,7 @@ const (
 	EmailCaptchaVerifyRateKeyPrefix   = "captcha:email:verify:rate:"
 	ClickCaptchaRedisKeyPrefix        = "captcha:click:"
 	SlideCaptchaRedisKeyPrefix        = "captcha:slide:"
+	LoginRateKeyPrefix                = "login:rate:"
 	VideoScheduleKey                  = "video:schedule"
 	VideoDetailCacheKeyPrefix         = "video:detail:meta:"
 	VideoDetailMetaGenKeyPrefix       = "video:detail:meta:gen:"
