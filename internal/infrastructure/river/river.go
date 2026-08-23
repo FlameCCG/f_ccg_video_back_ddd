@@ -7,12 +7,14 @@ package river
 import ( // 导入依赖
 	"context" // 上下文控制：取消、超时等
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"regexp"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"f_ccg_video_back_ddd/internal/config"
@@ -50,6 +52,7 @@ type River struct {
 	syncCh   chan any              // 事件/队列通道：内部同步协程消费（如 insert/update/delete）
 	cfg      *config.River         // River 同步配置（源、规则、批量大小等）
 	mysqlCfg *config.Mysql         // MySQL 连接配置（canal 复制用）
+	mysqlLoc *time.Location        // MySQL 业务时区，用于稳定解析 binlog DATETIME/TIMESTAMP
 	db       *gorm.DB              // 业务库句柄：反查标签/关系等冗余字段
 }
 
@@ -78,6 +81,13 @@ func NewRiver(riverCfg *config.River, mysqlCfg *config.Mysql, esCfg *config.ES, 
 	if err := validateRiverSchemas(riverCfg, mysqlCfg); err != nil {
 		return nil, errors.Trace(err)
 	}
+
+	mysqlLoc, locationErr := mysqlCfg.LoadLocation()
+	if locationErr != nil {
+		return nil, errors.Trace(locationErr)
+	}
+
+	r.mysqlLoc = mysqlLoc
 
 	r.rules = make(map[string]*rule.Rule)                      // 初始化规则 map
 	r.syncCh = make(chan any, riverSyncChanSize)               // 为异步处理准备一个有缓冲的通道，避免高峰期阻塞 canal 回调
@@ -286,9 +296,10 @@ func (r *River) parseSource() (map[string][]string, error) { // 解析 Sources�
 
 				tables := []string{} // 存放该通配展开出的实际表名
 
-				// 发 SQL 到 information_schema，按 RLIKE 扩展出所有匹配的表名 // 原理：让 DB 端做匹配，权威且高效
+				// 使用十六进制 UTF-8 字面量，避免配置中的引号/反斜杠破坏 SQL 语法。
 				sql := fmt.Sprintf(`SELECT table_name FROM information_schema.tables WHERE
-					table_name RLIKE "%s" AND table_schema = "%s";`, buildTable(table), s.Schema)
+					table_name RLIKE %s AND table_schema = %s;`,
+					mysqlUTF8Literal(buildTable(table)), mysqlUTF8Literal(s.Schema))
 
 				res, err := r.canal.Execute(sql) // 通过 canal 的连接执行
 				if err != nil {
@@ -510,6 +521,12 @@ func buildTable(table string) string { // 为通配构建 RLIKE 正则：把 "*"
 	}
 
 	return table // 否则返回原样（可能已经是更复杂的正则）
+}
+
+// mysqlUTF8Literal 把任意 UTF-8 文本编码为不含引号的 MySQL 字面量。
+// canal.Execute 只接受完整 SQL，无参数绑定入口，因此用 hex 避免手写转义受 sql_mode 影响。
+func mysqlUTF8Literal(value string) string {
+	return "CONVERT(0x" + hex.EncodeToString([]byte(value)) + " USING utf8mb4)"
 }
 
 // normalizeConfiguredTableName 把 camelCase 配置的表名统一成数据库使用的 snake_case；
