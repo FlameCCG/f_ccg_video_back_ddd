@@ -5,9 +5,10 @@ import (
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
-	thirdlogin "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
 )
 
 // maskedSecretValue 管理端脱敏占位符：提交该值表示「不修改原密钥」。
@@ -35,16 +36,16 @@ const (
 
 // SiteConfigService 站点配置用例服务（原 api/site_api/admin_config.go 的配置读写逻辑）。
 //
-// 配置快照由注入的 *config.Provider 持有（替代原 global.Config/SetConfig）：
+// 配置快照由注入的 shared.ConfigStore 端口持有（实现为 infraconfig.Provider，替代原 global.Config/SetConfig）：
 // 更新时先浅拷贝顶层、替换目标配置段、再原子发布，避免与热更新/并发读产生 data race；
 // 发布成功后把该配置段写回配置文件，语义与原 viper.WriteConfig 一致。
 type SiteConfigService struct {
-	provider *config.Provider
+	provider shared.ConfigStore
 	files    ConfigFileWriter
 }
 
 // NewSiteConfigService 构造站点配置用例服务。
-func NewSiteConfigService(provider *config.Provider, files ConfigFileWriter) *SiteConfigService {
+func NewSiteConfigService(provider shared.ConfigStore, files ConfigFileWriter) *SiteConfigService {
 	return &SiteConfigService{provider: provider, files: files}
 }
 

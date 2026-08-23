@@ -15,7 +15,7 @@ import ( // 导入依赖
 	"sync"
 	"unicode"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/river/rule" // 引入规则模块
 
 	"github.com/juju/errors"

@@ -10,8 +10,8 @@ import (
 	"net/url"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	third_login "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 )
 
@@ -55,14 +55,14 @@ type UserQQInfo struct {
 
 // QQClient QQ OAuth 客户端。
 type QQClient struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	httpClient  *http.Client
 }
 
 var _ app.QQOAuthClient = (*QQClient)(nil)
 
 // NewQQClient 构造 QQ OAuth 客户端。
-func NewQQClient(cfgProvider *config.Provider) *QQClient {
+func NewQQClient(cfgProvider *infraconfig.Provider) *QQClient {
 	return &QQClient{
 		cfgProvider: cfgProvider,
 		httpClient:  &http.Client{Timeout: ctxutil.RequestOAuthTimeout},

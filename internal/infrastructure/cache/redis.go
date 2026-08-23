@@ -4,7 +4,7 @@ package cache
 import (
 	"context"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"github.com/redis/go-redis/v9"

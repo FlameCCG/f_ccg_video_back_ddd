@@ -10,9 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/config"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -57,14 +58,14 @@ type transcodeCheckpoint struct {
 
 // checkpointManager 依据转码配置解析断点根目录、创建任务断点目录并清扫孤儿目录。
 //
-// 原实现直接读 global.Config()；新架构由构造函数注入 *config.Provider（支持热更新）。
+// 原实现直接读 global.Config()；新架构由构造函数注入 *infraconfig.Provider（支持热更新）。
 type checkpointManager struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	logger      *zap.Logger
 }
 
 // newCheckpointManager 构造断点目录管理器。
-func newCheckpointManager(cfgProvider *config.Provider, logger *zap.Logger) *checkpointManager {
+func newCheckpointManager(cfgProvider *infraconfig.Provider, logger *zap.Logger) *checkpointManager {
 	if logger == nil {
 		logger = zap.NewNop()
 	}

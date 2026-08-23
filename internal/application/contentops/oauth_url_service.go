@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/application/shared"
 
 	"github.com/google/uuid"
 )
@@ -44,12 +44,12 @@ type XURLParams struct {
 // 各方法都先落库一次性 state 再生成链接，顺序与原实现一致；
 // 配置缺失时返回空串（而非报错），同样与原实现一致。
 type OAuthURLService struct {
-	provider *config.Provider
+	provider shared.ConfigReader
 	states   OAuthStateStore
 }
 
 // NewOAuthURLService 构造三方登录授权链接服务。
-func NewOAuthURLService(provider *config.Provider, states OAuthStateStore) *OAuthURLService {
+func NewOAuthURLService(provider shared.ConfigReader, states OAuthStateStore) *OAuthURLService {
 	return &OAuthURLService{provider: provider, states: states}
 }
 

@@ -3,8 +3,8 @@ package identity
 import (
 	"context"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/encrypt"
@@ -22,7 +22,7 @@ const (
 // LoginService 密码登录与令牌刷新用例服务
 // （原 api/user_api/pwd_login.go、admin_pwd_login.go、refresh_token.go）。
 type LoginService struct {
-	cfgProvider  *config.Provider
+	cfgProvider  shared.ConfigReader
 	users        domain.UserAccountRepository
 	roles        UserRoleQuery
 	tokens       *TokenService
@@ -34,7 +34,7 @@ type LoginService struct {
 
 // NewLoginService 构造密码登录服务。
 func NewLoginService(
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	users domain.UserAccountRepository,
 	roles UserRoleQuery,
 	tokens *TokenService,

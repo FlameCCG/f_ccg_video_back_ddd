@@ -1,7 +1,7 @@
 package media
 
 // TranscodePolicy 是转码编码策略的值对象：把配置里的画质/码率/编码器旋钮
-// 收敛成领域可用的决策输入，使分辨率与码率决策不依赖 infrastructure/config。
+// 收敛成领域可用的决策输入，使分辨率与码率决策不依赖任何配置包。
 //
 // nil 指针语义等价于原实现的 `global.Config().Transcode == nil`：
 // 所有方法都对 nil 接收者安全，并沿用原实现在配置缺失时的回落值。

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -33,7 +33,7 @@ var ErrUploadStorageUnavailable = errors.New("上传配置错误")
 // 新架构改为实例字段，由 bootstrap 创建唯一实例注入，语义等价且无包级可变状态。
 type UploadService struct {
 	storage     StorageResolver
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 	mergeLocks  *mergeLockManager
 	statusCache *uploadStatusCache
 	logger      *zap.Logger
@@ -42,7 +42,7 @@ type UploadService struct {
 // NewUploadService 构造分片上传用例服务。
 func NewUploadService(
 	storage StorageResolver,
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	logger *zap.Logger,
 ) *UploadService {
 	return &UploadService{

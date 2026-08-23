@@ -12,8 +12,8 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	third_login "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 const (
@@ -54,14 +54,14 @@ type UserLinuxDoInfo struct {
 
 // LinuxDoClient Linux.do OAuth 客户端。
 type LinuxDoClient struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	httpClient  *http.Client
 }
 
 var _ app.LinuxDoOAuthClient = (*LinuxDoClient)(nil)
 
 // NewLinuxDoClient 构造 Linux.do OAuth 客户端。
-func NewLinuxDoClient(cfgProvider *config.Provider) *LinuxDoClient {
+func NewLinuxDoClient(cfgProvider *infraconfig.Provider) *LinuxDoClient {
 	return &LinuxDoClient{
 		cfgProvider: cfgProvider,
 		httpClient:  &http.Client{Timeout: linuxDoHTTPTimeout},

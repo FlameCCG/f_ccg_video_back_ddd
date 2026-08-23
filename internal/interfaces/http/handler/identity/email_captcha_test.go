@@ -7,9 +7,10 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
 	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
@@ -62,7 +63,7 @@ func newEmailCaptchaFixture(t *testing.T, sender app.EmailCaptchaSender) *emailC
 	t.Cleanup(func() { _ = redisClient.Close() })
 
 	db := openTestDB(t, &po.User{}, &po.UserConf{}, &po.FavoriteFolder{})
-	provider := config.NewProvider(&config.Config{
+	provider := infraconfig.NewProvider(&config.Config{
 		Email: &config.Email{IsExpire: 5},
 	})
 
@@ -208,7 +209,7 @@ func TestEmailCaptchaViewStoresConsumableCaptcha(t *testing.T) {
 	}
 
 	stored, err := app.NewCaptchaService(nil, nil, nil,
-		captcha.NewEmailCaptchaStore(fixture.redis), config.NewProvider(&config.Config{}),
+		captcha.NewEmailCaptchaStore(fixture.redis), infraconfig.NewProvider(&config.Config{}),
 	).ConsumeEmailCaptcha(context.Background(), payload.EmailID)
 	if err != nil {
 		t.Fatalf("consume stored captcha failed: %v", err)

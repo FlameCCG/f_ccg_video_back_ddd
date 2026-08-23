@@ -3,10 +3,10 @@ package storage
 import (
 	"errors"
 
+	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -15,10 +15,10 @@ import (
 // Resolver 依据站点配置解析存储驱动（原 storage_service.ResolveDriver、
 // mq_service.resolveDriverByType 与 pkg.CheckStorageTyped 的合并实现）。
 //
-// 站点存储配置支持运行期热更新，因此每次解析都从 *config.Provider 重新读取，
+// 站点存储配置支持运行期热更新，因此每次解析都从 *infraconfig.Provider 重新读取，
 // 与原实现「每个调用点重新读 global.Config()」的语义一致。
 type Resolver struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	clients     *MinIOClientPool
 	detached    *ctxutil.DetachedTaskGroup
 	logger      *zap.Logger
@@ -29,7 +29,7 @@ var _ media.StorageResolver = (*Resolver)(nil)
 
 // NewResolver 构造存储驱动解析器。
 func NewResolver(
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	clients *MinIOClientPool,
 	detached *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,

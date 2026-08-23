@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	thirdlogin "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	"f_ccg_video_back_ddd/internal/config"
+	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -65,7 +66,7 @@ func newOAuthHandler(t *testing.T, cfg *config.Config) (*Handler, *fakeOAuthStat
 	t.Helper()
 
 	states := newFakeOAuthStateStore()
-	provider := config.NewProvider(cfg)
+	provider := infraconfig.NewProvider(cfg)
 
 	return NewHandler(nil, nil, nil, app.NewOAuthURLService(provider, states), nil), states
 }

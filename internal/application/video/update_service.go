@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 // UpdateService 改稿用例服务（原 service/video_service/update_service.go）。
@@ -18,7 +18,7 @@ type UpdateService struct {
 	schedule    ScheduleStore
 	authors     *AuthorService
 	vectors     *VectorSyncService
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 }
 
 // NewUpdateService 构造改稿用例服务。
@@ -29,7 +29,7 @@ func NewUpdateService(
 	schedule ScheduleStore,
 	authors *AuthorService,
 	vectors *VectorSyncService,
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 ) *UpdateService {
 	return &UpdateService{
 		txm:         txm,
@@ -241,7 +241,7 @@ func buildUpdatedVideo(
 }
 
 // contentReviewEnabled 读取站点内容审核开关（原 IsContentReviewEnabled）。
-func contentReviewEnabled(cfgProvider *config.Provider) bool {
+func contentReviewEnabled(cfgProvider shared.ConfigReader) bool {
 	cfg := cfgProvider.Get()
 
 	return cfg != nil &&

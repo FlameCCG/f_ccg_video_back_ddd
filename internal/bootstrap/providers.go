@@ -1,9 +1,10 @@
 package bootstrap
 
 import (
+	shared "f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/infrastructure/auth"
 	"f_ccg_video_back_ddd/internal/infrastructure/cache"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongodb"
@@ -21,20 +22,23 @@ import (
 // ConfigProviderSet 配置装载与窄化 provider。
 //
 // 窄化 provider 把根配置拆成各基础组件真正需要的最小配置结构体，
-// 需要读取热更新配置的组件则直接注入 *config.Provider。
+// 需要读取热更新配置的基础组件直接注入 *infraconfig.Provider；
+// application 层一律经 shared.ConfigReader / shared.ConfigStore 端口注入（D-020）。
 var ConfigProviderSet = wire.NewSet(
 	cli.ProvideConfigPath,
-	config.Load,
-	config.ProvideServerConf,
-	config.ProvideLoggerConf,
-	config.ProvideMysqlConf,
-	config.ProvideRedisConf,
-	config.ProvideMongoConf,
-	config.ProvideESConf,
-	config.ProvideKafkaConf,
-	config.ProvideRiverConf,
-	config.ProvideTranscodeConf,
-	config.ProvideJwtConf,
+	infraconfig.Load,
+	wire.Bind(new(shared.ConfigReader), new(*infraconfig.Provider)),
+	wire.Bind(new(shared.ConfigStore), new(*infraconfig.Provider)),
+	infraconfig.ProvideServerConf,
+	infraconfig.ProvideLoggerConf,
+	infraconfig.ProvideMysqlConf,
+	infraconfig.ProvideRedisConf,
+	infraconfig.ProvideMongoConf,
+	infraconfig.ProvideESConf,
+	infraconfig.ProvideKafkaConf,
+	infraconfig.ProvideRiverConf,
+	infraconfig.ProvideTranscodeConf,
+	infraconfig.ProvideJwtConf,
 )
 
 // InfrastructureProviderSet 基础设施客户端 provider（按技术分组）。

@@ -10,10 +10,11 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	contentopspersistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/contentops"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
@@ -29,7 +30,7 @@ import (
 type bannerFixture struct {
 	handler      *Handler
 	adminHandler *AdminHandler
-	provider     *config.Provider
+	provider     *infraconfig.Provider
 	db           *gorm.DB
 	users        *persistence.UserRepository
 }
@@ -39,7 +40,7 @@ func newBannerFixture(t *testing.T, cfg *config.Config, configPath string) *bann
 	t.Helper()
 
 	db := openTestDB(t, &po.User{}, &po.UserConf{}, &po.FavoriteFolder{}, &po.Banner{})
-	provider := config.NewProvider(cfg)
+	provider := infraconfig.NewProvider(cfg)
 
 	users := persistence.NewUserRepository(db, provider)
 	confs := persistence.NewUserConfRepository(db)
@@ -556,7 +557,7 @@ func rebindBannerFixture(
 ) *bannerFixture {
 	t.Helper()
 
-	provider := config.NewProvider(cfg)
+	provider := infraconfig.NewProvider(cfg)
 	confs := persistence.NewUserConfRepository(old.db)
 	banners := persistence.NewUserBannerQuery(old.db)
 	writer := contentopspersistence.NewConfigFileWriter(configPath)

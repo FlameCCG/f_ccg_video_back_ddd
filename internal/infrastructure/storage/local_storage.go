@@ -1,7 +1,7 @@
 // Package storage 提供本地磁盘与 MinIO 对象存储驱动实现（原 service/storage_service）。
 //
 // 驱动实现 internal/domain/media.StorageDriver 端口；
-// 站点配置由 Resolver 从 *config.Provider 读取，包内不存在包级可变状态。
+// 站点配置由 Resolver 从 *infraconfig.Provider 读取，包内不存在包级可变状态。
 package storage
 
 import (
@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
 
 	"go.uber.org/zap"
 )

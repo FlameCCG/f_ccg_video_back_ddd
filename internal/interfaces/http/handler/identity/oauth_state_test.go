@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/external/oauth"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -21,7 +22,7 @@ import (
 func newOAuthLoginHandler(t *testing.T, login *site.Login) *Handler {
 	t.Helper()
 
-	provider := config.NewProvider(&config.Config{Site: &site.Site{Login: login}})
+	provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{Login: login}})
 	states := oauth.NewStateStore(nil)
 
 	oauthLogins := app.NewOAuthLoginService(

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -51,7 +51,7 @@ var (
 //
 // 写侧由 video 上下文在发布/下架时触发；读侧供 AI「找视频」做语义召回。
 type VideoVectorService struct {
-	cfg    *config.Provider
+	cfg    shared.ConfigReader
 	index  VideoVectorIndex
 	source VideoVectorSourceQuery
 	logger *zap.Logger
@@ -59,7 +59,7 @@ type VideoVectorService struct {
 
 // NewVideoVectorService 构造视频向量索引服务。
 func NewVideoVectorService(
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	index VideoVectorIndex,
 	source VideoVectorSourceQuery,
 	logger *zap.Logger,

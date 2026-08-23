@@ -3,7 +3,7 @@ package identity
 import (
 	"context"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/application/shared"
 )
 
 // ClickCaptchaResult 点击验证码生成结果（字段与原 ClickCaptchaGenerateResp 一致）。
@@ -66,7 +66,7 @@ type CaptchaService struct {
 	slide       SlideCaptchaPort
 	graphic     GraphicCaptchaStore
 	emails      EmailCaptchaStore
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 }
 
 // NewCaptchaService 构造验证码用例服务。
@@ -75,7 +75,7 @@ func NewCaptchaService(
 	slide SlideCaptchaPort,
 	graphic GraphicCaptchaStore,
 	emails EmailCaptchaStore,
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 ) *CaptchaService {
 	return &CaptchaService{
 		click:       click,

@@ -5,13 +5,13 @@ import (
 	"slices"
 	"strings"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 // UserConfService 用户配置用例服务（原 api/user_api/user_conf.go）。
 type UserConfService struct {
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 	confs       domain.UserConfRepository
 	query       UserConfQuery
 	banners     UserBannerCatalog
@@ -19,7 +19,7 @@ type UserConfService struct {
 
 // NewUserConfService 构造用户配置服务。
 func NewUserConfService(
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	confs domain.UserConfRepository,
 	query UserConfQuery,
 	banners UserBannerCatalog,

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"github.com/minio/minio-go/v7"

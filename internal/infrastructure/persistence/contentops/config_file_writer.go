@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/spf13/viper"
 )
@@ -26,7 +26,7 @@ func NewConfigFileWriter(path string) *ConfigFileWriter {
 }
 
 // ProvideConfigFileWriter 供 wire 使用：从配置 Provider 取配置文件路径。
-func ProvideConfigFileWriter(provider *config.Provider) *ConfigFileWriter {
+func ProvideConfigFileWriter(provider *infraconfig.Provider) *ConfigFileWriter {
 	return NewConfigFileWriter(provider.Path())
 }
 

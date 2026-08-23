@@ -127,7 +127,7 @@
   由 bootstrap 用 `wire.Bind` 绑定。其余顺序不变。
 - 影响：无外部行为变化；避免为跨上下文依赖引入占位实现（规范禁止 stub）。
 
-## D-013 `infrastructure/config` 视为横切关注点，允许外层读取
+## D-013 `infrastructure/config` 视为横切关注点，允许外层读取（已被 D-020 取代）
 
 - 背景：站点配置在运行期可热更新，被 40+ 处应用层与接口层逻辑读取
   （验证码开关、CORS 白名单、存储类型、三方登录、AI/邮件参数等）。
@@ -138,6 +138,9 @@
   **`internal/domain/**` 一律禁止 import 它**（领域层零框架依赖，规则不放松）。
   规范第 7 节的 DI 验收项是「application/domain 层零 gin 依赖」，本决策不违反该项。
 - 影响：无外部行为变化；领域层保持纯净可测。
+- **状态：已由 D-020 取代**——application 层不再依赖 `infrastructure/config`，
+  配置数据契约下沉共享内核 `internal/config`，配置访问经应用层端口；
+  interfaces / infrastructure 直接读取 Provider 的规则不变。
 
 ## D-014 路由奇偶校验采用双侧 Gin 引擎实测
 
@@ -222,3 +225,27 @@
   4. `wire.go` 只声明完整 App 与七个 CLI 注入器，生成的 `wire_gen.go` 提交但禁止手改。
 - 影响：ProviderSet 可按上下文与技术能力复用，同时 application/domain 不反向依赖 infrastructure；
   所有具体实现选择集中在组合根，依赖图可由 `wire check` 在编译期验证。
+
+## D-020 配置数据契约下沉共享内核 `internal/config`，application 经端口访问
+
+- 背景：D-013 允许 application 直接 import `internal/infrastructure/config`，
+  导致 19 个非测试用例文件持有具体基础设施类型 `*config.Provider`（携带
+  viper/fsnotify 机制），`application → infrastructure` 依赖边真实存在，
+  与仓储倒置（domain/shared/tx 端口 + gormx 适配器）的既有范式不一致。
+  D-013 当年拒绝的是「每个上下文一把窄接口」方案；单一端口即可避免该代价。
+- 决策：
+  1. **拆包**：配置树的数据契约（`Config` 结构、各配置段、`site`/`thirdlogin`
+     子包、`Clone`/`ValidateRequired` 纯校验）迁至共享内核 `internal/config`
+     ——纯数据、零第三方依赖，是跨层发布语言（json tag 对齐管理端 API 外部契约）；
+     加载与热更新机制（`Provider`/`Load`/窄化 provide 函数）留在
+     `internal/infrastructure/config`；
+  2. **端口**：`internal/application/shared` 声明 `ConfigReader`（`Get() *config.Config`）
+     与 `ConfigStore`（追加 `Set`，供管理端配置写回），`*infrastructure/config.Provider`
+     结构化满足，零适配器代码，`wire.Bind` 在组合根完成；
+  3. **分层规则**：application/domain 一律禁止 import `internal/infrastructure/**`
+     （由 `internal/application/shared/arch_deps_test.go` 守护）；domain 同时禁止
+     import `internal/config`（零配置依赖，延续 D-013 对领域层的要求）；
+     interfaces / infrastructure 可继续直接使用 Provider 与数据契约。
+- 影响：无外部行为变化（配置结构体、tag、热更新语义逐字保留）；
+  application 零基础设施 import，配置读取可在测试中用 `NewProvider` 或任意
+  `ConfigReader` 假实现注入；管理端配置读写（contentops）经 `ConfigStore` 端口。

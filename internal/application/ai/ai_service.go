@@ -7,8 +7,9 @@ import (
 	"net/url"
 	"strings"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -23,7 +24,7 @@ const defaultMaxOutputTokens = 4096
 // 新架构改为注入配置 Provider 与四个上游端口，上游协议细节下沉到
 // infrastructure/external/ark。
 type Service struct {
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 	text        TextGenerator
 	images      ImageGenerator
 	videos      VideoTaskClient
@@ -40,7 +41,7 @@ type configSnapshot struct {
 
 // NewService 构造 AI 用例服务。
 func NewService(
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	text TextGenerator,
 	images ImageGenerator,
 	videos VideoTaskClient,

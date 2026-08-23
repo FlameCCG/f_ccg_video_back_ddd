@@ -1,7 +1,7 @@
 // Package video 是视频上下文的应用层：用例服务、DTO（含读模型）、查询端口与跨上下文端口。
 //
 // 本包不依赖 gin / gorm / redis / sarama；数据访问一律经端口，实现在 infrastructure。
-// 允许 import internal/infrastructure/config（读运行期热更新的站点配置）。
+// 站点配置经 shared.ConfigReader 端口读取（数据契约在共享内核 internal/config，见 D-020）。
 package video
 
 import (

@@ -6,9 +6,10 @@ import (
 	"reflect"
 	"testing"
 
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -16,8 +17,8 @@ import (
 // 对应原 service/search_service/video_vector.go（原文件无单测，此处按分支补齐）。
 
 // newVectorConfigProvider 造一份可用的 AI 配置（向量检索的必填项齐备）。
-func newVectorConfigProvider(ai *config.AI) *config.Provider {
-	return config.NewProvider(&config.Config{AI: ai})
+func newVectorConfigProvider(ai *config.AI) *infraconfig.Provider {
+	return infraconfig.NewProvider(&config.Config{AI: ai})
 }
 
 func validVectorAIConfig() *config.AI {
@@ -73,7 +74,7 @@ func TestVectorConfigKeepsConfiguredValues(t *testing.T) {
 	ai.VectorRRFRankConstant = 42
 	ai.VectorMinSimilarity = 0.35
 
-	provider := config.NewProvider(&config.Config{
+	provider := infraconfig.NewProvider(&config.Config{
 		AI: ai,
 		Site: &site.Site{Storage: &site.Storage{Local: &site.Local{
 			Enable: true,
@@ -131,7 +132,7 @@ func TestVectorConfigRejectsMissingSettings(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			svc := NewVideoVectorService(config.NewProvider(tt.cfg), &fakeVectorIndex{}, &fakeVectorSource{}, zap.NewNop())
+			svc := NewVideoVectorService(infraconfig.NewProvider(tt.cfg), &fakeVectorIndex{}, &fakeVectorSource{}, zap.NewNop())
 			if _, err := svc.vectorConfig(); !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
@@ -394,7 +395,7 @@ func TestIndexVideoVectorPropagatesConfigError(t *testing.T) {
 
 	index := &fakeVectorIndex{available: true}
 	svc := NewVideoVectorService(
-		config.NewProvider(&config.Config{}),
+		infraconfig.NewProvider(&config.Config{}),
 		index,
 		&fakeVectorSource{available: true}, zap.NewNop())
 

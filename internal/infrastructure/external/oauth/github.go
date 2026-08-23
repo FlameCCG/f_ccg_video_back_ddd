@@ -13,8 +13,8 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	third_login "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 const (
@@ -54,14 +54,14 @@ type UserEmail struct {
 
 // GitHubClient GitHub OAuth 客户端。
 type GitHubClient struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	httpClient  *http.Client
 }
 
 var _ app.GitHubOAuthClient = (*GitHubClient)(nil)
 
 // NewGitHubClient 构造 GitHub OAuth 客户端。
-func NewGitHubClient(cfgProvider *config.Provider) *GitHubClient {
+func NewGitHubClient(cfgProvider *infraconfig.Provider) *GitHubClient {
 	return &GitHubClient{
 		cfgProvider: cfgProvider,
 		httpClient:  &http.Client{Timeout: githubHTTPTimeout},

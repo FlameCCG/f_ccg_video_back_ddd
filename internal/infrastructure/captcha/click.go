@@ -8,7 +8,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/golang/freetype/truetype"                              // 加载嵌入式中文字体，避免依赖宿主环境
@@ -45,7 +45,7 @@ type clickCaptchaStorePayload struct {
 // 由 wire 注入唯一实例（禁止包级可变单例）。
 type ClickCaptcha struct {
 	store       payloadStore
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 
 	once      sync.Once     // 保证生成器只初始化一次
 	generator click.Captcha // 点击验证码生成器实例
@@ -57,7 +57,7 @@ var _ app.ClickCaptchaPort = (*ClickCaptcha)(nil)
 // NewClickCaptcha 构造点击验证码适配器。
 func NewClickCaptcha(
 	redisClient *redis.Client,
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	logger *zap.Logger,
 ) *ClickCaptcha {
 	return &ClickCaptcha{
