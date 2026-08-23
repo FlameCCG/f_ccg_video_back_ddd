@@ -120,6 +120,8 @@ mysql:
   password: ""
   # 端口
   port: 3307
+  # DATETIME/TIMESTAMP 业务时区（应用读写与 River binlog 转换共用）
+  timezone: Asia/Shanghai
   # 用户名
   username: root
 
