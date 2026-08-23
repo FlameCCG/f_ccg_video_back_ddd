@@ -11,7 +11,7 @@ import (
 func TestValidateMenuIconAcceptsSafeIcons(t *testing.T) {
 	for _, icon := range []string{
 		"",
-		"icon-class-name",       // 手工路径允许非 SVG 图标（字体图标类名等）
+		"icon-class-name", // 手工路径允许非 SVG 图标（字体图标类名等）
 		"<svg viewBox=\"0 0 24 24\"></svg>",
 		"<svg><path d=\"M0 0h24v24H0z\"/></svg>",
 		"data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", // base64 data URI：原文不含危险 token，放行

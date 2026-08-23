@@ -16,7 +16,7 @@ import (
 //   - 立即公开 + 开启审核 → Review
 //
 // 原实现直接读 global.Config()；新架构把「是否开启内容审核」上提为显式入参，
-// 由应用层从注入的 *config.Provider 读取后传入，领域层因此零框架依赖。
+// 由应用层经配置端口读取后传入，领域层因此零框架、零配置依赖。
 func ResolvePublishVideoStatus(
 	now time.Time,
 	publishTime *time.Time,

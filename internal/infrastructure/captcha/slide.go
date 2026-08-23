@@ -7,7 +7,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/google/uuid"                                 // 生成随机 token
@@ -32,7 +32,7 @@ type slideCaptchaStorePayload struct {
 // SlideCaptcha 滑块验证码适配器（原 service/captcha_service/slide_captcha.go）。
 type SlideCaptcha struct {
 	store       payloadStore
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 
 	once      sync.Once     // 保证生成器只初始化一次
 	generator slide.Captcha // 滑块验证码生成器
@@ -44,7 +44,7 @@ var _ app.SlideCaptchaPort = (*SlideCaptcha)(nil)
 // NewSlideCaptcha 构造滑块验证码适配器。
 func NewSlideCaptcha(
 	redisClient *redis.Client,
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	logger *zap.Logger,
 ) *SlideCaptcha {
 	return &SlideCaptcha{

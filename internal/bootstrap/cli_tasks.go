@@ -5,7 +5,7 @@ import (
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
 	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
 	"f_ccg_video_back_ddd/internal/infrastructure/search"
 	"f_ccg_video_back_ddd/internal/interfaces/cli"
@@ -56,7 +56,7 @@ func (a *BannerStorageResolverAdapter) Resolve() (provisioningapp.StorageDriver,
 // 路由注册只需要非 nil handler 接收者；请求处理用例不会在 -rs 进程中执行，
 // 因而使用空 handler 壳可避免错误初始化 Kafka、对象存储等原 InitCore 在 -rs 之后才启动的组件。
 func NewCLIRouter(
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	enforcer *casbin.SyncedEnforcer,
 	logger *zap.Logger,
 	translator *validate.Translator,

@@ -1,8 +1,8 @@
 // Package contentops 是内容运营上下文的应用层：站点配置、站点统计与轮播图用例。
 //
 // 本包不 import gin / gorm / redis：数据访问一律经端口，实现在 infrastructure。
-// 允许 import internal/infrastructure/config —— 配置是横切关注点，
-// 管理端配置读写用例必须直接操作配置结构体（仅领域层禁止依赖配置）。
+// 配置访问经 shared.ConfigStore 端口与共享内核 internal/config 的数据契约（见 docs/decisions.md D-020），
+// 不依赖任何 infrastructure 包（仅领域层连数据契约也禁止依赖）。
 package contentops
 
 import (

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -25,7 +25,7 @@ type PublishService struct {
 	transcode   TranscodeDispatcher
 	vectors     *VectorSyncService
 	scheduler   *Scheduler
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 	tasks       *ctxutil.DetachedTaskGroup
 	logger      *zap.Logger
 }
@@ -38,7 +38,7 @@ func NewPublishService(
 	transcode TranscodeDispatcher,
 	vectors *VectorSyncService,
 	scheduler *Scheduler,
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	tasks *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,
 ) *PublishService {

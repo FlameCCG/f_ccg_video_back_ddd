@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
@@ -32,7 +32,7 @@ const (
 // OAuthLoginService 第三方登录用例服务
 // （原 api/user_api/{qq,google,github,linuxdo,x}_login.go 与 oauth_login_helper.go）。
 type OAuthLoginService struct {
-	cfgProvider  *config.Provider
+	cfgProvider  shared.ConfigReader
 	txm          tx.Manager
 	users        domain.UserAccountRepository
 	roles        UserRoleQuery
@@ -51,7 +51,7 @@ type OAuthLoginService struct {
 
 // NewOAuthLoginService 构造第三方登录服务。
 func NewOAuthLoginService(
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	txm tx.Manager,
 	users domain.UserAccountRepository,
 	roles UserRoleQuery,

@@ -4,7 +4,7 @@ package mysql
 import (
 	"time"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
 
 	"go.uber.org/zap"
 	"gorm.io/driver/mysql"

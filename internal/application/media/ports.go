@@ -1,7 +1,8 @@
 // Package media 是媒体上下文的应用层：转码管线编排、存储用例与转码取消协调。
 //
 // 依赖方向：本包只 import `internal/domain/media`、`internal/domain/shared/*`
-// 与 `internal/infrastructure/config`（配置横切关注点，见 docs/decisions.md D-013）；
+// 与共享内核 `internal/config` 的数据契约及 `internal/application/shared` 的配置端口
+// （见 docs/decisions.md D-020）；
 // 绝不 import gin / gorm / redis / sarama / minio，也绝不 import 其它限界上下文的包。
 //
 // 领域侧端口（存储驱动、资源仓储、进度读写、取消广播、任务投递）声明在

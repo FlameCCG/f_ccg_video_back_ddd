@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -33,7 +34,7 @@ type TranscodeService struct {
 	artifacts   ArtifactStateChecker
 
 	gpuCooldown *domain.GPUCooldown
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 	logger      *zap.Logger
 }
 
@@ -49,7 +50,7 @@ func NewTranscodeService(
 	stager SourceStager,
 	artifacts ArtifactStateChecker,
 	gpuCooldown *domain.GPUCooldown,
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	logger *zap.Logger,
 ) *TranscodeService {
 	return &TranscodeService{

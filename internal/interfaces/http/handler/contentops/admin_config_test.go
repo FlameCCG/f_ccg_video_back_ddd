@@ -11,9 +11,10 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/config/site"
-	thirdlogin "f_ccg_video_back_ddd/internal/infrastructure/config/thirdlogin"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/contentops"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -28,11 +29,11 @@ const (
 // newConfigHandler 构造只装配站点配置用例的处理器。
 //
 // 原测试通过 global.SetConfig / global.ConfigPath 操作全局状态；
-// 这里改为注入式：配置快照由 *config.Provider 持有，配置文件路径注入写回器。
-func newConfigHandler(t *testing.T, cfg *config.Config, configPath string) (*Handler, *config.Provider) {
+// 这里改为注入式：配置快照由 *infraconfig.Provider 持有，配置文件路径注入写回器。
+func newConfigHandler(t *testing.T, cfg *config.Config, configPath string) (*Handler, *infraconfig.Provider) {
 	t.Helper()
 
-	provider := config.NewProvider(cfg)
+	provider := infraconfig.NewProvider(cfg)
 	writer := persistence.NewConfigFileWriter(configPath)
 
 	return NewHandler(nil, nil, app.NewSiteConfigService(provider, writer), nil, nil), provider

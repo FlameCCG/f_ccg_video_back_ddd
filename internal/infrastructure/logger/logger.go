@@ -5,7 +5,8 @@ import (
 	"os"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/natefinch/lumberjack"
 	"go.uber.org/zap"
@@ -170,7 +171,7 @@ func getLogWriter(filename string, maxSize, maxBackup, maxAge int) zapcore.Write
 
 // Provide 供 wire 使用的 provider：返回日志器与其刷盘关闭函数，并把日志器
 // 显式附加到已装载的配置 Provider，供后续热更新诊断使用。
-func Provide(cfg *config.Logger, provider *config.Provider) (*Logger, func()) {
+func Provide(cfg *config.Logger, provider *infraconfig.Provider) (*Logger, func()) {
 	lg := New(cfg)
 	if provider != nil {
 		provider.SetLogger(lg.Zap())

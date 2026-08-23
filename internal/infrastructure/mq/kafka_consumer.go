@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/config"
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"

@@ -23,7 +23,8 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	emaillib "github.com/jordan-wright/email"
 	"go.uber.org/zap"
@@ -54,14 +55,14 @@ func (c *bufferedConn) Read(p []byte) (int, error) {
 
 // Sender SMTP 邮件发送器，同时提供验证码邮件模板。
 type Sender struct {
-	cfgProvider *config.Provider
+	cfgProvider *infraconfig.Provider
 	logger      *zap.Logger
 }
 
 var _ app.EmailCaptchaSender = (*Sender)(nil)
 
 // NewSender 构造 SMTP 邮件发送器。
-func NewSender(cfgProvider *config.Provider, logger *zap.Logger) *Sender {
+func NewSender(cfgProvider *infraconfig.Provider, logger *zap.Logger) *Sender {
 	return &Sender{cfgProvider: cfgProvider, logger: logger}
 }
 

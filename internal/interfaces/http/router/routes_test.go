@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,7 +26,7 @@ func TestRoutesMatchLegacyGolden(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	router := New(
-		config.NewProvider(&config.Config{}),
+		infraconfig.NewProvider(&config.Config{}),
 		nil,           // middlewares：路由注册期只取方法值，不会执行
 		nil,           // validator：路由清单测试不执行参数绑定
 		nil, nil, nil, // identity / identityAdmin / captcha

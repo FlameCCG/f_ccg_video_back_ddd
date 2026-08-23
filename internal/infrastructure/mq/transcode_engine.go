@@ -13,7 +13,7 @@ import (
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
@@ -42,7 +42,7 @@ var (
 
 // NewTranscodeEngine 构造转码执行引擎。
 func NewTranscodeEngine(
-	cfgProvider *config.Provider,
+	cfgProvider *infraconfig.Provider,
 	resources media.TranscodeResourceRepository,
 	logger *zap.Logger,
 ) *TranscodeEngine {

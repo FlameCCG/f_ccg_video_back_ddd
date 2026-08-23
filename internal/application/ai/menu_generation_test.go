@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -89,7 +90,7 @@ func TestServiceGenerateMenuSuggestionBuildsDedicatedConversation(t *testing.T) 
 		"keepAlive":false,"sortOrder":2
 	}`}
 	service := NewService(
-		config.NewProvider(&config.Config{AI: &config.AI{
+		infraconfig.NewProvider(&config.Config{AI: &config.AI{
 			ChatModelAPIKey: "test-key",
 			ChatModel:       "test-model",
 		}}),

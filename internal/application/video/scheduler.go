@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -25,7 +25,7 @@ type Scheduler struct {
 	videos      domain.VideoRepository
 	store       ScheduleStore
 	vectors     *VectorSyncService
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 	interval    time.Duration
 	logger      *zap.Logger
 
@@ -40,7 +40,7 @@ func NewScheduler(
 	videos domain.VideoRepository,
 	store ScheduleStore,
 	vectors *VectorSyncService,
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	logger *zap.Logger,
 ) *Scheduler {
 	return &Scheduler{

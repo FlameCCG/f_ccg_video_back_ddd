@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"

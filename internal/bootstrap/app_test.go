@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/internal/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	httprouter "f_ccg_video_back_ddd/internal/interfaces/http/router"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ import (
 func TestAppServeReturnsListenError(t *testing.T) {
 	t.Parallel()
 
-	provider := config.NewProvider(&config.Config{Server: &config.Server{
+	provider := infraconfig.NewProvider(&config.Config{Server: &config.Server{
 		Addr: "invalid-address-without-port",
 		Mode: gin.TestMode,
 	}})

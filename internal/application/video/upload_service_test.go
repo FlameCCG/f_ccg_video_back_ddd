@@ -12,7 +12,7 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -126,7 +126,7 @@ func (r *stubResolver) ValidateChunkIndex(index string) error {
 
 // newUploadService 用 stub driver 装配真实 UploadService（测试不走 wire）。
 func newUploadService(driver *stubDriver) *app.UploadService {
-	return app.NewUploadService(&stubResolver{driver: driver}, config.NewProvider(nil), zap.NewNop())
+	return app.NewUploadService(&stubResolver{driver: driver}, infraconfig.NewProvider(nil), zap.NewNop())
 }
 
 // TestValidateUploadID 覆盖原 TestValidateFileHash：上传标识的接受/拒绝集合。

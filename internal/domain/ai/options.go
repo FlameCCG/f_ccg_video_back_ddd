@@ -17,7 +17,7 @@ const (
 
 // Option 模型/思考强度的可选项（label + value）。
 //
-// 与配置结构 config.AIModel 同形，领域层用本类型避免反向依赖 infrastructure/config。
+// 与配置结构 config.AIModel 同形（共享内核 internal/config），领域层用本类型避免依赖任何配置包。
 type Option struct {
 	Label string `json:"label"`
 	Value string `json:"value"`

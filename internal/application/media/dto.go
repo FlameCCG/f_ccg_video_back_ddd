@@ -3,9 +3,9 @@ package media
 import (
 	"time"
 
+	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 // TranscodeTaskInput 是投递转码任务的入参（字段与 Kafka 消息体 pkg/mq.TranscodePayload 一一对应）。

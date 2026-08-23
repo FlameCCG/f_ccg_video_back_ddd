@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	"f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -15,7 +15,7 @@ import (
 // （原 api/user_api/user_info.go、user_detail.go、admin_info.go、
 // update_user_info.go、admin_update_user_info.go）。
 type ProfileService struct {
-	cfgProvider *config.Provider
+	cfgProvider shared.ConfigReader
 	txm         tx.Manager
 	users       domain.UserAccountRepository
 	confs       domain.UserConfRepository
@@ -29,7 +29,7 @@ type ProfileService struct {
 
 // NewProfileService 构造用户资料服务。
 func NewProfileService(
-	cfgProvider *config.Provider,
+	cfgProvider shared.ConfigReader,
 	txm tx.Manager,
 	users domain.UserAccountRepository,
 	confs domain.UserConfRepository,
