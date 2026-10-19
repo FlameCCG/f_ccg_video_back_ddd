@@ -153,6 +153,9 @@ func buildFFmpegArgsForOutputs(
 			if chunk.ForceKeyframeEverySec > 0 {
 				args = append(args, "-force_key_frames",
 					fmt.Sprintf("expr:gte(t,n_forced*%d)", chunk.ForceKeyframeEverySec))
+				if useGPU {
+					args = append(args, "-forced-idr:v:0", "1")
+				}
 			}
 			// LenSec<=0 表示末块：编到源文件结尾，吃掉 ffprobe 整数截断的小数尾巴。
 			if chunk.LenSec > 0 {
@@ -177,7 +180,7 @@ func isNonSeekableOutput(output string) bool {
 		o == "-"
 }
 
-// buildDASHFFmpegArgs 构造单文件 SegmentBase DASH 的 ffmpeg 参数：单次调用、单个 .mpd 输出，
+// buildDASHFFmpegArgs 构造原生分片 DASH 参数：由 FFmpeg 直接生成准确的 SegmentTimeline，
 // 视频各 representation 复用 MP4 路径相同的质量/码率封顶策略，音频共享一条 AdaptationSet。
 func buildDASHFFmpegArgs(
 	policy *media.TranscodePolicy,
@@ -215,6 +218,12 @@ func buildDASHFFmpegArgs(
 	for idx, t := range targets {
 		args = append(args, "-map", fmt.Sprintf("[%s]", t.MapLabel))
 		args = append(args, "-c:v:"+strconv.Itoa(idx), videoCodec)
+		args = append(args, "-force_key_frames:v:"+strconv.Itoa(idx),
+			fmt.Sprintf("expr:gte(t,n_forced*%d)", policy.SegDurationOrDefault()))
+		if useGPU {
+			// NVENC 默认强制 I 帧不一定是可独立解码的 IDR，DASH 需要 IDR 边界。
+			args = append(args, "-forced-idr:v:"+strconv.Itoa(idx), "1")
+		}
 
 		// 根据 target 的 Quality 字段选择 CQP/CRF
 		val := policy.OutputCQPForTarget(t, useGPU)
@@ -247,17 +256,14 @@ func buildDASHFFmpegArgs(
 
 	segDur := policy.SegDurationOrDefault()
 
-	// 强制在每个分片边界生成关键帧（IDR），这是 DASH 正常播放和 ABR 码率切换的前提条件。
-	args = append(args, "-force_key_frames", fmt.Sprintf("expr:gte(t,n_forced*%d)", segDur))
-
-	// -single_file 1 让每个 representation 写为单个 mp4，manifest 用 SegmentBase 字节范围索引；
-	// -single_file_name 给确定性文件名，使重试原地覆盖、无孤儿文件。
-	// 注意：必须是纯文件名(无路径前缀)，否则 ffmpeg 会把绝对路径写进 .mpd manifest，
-	// 导致浏览器端无法加载本地文件路径。文件通过 cmd.Dir=tmpDir 保证落到临时目录。
+	// 单文件模式的固定 duration 不能准确表达实际 GOP 和 AAC 尾段。
+	// 使用 FFmpeg 原生时间轴；确定性相对文件名保证重试覆盖、播放器同目录取段。
 	args = append(args,
 		"-f", "dash",
-		"-single_file", "1",
-		"-single_file_name", fileHash+"-stream$RepresentationID$.mp4",
+		"-use_template", "1",
+		"-use_timeline", "1",
+		"-init_seg_name", fileHash+"-init-stream$RepresentationID$.mp4",
+		"-media_seg_name", fileHash+"-stream$RepresentationID$-$Number%05d$.m4s",
 		"-dash_segment_type", "mp4",
 		"-seg_duration", strconv.Itoa(segDur),
 		"-adaptation_sets", adaptationSets,
@@ -365,8 +371,10 @@ func buildChunkedDASHMuxArgs(listPaths []string, audioPath, mpdPath, fileHash st
 	return append(args,
 		"-c", "copy",
 		"-f", "dash",
-		"-single_file", "1",
-		"-single_file_name", fileHash+"-stream$RepresentationID$.mp4",
+		"-use_template", "1",
+		"-use_timeline", "1",
+		"-init_seg_name", fileHash+"-init-stream$RepresentationID$.mp4",
+		"-media_seg_name", fileHash+"-stream$RepresentationID$-$Number%05d$.m4s",
 		"-dash_segment_type", "mp4",
 		"-seg_duration", strconv.Itoa(segDur),
 		"-adaptation_sets", adaptationSets,
