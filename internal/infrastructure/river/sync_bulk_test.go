@@ -25,6 +25,25 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+func TestRiverDoBulkAllowsSlowSuccessfulWrite(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// 模拟本地 ES 短暂慢写：超过旧的 3 秒期限，但最终能够成功。
+		timer := time.NewTimer(4 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			writeBulkSuccess(t, w)
+		case <-req.Context().Done():
+		}
+	}))
+	defer server.Close()
+
+	r := newTestRiver(t, server)
+	if err := r.doBulk(testUserBulkRequests()); err != nil {
+		t.Fatalf("slow successful bulk should finish without a timeout: %v", err)
+	}
+}
+
 func TestRiverDoBulkWithRetryRetriesTransientFailure(t *testing.T) {
 	var calls atomic.Int32
 

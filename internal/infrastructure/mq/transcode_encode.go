@@ -303,7 +303,7 @@ func (e *TranscodeEngine) encodeDirectDASH(
 	defer cancelRun()
 
 	cmd := exec.CommandContext(runCtx, "ffmpeg", args...)
-	// CWD 切到临时目录，使 -single_file_name 纯文件名落对地方且 manifest 只含相对路径。
+	// CWD 切到临时目录，初始化文件和分片都在同一目录，manifest 只含相对路径。
 	cmd.Dir = tmpDir
 	cmd.Stdout = io.Discard
 

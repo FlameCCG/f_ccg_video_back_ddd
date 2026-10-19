@@ -89,7 +89,7 @@ func (t TranscodeTask) DashManifestRelativePath() string {
 	return path.Join(t.OutputPath, "dash", DashManifestName)
 }
 
-// DashRepresentationPrefix 返回 DASH 单文件 representation 的命名前缀（$RepresentationID$ 模板由 ffmpeg 展开）。
+// DashRepresentationPrefix 返回 DASH 初始化文件与媒体分片的命名前缀。
 func (t TranscodeTask) DashRepresentationPrefix() string {
 	fileHash := strings.TrimSpace(t.FileHash)
 	if fileHash == "" {
