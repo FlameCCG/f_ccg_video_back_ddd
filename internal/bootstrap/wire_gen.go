@@ -397,6 +397,51 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	}, nil
 }
 
+// InitializeTranscodeWorker 构造独立转码消费者，不装配 HTTP 与其他后台组件。
+func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), error) {
+	string2 := cli.ProvideConfigPath(opts)
+	provider, err := config.Load(string2)
+	if err != nil {
+		return nil, nil, err
+	}
+	kafka := config.ProvideKafkaConf(provider)
+	configMysql := config.ProvideMysqlConf(provider)
+	configLogger := config.ProvideLoggerConf(provider)
+	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	zapLogger := logger.ProvideZap(loggerLogger)
+	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	gormDB := mysql.ProvideGorm(db)
+	txManager := gormx.NewTxManager(gormDB)
+	transcodeResourceRepository := media3.NewTranscodeResourceRepository(gormDB, txManager)
+	minIOClientPool := storage.NewMinIOClientPool(zapLogger)
+	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
+	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
+	redis := config.ProvideRedisConf(provider)
+	cacheRedis, cleanup3 := cache.Provide(redis, zapLogger)
+	client := cache.ProvideClient(cacheRedis)
+	progressCache := media2.NewProgressCache(client, zapLogger)
+	videoDetailCache := media2.NewVideoDetailCache(client, zapLogger)
+	transcodeEngine := mq.NewTranscodeEngine(provider, transcodeResourceRepository, zapLogger)
+	gpuCooldown := media.ProvideGPUCooldown()
+	transcodeService := media.NewTranscodeService(transcodeResourceRepository, resolver, progressCache, videoDetailCache, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, gpuCooldown, provider, zapLogger)
+	taskRegistry := media.ProvideTaskRegistry()
+	cancelSubscriber := media2.NewCancelSubscriber(client, taskRegistry, zapLogger)
+	producerPool := mq.NewProducerPool(zapLogger)
+	mqTranscodeConsumer, err := mq.NewTranscodeConsumer(kafka, transcodeService, taskRegistry, cancelSubscriber, producerPool, zapLogger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	transcodeWorker := NewTranscodeWorker(mqTranscodeConsumer, producerPool, detachedTaskGroup, zapLogger)
+	return transcodeWorker, func() {
+		cleanup3()
+		cleanup2()
+		cleanup()
+	}, nil
+}
+
 // InitializeMigrateDBTask 构造 -db 运维任务（配置 + 日志 + MySQL）。
 func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
