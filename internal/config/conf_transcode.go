@@ -4,6 +4,7 @@ import "errors"
 
 // Transcode 定义转码相关配置.
 type Transcode struct {
+	LocalConsumerDisabled          bool     `mapstructure:"localConsumerDisabled" json:"localConsumerDisabled"`                   // 本机不参与转码消费；默认 false，修改后重启本机服务生效，不影响任务投递
 	MaxWorkers                     int      `mapstructure:"maxWorkers" json:"maxWorkers"`                                         // 并发转码 worker 数
 	TranscodeResolutions           []uint16 `mapstructure:"transcodeResolutions" json:"transcodeResolutions"`                     // 转码分辨率列表（MP4 多分辨率与 DASH 共用）
 	HighBitrateThreshold           int      `mapstructure:"highBitrateThreshold" json:"highBitrateThreshold"`                     // 触发高码率判定的码率阈值(kbps)(只有在>=1080P/4K才会生效)
