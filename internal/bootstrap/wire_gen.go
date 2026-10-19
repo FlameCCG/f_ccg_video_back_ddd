@@ -371,7 +371,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	gpuCooldown := media.ProvideGPUCooldown()
 	transcodeService := media.NewTranscodeService(transcodeResourceRepository, resolver, progressCache, videoDetailCache, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, transcodeEngine, gpuCooldown, provider, zapLogger)
 	cancelSubscriber := media2.NewCancelSubscriber(client, taskRegistry, zapLogger)
-	transcodeConsumerComponent := mq.NewTranscodeConsumerComponent(kafka, transcodeService, taskRegistry, cancelSubscriber, producerPool, zapLogger)
+	transcodeConsumerComponent := mq.NewTranscodeConsumerComponent(provider, kafka, transcodeService, taskRegistry, cancelSubscriber, producerPool, zapLogger)
 	commentLikeQueue := scheduler.NewCommentLikeQueue(client)
 	commentLikeProjection := scheduler.NewCommentLikeProjection(gormDB)
 	commentLikeSyncService := platform.NewCommentLikeSyncService(txManager, commentLikeQueue, commentLikeProjection, zapLogger)

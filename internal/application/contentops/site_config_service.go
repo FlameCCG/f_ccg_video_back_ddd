@@ -135,12 +135,20 @@ func (s *SiteConfigService) UpdateAI(ai *config.AI) error {
 }
 
 // UpdateTranscode 更新转码配置段；校验失败时不发布也不落盘。
-func (s *SiteConfigService) UpdateTranscode(transcode *config.Transcode) error {
+func (s *SiteConfigService) UpdateTranscode(transcode *config.Transcode, localConsumerDisabled *bool) error {
 	if err := transcode.Validate(); err != nil {
 		return err
 	}
 
 	next := config.Clone(s.provider.Get())
+	// 旧管理端未携带开关时保留本机角色，避免保存其他参数时重新启用本机消费。
+	if transcode != nil {
+		if localConsumerDisabled != nil {
+			transcode.LocalConsumerDisabled = *localConsumerDisabled
+		} else if next.Transcode != nil {
+			transcode.LocalConsumerDisabled = next.Transcode.LocalConsumerDisabled
+		}
+	}
 	next.Transcode = transcode
 
 	return s.publish(next, ConfigNameTranscode, next.Transcode)

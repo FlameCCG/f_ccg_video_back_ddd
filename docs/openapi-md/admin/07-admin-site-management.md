@@ -249,10 +249,13 @@ name=ai
 
 name=transcode
 
+`localConsumerDisabled` 控制收到此配置请求的后端实例是否参与 Kafka 转码消费：省略/`false` 时保持默认参与，`true` 时不启动本机消费者。它不关闭 Kafka 生产者，投稿仍可投递任务给其他节点；没有其他消费者时任务会排队。管理端“本机参与转码消费”开关与此字段取反。保存后需重启当前后端实例生效；旧客户端更新时省略或传 `null` 会保留当前开关值。
+
 ```json
 {
   "code": 0,
   "data": {
+    "localConsumerDisabled": false,
     "maxWorkers": 2,
     "transcodeResolutions": [360, 720, 1080, 2160],
     "highBitrateThreshold": 8000,
@@ -464,6 +467,7 @@ name=transcode
 
 ```json
 {
+  "localConsumerDisabled": false,
   "maxWorkers": 2,
   "transcodeResolutions": [360, 720, 1080, 2160],
   "highBitrateThreshold": 8000,

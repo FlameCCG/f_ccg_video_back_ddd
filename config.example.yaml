@@ -308,6 +308,8 @@ thirdLogin:
 # 视频转码
 # maxrate 削减比例：值越大封顶越狠，maxrate ≈ 源码率 × (100-ratio)/100（另有分辨率保底）
 transcode:
+  # true：本机不启动转码消费者（仍正常投递任务）；省略/false：参与消费。修改后重启本机服务生效。
+  localConsumerDisabled: false
   # High 档(QualityModeHigh)：4K 源片规范化 / 高码率 4K 的 DASH 2160 High，轻微封顶，推荐 10~15
   bitrate2160HighKbpsReduceRatio: 12
   # High 档：1080 源片规范化 / 4K 管线 1080 High / 1080 高码率源，推荐 12~18
