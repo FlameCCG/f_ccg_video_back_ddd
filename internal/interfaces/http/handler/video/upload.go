@@ -2,9 +2,11 @@ package video
 
 import (
 	"context"
+	"errors"
 	"path"
 	"strings"
 
+	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -24,6 +26,11 @@ type UploadChunkReq struct {
 // UploadChunkView handles the corresponding HTTP request.
 func (h *Handler) UploadChunkView(c *gin.Context) {
 	req := middlewares.GetBound[UploadChunkReq](c)
+	uid, ok := getUID(c)
+	if !ok {
+		res.FailWithMsg("请先登录", c)
+		return
+	}
 
 	file, header, err := c.Request.FormFile("chunk")
 	if err != nil {
@@ -35,7 +42,7 @@ func (h *Handler) UploadChunkView(c *gin.Context) {
 
 	defer func() { _ = file.Close() }()
 
-	if err := h.uploads.UploadChunk(c.Request.Context(), req.FileHash, req.Index, header.Size, file); err != nil {
+	if err := h.uploads.UploadChunkForUser(c.Request.Context(), uid, req.FileHash, req.Index, header.Size, file); err != nil {
 		h.log().Error("upload chunk failed", zap.Error(err))
 		res.FailWithMsg(err.Error(), c)
 
@@ -61,11 +68,20 @@ type ChunkStatusResp struct {
 // ChunkStatusView 检查文件分片上传状态.
 func (h *Handler) ChunkStatusView(c *gin.Context) {
 	req := middlewares.GetBound[ChunkStatusReq](c)
+	uid, ok := getUID(c)
+	if !ok {
+		res.FailWithMsg("请先登录", c)
+		return
+	}
 
-	status, err := h.uploads.GetUploadStatus(c.Request.Context(), req.FileHash)
+	status, err := h.uploads.GetUploadStatusForUser(c.Request.Context(), uid, req.FileHash)
 	if err != nil {
 		h.log().Error("list uploaded chunks failed", zap.Error(err))
-		res.FailWithMsg("检查上传状态失败", c)
+		if errors.Is(err, app.ErrDailyUploadLimit) || errors.Is(err, app.ErrUploadQuotaUnavailable) {
+			res.FailWithMsg(err.Error(), c)
+		} else {
+			res.FailWithMsg("检查上传状态失败", c)
+		}
 
 		return
 	}
@@ -93,6 +109,11 @@ type CompleteUploadResp struct {
 // CompleteUploadView handles the corresponding HTTP request.
 func (h *Handler) CompleteUploadView(c *gin.Context) {
 	req := middlewares.GetBound[CompleteUploadReq](c)
+	uid, ok := getUID(c)
+	if !ok {
+		res.FailWithMsg("请先登录", c)
+		return
+	}
 
 	// 合并分片已完成鉴权与参数绑定，允许脱离客户端断开继续收尾，但必须保留上传级超时。
 	mergeCtx, cancel := context.WithTimeout(
@@ -101,7 +122,7 @@ func (h *Handler) CompleteUploadView(c *gin.Context) {
 	)
 	defer cancel()
 
-	finalPath, err := h.uploads.CompleteUpload(mergeCtx, req.FileHash, req.FileName, req.TotalChunks)
+	finalPath, err := h.uploads.CompleteUploadForUser(mergeCtx, uid, req.FileHash, req.FileName, req.TotalChunks)
 	if err != nil {
 		h.log().Error("complete upload failed", zap.Error(err))
 		res.FailWithMsg(err.Error(), c)

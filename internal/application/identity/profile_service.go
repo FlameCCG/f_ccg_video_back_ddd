@@ -79,7 +79,13 @@ func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoRe
 	})
 	_ = group.Wait()
 
+	isAdmin, err := IsAdminUser(ctx, s.roles, userID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &UserInfoResult{
+		IsAdmin:        isAdmin,
 		ID:             user.ID,
 		Username:       user.Username,
 		Email:          user.Email,

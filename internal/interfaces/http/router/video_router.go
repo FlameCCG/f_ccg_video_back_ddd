@@ -14,6 +14,9 @@ func registerVideoCommonRoutes(
 	mw *middlewares.Middlewares,
 	h *videohandler.Handler,
 ) {
+	// 通用图片用于头像、评论、动态与私信，不受视频投稿开关影响。
+	g.POST("/image/upload", middlewares.RequestTimeout(ctxutil.RequestUploadTimeout), mw.JwtAuth(), h.UploadImageView)
+
 	videoGroup := g.Group("/video")
 	{
 		videoGroup.GET("home", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.HomeFeedReq], h.HomeFeedView)
@@ -75,10 +78,11 @@ func registerVideoCommonRoutes(
 		authGroup.GET("folder/videos", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.FolderVideosReq], h.FolderVideosView)
 
 		// 投稿发布与管理
-		authGroup.POST("image/upload", middlewares.RequestTimeout(ctxutil.RequestUploadTimeout), mw.JwtAuth(), h.UploadImageView)
+		authGroup.POST("image/upload", middlewares.RequestTimeout(ctxutil.RequestUploadTimeout), mw.JwtAuth(), mw.VideoSubmissionCheck(), mw.UserBanCheck(), h.UploadImageView)
 		authGroup.POST("publish",
 			middlewares.RequestTimeout(ctxutil.RequestLongTimeout),
 			mw.JwtAuth(),
+			mw.VideoSubmissionCheck(),
 			mw.UserBanCheck(),
 			middlewares.JsonBindParams[videohandler.PublishVideoReq],
 			h.PublishVideoView,
@@ -86,6 +90,7 @@ func registerVideoCommonRoutes(
 		authGroup.PUT("publish",
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 			mw.JwtAuth(),
+			mw.VideoSubmissionCheck(),
 			mw.UserBanCheck(),
 			middlewares.JsonBindParams[videohandler.UpdateVideoReq],
 			h.UpdateVideoView,
@@ -97,14 +102,16 @@ func registerVideoCommonRoutes(
 			uploadGroup.POST("chunk",
 				middlewares.RequestTimeout(ctxutil.RequestUploadTimeout),
 				mw.JwtAuth(),
+				mw.VideoSubmissionCheck(),
 				mw.UserBanCheck(),
 				middlewares.BindParams[videohandler.UploadChunkReq],
 				h.UploadChunkView,
 			)
-			uploadGroup.GET("status", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.ChunkStatusReq], h.ChunkStatusView)
+			uploadGroup.GET("status", middlewares.NoCache(), middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtAuth(), mw.VideoSubmissionCheck(), middlewares.BindQueryParams[videohandler.ChunkStatusReq], h.ChunkStatusView)
 			uploadGroup.POST("complete",
 				middlewares.RequestTimeout(ctxutil.RequestUploadTimeout),
 				mw.JwtAuth(),
+				mw.VideoSubmissionCheck(),
 				mw.UserBanCheck(),
 				middlewares.JsonBindParams[videohandler.CompleteUploadReq],
 				h.CompleteUploadView,

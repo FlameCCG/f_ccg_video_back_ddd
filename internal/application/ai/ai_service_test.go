@@ -153,7 +153,7 @@ func TestCreateResponseKeepsRuntimeSnapshotAcrossHotReload(t *testing.T) {
 			TimeoutSec:        99,
 		}},
 	}
-	service := NewService(provider, text, nil, nil, nil, nil, nil, zap.NewNop())
+	service := NewService(provider, text, nil, nil, nil, &promptQueryFake{available: true}, nil, zap.NewNop())
 
 	_, err := service.CreateResponse(context.Background(), ResponsesRequest{
 		Input: json.RawMessage(`[{"role":"user","content":"hello"}]`),

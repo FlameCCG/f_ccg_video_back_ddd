@@ -41,6 +41,7 @@ type OAuthLoginInput struct {
 
 // UserInfoResult 当前登录用户信息（json 字段与原 UserInfoRes 逐字一致）。
 type UserInfoResult struct {
+	IsAdmin        bool     `json:"isAdmin"`
 	ID             uint     `json:"id"`
 	Username       string   `json:"username"`
 	Email          string   `json:"email"`

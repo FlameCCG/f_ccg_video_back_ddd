@@ -73,49 +73,56 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	initialStatus := domain.ResolvePublishVideoStatus(now, &publishTime, cmd.IsPrivate, contentReviewEnabled(s.cfgProvider))
 
 	isMultiPart := len(cmd.Parts) > 0
-	if err := s.preparePublishUploads(ctx, &cmd); err != nil {
-		return nil, err
-	}
-
-	var parts []domain.VideoPart
-
 	if isMultiPart {
-		parts = make([]domain.VideoPart, 0, len(cmd.Parts))
-
-		for i, p := range cmd.Parts {
-			title := trimSpace(p.Title)
-			if title == "" {
-				title = domain.DefaultPartTitleFromFileName(p.FileName)
+		maxParts := 10
+		if cfg := s.cfgProvider.Get(); cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.MaxUploadNum > 0 {
+			maxParts = cfg.Site.Storage.MaxUploadNum
+		}
+		if len(cmd.Parts) > maxParts {
+			return nil, fmt.Errorf("单个作品最多上传 %d 个分P", maxParts)
+		}
+		for _, part := range cmd.Parts {
+			if trimSpace(part.FileName) == "" || trimSpace(part.FileHash) == "" {
+				return nil, errUploadAllPartsFirst
 			}
-
-			parts = append(parts, domain.VideoPart{
-				Title:       title,
-				SortOrder:   i,
-				Duration:    0,
-				StorageType: storageType,
-			})
 		}
 	} else if trimSpace(cmd.FileName) == "" || trimSpace(cmd.FileHash) == "" {
 		return nil, errUploadVideoFirst
 	}
-
-	video := &domain.Video{
-		Title:          cmd.Title,
-		Description:    cmd.Description,
-		Cover:          cmd.CoverURL,
-		AuthorUsername: cmd.AuthorUsername,
-		PartitionID:    cmd.PartitionID,
-		IsOriginal:     cmd.IsOriginal,
-		Status:         initialStatus,
-		Duration:       0,
-		StorageType:    storageType,
+	var parts []domain.VideoPart
+	var video *domain.Video
+	hashes := []string{cmd.FileHash}
+	if isMultiPart {
+		hashes = make([]string, 0, len(cmd.Parts))
+		for _, part := range cmd.Parts {
+			hashes = append(hashes, part.FileHash)
+		}
 	}
-
-	// 1. 同步进行数据库保存，获取生成的 VideoID 和 PartID
+	// 投稿入库之前持有全部源文件的哈希锁，清理任务无法在验证后、入库前删除源文件。
 	persistCtx, cancel := ctxutil.WithDetachedTimeout(ctx, ctxutil.RequestLongTimeout)
 	defer cancel()
-
-	if err := s.persistVideo(persistCtx, video, cmd, parts); err != nil {
+	if err := s.uploads.WithPublishUploads(persistCtx, cmd.AuthorID, hashes,
+		func(guardCtx context.Context) error { return s.preparePublishUploads(guardCtx, &cmd) },
+		func(guardCtx context.Context) error {
+			if isMultiPart {
+				parts = make([]domain.VideoPart, 0, len(cmd.Parts))
+				for i, p := range cmd.Parts {
+					title := trimSpace(p.Title)
+					if title == "" {
+						title = domain.DefaultPartTitleFromFileName(p.FileName)
+					}
+					parts = append(parts, domain.VideoPart{
+						Title: title, SortOrder: i, Duration: 0, StorageType: storageType,
+					})
+				}
+			}
+			video = &domain.Video{
+				Title: cmd.Title, Description: cmd.Description, Cover: cmd.CoverURL,
+				AuthorUsername: cmd.AuthorUsername, PartitionID: cmd.PartitionID,
+				IsOriginal: cmd.IsOriginal, Status: initialStatus, Duration: 0, StorageType: storageType,
+			}
+			return s.persistVideo(guardCtx, video, cmd, parts)
+		}); err != nil {
 		return nil, err
 	}
 

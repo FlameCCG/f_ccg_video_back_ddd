@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "E:\\f_ccg_video_final\\f_ccg_video_back_ddd\\docs\\interview\\diagrams\\system.architecture.json",
+  "output": "E:\\f_ccg_video_final\\f_ccg_video_back_ddd\\docs\\interview\\diagrams\\system-architecture.html",
+  "specification": {
+    "sha256": "2bf4a76ba326ca7ee1ca1a35bf7485cbea6d4c652257a1940986b07a5d7e027b",
+    "bytes": 6694
+  },
+  "artifact": {
+    "sha256": "c3d7743f09aaa0c16ccf98a358d8887562591a48aa747aed57b510aadda2f3b2",
+    "bytes": 715426
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  },
+  "visual_review": {
+    "status": "passed",
+    "method": "Inspected light and dark captures at 1440x900 and 2048x1320; automated containment passed at four desktop sizes.",
+    "correction_rounds": 0
+  }
+}

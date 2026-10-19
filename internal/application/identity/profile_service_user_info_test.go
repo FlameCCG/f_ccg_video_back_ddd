@@ -10,6 +10,7 @@ import (
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+	"f_ccg_video_back_ddd/pkg/constants"
 )
 
 type userInfoAccountRepository struct {
@@ -165,7 +166,7 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 		confs,
 		banners,
 		relations,
-		nil,
+		&userInfoRoleQuery{},
 		nil,
 		nil,
 		nil,
@@ -262,7 +263,7 @@ func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
 		confs,
 		banners,
 		relations,
-		nil,
+		&userInfoRoleQuery{},
 		nil,
 		nil,
 		nil,
@@ -308,5 +309,39 @@ func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
 	}
 	if got := confs.findCalls.Load(); got != 1 {
 		t.Fatalf("conf calls = %d, want 1", got)
+	}
+}
+
+// userInfoRoleQuery 为当前用户资料提供明确的角色读模型。
+type userInfoRoleQuery struct {
+	UserRoleQuery
+	items []UserRoleItem
+	err   error
+}
+
+func (q *userInfoRoleQuery) LoadRoles(context.Context, uint) ([]UserRoleItem, error) {
+	return q.items, q.err
+}
+
+func TestProfileUserInfoAdministratorIdentity(t *testing.T) {
+	for _, admin := range []bool{false, true} {
+		roles := &userInfoRoleQuery{}
+		if admin {
+			roles.items = []UserRoleItem{{Name: constants.AdminUserRole}}
+		}
+		service := NewProfileService(infraconfig.NewProvider(nil), nil,
+			&userInfoAccountRepository{user: &domain.User{ID: 7}}, &userInfoConfRepository{},
+			&concurrentBannerCatalog{}, &concurrentRelationQuery{}, roles, nil, nil, nil)
+		info, err := service.UserInfo(t.Context(), 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.IsAdmin != admin {
+			t.Fatalf("isAdmin=%v, want %v", info.IsAdmin, admin)
+		}
+		roles.err = errors.New("role query unavailable")
+		if info, err := service.UserInfo(t.Context(), 7); err == nil || info != nil {
+			t.Fatal("role lookup error must not grant administrator identity")
+		}
 	}
 }

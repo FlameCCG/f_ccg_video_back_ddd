@@ -194,7 +194,10 @@ Base URL：/v1
 | data.site.storage.maxChunkSize | integer(int64) | 最大分块大小(MB) |
 | data.site.storage.chunkSize | integer(int64) | 分块大小(MB) |
 | data.site.storage.maxFileSize | integer(int64) | 最大文件大小(MB) |
-| data.site.storage.maxUploadNum | integer(int64) | 最大上传文件数量 |
+| data.site.storage.maxUploadNum | integer(int64) | 单个作品的分P上限 |
+| data.site.storage.dailyUploadLimit | integer(int64) | 普通用户每日不同源文件上限 |
+| data.site.storage.unmergedChunkRetentionHours | integer(int64) | 未合并分片保留小时数 |
+| data.site.storage.unpublishedSourceRetentionHours | integer(int64) | 未投稿源视频保留小时数 |
 
 响应示例:
 
@@ -224,7 +227,10 @@ Base URL：/v1
         "maxChunkSize": 100,
         "chunkSize": 10,
         "maxFileSize": 1901,
-        "maxUploadNum": 10
+        "maxUploadNum": 10,
+        "dailyUploadLimit": 10,
+        "unmergedChunkRetentionHours": 2,
+        "unpublishedSourceRetentionHours": 1
       },
       "register": {
         "emailCaptcha": true,
@@ -306,3 +312,11 @@ Base URL：/v1
   "msg": "心跳成功"
 }
 ```
+
+## 视频投稿开关
+
+- 字段：`site.disableUserSubmission`，布尔值，默认 `false`。
+- 管理端 `GET /admin/site/config?name=site` 返回 `data.disableUserSubmission`；公开配置返回 `data.site.disableUserSubmission`。
+- 使用 `PUT /admin/site/config?name=site` 保存完整 site 对象。开启后，仅拥有管理员角色的账号可上传视频及投稿封面、查询续传状态、完成上传、发布和修改视频。保存后后续请求立即按新值校验。
+- 旧配置缺少字段时默认允许投稿；旧管理端更新时遗漏此字段会保留当前值，显式传 `false` 才会关闭限制。
+- 客户端通过 `GET /common/user/info` 的 `data.isAdmin` 判断管理员身份；前端显示提示，后端独立校验身份。
