@@ -102,9 +102,9 @@ services:
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT # 为每个 listener 指定安全协议（这里都为 PLAINTEXT）
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER # 指定 controller 使用的 listener 名称（上面配置里的 CONTROLLER）
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093 # controller 选举集（单节点：节点 1 在 kafka:9093 上）
-      # 对内（容器网）宣告 kafka:9092；对外（宿主机）宣告 host.docker.internal:9094
-      # 如果在 Linux 下 host.docker.internal 不可用，替换为宿主机实际 IP
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      # 对内（容器网）宣告 kafka:9092；对外宣告宿主机局域网 IP，供本机及其他机器连接
+      # 宿主机局域网 IP 变化时需同步更新并重建 Kafka 容器
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://192.168.1.3:9094
       - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT # broker 之间通信使用的 listener 名称（上面 LISTENERS 中的 PLAINTEXT）
       - KAFKA_LOG_DIRS=/var/lib/kafka/data # Kafka 数据日志目录（保存 topic 分区数据等）
       - KAFKA_NUM_PARTITIONS=1 # 默认分区数（未指定时使用；开发环境设为 1 即可）
@@ -116,7 +116,7 @@ services:
       - KAFKA_HEAP_OPTS=-Xms512m -Xmx512m # Kafka JVM 堆大小设置：最小 512MB，最大 512MB
     ports:
       - "9092:9092" # 容器网访问（一般容器间）
-      - "9094:9094" # 宿主机访问 Kafka
+      - "9094:9094" # 本机及局域网机器访问 Kafka
     volumes:
       - ./components/kafka/data:/var/lib/kafka/data # 数据持久化
     networks:
