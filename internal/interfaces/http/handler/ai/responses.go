@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -89,14 +90,19 @@ func buildResponsesStreamRequest(req ResponsesStreamReq) (aiapp.ResponsesRequest
 
 // streamResponses 打开上游流并逐块转发给客户端（禁用代理缓冲，逐块 Flush）。
 func (h *Handler) streamResponses(c *gin.Context, req aiapp.ResponsesRequest) {
-	stream, err := h.service.OpenResponseStream(c.Request.Context(), req)
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	stream, err := h.service.OpenResponseStream(ctx, req)
 	if err != nil {
 		h.failWithAIError(c, "open AI response stream failed", err)
 
 		return
 	}
 	defer stream.Close()
+	h.forwardResponsesStream(c, stream)
+}
 
+func (h *Handler) forwardResponsesStream(c *gin.Context, stream *schema.StreamReader[*schema.Message]) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -106,9 +112,12 @@ func (h *Handler) streamResponses(c *gin.Context, req aiapp.ResponsesRequest) {
 	c.Status(200)
 
 	for {
+		if c.Request.Context().Err() != nil {
+			return
+		}
 		chunk, receiveErr := stream.Recv()
 		if errors.Is(receiveErr, io.EOF) {
-			if err = writeResponsesCompleted(c.Writer); err != nil {
+			if err := writeResponsesCompleted(c.Writer); err != nil {
 				h.log().Warn("write AI response completion failed", zap.Error(err))
 
 				return
@@ -118,11 +127,22 @@ func (h *Handler) streamResponses(c *gin.Context, req aiapp.ResponsesRequest) {
 			return
 		}
 		if receiveErr != nil {
+			if c.Request.Context().Err() != nil {
+				return
+			}
 			h.log().Warn("receive Eino AI response stream failed", zap.Error(receiveErr))
+			// 已发送 SSE 响应头，必须用流内错误通知客户端，避免半截回答被当作成功。
+			if err := writeResponsesEvent(c.Writer, map[string]any{
+				"type":    "response.failed",
+				"message": "AI 回答中断，请稍后重试",
+			}); err != nil {
+				h.log().Warn("write AI response failure failed", zap.Error(err))
+			}
+			c.Writer.Flush()
 
 			return
 		}
-		if err = writeResponsesChunk(c.Writer, chunk); err != nil {
+		if err := writeResponsesChunk(c.Writer, chunk); err != nil {
 			h.log().Warn("write AI response stream failed", zap.Error(err))
 
 			return

@@ -11,7 +11,7 @@ import (
 
 func TestStop_NilSafeAndIdempotent(t *testing.T) {
 	// 未启动状态与重复 Stop 均不应 panic。
-	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
+	component := NewCronComponent(nil, nil, nil, nil, nil, zap.NewNop())
 
 	if err := component.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop: %v", err)
@@ -34,7 +34,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 		exited  atomic.Bool
 	)
 
-	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
+	component := NewCronComponent(nil, nil, nil, nil, nil, zap.NewNop())
 
 	// 注册一个长任务：启动后阻塞，直到 Stop 的 context 等待窗口结束或任务自行返回。
 	// 这里用短 sleep，确保 crontab.Stop() 的 Done 能在任务结束后触发。
@@ -82,7 +82,7 @@ func TestStop_StopsSchedulerAndRunningJob(t *testing.T) {
 func TestStartJobs_IgnoresDuplicateStart(t *testing.T) {
 	var runs atomic.Int64
 
-	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
+	component := NewCronComponent(nil, nil, nil, nil, nil, zap.NewNop())
 
 	job := []cronJob{{
 		name: "TestJob",
@@ -111,7 +111,7 @@ func TestStartJobs_IgnoresDuplicateStart(t *testing.T) {
 
 func TestCronSpecsMatchLegacySchedule(t *testing.T) {
 	// cron 表达式属外部契约，逐条与原 service/cron_service/enter.go 核对。
-	component := NewCronComponent(nil, nil, nil, nil, zap.NewNop())
+	component := NewCronComponent(nil, nil, nil, nil, nil, zap.NewNop())
 
 	want := []struct {
 		name string
@@ -132,5 +132,22 @@ func TestCronSpecsMatchLegacySchedule(t *testing.T) {
 		if jobs[i].name != expected.name || jobs[i].spec != expected.spec {
 			t.Fatalf("job %d: expected %s/%q, got %s/%q", i, expected.name, expected.spec, jobs[i].name, jobs[i].spec)
 		}
+	}
+}
+
+type uploadCleanupRecorder struct{ calls atomic.Int32 }
+
+func (r *uploadCleanupRecorder) Run(context.Context) { r.calls.Add(1) }
+
+func TestUploadCleanupRunsEveryFiveMinutes(t *testing.T) {
+	recorder := &uploadCleanupRecorder{}
+	component := NewCronComponent(nil, nil, nil, nil, recorder, zap.NewNop())
+	jobs := component.jobs()
+	if len(jobs) != 5 || jobs[4].name != "CleanupUploads" || jobs[4].spec != "0 */5 * * * ?" {
+		t.Fatalf("upload cleanup schedule = %+v", jobs)
+	}
+	jobs[4].run()
+	if recorder.calls.Load() != 1 {
+		t.Fatal("upload cleanup job did not run")
 	}
 }

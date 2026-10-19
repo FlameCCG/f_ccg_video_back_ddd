@@ -23,6 +23,7 @@ var uploadIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.\-]+$`)
 
 // stubDriver 存储驱动 stub（等价原 upload_service_test.go 的 stubDriver）。
 type stubDriver struct {
+	saveErr              error
 	completedFilePath    string
 	completed            bool
 	uploadedChunks       []string
@@ -35,7 +36,7 @@ type stubDriver struct {
 }
 
 func (s *stubDriver) SaveChunk(context.Context, string, string, int64, io.Reader) error {
-	return nil
+	return s.saveErr
 }
 
 func (s *stubDriver) ListUploadedChunks(ctx context.Context, _ string) ([]string, error) {
@@ -126,7 +127,7 @@ func (r *stubResolver) ValidateChunkIndex(index string) error {
 
 // newUploadService 用 stub driver 装配真实 UploadService（测试不走 wire）。
 func newUploadService(driver *stubDriver) *app.UploadService {
-	return app.NewUploadService(&stubResolver{driver: driver}, infraconfig.NewProvider(nil), zap.NewNop())
+	return app.NewUploadService(&stubResolver{driver: driver}, infraconfig.NewProvider(nil), nil, nil, zap.NewNop())
 }
 
 // TestValidateUploadID 覆盖原 TestValidateFileHash：上传标识的接受/拒绝集合。

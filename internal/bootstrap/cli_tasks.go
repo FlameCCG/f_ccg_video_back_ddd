@@ -61,7 +61,7 @@ func NewCLIRouter(
 	logger *zap.Logger,
 	translator *validate.Translator,
 ) *router.Router {
-	mw := middlewares.New(cfgProvider, enforcer, nil, nil, nil, nil, nil, logger)
+	mw := middlewares.New(cfgProvider, enforcer, nil, nil, nil, nil, nil, nil, logger)
 
 	return router.New(
 		cfgProvider,

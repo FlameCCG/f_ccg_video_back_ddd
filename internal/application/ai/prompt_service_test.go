@@ -16,15 +16,40 @@ import (
 )
 
 type promptTextFake struct {
-	text string
-	err  error
-	last TextInvocation
+	text  string
+	err   error
+	last  TextInvocation
+	calls int
 }
 
 func (f *promptTextFake) InvokeText(_ context.Context, invocation TextInvocation) (string, error) {
 	f.last = invocation
+	f.calls++
 
 	return f.text, f.err
+}
+
+func TestBuildResponsesSystemPromptSkipsAnalysisWithoutVideoSource(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		prompts PromptVideoQuery
+	}{
+		{name: "not configured"},
+		{name: "unavailable", prompts: &promptQueryFake{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			text := &promptTextFake{err: errors.New("model must not be called")}
+			s := &Service{text: text, prompts: tc.prompts, logger: zap.NewNop()}
+			prompt, err := s.buildResponsesSystemPrompt(context.Background(), &config.AI{SystemPrompt: "服务端提示"}, RuntimeConfig{}, conversation{
+				Messages: []*schema.Message{schema.UserMessage("你好")},
+			}, "test-model")
+			if err != nil || prompt != "服务端提示" || text.calls != 0 {
+				t.Fatalf("prompt=%q err=%v modelCalls=%d", prompt, err, text.calls)
+			}
+		})
+	}
 }
 
 func (f *promptTextFake) OpenStream(

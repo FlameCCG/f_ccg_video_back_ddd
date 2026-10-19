@@ -630,6 +630,7 @@ type TranscodePipelineProgress struct {
 
 // PublishVideoCommand 投稿命令（handler 校验绑定后交由应用层执行）。
 type PublishVideoCommand struct {
+	AuthorID       uint
 	Title          string
 	Description    string
 	PartitionID    uint

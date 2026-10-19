@@ -158,6 +158,9 @@ name=site
       "chunkSize": 10,
       "maxFileSize": 100,
       "maxUploadNum": 10,
+      "dailyUploadLimit": 10,
+      "unmergedChunkRetentionHours": 2,
+      "unpublishedSourceRetentionHours": 1,
       "chunkDir": "./runtime/chunks",
       "local": {
         "enable": false,
@@ -382,6 +385,9 @@ name=site
     "chunkSize": 10,
     "maxFileSize": 100,
     "maxUploadNum": 10,
+    "dailyUploadLimit": 10,
+    "unmergedChunkRetentionHours": 2,
+    "unpublishedSourceRetentionHours": 1,
     "chunkDir": "./runtime/chunks",
     "local": {
       "enable": false,
@@ -539,3 +545,11 @@ name=jwt
   "msg": "更新成功"
 }
 ```
+
+## 视频投稿开关
+
+- 字段：`site.disableUserSubmission`，布尔值，默认 `false`。
+- 管理端 `GET /admin/site/config?name=site` 返回 `data.disableUserSubmission`；公开配置返回 `data.site.disableUserSubmission`。
+- 使用 `PUT /admin/site/config?name=site` 保存完整 site 对象。开启后，仅拥有管理员角色的账号可上传视频及投稿封面、查询续传状态、完成上传、发布和修改视频。保存后后续请求立即按新值校验。
+- 旧配置缺少字段时默认允许投稿；旧管理端更新时遗漏此字段会保留当前值，显式传 `false` 才会关闭限制。
+- 客户端通过 `GET /common/user/info` 的 `data.isAdmin` 判断管理员身份；前端显示提示，后端独立校验身份。

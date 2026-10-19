@@ -34,6 +34,8 @@ var ErrUploadStorageUnavailable = errors.New("上传配置错误")
 type UploadService struct {
 	storage     StorageResolver
 	cfgProvider shared.ConfigReader
+	quota       *UploadQuotaService
+	guard       UploadHashGuard
 	mergeLocks  *mergeLockManager
 	statusCache *uploadStatusCache
 	logger      *zap.Logger
@@ -43,15 +45,110 @@ type UploadService struct {
 func NewUploadService(
 	storage StorageResolver,
 	cfgProvider shared.ConfigReader,
+	quota *UploadQuotaService,
+	guard UploadHashGuard,
 	logger *zap.Logger,
 ) *UploadService {
 	return &UploadService{
 		storage:     storage,
 		cfgProvider: cfgProvider,
+		quota:       quota,
+		guard:       guard,
 		mergeLocks:  newMergeLockManager(),
 		statusCache: newUploadStatusCache(uploadStatusCacheTTL),
 		logger:      logger,
 	}
+}
+
+// UploadChunkForUser 在首片实际写入前占用当天名额；失败或放弃均不退还。
+func (s *UploadService) UploadChunkForUser(ctx context.Context, userID uint, fileHash, index string, size int64, reader io.Reader) error {
+	fileHash = trimSpace(fileHash)
+	index = trimSpace(index)
+	if err := s.validateFileHash(fileHash); err != nil {
+		return err
+	}
+	if err := s.storage.ValidateChunkIndex(index); err != nil {
+		return err
+	}
+	if err := s.claimQuota(ctx, userID, fileHash); err != nil {
+		return err
+	}
+	return s.withHashes(ctx, []string{fileHash}, func(guardCtx context.Context) error {
+		return s.UploadChunk(guardCtx, fileHash, index, size, reader)
+	})
+}
+
+// GetUploadStatusForUser 仅在确认完整对象存在后为秒传占额，才返回 completed=true。
+func (s *UploadService) GetUploadStatusForUser(ctx context.Context, userID uint, fileHash string) (*UploadStatus, error) {
+	fileHash = trimSpace(fileHash)
+	if err := s.validateFileHash(fileHash); err != nil {
+		return nil, err
+	}
+	var status *UploadStatus
+	err := s.withHashes(ctx, []string{fileHash}, func(guardCtx context.Context) error {
+		var err error
+		status, err = s.GetUploadStatus(guardCtx, fileHash)
+		if err != nil || !status.Completed {
+			return err
+		}
+		return s.claimQuota(guardCtx, userID, fileHash)
+	})
+	return status, err
+}
+
+// CompleteUploadForUser 在复用已完成对象或合并分片前做服务端额度兜底。
+func (s *UploadService) CompleteUploadForUser(ctx context.Context, userID uint, fileHash, fileName string, totalChunks int) (string, error) {
+	fileHash = trimSpace(fileHash)
+	if err := s.validateFileHash(fileHash); err != nil {
+		return "", err
+	}
+	if err := s.claimQuota(ctx, userID, fileHash); err != nil {
+		return "", err
+	}
+	var path string
+	err := s.withHashes(ctx, []string{fileHash}, func(guardCtx context.Context) error {
+		var err error
+		path, err = s.CompleteUpload(guardCtx, fileHash, fileName, totalChunks)
+		return err
+	})
+	return path, err
+}
+
+// WithPublishUploads 将多分P的对象校验、额度检查和 MySQL 投稿写入置于同一组哈希锁内。
+func (s *UploadService) WithPublishUploads(ctx context.Context, userID uint, hashes []string, validate, persist func(context.Context) error) error {
+	normalized := make([]string, len(hashes))
+	for i, hash := range hashes {
+		hash = trimSpace(hash)
+		if err := s.validateFileHash(hash); err != nil {
+			return err
+		}
+		normalized[i] = hash
+	}
+	return s.withHashes(ctx, normalized, func(guardCtx context.Context) error {
+		if err := validate(guardCtx); err != nil {
+			return err
+		}
+		for _, hash := range uniqueUploadHashes(normalized) {
+			if err := s.claimQuota(guardCtx, userID, hash); err != nil {
+				return err
+			}
+		}
+		return persist(guardCtx)
+	})
+}
+
+func (s *UploadService) claimQuota(ctx context.Context, userID uint, fileHash string) error {
+	if s.quota == nil { // 仅供不装配 Redis 的单元测试使用；正式 Wire 图始终注入 quota。
+		return nil
+	}
+	return s.quota.Claim(ctx, userID, fileHash)
+}
+
+func (s *UploadService) withHashes(ctx context.Context, hashes []string, fn func(context.Context) error) error {
+	if s.guard == nil { // 仅供不装配 Redis 的单元测试使用。
+		return fn(ctx)
+	}
+	return s.guard.Run(ctx, hashes, fn)
 }
 
 // UploadChunk 保存一个分片。
@@ -61,6 +158,8 @@ func (s *UploadService) UploadChunk(
 	size int64,
 	reader io.Reader,
 ) error {
+	fileHash = trimSpace(fileHash)
+	index = trimSpace(index)
 	driver, err := s.resolve()
 	if err != nil {
 		return err
@@ -86,6 +185,7 @@ func (s *UploadService) UploadChunk(
 
 // GetUploadedChunks 读取已上传的分片索引列表。
 func (s *UploadService) GetUploadedChunks(ctx context.Context, fileHash string) ([]string, error) {
+	fileHash = trimSpace(fileHash)
 	driver, err := s.resolve()
 	if err != nil {
 		return nil, err
@@ -102,6 +202,7 @@ func (s *UploadService) GetUploadedChunks(ctx context.Context, fileHash string) 
 //
 // completed 必须以对象存储为准；内存缓存只做加速，对象被硬删后不得继续秒传。
 func (s *UploadService) GetUploadStatus(ctx context.Context, fileHash string) (*UploadStatus, error) {
+	fileHash = trimSpace(fileHash)
 	driver, err := s.resolve()
 	if err != nil {
 		return nil, err
@@ -145,7 +246,7 @@ func (s *UploadService) GetUploadStatus(ctx context.Context, fileHash string) (*
 	}()
 
 	completedRes := <-completedCh
-	if completedRes.err == nil && completedRes.completed {
+	if completedRes.err == nil && completedRes.completed && trimSpace(completedRes.filePath) != "" {
 		s.statusCache.rememberCompleted(fileHash, completedRes.filePath)
 		cancelStatus()
 

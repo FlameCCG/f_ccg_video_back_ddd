@@ -23,6 +23,8 @@ var ProviderSet = wire.NewSet(
 	NewStatsService,
 	NewUpdateService,
 	NewUploadService,
+	NewUploadQuotaService,
+	NewUploadCleanupService,
 	NewUserVideoService,
 	NewVectorSyncService,
 )

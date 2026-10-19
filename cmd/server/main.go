@@ -39,6 +39,36 @@ func runMaintenanceTaskWithInitializer(
 	opts *cli.Options,
 	initialize maintenanceTaskInitializer,
 ) int {
+	if task == cli.TaskInitAll {
+		allOpts := *opts
+		if len(allOpts.Args) == 0 {
+			allOpts.Args = []string{"ccg", "123456"}
+		} else if len(allOpts.Args) < 2 {
+			_, _ = fmt.Fprintln(os.Stderr, "请同时提供超级管理员用户名和密码，例如: go run ./cmd/server -all 用户名 密码")
+			return 1
+		}
+		// 每步独立装配并清理，确保迁移完成后才构造依赖数据库表的基础设施。
+		for _, step := range []struct {
+			name string
+			task cli.Task
+		}{
+			{"db", cli.TaskMigrateDB},
+			{"vp", cli.TaskVideoPartitions},
+			{"br", cli.TaskBanner},
+			{"es", cli.TaskESIndex},
+			{"rs", cli.TaskResourceSync},
+			{"rbac", cli.TaskRBACInit},
+			{"su", cli.TaskSuperUser},
+		} {
+			_, _ = fmt.Fprintf(os.Stderr, "初始化资源: %s\n", step.name)
+			if code := runMaintenanceTaskWithInitializer(ctx, step.task, &allOpts, initialize); code != 0 {
+				_, _ = fmt.Fprintf(os.Stderr, "初始化资源失败: %s\n", step.name)
+				return code
+			}
+		}
+		return 0
+	}
+
 	executor, cleanup, err := initialize(task, opts)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "初始化运维任务失败: %v\n", err)

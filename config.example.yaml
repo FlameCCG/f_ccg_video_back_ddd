@@ -174,6 +174,8 @@ server:
 
 # 站点业务配置
 site:
+  # 开启后仅管理员可上传、投稿和改稿；默认关闭
+  disableUserSubmission: false
   # 登录方式开关与验证码
   login:
     # 是否允许 QQ 登录
@@ -216,8 +218,14 @@ site:
     chunkSize: 10
     # 单文件最大体积（MB）
     maxFileSize: 700
-    # 单用户并发上传任务上限
+    # 单个作品的分P上限
     maxUploadNum: 10
+    # 普通用户北京时间自然日最多上传的不同源视频文件数（同哈希只计一次）
+    dailyUploadLimit: 10
+    # 未合并分片保留小时数，按最近成功写入时间计算
+    unmergedChunkRetentionHours: 2
+    # 未投稿源视频保留小时数；有视频资源引用时不会删除
+    unpublishedSourceRetentionHours: 1
     # 分片临时目录
     chunkDir: ./runtime/chunks
     # 本地磁盘存储

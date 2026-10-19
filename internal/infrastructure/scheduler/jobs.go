@@ -4,6 +4,7 @@ import (
 	"context"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
+	videoapp "f_ccg_video_back_ddd/internal/application/video"
 )
 
 // CommentLikeSyncJob 评论点赞增量落库任务端口。
@@ -37,6 +38,12 @@ type AutoUnbanJob interface {
 	// Run 执行一轮解封检查。
 	Run(ctx context.Context)
 }
+
+type UploadCleanupJob interface {
+	Run(ctx context.Context)
+}
+
+var _ UploadCleanupJob = (*videoapp.UploadCleanupService)(nil)
 
 // 编译期断言：四个应用层用例服务分别满足对应的任务端口，
 // bootstrap 中可直接 wire.Bind，无需额外适配器。

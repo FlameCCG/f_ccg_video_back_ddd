@@ -1123,3 +1123,34 @@ Base URL：/v1
   "msg": "获取成功"
 }
 ```
+
+## [PUT] 菜单拖拽排序
+
+- 接口路径: PUT /admin/rbac/menu/move
+- Tag: 权限管理
+- 认证及权限: 需要登录并通过 RBAC 权限校验
+- 请求体: `id`、`targetId` 为必填正整数；`position` 必填，取 `before` 或 `after`
+- 说明: 只允许在同一父菜单下排序，将 `id` 移动到 `targetId` 之前或之后
+- 响应: HTTP 200，`code=0`、`msg=排序成功`；失败时 `code=1`，原因见 `msg`
+
+## [POST] AI 生成菜单字段
+
+- 接口路径: POST /admin/rbac/menu/generate
+- Tag: 权限管理
+- 认证及权限: 需要登录并通过 RBAC 权限校验
+- 请求体: `title` 为必填中文标题；`parentId` 为可选父菜单ID
+- 说明: 根据标题、父菜单和现有菜单生成可编辑建议，不直接创建菜单
+- 响应: HTTP 200，业务成功以 `code=0` 判断；`data` 包含 `titleEn`、`titleJa`、`icon`、`path`、`name`、`component`、`keepAlive`、`sortOrder`
+
+## [GET] 系统通配符权限列表
+
+- 接口路径: GET /admin/rbac/permission/wildcards
+- Tag: 权限管理
+- 认证及权限: 需要登录并通过 RBAC 权限校验
+- 请求参数: 无
+- 说明: 返回系统已有的通配符权限，跨角色去重
+- 响应: HTTP 200，`code=0` 时 `data` 为数组，每项包含 `resource` 和 `action`
+
+## 接口资源元数据同步
+
+`api_resources.summary` 与 `tags` 来自 `docs/openapi.yaml` 对应操作的 `summary` 与 `tags`。修改 YAML 后，在 DDD 后端目录运行 `go run ./cmd/server -f config_dev.yaml -rs`，将已注册路由的元数据同步到数据库。路径使用 `/admin/...`、`/common/...`，同步器兼容实际路由的 `/v1` 前缀。

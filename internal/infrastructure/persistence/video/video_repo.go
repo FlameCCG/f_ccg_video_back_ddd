@@ -532,7 +532,11 @@ func (r *VideoRepository) StoragePathStillReferenced(ctx context.Context, stored
 		return false, err
 	}
 
-	return count > 0, nil
+	if count > 0 {
+		return true, nil
+	}
+
+	return legacyStoragePathReferenced(db, storedPath)
 }
 
 // mapNotFound 把 GORM 的「记录不存在」映射为领域哨兵错误。

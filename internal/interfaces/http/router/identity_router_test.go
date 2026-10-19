@@ -40,7 +40,7 @@ func TestRegisterEmailRouteDoesNotRequireSlideCaptcha(t *testing.T) {
 
 	// 只装配验证码用例：注册路由链路只会用到验证码开关。
 	captchaSvc := identityapp.NewCaptchaService(nil, nil, nil, nil, provider)
-	mw := middlewares.New(provider, nil, nil, nil, nil, captchaSvc, nil, zap.NewNop())
+	mw := middlewares.New(provider, nil, nil, nil, nil, nil, captchaSvc, nil, zap.NewNop())
 
 	engine := gin.New()
 	engine.Use(mw.InjectLogger())
@@ -97,7 +97,7 @@ func TestAdminLoginRouteRequiresSlideCaptcha(t *testing.T) {
 	})
 
 	captchaSvc := identityapp.NewCaptchaService(nil, nil, nil, nil, provider)
-	mw := middlewares.New(provider, nil, nil, nil, nil, captchaSvc, nil, zap.NewNop())
+	mw := middlewares.New(provider, nil, nil, nil, nil, nil, captchaSvc, nil, zap.NewNop())
 
 	engine := gin.New()
 	engine.Use(mw.InjectLogger())

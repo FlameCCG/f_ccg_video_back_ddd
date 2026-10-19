@@ -76,19 +76,19 @@ services:
   #     - ./components/logstash/pipeline:/usr/share/logstash/pipeline:ro
   #   networks:
   #     - f_video_network
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.12.2
-    restart: unless-stopped
-    container_name: kibana
-    depends_on: [elasticsearch]
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    ports:
-      - "5601:5601"
-    volumes:
-      - ./components/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
-    networks:
-      - f_video_network
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana:8.12.2
+  #   restart: unless-stopped
+  #   container_name: kibana
+  #   depends_on: [elasticsearch]
+  #   environment:
+  #     - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+  #   ports:
+  #     - "5601:5601"
+  #   volumes:
+  #     - ./components/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+  #   networks:
+  #     - f_video_network
   kafka: # Kafka 服务定义（服务名为 kafka）
     image: apache/kafka:3.9.0 # 使用的镜像：Apache 官方 Kafka 3.9.0
     restart: unless-stopped # 容器异常退出会自动重启，除非手动停止
@@ -147,9 +147,11 @@ services:
     networks:
       - f_video_network
   minio:
-    image: minio/minio:latest
+    image: pgsty/silo:latest # MinIO 官方已下架 Docker Hub 镜像，使用 100% 兼容的开源 Silo (保留原 API 与数据格式)
     container_name: minio
     environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
     ports:

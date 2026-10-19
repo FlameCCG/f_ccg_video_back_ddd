@@ -27,6 +27,8 @@ func TestResolveTaskPriority(t *testing.T) {
 	}{
 		{"nil options", nil, TaskServe},
 		{"empty options", &Options{}, TaskServe},
+		{"all resources", &Options{All: true}, TaskInitAll},
+		{"all takes priority", &Options{All: true, DB: true, SuperUser: true, Index: true, RBAC: true}, TaskInitAll},
 		{"db", &Options{DB: true}, TaskMigrateDB},
 		{"video partitions", &Options{VideoPartitions: true, Banner: true, SuperUser: true, Index: true}, TaskVideoPartitions},
 		{"banner", &Options{Banner: true, SuperUser: true, Index: true}, TaskBanner},

@@ -7,5 +7,6 @@ var ProviderSet = wire.NewSet(
 	NewLocalStorage,
 	NewMinIOClientPool,
 	NewMinIOStorage,
+	NewUploadGarbageScanner,
 	NewResolver,
 )

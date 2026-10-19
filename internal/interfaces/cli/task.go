@@ -21,6 +21,8 @@ const (
 	TaskResourceSync
 	// TaskRBACInit 初始化 RBAC 默认数据（-rbac）。
 	TaskRBACInit
+	// TaskInitAll 按顺序初始化全部资源及超级管理员（-all）。
+	TaskInitAll
 )
 
 // ResolveTask 依据命令行选项决定要执行的任务。
@@ -28,13 +30,15 @@ const (
 // 优先级严格复刻原 core.InitCore 的执行顺序：
 // flags.RunDBTasks 依次检查 -db → -vp → -br → -su（各自 os.Exit），
 // 随后 flags.RunESTasks 检查 -es，最后 InitCore 依次检查 -rs → -rbac。
-// 因此多个开关同时给出时，靠前者胜出。
+// 因此多个开关同时给出时，靠前者胜出；-all 优先于所有单项开关。
 func ResolveTask(opts *Options) Task {
 	if opts == nil {
 		return TaskServe
 	}
 
 	switch {
+	case opts.All:
+		return TaskInitAll
 	case opts.DB:
 		return TaskMigrateDB
 	case opts.VideoPartitions:

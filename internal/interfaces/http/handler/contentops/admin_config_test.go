@@ -19,6 +19,7 @@ import (
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -733,4 +734,77 @@ func decodeResponseData(t *testing.T, recorder *httptest.ResponseRecorder) []byt
 	}
 
 	return payload
+}
+
+func TestSiteSubmissionPolicyRoundTripAndLegacyUpdates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("site: {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	handler, provider := newConfigHandler(t, &config.Config{Site: &site.Site{}}, path)
+	for _, step := range []struct {
+		body string
+		want bool
+	}{
+		{`{"disableUserSubmission":true,"login":{"usernamePwdLogin":true}}`, true},
+		{`{"login":{"usernamePwdLogin":true}}`, true},
+		{`{"disableUserSubmission":false,"login":{"usernamePwdLogin":true}}`, false},
+	} {
+		rec := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(rec)
+		ctx.Request = httptest.NewRequest(http.MethodPut, "/v1/admin/site/config?name=site", strings.NewReader(step.body))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		handler.AdminUpdateConfigItemView(ctx)
+		var response res.Response
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || response.Code != 0 {
+			t.Fatalf("update failed: %s", rec.Body.String())
+		}
+		if provider.Get().Site.DisableUserSubmission != step.want {
+			t.Fatalf("wrong effective policy: %+v", provider.Get().Site)
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var persisted struct {
+			Site site.Site `yaml:"site"`
+		}
+		if err := yaml.Unmarshal(contents, &persisted); err != nil {
+			t.Fatal(err)
+		}
+		if persisted.Site.DisableUserSubmission != step.want {
+			t.Fatalf("policy not persisted: %s", contents)
+		}
+		for _, admin := range []bool{false, true} {
+			rec = httptest.NewRecorder()
+			ctx, _ = gin.CreateTestContext(rec)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/admin/site/config?name=site", nil)
+			if admin {
+				handler.AdminConfigItemView(ctx)
+			} else {
+				handler.CommonConfigView(ctx)
+			}
+			var result struct {
+				Data json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			var cfg site.Site
+			if admin {
+				if err := json.Unmarshal(result.Data, &cfg); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				var public SiteResp
+				if err := json.Unmarshal(result.Data, &public); err != nil {
+					t.Fatal(err)
+				}
+				cfg = public.Site
+			}
+			if cfg.DisableUserSubmission != step.want {
+				t.Fatalf("policy not exposed to admin=%v: %s", admin, rec.Body.String())
+			}
+		}
+	}
 }

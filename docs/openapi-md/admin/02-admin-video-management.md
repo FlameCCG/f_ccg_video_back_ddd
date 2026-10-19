@@ -805,3 +805,21 @@ data: {"videoId":11,"status":"succeeded","percent":100,"stage":"cleanup","stageP
 event: complete
 data: {"ok":true}
 ```
+
+## [POST] 重建视频向量索引
+
+- 接口路径: POST /admin/video/vector/rebuild
+- Tag: 后台-视频管理
+- 认证及权限: 需要登录并通过 RBAC 权限校验
+- 请求体: JSON 对象；`recreate` 可选，默认 `false`，为 `true` 时删除并重建索引；`workers` 可选，省略或传 `0` 使用默认并发数 `4`，否则允许 `1` 至 `16`
+- 说明: 异步启动全量向量回填，已有任务运行时返回 `code=1`
+- 响应: HTTP 200，`code=0` 时 `data` 为当前重建任务状态
+
+## [GET] 视频向量索引重建状态
+
+- 接口路径: GET /admin/video/vector/status
+- Tag: 后台-视频管理
+- 认证及权限: 需要登录并通过 RBAC 权限校验
+- 请求参数: 无
+- 响应: HTTP 200，`code=0` 时 `data` 包含 `running`、`total`、`succeeded`、`failed`、`startedAt`、`finishedAt`、`lastError`（可选）
+- 说明: 状态仅保存在当前服务进程中，服务重启后不保留任务快照
