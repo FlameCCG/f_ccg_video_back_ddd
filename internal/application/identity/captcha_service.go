@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config/site"
 )
 
 // ClickCaptchaResult 点击验证码生成结果（字段与原 ClickCaptchaGenerateResp 一致）。
@@ -37,14 +38,14 @@ type SlideCaptchaVerifyReq struct {
 
 // ClickCaptchaPort 点击验证码端口（实现在 infrastructure/captcha）。
 type ClickCaptchaPort interface {
-	Generate(ctx context.Context) (*ClickCaptchaResult, error)
-	Verify(ctx context.Context, token string, points []ClickCaptchaPoint) (bool, error)
+	Generate(ctx context.Context, scenes ...string) (*ClickCaptchaResult, error)
+	Verify(ctx context.Context, token string, points []ClickCaptchaPoint, scenes ...string) (bool, error)
 }
 
 // SlideCaptchaPort 滑块验证码端口（实现在 infrastructure/captcha）。
 type SlideCaptchaPort interface {
-	Generate(ctx context.Context) (*SlideCaptchaResult, error)
-	Verify(ctx context.Context, req SlideCaptchaVerifyReq) (bool, error)
+	Generate(ctx context.Context, scenes ...string) (*SlideCaptchaResult, error)
+	Verify(ctx context.Context, req SlideCaptchaVerifyReq, scenes ...string) (bool, error)
 }
 
 // GraphicCaptchaStore 图形（字符）验证码存储端口。
@@ -87,23 +88,23 @@ func NewCaptchaService(
 }
 
 // GenerateClick 生成点击验证码。
-func (s *CaptchaService) GenerateClick(ctx context.Context) (*ClickCaptchaResult, error) {
-	return s.click.Generate(ctx)
+func (s *CaptchaService) GenerateClick(ctx context.Context, scenes ...string) (*ClickCaptchaResult, error) {
+	return s.click.Generate(ctx, scenes...)
 }
 
 // VerifyClick 校验点击验证码。
-func (s *CaptchaService) VerifyClick(ctx context.Context, token string, points []ClickCaptchaPoint) (bool, error) {
-	return s.click.Verify(ctx, token, points)
+func (s *CaptchaService) VerifyClick(ctx context.Context, token string, points []ClickCaptchaPoint, scenes ...string) (bool, error) {
+	return s.click.Verify(ctx, token, points, scenes...)
 }
 
 // GenerateSlide 生成滑块验证码。
-func (s *CaptchaService) GenerateSlide(ctx context.Context) (*SlideCaptchaResult, error) {
-	return s.slide.Generate(ctx)
+func (s *CaptchaService) GenerateSlide(ctx context.Context, scenes ...string) (*SlideCaptchaResult, error) {
+	return s.slide.Generate(ctx, scenes...)
 }
 
 // VerifySlide 校验滑块验证码。
-func (s *CaptchaService) VerifySlide(ctx context.Context, req SlideCaptchaVerifyReq) (bool, error) {
-	return s.slide.Verify(ctx, req)
+func (s *CaptchaService) VerifySlide(ctx context.Context, req SlideCaptchaVerifyReq, scenes ...string) (bool, error) {
+	return s.slide.Verify(ctx, req, scenes...)
 }
 
 // GraphicStore 返回图形验证码存储，供接口层构造 base64Captcha 实例。
@@ -116,6 +117,15 @@ func (s *CaptchaService) VerifyGraphic(id, answer string) bool {
 	return s.graphic.Verify(id, answer, true)
 }
 
+// InteractiveCaptchaOptions 读取当前场景的交互验证码开关。
+func (s *CaptchaService) InteractiveCaptchaOptions(scene string) site.CaptchaOptions {
+	cfg := s.cfgProvider.Get()
+	if cfg == nil {
+		return site.CaptchaOptions{}
+	}
+	return cfg.Site.InteractiveCaptchaOptions(scene)
+}
+
 // ClickCaptchaEnabled 登录是否启用点击验证码。
 func (s *CaptchaService) ClickCaptchaEnabled() bool {
 	cfg := s.cfgProvider.Get()
@@ -123,11 +133,11 @@ func (s *CaptchaService) ClickCaptchaEnabled() bool {
 	return cfg != nil && cfg.Site != nil && cfg.Site.Login != nil && cfg.Site.Login.TextClickCaptcha
 }
 
-// SlideCaptchaEnabled 注册/登录是否启用滑块验证码。
+// SlideCaptchaEnabled 管理员登录是否启用滑块验证码。
 func (s *CaptchaService) SlideCaptchaEnabled() bool {
 	cfg := s.cfgProvider.Get()
 
-	return cfg != nil && cfg.Site != nil && cfg.Site.Register != nil && cfg.Site.Register.SlideCaptcha
+	return cfg != nil && cfg.Site != nil && cfg.Site.Login != nil && cfg.Site.Login.SlideCaptcha
 }
 
 // GraphicCaptchaEnabled 注册是否启用图形验证码。

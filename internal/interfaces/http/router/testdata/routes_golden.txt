@@ -57,6 +57,7 @@ GET     /v1/common/banner/list
 GET     /v1/common/captcha/click
 GET     /v1/common/captcha/graphics-text
 GET     /v1/common/captcha/slide
+GET     /v1/common/captcha/type
 GET     /v1/common/chat/conversations
 GET     /v1/common/chat/messages
 GET     /v1/common/chat/ws

@@ -103,6 +103,13 @@ func (p *Provider) Path() string {
 // 热更新读取或校验失败时保留上一份有效配置并打日志。
 func Load(filePath string) (*Provider, error) {
 	v := viper.New()
+	// 缺少新增字段时使用独立默认值；显式配置的 0 边距仍会保留。
+	for _, scene := range []string{"login", "register"} {
+		v.SetDefault("site."+scene+".slideCaptchaTTL", 300)
+		v.SetDefault("site."+scene+".slideCaptchaPadding", 10)
+		v.SetDefault("site."+scene+".textClickCaptchaTTL", 300)
+		v.SetDefault("site."+scene+".textClickCaptchaPadding", 20)
+	}
 	v.SetConfigFile(filePath)
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
