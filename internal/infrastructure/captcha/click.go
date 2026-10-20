@@ -8,6 +8,7 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/config/site"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/constants"
 
@@ -36,6 +37,8 @@ type clickCaptchaTarget struct {
 }
 
 type clickCaptchaStorePayload struct {
+	Scene string `json:"scene"`
+
 	Dots []clickCaptchaTarget `json:"dots"` // 存放全部正确答案
 }
 
@@ -67,7 +70,12 @@ func NewClickCaptcha(
 }
 
 // Generate 生成点击验证码，并把答案写入 Redis。
-func (c *ClickCaptcha) Generate(ctx context.Context) (*app.ClickCaptchaResult, error) {
+func (c *ClickCaptcha) Generate(ctx context.Context, scenes ...string) (*app.ClickCaptchaResult, error) {
+	scene := "login"
+	if len(scenes) > 0 {
+		scene = site.ResolveCaptchaScene(scenes[0], scene)
+	}
+
 	// 初始化生成器资源
 	if err := c.ensure(); err != nil {
 		return nil, err
@@ -79,9 +87,9 @@ func (c *ClickCaptcha) Generate(ctx context.Context) (*app.ClickCaptchaResult, e
 		return nil, err
 	}
 
-	token := uuid.NewString()                          // 生成唯一 token 用于关联答案
-	targets := buildClickTargets(captData.GetData())   // 将 map[int]*Dot 转为稳定切片
-	payload := clickCaptchaStorePayload{Dots: targets} // 构造写入 Redis 的载荷
+	token := uuid.NewString()                                        // 生成唯一 token 用于关联答案
+	targets := buildClickTargets(captData.GetData())                 // 将 map[int]*Dot 转为稳定切片
+	payload := clickCaptchaStorePayload{Scene: scene, Dots: targets} // 构造写入 Redis 的载荷
 
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -89,7 +97,7 @@ func (c *ClickCaptcha) Generate(ctx context.Context) (*app.ClickCaptchaResult, e
 	}
 
 	// 写入 Redis 并设置 TTL
-	if err = c.store.store(ctx, constants.ClickCaptchaRedisKeyPrefix+token, data, c.ttl()); err != nil {
+	if err = c.store.store(ctx, constants.ClickCaptchaRedisKeyPrefix+token, data, c.ttl(scene)); err != nil {
 		return nil, err
 	}
 
@@ -111,7 +119,12 @@ func (c *ClickCaptcha) Generate(ctx context.Context) (*app.ClickCaptchaResult, e
 }
 
 // Verify 校验点击顺序与坐标是否落在容错范围内（答案一次性消费）。
-func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.ClickCaptchaPoint) (bool, error) {
+func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.ClickCaptchaPoint, scenes ...string) (bool, error) {
+	scene := "login"
+	if len(scenes) > 0 {
+		scene = site.ResolveCaptchaScene(scenes[0], scene)
+	}
+
 	if token == "" || len(points) == 0 {
 		return false, ErrCaptchaExpired
 	}
@@ -127,6 +140,9 @@ func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.Cl
 	var payload clickCaptchaStorePayload
 
 	_ = json.Unmarshal(raw, &payload)
+	if payload.Scene != scene {
+		return false, ErrCaptchaExpired
+	}
 
 	// 数量不匹配说明验证码失效或前端少传点位
 	if len(payload.Dots) == 0 || len(payload.Dots) != len(points) {
@@ -138,7 +154,7 @@ func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.Cl
 		targetMap[target.Index] = target
 	}
 
-	padding := c.padding()
+	padding := c.padding(scene)
 	success := true // 默认校验成功
 
 	for _, point := range points {
@@ -193,24 +209,28 @@ func (c *ClickCaptcha) ensure() error {
 	return c.initErr
 }
 
-func (c *ClickCaptcha) ttl() time.Duration {
-	cfg := c.cfgProvider.Get()
-	// 读取配置中的秒数
-	if cfg != nil && cfg.Site != nil && cfg.Site.Login != nil && cfg.Site.Login.TextClickCaptchaTTL > 0 {
-		return time.Duration(cfg.Site.Login.TextClickCaptchaTTL) * time.Second
+func (c *ClickCaptcha) ttl(scenes ...string) time.Duration {
+	scene := "login"
+	if len(scenes) > 0 {
+		scene = scenes[0]
 	}
-
-	return defaultClickCaptchaTTL // 配置缺失时使用默认值
+	cfg := c.cfgProvider.Get()
+	if cfg == nil {
+		return defaultClickCaptchaTTL
+	}
+	return time.Duration(cfg.Site.CaptchaSettings(scene, "click").TTLSeconds) * time.Second
 }
 
-func (c *ClickCaptcha) padding() int {
-	cfg := c.cfgProvider.Get()
-	// 读取配置中的容错像素
-	if cfg != nil && cfg.Site != nil && cfg.Site.Login != nil && cfg.Site.Login.TextClickCaptchaPadding > 0 {
-		return cfg.Site.Login.TextClickCaptchaPadding
+func (c *ClickCaptcha) padding(scenes ...string) int {
+	scene := "login"
+	if len(scenes) > 0 {
+		scene = scenes[0]
 	}
-
-	return defaultClickCaptchaPadding // 配置缺失时使用默认值
+	cfg := c.cfgProvider.Get()
+	if cfg == nil {
+		return defaultClickCaptchaPadding
+	}
+	return cfg.Site.CaptchaSettings(scene, "click").Padding
 }
 
 // buildClickTargets 把生成器返回的目标 map 转成按索引排序的稳定切片。
