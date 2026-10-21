@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
@@ -126,6 +127,30 @@ func (q *DanmuQuery) RoomList(
 	}
 
 	return items, total, nil
+}
+
+// MonthInstants 返回 [start, end) 内每条弹幕的 created_at，按时间升序。
+func (q *DanmuQuery) MonthInstants(
+	ctx context.Context,
+	videoID, partID uint,
+	start, end time.Time,
+) ([]time.Time, error) {
+	var instants []time.Time
+	err := gormx.DB(ctx, q.db).
+		Model(&po.Danmu{}).
+		Where("video_id = ? AND video_part_id = ?", videoID, partID).
+		Where("created_at >= ? AND created_at < ?", start, end).
+		Order("created_at ASC, id ASC").
+		Pluck("created_at", &instants).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if instants == nil {
+		return []time.Time{}, nil
+	}
+
+	return instants, nil
 }
 
 // AdminList 管理端弹幕列表。

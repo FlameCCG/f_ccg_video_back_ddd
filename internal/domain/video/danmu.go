@@ -206,3 +206,39 @@ func ParseDanmuDateRange(date string) (time.Time, time.Time, error) {
 
 	return t, t.Add(24 * time.Hour), nil
 }
+
+// ParseDanmuMonthRange 解析 YYYY-MM 为 [月初, 下月初) 区间（本地时区）。
+func ParseDanmuMonthRange(month string) (time.Time, time.Time, error) {
+	t, err := time.ParseInLocation("2006-01", strings.TrimSpace(month), time.Local)
+	if err != nil {
+		return time.Time{}, time.Time{}, errMonthFormat
+	}
+
+	return t, t.AddDate(0, 1, 0), nil
+}
+
+// ParseDanmuInstantRange 解析浏览器给出的绝对时间窗。
+//
+// 弹幕 created_at 按 Asia/Shanghai 落库。日历上的“哪一天”由浏览器时区决定，
+// 所以这里只接受前端算好的月初、下月初瞬间，不使用服务器的 time.Local。
+func ParseDanmuInstantRange(startRaw, endRaw string) (time.Time, time.Time, error) {
+	start, err := parseRFC3339(startRaw)
+	if err != nil {
+		return time.Time{}, time.Time{}, errInstantRange
+	}
+
+	end, err := parseRFC3339(endRaw)
+	if err != nil {
+		return time.Time{}, time.Time{}, errInstantRange
+	}
+
+	if !end.After(start) || end.Sub(start) > 32*24*time.Hour {
+		return time.Time{}, time.Time{}, errInstantRange
+	}
+
+	return start, end, nil
+}
+
+func parseRFC3339(raw string) (time.Time, error) {
+	return time.Parse(time.RFC3339Nano, strings.TrimSpace(raw))
+}

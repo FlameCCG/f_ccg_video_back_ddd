@@ -415,6 +415,14 @@ type DanmuHistoryParams struct {
 	Limit       int
 }
 
+// DanmuMonthDates 某月内有弹幕的发送时刻。
+//
+// Times 是库内 Asia/Shanghai 的绝对时间。浏览器再用本地时区把它折成日历日。
+type DanmuMonthDates struct {
+	Month string      `json:"month"`
+	Times []time.Time `json:"times"`
+}
+
 // DanmuRoomListParams 房间弹幕列表查询参数。
 type DanmuRoomListParams struct {
 	VideoID      uint
