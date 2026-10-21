@@ -159,7 +159,9 @@ services:
       - "9003:9001" # Web管理界面端口
     command: server --address ":9000" --console-address ":9001" /data
     volumes:
-      - ./components/minio/data:/data
+      # Linux 数据卷避免 Windows NTFS/9p 挂载在 RenameData 时偶发 Access Denied。
+      # 已有 components/minio/data 必须停服复制并校验后再切换，见 docs/minio-storage.md。
+      - minio_data:/data
     networks:
       - f_video_network
     restart: unless-stopped
@@ -189,3 +191,7 @@ services:
 networks:
   f_video_network:
     driver: bridge
+volumes:
+  minio_data:
+    name: f_ccg_video_minio_data
+    external: true
