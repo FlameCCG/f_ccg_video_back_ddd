@@ -32,7 +32,6 @@ type stubDriver struct {
 	mergePath            string
 	waitCompletedTimeout bool
 	waitChunkTimeout     bool
-	listChunkCalls       int
 }
 
 func (s *stubDriver) SaveChunk(context.Context, string, string, int64, io.Reader) error {
@@ -40,8 +39,6 @@ func (s *stubDriver) SaveChunk(context.Context, string, string, int64, io.Reader
 }
 
 func (s *stubDriver) ListUploadedChunks(ctx context.Context, _ string) ([]string, error) {
-	s.listChunkCalls++
-
 	if s.waitChunkTimeout {
 		<-ctx.Done()
 

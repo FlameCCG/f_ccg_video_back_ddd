@@ -76,6 +76,8 @@ var IdentityProviderSet = wire.NewSet(
 	wire.Bind(new(identityapp.CreatorMetricStore), new(*identitycache.CreatorMetricStore)),
 
 	// 验证码适配器
+	captcha.NewEmailGenerator,
+	wire.Bind(new(identityapp.EmailCaptchaGenerator), new(*captcha.EmailGenerator)),
 	captcha.NewClickCaptcha,
 	wire.Bind(new(identityapp.ClickCaptchaPort), new(*captcha.ClickCaptcha)),
 	captcha.NewSlideCaptcha,

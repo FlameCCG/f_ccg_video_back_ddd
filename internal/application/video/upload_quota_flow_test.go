@@ -8,12 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	identity "f_ccg_video_back_ddd/internal/application/identity"
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"go.uber.org/zap"
 )
@@ -23,17 +21,8 @@ type uploadRoles struct {
 	err   error
 }
 
-func (r uploadRoles) RoleIDByName(context.Context, string) (uint, error)     { return 0, nil }
-func (r uploadRoles) HasRole(context.Context, uint, uint) (bool, error)      { return r.admin, r.err }
-func (r uploadRoles) RoleMap(context.Context, uint) (map[uint]string, error) { return nil, r.err }
-func (r uploadRoles) LoadRoles(context.Context, uint) ([]identity.UserRoleItem, error) {
-	if r.err != nil {
-		return nil, r.err
-	}
-	if r.admin {
-		return []identity.UserRoleItem{{Name: constants.AdminUserRole}}, nil
-	}
-	return nil, nil
+func (r uploadRoles) IsUploadQuotaExempt(context.Context, uint) (bool, error) {
+	return r.admin, r.err
 }
 
 type quotaMemory struct {

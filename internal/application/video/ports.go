@@ -404,6 +404,8 @@ type ExpAwarder interface {
 // 在已有事务的 context 中调用 ApplyChange 时，identity 侧会复用同一事务
 // （见 decisions.md D-010），因此三连/投币的跨上下文原子性与原实现一致。
 type CoinLedger interface {
+	// LockAccounts 在调用方事务中锁定账户；由 identity 负责排序与去重。
+	LockAccounts(ctx context.Context, userIDs []uint) error
 	// ApplyChange 增减用户硬币余额并写入流水。
 	ApplyChange(ctx context.Context, userID uint, delta float64, reason string, dedupKey *string) error
 	// IsInsufficient 判断错误是否为「硬币余额不足」。
