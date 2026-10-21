@@ -105,6 +105,16 @@ func (m *MinIOStorage) SaveChunk(
 		ContentType: contentTypeOctetStream, // 统一使用二进制类型
 	})
 	if err != nil {
+		// AccessDenied 也可能来自存储服务器的文件系统错误；保留请求 ID 以便关联服务端追踪。
+		resp := minio.ToErrorResponse(err)
+		m.logger.Error("minio chunk write failed",
+			zap.Error(err),
+			zap.String("bucket", m.bucket),
+			zap.String("key", objectName),
+			zap.Int64("size", size),
+			zap.String("storageCode", resp.Code),
+			zap.Int("storageStatus", resp.StatusCode),
+			zap.String("requestID", resp.RequestID))
 		return fmt.Errorf("上传分片失败: %w", err)
 	}
 
