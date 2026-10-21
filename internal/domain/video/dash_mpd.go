@@ -255,7 +255,14 @@ func classifyRepContentType(v DASHVariant) string {
 }
 
 // ResolutionLabelFromSize 尽可能把 WxH 映射为项目内的分辨率标签。
+//
+// 宽 >= 3840 的超宽片与 MapResolutionEnum 一样归入 4K。只看高度时，
+// 3840×1632 会因为 1632 < 2000 被标成 1080p。
 func ResolutionLabelFromSize(width, height int) string {
+	if width >= 3840 || height >= 2160 {
+		return string(enum.Resolution2160P)
+	}
+
 	h := height
 	if h <= 0 && width > 0 {
 		// 竖屏兜底
