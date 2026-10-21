@@ -192,7 +192,7 @@ func (s *InteractionService) applyCoin(
 	}
 
 	// 固定加锁顺序，避免与三连/收藏并发死锁
-	if err := s.videos.LockUsers(ctx, domain.SortUserIDsForLock(userID, ownerID)); err != nil {
+	if err := s.ledger.LockAccounts(ctx, []uint{userID, ownerID}); err != nil {
 		return 0, 0, err
 	}
 
@@ -333,7 +333,7 @@ func (s *InteractionService) addFavorite(
 	firstFavorite := false
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		if err := s.videos.LockUsers(txCtx, []uint{userID}); err != nil {
+		if err := s.ledger.LockAccounts(txCtx, []uint{userID}); err != nil {
 			return err
 		}
 

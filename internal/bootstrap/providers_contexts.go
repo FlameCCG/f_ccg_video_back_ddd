@@ -32,6 +32,7 @@ import (
 	infrastructureExternalArk "f_ccg_video_back_ddd/internal/infrastructure/external/ark"
 	infrastructureExternalEmail "f_ccg_video_back_ddd/internal/infrastructure/external/email"
 	infrastructureExternalOauth "f_ccg_video_back_ddd/internal/infrastructure/external/oauth"
+	infrastructureExternalVideo "f_ccg_video_back_ddd/internal/infrastructure/external/video"
 	infrastructureMq "f_ccg_video_back_ddd/internal/infrastructure/mq"
 	infrastructurePersistenceAi "f_ccg_video_back_ddd/internal/infrastructure/persistence/ai"
 	infrastructurePersistenceChat "f_ccg_video_back_ddd/internal/infrastructure/persistence/chat"
@@ -282,7 +283,8 @@ var MediaProviderSet = wire.NewSet(
 var VideoProviderSet = wire.NewSet(
 	// internal/application/video
 	applicationVideo.ProviderSet,
-	wire.Bind(new(applicationVideo.DASHVariantResolver), new(*applicationVideo.HTTPDASHVariantResolver)),
+	infrastructureExternalVideo.NewHTTPDASHVariantResolver,
+	wire.Bind(new(applicationVideo.DASHVariantResolver), new(*infrastructureExternalVideo.HTTPDASHVariantResolver)),
 	// internal/infrastructure/persistence/video
 	infrastructurePersistenceVideo.NewAdminVideoQuery,
 	infrastructurePersistenceVideo.NewAuthorRenameRepository,

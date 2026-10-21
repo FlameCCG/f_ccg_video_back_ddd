@@ -46,14 +46,15 @@ func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*domain.V
 	return toDomainVideo(&row), nil
 }
 
-// FindByIDAndAuthor 按主键 + 作者用户名读取视频；不存在时返回 ErrRecordNotFound。
-func (r *VideoRepository) FindByIDAndAuthor(
+// FindByIDAndAuthorForUpdate 在调用方事务中取得行锁，防止改稿覆盖并发删除或审核。
+func (r *VideoRepository) FindByIDAndAuthorForUpdate(
 	ctx context.Context,
 	videoID uint,
 	authorUsername string,
 ) (*domain.Video, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Take(&row, "id = ? AND author_username = ?", videoID, authorUsername).Error; err != nil {
 		return nil, mapNotFound(err)
 	}
@@ -262,21 +263,6 @@ func (r *VideoRepository) UserIDByUsername(ctx context.Context, username string)
 	return user.ID, user.Username, nil
 }
 
-// LockUsers 按给定顺序对 users 行加写锁（要求在事务内调用）。
-func (r *VideoRepository) LockUsers(ctx context.Context, userIDs []uint) error {
-	db := gormx.DB(ctx, r.db)
-
-	for _, id := range userIDs {
-		if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Select("id").
-			Take(&po.User{}, "id = ?", id).Error; err != nil {
-			return mapNotFound(err)
-		}
-	}
-
-	return nil
-}
-
 // UpdateStatus 无条件更新视频状态。
 func (r *VideoRepository) UpdateStatus(ctx context.Context, videoID uint, status enum.VideoStatus) error {
 	return gormx.DB(ctx, r.db).
@@ -387,16 +373,23 @@ func (r *VideoRepository) CountByPartition(ctx context.Context, partitionID uint
 	return count, nil
 }
 
-// UpdateFields 更新视频的部分字段（列名 → 值）。
-func (r *VideoRepository) UpdateFields(ctx context.Context, videoID uint, updates map[string]any) error {
-	if len(updates) == 0 {
-		return nil
+// SaveRevision 只映射改稿字段；数据库列名留在适配器内，统计等独立写入不受影响。
+func (r *VideoRepository) SaveRevision(ctx context.Context, video *domain.Video) error {
+	if video == nil || video.ID == 0 {
+		return domain.ErrRecordNotFound
 	}
 
 	return gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
-		Where("id = ?", videoID).
-		Updates(updates).Error
+		Where("id = ?", video.ID).
+		Updates(map[string]any{
+			"title":        video.Title,
+			"description":  video.Description,
+			"cover":        video.Cover,
+			"partition_id": video.PartitionID,
+			"is_original":  video.IsOriginal,
+			"status":       video.Status,
+		}).Error
 }
 
 // ReplaceTags 覆盖视频的标签关联（tags 为空表示清空关联）。
@@ -464,47 +457,6 @@ func (r *VideoRepository) CreateOrGetTag(ctx context.Context, name string) (*dom
 	}
 
 	return toDomainTag(&row), nil
-}
-
-// SoftDeleteWithComments 作者软删视频：置为已删除并清理评论与评论点赞，返回删除计数。
-//
-// 与原 delete_service.go 的事务内三步一致（改状态 → 删评论点赞 → 删评论）。
-// 应用层默认走 CommentPurger 端口（评论归 comment 上下文），本方法是领域接口声明的
-// 完整实现，供不经跨上下文端口的调用路径使用。
-func (r *VideoRepository) SoftDeleteWithComments(
-	ctx context.Context,
-	videoID uint,
-) (comments, commentLikes int64, err error) {
-	db := gormx.DB(ctx, r.db)
-
-	if updateErr := db.Model(&po.Video{}).
-		Where("id = ?", videoID).
-		Update("status", enum.VideoStatusDeleted).Error; updateErr != nil {
-		return 0, 0, updateErr
-	}
-
-	var commentIDs []uint
-	if pluckErr := db.Model(&po.Comment{}).
-		Where("video_id = ?", videoID).
-		Pluck("id", &commentIDs).Error; pluckErr != nil {
-		return 0, 0, pluckErr
-	}
-
-	if len(commentIDs) > 0 {
-		likeResult := db.Where("comment_id IN ?", commentIDs).Delete(&po.CommentLike{})
-		if likeResult.Error != nil {
-			return 0, 0, likeResult.Error
-		}
-
-		commentLikes = likeResult.RowsAffected
-	}
-
-	commentResult := db.Where("video_id = ?", videoID).Delete(&po.Comment{})
-	if commentResult.Error != nil {
-		return 0, commentLikes, commentResult.Error
-	}
-
-	return commentResult.RowsAffected, commentLikes, nil
 }
 
 // StoragePathStillReferenced 判断对象路径是否仍被其它视频/资源引用。

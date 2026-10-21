@@ -137,7 +137,7 @@ func (s *InteractionService) applyTriple(
 
 	out.AuthorID = authorID
 
-	if err := s.videos.LockUsers(ctx, domain.SortUserIDsForLock(userID, authorID)); err != nil {
+	if err := s.ledger.LockAccounts(ctx, []uint{userID, authorID}); err != nil {
 		return nil, err
 	}
 

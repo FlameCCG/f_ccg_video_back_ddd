@@ -10,7 +10,6 @@ import (
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 
-	"github.com/mojocn/base64Captcha"
 	"go.uber.org/zap"
 )
 
@@ -42,13 +41,14 @@ const (
 // 原实现用包级 emailverifier 实例与包级函数变量 emailCaptchaSend；
 // 新架构改为注入 EmailAddressVerifier / EmailCaptchaSender 端口，测试注入 fake。
 type EmailCaptchaSendService struct {
-	users    domain.UserAccountRepository
-	captcha  *CaptchaService
-	verifier EmailAddressVerifier
-	sender   EmailCaptchaSender
-	limiter  RateLimiter
-	tasks    *ctxutil.DetachedTaskGroup
-	logger   *zap.Logger
+	users     domain.UserAccountRepository
+	captcha   *CaptchaService
+	verifier  EmailAddressVerifier
+	sender    EmailCaptchaSender
+	generator EmailCaptchaGenerator
+	limiter   RateLimiter
+	tasks     *ctxutil.DetachedTaskGroup
+	logger    *zap.Logger
 }
 
 // NewEmailCaptchaSendService 构造邮箱验证码发送服务。
@@ -57,18 +57,20 @@ func NewEmailCaptchaSendService(
 	captcha *CaptchaService,
 	verifier EmailAddressVerifier,
 	sender EmailCaptchaSender,
+	generator EmailCaptchaGenerator,
 	limiter RateLimiter,
 	tasks *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,
 ) *EmailCaptchaSendService {
 	return &EmailCaptchaSendService{
-		users:    users,
-		captcha:  captcha,
-		verifier: verifier,
-		sender:   sender,
-		limiter:  limiter,
-		tasks:    tasks,
-		logger:   logger,
+		users:     users,
+		captcha:   captcha,
+		verifier:  verifier,
+		sender:    sender,
+		generator: generator,
+		limiter:   limiter,
+		tasks:     tasks,
+		logger:    logger,
 	}
 }
 
@@ -93,8 +95,7 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 	}
 
 	// 生成验证码（答案仅存验证码存储，禁止打印到日志/控制台）。
-	code := base64Captcha.RandText(emailCaptchaCodeLength, emailCaptchaCodeCharset)
-	id := base64Captcha.RandomId()
+	id, code := s.generator.Generate(emailCaptchaCodeLength, emailCaptchaCodeCharset)
 
 	if err := s.captcha.StoreEmailCaptcha(ctx, id, in.Email, code); err != nil {
 		s.logger.Error("验证码保存失败", zap.Int("type", in.Type), zap.String("emailID", id), zap.Error(err))

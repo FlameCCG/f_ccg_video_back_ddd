@@ -13,7 +13,6 @@ var ProviderSet = wire.NewSet(
 	NewFeedService,
 	NewFolderService,
 	NewHistoryService,
-	NewHTTPDASHVariantResolver,
 	NewInteractionService,
 	NewPartitionService,
 	NewPublishService,

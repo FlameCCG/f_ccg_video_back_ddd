@@ -44,37 +44,6 @@ func CoinAuthorReward(coins int64) float64 {
 	return float64(coins) * CoinAuthorRewardRate
 }
 
-// SortUserIDsForLock 按 id 升序去重排列用户 ID，供仓储按固定顺序加行锁、降低死锁概率。
-//
-// 语义与原 lockUsersInOrder 的去零、去重、升序一致。
-func SortUserIDsForLock(userIDs ...uint) []uint {
-	seen := make(map[uint]struct{}, len(userIDs))
-	ordered := make([]uint, 0, len(userIDs))
-
-	for _, id := range userIDs {
-		if id == 0 {
-			continue
-		}
-
-		if _, ok := seen[id]; ok {
-			continue
-		}
-
-		seen[id] = struct{}{}
-		ordered = append(ordered, id)
-	}
-
-	for i := range ordered {
-		for j := i + 1; j < len(ordered); j++ {
-			if ordered[j] < ordered[i] {
-				ordered[i], ordered[j] = ordered[j], ordered[i]
-			}
-		}
-	}
-
-	return ordered
-}
-
 // TripleOutcome 三连在一个事务内实际产生的增量与副作用标记。
 type TripleOutcome struct {
 	LikeDelta   int64

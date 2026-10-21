@@ -4,6 +4,8 @@
 
 第一次接触 DDD，先读[从零读懂本项目的 DDD 架构](./DDD-从零到读懂本项目.md)，跟着投稿源码走完一条链路，再回到本文查完整目录和装配细节。
 
+本次领域边界、改稿事务及技术适配器的审查与改进，见 [DDD 审查记录](./ddd-review.md)，其中区分已修复内容、尚存限制和验证范围。
+
 | 你想先弄清什么 | 阅读入口 |
 |---|---|
 | 代码按哪些业务拆，四层分别做什么 | 第 1～3 节；[DDD 入门导读](./DDD-从零到读懂本项目.md) |
@@ -102,7 +104,7 @@ interfaces ──▶ application ──▶ domain（规则与写侧仓储端口�
                                └────── bootstrap 绑定与注入
 ```
 
-- 领域层不应依赖 Gin/GORM/Redis/Sarama/Viper/Casbin 等实现；应用层不直接 import `internal/infrastructure`。已有[架构测试](../internal/application/shared/arch_deps_test.go)检查应用层不导入基础设施、领域层不导入基础设施和 `internal/config`。这不是对所有依赖边界的完整静态证明。
+- 领域层不应依赖 Gin/GORM/Redis/Sarama/Viper/Casbin 等实现；应用层不直接 import `internal/infrastructure`。现有[架构测试](../internal/application/shared/arch_deps_test.go)还检查反向分层依赖、领域/应用层直接导入外部业务上下文、列出的技术框架，以及应用层构造 HTTP 请求/客户端。这不是对所有间接依赖或业务归属的完整静态证明。
 - 跨上下文通过应用端口协调，必要的 DTO 转换放在 `internal/bootstrap/adapters`；具体绑定见[跨上下文 ProviderSet](../internal/bootstrap/providers_cross_context.go)。
 - `gin.Context` 止步 interfaces 层：向 application/domain 只传 `context.Context` 与 DTO；
   用户身份、客户端 IP 等在 interfaces 层提取后显式传参。
@@ -247,7 +249,7 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动�
 4. **异步派发与处理**：入库后，detached 任务处理向量同步、定时发布安排和 Kafka 转码投递；失败记日志，不会回滚已完成的投稿事务。消费者以有限 worker 池执行 `media.TranscodeService`，由 FFmpeg/ffprobe、断点、进度、产物上传和资源落库适配器配合完成。见[投稿用例](../internal/application/video/publish_service.go)、[消费组件](../internal/infrastructure/mq/transcode_consumer.go)、[转码服务](../internal/application/media/transcode_service.go)。
 5. **重试与清理**：成功或视频已删除时会标记 Kafka 消息；永久错误成功写入 DLQ 后也会标记。可重试错误耗尽本轮尝试、停机取消或 rebalance 可能导致再投递，断点恢复不等于恰好一次。Cron 每 5 分钟清理过期分片和未投稿源文件，删源文件前查询 MySQL 资源引用，并尝试取得相同哈希锁。默认保留时间是未合并分片 2 小时、未投稿源文件 1 小时，可由站点配置覆盖。见[Kafka 消费循环](../internal/infrastructure/mq/kafka_consumer.go)、[清理用例](../internal/application/video/upload_cleanup.go)、[Cron](../internal/infrastructure/scheduler/cron.go)。
 
-排障时按阶段看：存储里是否有完整源文件 → MySQL 是否有视频/资源引用 → 异步投递是否成功 → Kafka 消费进度/死信 → 转码产物与资源记录是否一致。详情接口还会合并 Redis 缓存与数据库读模型；DASH 资源可解析 MPD 展开 Representation。见[详情用例](../internal/application/video/detail_service.go)和[MPD 解析器](../internal/application/video/dash_resolver.go)。
+排障时按阶段看：存储里是否有完整源文件 → MySQL 是否有视频/资源引用 → 异步投递是否成功 → Kafka 消费进度/死信 → 转码产物与资源记录是否一致。详情接口还会合并 Redis 缓存与数据库读模型；DASH 资源可解析 MPD 展开 Representation。见[详情用例](../internal/application/video/detail_service.go)、[解析端口](../internal/application/video/dash_resolver.go)和 [HTTP 适配器](../internal/infrastructure/external/video/dash_resolver.go)。
 
 ## 10. 用三个方向把这套架构讲明白
 

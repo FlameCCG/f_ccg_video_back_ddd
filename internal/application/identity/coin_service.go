@@ -27,6 +27,12 @@ func NewCoinService(txm tx.Manager, users domain.UserRepository, records domain.
 	return &CoinService{txm: txm, users: users, records: records}
 }
 
+// LockAccounts 为跨账户的投币/奖励操作预先取得统一顺序的锁。
+// 必须在调用方的事务内调用；锁的实现与账户数据均由 identity 管理。
+func (s *CoinService) LockAccounts(ctx context.Context, userIDs []uint) error {
+	return s.users.LockAccounts(ctx, userIDs)
+}
+
 // ApplyChange 增减用户硬币余额并写入记录。
 func (s *CoinService) ApplyChange(
 	ctx context.Context,

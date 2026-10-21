@@ -76,6 +76,7 @@ func newEmailCaptchaFixture(t *testing.T, sender app.EmailCaptchaSender) *emailC
 		captchaSvc,
 		fakeEmailAddressVerifier{},
 		sender,
+		captcha.NewEmailGenerator(),
 		// 用真实限流器 + miniredis：与生产路径一致（限流端口不可为 nil）。
 		ratelimit.New(redisClient),
 		tasks,
