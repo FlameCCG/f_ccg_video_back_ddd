@@ -138,5 +138,7 @@ var (
 	errEndRequired      = errors.New("end 不能为空")
 	errEndMustBeGreater = errors.New("end 必须大于 start")
 	errDateFormat       = errors.New("date 格式应为 YYYY-MM-DD")
+	errMonthFormat      = errors.New("month 格式应为 YYYY-MM")
+	errInstantRange     = errors.New("start/end 应为 RFC3339 时间，且间隔不超过 32 天")
 	errNotAbsoluteURL   = errors.New("not an absolute url")
 )

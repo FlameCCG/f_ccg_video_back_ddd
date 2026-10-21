@@ -2,6 +2,8 @@ package video
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
@@ -177,6 +179,46 @@ func (s *DanmuService) History(ctx context.Context, params DanmuHistoryParams) (
 	}
 
 	return result, nil
+}
+
+// MonthDates 返回浏览器所看月份里，每条弹幕的发送时刻。
+//
+// month 只校验并回显 YYYY-MM。查询窗口用 start/end，这两个瞬间由浏览器按本地时区算出。
+func (s *DanmuService) MonthDates(
+	ctx context.Context,
+	videoID, partID uint,
+	month, startRaw, endRaw string,
+) (DanmuMonthDates, error) {
+	if videoID == 0 {
+		return DanmuMonthDates{}, domain.ErrVideoIDRequired
+	}
+
+	if _, _, err := domain.ParseDanmuMonthRange(month); err != nil {
+		return DanmuMonthDates{}, err
+	}
+
+	start, end, err := domain.ParseDanmuInstantRange(startRaw, endRaw)
+	if err != nil {
+		return DanmuMonthDates{}, err
+	}
+
+	ctx = orTODO(ctx)
+
+	resolvedPartID, err := s.ResolveDanmuPart(ctx, videoID, partID)
+	if err != nil {
+		return DanmuMonthDates{}, err
+	}
+
+	times, err := s.query.MonthInstants(ctx, videoID, resolvedPartID, start, end)
+	if err != nil {
+		return DanmuMonthDates{}, err
+	}
+
+	if times == nil {
+		times = []time.Time{}
+	}
+
+	return DanmuMonthDates{Month: strings.TrimSpace(month), Times: times}, nil
 }
 
 // RoomList 房间弹幕列表；UseTimeRange 为 true 时按播放时间分段返回。
