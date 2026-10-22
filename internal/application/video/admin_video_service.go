@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
@@ -14,6 +15,7 @@ import (
 // （原 service/video_service/{admin_video_service.go,admin_restore_service.go,
 // admin_delete_service.go}）。
 type AdminVideoService struct {
+	txm       tx.Manager
 	videos    domain.VideoRepository
 	query     AdminVideoQuery
 	stats     *StatsService
@@ -31,6 +33,7 @@ type AdminVideoService struct {
 
 // NewAdminVideoService 构造管理端视频用例服务。
 func NewAdminVideoService(
+	txm tx.Manager,
 	videos domain.VideoRepository,
 	query AdminVideoQuery,
 	stats *StatsService,
@@ -46,6 +49,7 @@ func NewAdminVideoService(
 	logger *zap.Logger,
 ) *AdminVideoService {
 	return &AdminVideoService{
+		txm:       txm,
 		videos:    videos,
 		query:     query,
 		stats:     stats,
@@ -152,32 +156,27 @@ func (s *AdminVideoService) finalizeReviewRejection(
 	reviewIDs []uint,
 	status enum.VideoStatus,
 ) (int64, error) {
-	rows, err := s.videos.UpdateStatusBatchFrom(ctx, reviewIDs, enum.VideoStatusReview, status)
-	if err != nil {
-		return 0, err
-	}
-
-	if rows == 0 {
-		return 0, nil
-	}
-
+	var affected int64
 	for _, id := range reviewIDs {
 		if id == 0 {
 			continue
 		}
 
-		_ = s.schedule.Remove(ctx, id)
+		rows, err := s.applyReview(ctx, id, status)
+		if err != nil {
+			return affected, err
+		}
+		if rows == 0 {
+			continue
+		}
+		affected += rows
 		s.invalidateReviewCaches(ctx, id)
+		s.vectors.SyncAsync(ctx, id, status)
 	}
-
-	s.vectors.SyncBatchAsync(ctx, reviewIDs, status)
-
-	return rows, nil
+	return affected, nil
 }
 
 func (s *AdminVideoService) finalizeReviewApproval(ctx context.Context, reviewIDs []uint) (int64, error) {
-	nowUnix := float64(time.Now().Unix())
-
 	var (
 		publishedIDs []uint
 		scheduledIDs []uint
@@ -191,11 +190,7 @@ func (s *AdminVideoService) finalizeReviewApproval(ctx context.Context, reviewID
 
 		target := enum.VideoStatusPublished
 
-		if score, ok, err := s.schedule.Score(ctx, id); err == nil && ok && score > nowUnix {
-			target = enum.VideoStatusScheduled
-		}
-
-		rows, err := s.videos.UpdateStatusFrom(ctx, id, enum.VideoStatusReview, target)
+		rows, err := s.applyReviewTarget(ctx, id, &target)
 		if err != nil {
 			return affected, err
 		}
@@ -213,7 +208,6 @@ func (s *AdminVideoService) finalizeReviewApproval(ctx context.Context, reviewID
 			continue
 		}
 
-		_ = s.schedule.Remove(ctx, id)
 		publishedIDs = append(publishedIDs, id)
 	}
 
@@ -226,6 +220,42 @@ func (s *AdminVideoService) finalizeReviewApproval(ctx context.Context, reviewID
 	}
 
 	return affected, nil
+}
+
+func (s *AdminVideoService) applyReview(ctx context.Context, id uint, target enum.VideoStatus) (int64, error) {
+	return s.applyReviewTarget(ctx, id, &target)
+}
+
+// 审核与作者改期、到期发布使用同一视频行锁；计划读取失败时禁止提前发布。
+func (s *AdminVideoService) applyReviewTarget(ctx context.Context, id uint, target *enum.VideoStatus) (int64, error) {
+	var rows int64
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		video, err := s.videos.FindByIDForUpdate(txCtx, id)
+		if err != nil || video == nil || video.Status != enum.VideoStatusReview {
+			return err
+		}
+		if *target == enum.VideoStatusPublished {
+			score, exists, err := s.schedule.Score(txCtx, id)
+			if err != nil {
+				return err
+			}
+			if exists && score > float64(time.Now().Unix()) {
+				*target = enum.VideoStatusScheduled
+			}
+		}
+		rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, *target)
+		if err != nil || rows == 0 {
+			return err
+		}
+		if *target != enum.VideoStatusScheduled {
+			return s.schedule.Remove(txCtx, id)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return rows, nil
 }
 
 func (s *AdminVideoService) invalidateReviewCaches(ctx context.Context, videoID uint) {

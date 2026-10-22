@@ -109,21 +109,22 @@ func (s *UpdateService) UpdateVideo(
 		if err := s.videos.SaveRevision(txCtx, video); err != nil {
 			return err
 		}
+		// 计划与状态同库提交；失败会一起回滚，不留下无发布任务的 Scheduled 视频。
+		if opts.IsPrivate != nil || opts.PublishTime != nil {
+			if opts.PublishTime != nil && domain.ShouldScheduleVideoPublish(now, *opts.PublishTime, video.Status == enum.VideoStatusPrivate) {
+				if err := s.schedule.Add(txCtx, video.ID, *opts.PublishTime); err != nil {
+					return err
+				}
+			} else if err := s.schedule.Remove(txCtx, video.ID); err != nil {
+				return err
+			}
+		}
 		if opts.TagIDs != nil {
 			return s.videos.ReplaceTags(txCtx, video.ID, tags)
 		}
 		return nil
 	}); err != nil {
 		return nil, err
-	}
-
-	// 只在可见性或时间发生变更时调整调度；使用领域决策后的实际私密状态。
-	if opts.IsPrivate != nil || opts.PublishTime != nil {
-		if opts.PublishTime != nil && domain.ShouldScheduleVideoPublish(now, *opts.PublishTime, video.Status == enum.VideoStatusPrivate) {
-			_ = s.schedule.Add(ctx, video.ID, *opts.PublishTime)
-		} else {
-			_ = s.schedule.Remove(ctx, video.ID)
-		}
 	}
 
 	s.authors.InvalidateVideoAuthorCache(ctx, video.ID)

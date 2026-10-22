@@ -226,9 +226,9 @@ type DanmuBroadcaster interface {
 	BroadcastDanmu(ctx context.Context, dto *DanmuDTO)
 }
 
-// ScheduleStore 定时发布任务的 Redis ZSet 端口。
+// ScheduleStore 是持久化的定时发布计划；写操作必须复用视频写入的事务。
 type ScheduleStore interface {
-	// Available 报告 Redis 是否可用。
+	// Available 报告持久化存储是否已配置，不依赖 Redis。
 	Available() bool
 	// Add 写入定时发布任务。
 	Add(ctx context.Context, videoID uint, when time.Time) error
@@ -239,6 +239,16 @@ type ScheduleStore interface {
 	// DueMembers 读取到期任务的原始 member 列表。
 	DueMembers(ctx context.Context, nowUnix int64) ([]string, error)
 	// RemoveMember 按原始 member 移除任务（用于清理非法 member）。
+	RemoveMember(ctx context.Context, member string) error
+	// RecoverLegacy 幂等导入升级前的 Redis 任务；失败可重试，不影响新任务。
+	RecoverLegacy(ctx context.Context) error
+}
+
+// LegacyScheduleStore 只用于兼容升级前的 Redis 任务，新任务不再写 Redis。
+type LegacyScheduleStore interface {
+	Available() bool
+	Score(ctx context.Context, videoID uint) (float64, bool, error)
+	DueMembers(ctx context.Context, nowUnix int64) ([]string, error)
 	RemoveMember(ctx context.Context, member string) error
 }
 
