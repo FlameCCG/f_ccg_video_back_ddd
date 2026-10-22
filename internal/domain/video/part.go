@@ -1,6 +1,10 @@
 package video
 
-import "f_ccg_video_back_ddd/internal/domain/shared/enum"
+import (
+	"time"
+
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+)
 
 // VideoPart 视频分P实体。
 type VideoPart struct {
@@ -52,6 +56,8 @@ func BuildInitialResourceDraft(fileName, filePath string) *ResourceDraft {
 type PublishDraft struct {
 	// Video 视频主体；仓储写入后回填自增 ID。
 	Video *Video
+	// PublishAt 与视频主体同时提交；nil 表示无需定时发布。
+	PublishAt *time.Time
 	// TagIDs 标签关联（为空表示不建立关联）。
 	TagIDs []uint
 	// Parts 分P列表；仓储写入后逐项回填自增 ID。

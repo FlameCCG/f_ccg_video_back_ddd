@@ -33,17 +33,13 @@ func (s *AdminVideoService) Delete(
 func (s *AdminVideoService) softDelete(ctx context.Context, videoIDs []uint) (*domain.HardDeleteResult, error) {
 	result := &domain.HardDeleteResult{}
 
-	rows, err := s.videos.UpdateStatusBatch(ctx, videoIDs, enum.VideoStatusDeleted)
+	rows, err := s.markDeleted(ctx, videoIDs)
 	if err != nil {
 		return nil, err
 	}
 
 	result.Videos = rows
 	s.notifyDeletedVideoTranscodes(ctx, videoIDs)
-
-	for _, id := range videoIDs {
-		_ = s.schedule.Remove(ctx, id)
-	}
 
 	s.cleanupVideoCache(ctx, videoIDs)
 	s.vectors.SyncBatchAsync(ctx, videoIDs, enum.VideoStatusDeleted)
@@ -53,7 +49,7 @@ func (s *AdminVideoService) softDelete(ctx context.Context, videoIDs []uint) (*d
 }
 
 func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*domain.HardDeleteResult, error) {
-	if _, err := s.videos.UpdateStatusBatch(ctx, videoIDs, enum.VideoStatusDeleted); err != nil {
+	if _, err := s.markDeleted(ctx, videoIDs); err != nil {
 		return nil, err
 	}
 
@@ -100,6 +96,27 @@ func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*d
 	)
 
 	return result, nil
+}
+
+func (s *AdminVideoService) markDeleted(ctx context.Context, videoIDs []uint) (int64, error) {
+	var rows int64
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		var err error
+		rows, err = s.videos.UpdateStatusBatch(txCtx, videoIDs, enum.VideoStatusDeleted)
+		if err != nil {
+			return err
+		}
+		for _, id := range videoIDs {
+			if id == 0 {
+				continue
+			}
+			if err := s.schedule.Remove(txCtx, id); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return rows, err
 }
 
 func (s *AdminVideoService) notifyDeletedVideoTranscodes(ctx context.Context, videoIDs []uint) {

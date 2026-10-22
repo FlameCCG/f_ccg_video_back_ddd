@@ -306,6 +306,7 @@ var VideoProviderSet = wire.NewSet(
 	infrastructurePersistenceVideo.NewReportRepository,
 	infrastructurePersistenceVideo.NewUserVideoQuery,
 	infrastructurePersistenceVideo.NewVideoRepository,
+	infrastructurePersistenceVideo.NewScheduleStore,
 	wire.Bind(new(applicationVideo.AdminVideoQuery), new(*infrastructurePersistenceVideo.AdminVideoQuery)),
 	wire.Bind(new(applicationVideo.DanmuQuery), new(*infrastructurePersistenceVideo.DanmuQuery)),
 	wire.Bind(new(domainVideo.DanmuRepository), new(*infrastructurePersistenceVideo.DanmuRepository)),
@@ -348,7 +349,8 @@ var VideoProviderSet = wire.NewSet(
 	wire.Bind(new(applicationVideo.AuthorStatsCache), new(*infrastructureCacheVideo.AuthorStatsCache)),
 	wire.Bind(new(applicationVideo.UsernameCache), new(*infrastructureCacheVideo.UsernameCache)),
 	wire.Bind(new(applicationVideo.PartitionCache), new(*infrastructureCacheVideo.PartitionCache)),
-	wire.Bind(new(applicationVideo.ScheduleStore), new(*infrastructureCacheVideo.ScheduleStore)),
+	wire.Bind(new(applicationVideo.LegacyScheduleStore), new(*infrastructureCacheVideo.ScheduleStore)),
+	wire.Bind(new(applicationVideo.ScheduleStore), new(*infrastructurePersistenceVideo.ScheduleStore)),
 	wire.Bind(new(applicationVideo.StatsCache), new(*infrastructureCacheVideo.StatsCache)),
 	// internal/interfaces/ws/danmu
 	NewDanmuHub,

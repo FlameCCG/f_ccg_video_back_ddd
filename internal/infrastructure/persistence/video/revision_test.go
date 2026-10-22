@@ -42,7 +42,7 @@ func newRevisionFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	// 只建立改稿所需表，避免其它业务表在 SQLite 中的同名索引冲突。
-	if err := db.AutoMigrate(&po.Video{}, &po.Tag{}, &po.VideoPartition{}); err != nil {
+	if err := db.AutoMigrate(&po.Video{}, &po.Tag{}, &po.VideoPartition{}, &po.VideoPublishSchedule{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("CREATE TABLE video_tags (video_id integer, tag_id integer, PRIMARY KEY (video_id, tag_id))").Error; err != nil {
@@ -56,8 +56,14 @@ type revisionEffects struct {
 	added, removed, invalidated int
 }
 
-func (s *revisionEffects) Add(context.Context, uint, time.Time) error { s.added++; return nil }
-func (s *revisionEffects) Remove(context.Context, uint) error         { s.removed++; return nil }
+func (s *revisionEffects) Add(ctx context.Context, id uint, when time.Time) error {
+	s.added++
+	return s.ScheduleStore.Add(ctx, id, when)
+}
+func (s *revisionEffects) Remove(ctx context.Context, id uint) error {
+	s.removed++
+	return s.ScheduleStore.Remove(ctx, id)
+}
 
 type revisionMeta struct {
 	app.DetailMetaCache
@@ -98,6 +104,7 @@ func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []do
 }
 
 func (f *fixture) revisionService(repo domain.VideoRepository, effects *revisionEffects) *app.UpdateService {
+	effects.ScheduleStore = infra.NewScheduleStore(f.db, nil)
 	authors := app.NewAuthorService(repo, revisionAuthorIDs{}, revisionMeta{effects: effects}, nil, zap.NewNop())
 	return app.NewUpdateService(gormx.NewTxManager(f.db), repo, f.partitions, effects, authors,
 		app.NewVectorSyncService(nil, nil, nil), infraconfig.NewProvider(&config.Config{}))
@@ -164,8 +171,12 @@ func TestUpdateRevisionRollsBackBeforeSideEffects(t *testing.T) {
 	if stored.Title != "old" || stored.Status != enum.VideoStatusPublished {
 		t.Fatalf("rollback failed: %+v", stored)
 	}
-	if effects.added != 0 || effects.removed != 0 || effects.invalidated != 0 {
-		t.Fatalf("side effects before commit: %+v", effects)
+	var plans int64
+	if err := f.db.Model(&po.VideoPublishSchedule{}).Count(&plans).Error; err != nil {
+		t.Fatal(err)
+	}
+	if effects.invalidated != 0 || plans != 0 {
+		t.Fatalf("cache invalidated or schedule escaped rollback: effects=%+v, plans=%d", effects, plans)
 	}
 }
 

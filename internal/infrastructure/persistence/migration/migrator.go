@@ -51,6 +51,7 @@ func (m *Migrator) AutoMigrate() error {
 		po.UserGlobalNotification{},
 		po.NotificationUserRead{},
 		po.Video{},
+		po.VideoPublishSchedule{},
 		po.VideoPart{},
 		po.VideoPartResource{},
 		po.VideoPlayHistory{},

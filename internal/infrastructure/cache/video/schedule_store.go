@@ -19,7 +19,7 @@ type ScheduleStore struct {
 	redis *redis.Client
 }
 
-var _ app.ScheduleStore = (*ScheduleStore)(nil)
+var _ app.LegacyScheduleStore = (*ScheduleStore)(nil)
 
 // NewScheduleStore 构造定时发布任务存储；redisClient 允许为 nil。
 func NewScheduleStore(redisClient *redis.Client) *ScheduleStore {

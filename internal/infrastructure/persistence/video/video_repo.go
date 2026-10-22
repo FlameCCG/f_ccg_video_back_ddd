@@ -46,6 +46,18 @@ func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*domain.V
 	return toDomainVideo(&row), nil
 }
 
+func (r *VideoRepository) FindByIDForUpdate(ctx context.Context, videoID uint) (*domain.Video, error) {
+	var row po.Video
+	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Take(&row, "id = ?", videoID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return toDomainVideo(&row), nil
+}
+
 // FindByIDAndAuthorForUpdate 在调用方事务中取得行锁，防止改稿覆盖并发删除或审核。
 func (r *VideoRepository) FindByIDAndAuthorForUpdate(
 	ctx context.Context,
