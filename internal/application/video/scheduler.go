@@ -3,7 +3,6 @@ package video
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -145,32 +144,26 @@ func (s *Scheduler) loop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.flushDue(ctx)
-			if err := s.store.RecoverLegacy(ctx); err != nil {
-				s.logger.Warn("recover legacy video schedules failed; will retry", zap.Error(err))
-			}
 		}
 	}
 }
 
 func (s *Scheduler) flushDue(ctx context.Context) {
-	members, err := s.store.DueMembers(ctx, time.Now().Unix())
+	statuses := []enum.VideoStatus{enum.VideoStatusScheduled}
+	if !contentReviewEnabled(s.cfgProvider) {
+		statuses = append(statuses, enum.VideoStatusReview)
+	}
+	videoIDs, err := s.store.DueVideoIDs(ctx, time.Now(), statuses)
 	if err != nil {
 		s.logger.Error("fetch scheduled videos failed", zap.Error(err))
 
 		return
 	}
 
-	for _, member := range members {
-		videoID, convErr := strconv.ParseUint(member, 10, 64)
-		if convErr != nil {
-			_ = s.store.RemoveMember(ctx, member)
-
-			continue
-		}
-
-		_, pubErr := s.ProcessDueScheduledVideo(ctx, uint(videoID))
+	for _, videoID := range videoIDs {
+		_, pubErr := s.ProcessDueScheduledVideo(ctx, videoID)
 		if pubErr != nil {
-			s.logger.Error("scheduled publish failed", zap.Error(pubErr), zap.Uint("videoId", uint(videoID)))
+			s.logger.Error("scheduled publish failed", zap.Error(pubErr), zap.Uint("videoId", videoID))
 		}
 	}
 }
@@ -178,7 +171,7 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 // ProcessDueScheduledVideo 处理到期定时任务。
 //
 // 在事务中重新检查最新发布时间；状态变更与任务消费一起提交。
-// drop=true 表示任务已在事务中消费，调用方不可在提交后再次无条件删除计划。
+// drop=true 表示本次任务已处理；成功发布保留原计划时间，调用方不可再无条件清除。
 func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) (bool, error) {
 	var drop, published bool
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
@@ -187,15 +180,19 @@ func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) 
 			return err
 		}
 		if video != nil {
-			score, exists, err := s.store.Score(txCtx, videoID)
+			if video.Status == enum.VideoStatusPublished {
+				drop = true
+				return nil // 其它实例已发布，保留原计划时间，不能把历史信息当作过期任务清掉。
+			}
+			publishAt, err := s.store.PublishTime(txCtx, videoID)
 			if err != nil {
 				return err
 			}
-			if !exists {
+			if publishAt == nil {
 				drop = true
 				return nil
 			}
-			if score > float64(time.Now().Unix()) {
+			if publishAt.After(time.Now()) {
 				return nil // 列出到期任务后已被作者改期。
 			}
 			switch domain.ResolveScheduledPublishOutcome(video.Status, contentReviewEnabled(s.cfgProvider)) {
@@ -208,6 +205,10 @@ func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) 
 					return fmt.Errorf("video %d status changed during scheduled publish", videoID)
 				}
 				published = true
+				drop = true
+				return nil // 保留计划时间和定时标识供后台查看；已发布状态不会再次进入到期列表。
+			case domain.ScheduledPublishKeepReview:
+				return nil // 待审作品保留原计划时间，审核通过时再决定立即或定时发布。
 			}
 		}
 		if err := s.store.Remove(txCtx, videoID); err != nil {

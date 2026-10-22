@@ -116,6 +116,9 @@ func (s *DetailService) mergeDetail(
 	}
 
 	detail := &VideoDetail{
+		IsScheduled: meta.IsScheduled,
+		PublishAt:   meta.PublishAt,
+		ApprovedAt:  meta.ApprovedAt,
 		ID:          meta.ID,
 		Title:       meta.Title,
 		Description: meta.Description,

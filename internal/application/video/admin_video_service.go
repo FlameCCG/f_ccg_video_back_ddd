@@ -124,7 +124,7 @@ func (s *AdminVideoService) List(
 
 // Review 管理员审核视频。
 //
-// 通过（Published）时：若 Redis 仍有未来定时任务，则置为 Scheduled 等待到点发布；否则立即 Published。
+// 通过（Published）时：若 publish_at 仍在未来，则置为 Scheduled 等待到点发布；否则立即 Published。
 // 驳回（Private/Deleted）时取消定时任务。
 func (s *AdminVideoService) Review(ctx context.Context, params AdminVideoReviewParams) (int64, error) {
 	if len(params.VideoIDs) == 0 {
@@ -229,25 +229,30 @@ func (s *AdminVideoService) applyReview(ctx context.Context, id uint, target enu
 // 审核与作者改期、到期发布使用同一视频行锁；计划读取失败时禁止提前发布。
 func (s *AdminVideoService) applyReviewTarget(ctx context.Context, id uint, target *enum.VideoStatus) (int64, error) {
 	var rows int64
+	approval := *target == enum.VideoStatusPublished
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		video, err := s.videos.FindByIDForUpdate(txCtx, id)
 		if err != nil || video == nil || video.Status != enum.VideoStatusReview {
 			return err
 		}
 		if *target == enum.VideoStatusPublished {
-			score, exists, err := s.schedule.Score(txCtx, id)
+			publishAt, err := s.schedule.PublishTime(txCtx, id)
 			if err != nil {
 				return err
 			}
-			if exists && score > float64(time.Now().Unix()) {
+			if publishAt != nil && publishAt.After(time.Now()) {
 				*target = enum.VideoStatusScheduled
 			}
 		}
-		rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, *target)
+		if approval {
+			rows, err = s.videos.Approve(txCtx, id, *target, time.Now())
+		} else {
+			rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, *target)
+		}
 		if err != nil || rows == 0 {
 			return err
 		}
-		if *target != enum.VideoStatusScheduled {
+		if !approval {
 			return s.schedule.Remove(txCtx, id)
 		}
 		return nil

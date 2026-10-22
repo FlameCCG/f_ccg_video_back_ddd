@@ -30,6 +30,9 @@ func (q *AdminVideoQuery) List(
 	params app.AdminVideoListParams,
 ) ([]app.AdminVideoItem, int64, error) {
 	query := gormx.DB(ctx, q.db).Model(&po.Video{})
+	if params.IsScheduled != nil {
+		query = query.Where("is_scheduled = ?", *params.IsScheduled)
+	}
 
 	if params.AuthorUsername != "" {
 		query = query.Where("author_username = ?", params.AuthorUsername)
@@ -61,7 +64,7 @@ func (q *AdminVideoQuery) List(
 	if err := query.Session(&gorm.Session{}).
 		Select("id", "title", "description", "cover", "duration", "views", "likes",
 			"comment_count", "coin_count", "favorite_count", "danmu_count", "is_original",
-			"storage_type", "status", "partition_id", "author_username", "created_at").
+			"storage_type", "status", "partition_id", "author_username", "created_at", "is_scheduled", "publish_at", "approved_at").
 		Preload("Author", func(tx *gorm.DB) *gorm.DB {
 			return tx.Select("id", "username", "avatar")
 		}).
@@ -100,6 +103,9 @@ func (q *AdminVideoQuery) List(
 		}
 
 		items = append(items, app.AdminVideoItem{
+			IsScheduled:   v.IsScheduled,
+			PublishAt:     v.PublishAt,
+			ApprovedAt:    v.ApprovedAt,
 			ID:            v.ID,
 			Title:         v.Title,
 			Cover:         v.Cover,

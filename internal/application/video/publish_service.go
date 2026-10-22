@@ -52,7 +52,7 @@ func NewPublishService(
 	}
 }
 
-// PublishVideo 执行投稿：校验上传 → 落库 → 异步调度与转码投递。
+// PublishVideo 执行投稿：校验上传 → 落库视频及发布时间 → 异步转码投递。
 func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoCommand) (*PublishVideoResult, error) {
 	now := time.Now()
 
@@ -120,7 +120,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 			video = &domain.Video{
 				Title: cmd.Title, Description: cmd.Description, Cover: cmd.CoverURL,
 				AuthorUsername: cmd.AuthorUsername, PartitionID: cmd.PartitionID,
-				IsOriginal: cmd.IsOriginal, Status: initialStatus, Duration: 0, StorageType: storageType,
+				IsOriginal: cmd.IsOriginal, Status: initialStatus, IsScheduled: scheduledAt != nil, Duration: 0, StorageType: storageType,
 			}
 			return s.persistVideo(guardCtx, video, cmd, parts, scheduledAt)
 		}); err != nil {

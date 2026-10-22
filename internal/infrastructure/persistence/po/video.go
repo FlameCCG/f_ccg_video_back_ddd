@@ -26,6 +26,9 @@ type Video struct {
 	IsOriginal     bool                  `gorm:"default:true;comment:是否原创" json:"isOriginal"`
 	StorageType    enum.VideoStorageType `gorm:"default:1;index;comment:存储类型" json:"storageType"`
 	Status         enum.VideoStatus      `gorm:"default:1;index;index:idx_videos_author_status,priority:2;comment:视频状态" json:"status"`
+	PublishAt      *time.Time            `gorm:"index:idx_videos_publish_at;comment:定时发布时间" json:"publishAt,omitempty"`
+	ApprovedAt     *time.Time            `gorm:"comment:审核通过时间" json:"approvedAt,omitempty"`
+	IsScheduled    bool                  `gorm:"not null;default:false;comment:是否定时作品" json:"isScheduled"`
 	Author         User                  `gorm:"foreignKey:AuthorUsername;references:Username" json:"author,omitempty"`
 	VideoPartition VideoPartition        `gorm:"foreignKey:PartitionID" json:"category,omitempty"`
 	VideoResources []VideoResource       `gorm:"foreignKey:VideoID" json:"videoResources,omitempty"`

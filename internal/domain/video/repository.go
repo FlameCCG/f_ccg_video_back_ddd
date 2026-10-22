@@ -38,6 +38,8 @@ type VideoRepository interface {
 	UpdateStatus(ctx context.Context, videoID uint, status enum.VideoStatus) error
 	// UpdateStatusFrom 仅当当前状态等于 from 时更新为 to，返回影响行数。
 	UpdateStatusFrom(ctx context.Context, videoID uint, from, to enum.VideoStatus) (int64, error)
+	// Approve 在调用方事务中将待审视频置为目标状态并记录实际审核通过时间。
+	Approve(ctx context.Context, videoID uint, status enum.VideoStatus, approvedAt time.Time) (int64, error)
 	// UpdateStatusBatch 批量更新视频状态，返回影响行数。
 	UpdateStatusBatch(ctx context.Context, videoIDs []uint, status enum.VideoStatus) (int64, error)
 	// UpdateStatusBatchFrom 批量条件更新视频状态，返回影响行数。

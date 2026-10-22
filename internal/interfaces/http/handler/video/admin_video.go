@@ -36,9 +36,10 @@ func (h *AdminHandler) AdminDetailView(c *gin.Context) {
 
 // AdminVideoListReq is an exported API type.
 type AdminVideoListReq struct {
+	IsScheduled *bool  `form:"isScheduled"`
 	UserID      uint   `form:"userId" binding:"omitempty,gt=0"`
 	Keyword     string `form:"keyword"`
-	Status      int    `form:"status" binding:"omitempty,oneof=1 2 3 4"` // 1已发布2私有的3审核中4已删除
+	Status      int    `form:"status" binding:"omitempty,oneof=1 2 3 4 5"` // 1已发布 2私密 3已删除 4待审核 5定时待发布
 	PartitionID uint   `form:"partitionId" binding:"omitempty,gt=0"`
 	Sort        string `form:"sort" binding:"omitempty,oneof=latest oldest views likes duration"`
 	Page        int    `form:"page" binding:"omitempty,min=1"`
@@ -50,6 +51,7 @@ func (h *AdminHandler) AdminListView(c *gin.Context) {
 	req := middlewares.GetBound[AdminVideoListReq](c)
 
 	list, total, err := h.admin.List(c.Request.Context(), app.AdminVideoListParams{
+		IsScheduled: req.IsScheduled,
 		UserID:      req.UserID,
 		Keyword:     req.Keyword,
 		Status:      req.Status,
