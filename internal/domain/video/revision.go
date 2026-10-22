@@ -52,6 +52,10 @@ func (v *Video) Revise(author string, change Revision, now time.Time, reviewEnab
 			isPrivate = *change.IsPrivate
 		}
 		v.Status = ResolvePublishVideoStatus(now, change.PublishTime, isPrivate, reviewEnabled)
+		v.IsScheduled = !isPrivate && change.PublishTime != nil && change.PublishTime.After(now)
+		if v.Status == enum.VideoStatusReview {
+			v.ApprovedAt = nil
+		}
 	}
 
 	return nil

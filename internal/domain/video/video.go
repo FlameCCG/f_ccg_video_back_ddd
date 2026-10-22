@@ -30,6 +30,8 @@ type Video struct {
 	IsOriginal     bool
 	StorageType    enum.VideoStorageType
 	Status         enum.VideoStatus
+	ApprovedAt     *time.Time
+	IsScheduled    bool
 }
 
 // IsPublished 判断视频是否处于已发布（公开可见）状态。

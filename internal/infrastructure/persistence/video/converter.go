@@ -31,6 +31,8 @@ func toDomainVideo(row *po.Video) *domain.Video {
 		IsOriginal:     row.IsOriginal,
 		StorageType:    row.StorageType,
 		Status:         row.Status,
+		ApprovedAt:     row.ApprovedAt,
+		IsScheduled:    row.IsScheduled,
 	}
 }
 
@@ -61,6 +63,8 @@ func toPOVideo(video *domain.Video) *po.Video {
 		IsOriginal:     video.IsOriginal,
 		StorageType:    video.StorageType,
 		Status:         video.Status,
+		ApprovedAt:     video.ApprovedAt,
+		IsScheduled:    video.IsScheduled,
 	}
 }
 

@@ -226,30 +226,18 @@ type DanmuBroadcaster interface {
 	BroadcastDanmu(ctx context.Context, dto *DanmuDTO)
 }
 
-// ScheduleStore 是持久化的定时发布计划；写操作必须复用视频写入的事务。
+// ScheduleStore 读写 videos.publish_at；写操作复用视频状态变更的事务。
 type ScheduleStore interface {
 	// Available 报告持久化存储是否已配置，不依赖 Redis。
 	Available() bool
-	// Add 写入定时发布任务。
+	// Add 设置视频的定时发布时间。
 	Add(ctx context.Context, videoID uint, when time.Time) error
-	// Remove 移除定时发布任务。
+	// Remove 清空视频的定时发布时间。
 	Remove(ctx context.Context, videoID uint) error
-	// Score 读取定时发布时间戳（Unix 秒）；无任务时返回 (0, false, nil)。
-	Score(ctx context.Context, videoID uint) (float64, bool, error)
-	// DueMembers 读取到期任务的原始 member 列表。
-	DueMembers(ctx context.Context, nowUnix int64) ([]string, error)
-	// RemoveMember 按原始 member 移除任务（用于清理非法 member）。
-	RemoveMember(ctx context.Context, member string) error
-	// RecoverLegacy 幂等导入升级前的 Redis 任务；失败可重试，不影响新任务。
-	RecoverLegacy(ctx context.Context) error
-}
-
-// LegacyScheduleStore 只用于兼容升级前的 Redis 任务，新任务不再写 Redis。
-type LegacyScheduleStore interface {
-	Available() bool
-	Score(ctx context.Context, videoID uint) (float64, bool, error)
-	DueMembers(ctx context.Context, nowUnix int64) ([]string, error)
-	RemoveMember(ctx context.Context, member string) error
+	// PublishTime 读取定时发布时间；未定时或视频不存在时返回 nil。
+	PublishTime(ctx context.Context, videoID uint) (*time.Time, error)
+	// DueVideoIDs 读取本轮到期的视频 ID。
+	DueVideoIDs(ctx context.Context, now time.Time, statuses []enum.VideoStatus) ([]uint, error)
 }
 
 // AuthorStatsCache 作者作品聚合统计的进程内短 TTL 缓存端口。

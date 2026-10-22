@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
@@ -33,7 +34,7 @@ func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*domain.V
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "author_username", "status", "partition_id", "title", "cover", "duration",
 			"description", "views", "likes", "comment_count", "coin_count", "favorite_count",
-			"danmu_count", "is_original", "storage_type", "created_at", "updated_at").
+			"danmu_count", "is_original", "storage_type", "created_at", "updated_at", "approved_at", "is_scheduled").
 		Where("id = ?", videoID).
 		Take(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -297,6 +298,14 @@ func (r *VideoRepository) UpdateStatusFrom(
 	return result.RowsAffected, result.Error
 }
 
+// Approve 在审核事务内同时保存通过状态与通过时间。
+func (r *VideoRepository) Approve(ctx context.Context, videoID uint, status enum.VideoStatus, approvedAt time.Time) (int64, error) {
+	result := gormx.DB(ctx, r.db).Model(&po.Video{}).
+		Where("id = ? AND status = ?", videoID, enum.VideoStatusReview).
+		Updates(map[string]any{"status": status, "approved_at": approvedAt})
+	return result.RowsAffected, result.Error
+}
+
 // UpdateStatusBatch 批量更新视频状态，返回影响行数。
 func (r *VideoRepository) UpdateStatusBatch(
 	ctx context.Context,
@@ -401,6 +410,8 @@ func (r *VideoRepository) SaveRevision(ctx context.Context, video *domain.Video)
 			"partition_id": video.PartitionID,
 			"is_original":  video.IsOriginal,
 			"status":       video.Status,
+			"is_scheduled": video.IsScheduled,
+			"approved_at":  video.ApprovedAt,
 		}).Error
 }
 

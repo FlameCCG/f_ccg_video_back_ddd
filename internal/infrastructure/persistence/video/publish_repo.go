@@ -20,16 +20,13 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 	}
 
 	row := toPOVideo(draft.Video)
+	row.PublishAt = draft.PublishAt
+	row.IsScheduled = draft.PublishAt != nil
 
 	err := gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if createErr := tx.Create(row).Error; createErr != nil {
 			return domain.ErrCreateVideoFailed
 		}
-		// nil 也落库，明确标记新投稿没有定时计划，避免误查旧 Redis。
-		if err := tx.Create(&po.VideoPublishSchedule{VideoID: row.ID, PublishAt: draft.PublishAt}).Error; err != nil {
-			return err
-		}
-
 		if len(draft.TagIDs) > 0 {
 			tags := make([]po.Tag, 0, len(draft.TagIDs))
 			for _, id := range draft.TagIDs {

@@ -43,7 +43,7 @@ func ResolvePublishVideoStatus(
 }
 
 // ShouldScheduleVideoPublish 是否应写入定时发布任务。
-// 私密不调度；未来公开时间写入调度（开启审核时也保留分数，便于过审后按点发布）。
+// 私密不调度；未来公开时间保存到 videos.publish_at（开启审核时也保留时间，便于过审后按点发布）。
 func ShouldScheduleVideoPublish(now, publishTime time.Time, isPrivate bool) bool {
 	if isPrivate {
 		return false

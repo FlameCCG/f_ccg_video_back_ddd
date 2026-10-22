@@ -246,6 +246,9 @@ Base URL：/v1
 | data.favoriteCount | integer(int64) | 收藏数 |
 | data.danmuCount | integer(int64) | 弹幕数 |
 | data.isOriginal | boolean | 是否原创 |
+| data.isScheduled | boolean | 是否定时作品，发布后保留 |
+| data.publishAt | string(date-time) / null | 计划发布时间 |
+| data.approvedAt | string(date-time) / null | 审核通过时间 |
 | data.storageType | string | 存储类型（Local/Minio） |
 | data.status | integer | 视频状态 |
 | data.createdAt | string(date-time) | 创建时间 |
@@ -316,6 +319,9 @@ Base URL：/v1
     "favoriteCount": 1,
     "danmuCount": 1,
     "isOriginal": true,
+    "isScheduled": false,
+    "publishAt": null,
+    "approvedAt": null,
     "storageType": "pwd",
     "status": 1,
     "createdAt": "2024-06-01T12:00:00Z",
@@ -393,7 +399,8 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | userId | query | integer | 否 | 作者用户ID（可选） |
 | keyword | query | string | 否 | 标题/描述关键词（可选） |
-| status | query | integer | 否 | 视频状态（1已发布 2私密 3已删除 4审核中） 可选: 1/2/3/4 |
+| status | query | integer | 否 | 视频状态（1已发布 2私密 3已删除 4审核中 5定时待发布） 可选: 1/2/3/4/5 |
+| isScheduled | query | boolean | 否 | 是否定时作品；false 筛选即时作品 |
 | partitionId | query | integer | 否 | 分区ID（可选） |
 | sort | query | string | 否 | 排序（latest最新 oldest最早 views播放量 likes点赞） 可选: latest/oldest/views/likes |
 | page | query | integer | 否 | 页码 |
@@ -415,6 +422,9 @@ Base URL：/v1
 | data.list[].favoriteCount | integer(int64) | 收藏数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
 | data.list[].isOriginal | boolean | 是否原创 |
+| data.list[].isScheduled | boolean | 是否定时作品，发布后保留 |
+| data.list[].publishAt | string(date-time) / null | 计划发布时间，成功发布后保留供查看 |
+| data.list[].approvedAt | string(date-time) / null | 管理员审核通过时间；免审或未通过时为空 |
 | data.list[].storageType | string | 存储类型 |
 | data.list[].status | integer | 视频状态 |
 | data.list[].partitionId | integer(uint) | 分区ID |
@@ -443,6 +453,9 @@ Base URL：/v1
         "favoriteCount": 1,
         "danmuCount": 1,
         "isOriginal": true,
+        "isScheduled": false,
+        "publishAt": null,
+        "approvedAt": null,
         "storageType": "pwd",
         "status": 1,
         "partitionId": 2001,

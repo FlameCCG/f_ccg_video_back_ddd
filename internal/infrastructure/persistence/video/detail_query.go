@@ -141,6 +141,9 @@ func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *domain.Stats) {
 	}
 
 	meta := &app.DetailMeta{
+		IsScheduled: row.IsScheduled,
+		PublishAt:   row.PublishAt,
+		ApprovedAt:  row.ApprovedAt,
 		ID:          row.ID,
 		Title:       row.Title,
 		Description: row.Description,
