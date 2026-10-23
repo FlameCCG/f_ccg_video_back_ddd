@@ -370,6 +370,12 @@ transcode:
   maxWorkers: 4
   # 转码线程数
   threads: 8
+  # 断点续传目录。留空时使用系统临时目录下的 transcode-checkpoints
+  checkpointDir: ""
+  # 为 true 时关闭断点续传，重试会整段重编码
+  checkpointDisable: false
+  # 分段转码块长（秒）。0 表示默认 180；小于 0 表示关闭分段，只保留单元级断点
+  chunkDurationSec: 0
   # 允许产出的分辨率列表（MP4 多分辨率与 DASH 共用）
   transcodeResolutions:
     - 360
