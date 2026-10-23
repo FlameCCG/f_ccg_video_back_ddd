@@ -9,6 +9,9 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
+// 端口阅读：关键词索引、SQL 回退、联想缓存、热词、向量源数据与嵌入能力使用不同端口。
+// Available 通常检查是否已配置句柄；实际网络调用仍可能失败，应结合用例的回退分支理解。
+
 // ErrUnexpectedMultiSearchSize 表示 multi-search 返回的响应条数与请求不匹配。
 // 与原 service/search_service.Search 的 "unexpected elasticsearch search response size" 等价。
 var ErrUnexpectedMultiSearchSize = errors.New("unexpected elasticsearch search response size")

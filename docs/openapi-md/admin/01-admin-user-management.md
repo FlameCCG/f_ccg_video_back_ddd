@@ -236,8 +236,8 @@ Base URL：/v1
 - 接口路径: POST /admin/user/login/pwd
 - 认证: 无需登录
 - 权限: 无需RBAC权限
-- 依赖接口: 图形/滑块/点选验证码接口
-- 接口说明: 管理员用户名密码登录（需通过滑块验证码）
+- 依赖接口: [交互验证码类型及挑战接口](../user/02-captcha-management.md#交互验证码调用顺序)（`scene=login`）
+- 接口说明: 管理员用户名密码登录；与普通用户共享 `site.login` 的点选/滑块开关，按当前展示类型提交一种凭证
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -246,9 +246,13 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | username | body | string | 是 | 用户名或邮箱 |
 | password | body | string | 是 | 密码 |
-| slideCaptchaToken | body | string | 是 | 滑块验证码Token（来自 /common/captcha/slide） |
-| slideCaptchaX | body | integer | 是 | 滑块验证码X坐标 |
-| slideCaptchaY | body | integer | 是 | 滑块验证码Y坐标 |
+| captchaToken | body | string | 点选时必填 | 来自 `/common/captcha/click?scene=login` |
+| captchaDots | body | array<ClickCaptchaPoint> | 点选时必填 | 非空点位列表，每项包含 index、x、y，按点击顺序提交 |
+| slideCaptchaToken | body | string | 滑块时必填 | 来自 `/common/captcha/slide?scene=login` |
+| slideCaptchaX | body | integer | 滑块时必填 | 滑块的 X 坐标 |
+| slideCaptchaY | body | integer | 滑块时必填 | 滑块的 Y 坐标 |
+
+先调用 `GET /common/captcha/type?scene=login` 再获取对应挑战，不要同时提交两种 token。返回 `none` 时无需交互凭证。滑块接口默认 register，管理员登录须显式传 `scene=login`；跨场景 token 会校验失败。此密码登录路由不额外校验图形验证码。
 
 响应字段:
 | 字段 | 类型 | 说明 |

@@ -148,6 +148,8 @@ func (s *Scheduler) loop(ctx context.Context) {
 	}
 }
 
+// flushDue 按当前审核政策筛选一批到期候选。
+// 开启审核时不扫描 Review，避免轮询替代人工审核；真正发布前仍需重新锁定并检查。
 func (s *Scheduler) flushDue(ctx context.Context) {
 	statuses := []enum.VideoStatus{enum.VideoStatusScheduled}
 	if !contentReviewEnabled(s.cfgProvider) {
@@ -169,6 +171,9 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 }
 
 // ProcessDueScheduledVideo 处理到期定时任务。
+//
+// 初次扫描只给出候选 ID，不是领取锁；多实例可能扫描到同一稿件。
+// 本方法在行锁内重新读取状态和计划，以免发布已被作者改期或被管理端修改的稿件。
 //
 // 在事务中重新检查最新发布时间；状态变更与任务消费一起提交。
 // drop=true 表示本次任务已处理；成功发布保留原计划时间，调用方不可再无条件清除。

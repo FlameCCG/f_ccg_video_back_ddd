@@ -1,13 +1,12 @@
-// Package media 是媒体上下文的应用层：转码管线编排、存储用例与转码取消协调。
+// Package media 编排媒体任务派发、转码管线、进度查询与取消。
 //
-// 依赖方向：本包只 import `internal/domain/media`、`internal/domain/shared/*`
-// 与共享内核 `internal/config` 的数据契约及 `internal/application/shared` 的配置端口
-// （见 docs/decisions.md D-020）；
-// 绝不 import gin / gorm / redis / sarama / minio，也绝不 import 其它限界上下文的包。
+// 从 transcode_service.go 的 ProcessTask 读完整流程，再看 pipeline_coordinator.go 的 MP4/DASH 分支。
+// 领域根据源片元信息和策略生成计划；本层调度探测、编码、检查点、上传及资源保存端口。
+// 错误分类会影响消息确认：永久错误走死信，删除使任务作废，可重试错误保留恢复机会。
+// 数据库资源行、存储对象和检查点要分别核验，单凭“进度为 100%”不能替代产物有效性检查。
 //
-// 领域侧端口（存储驱动、资源仓储、进度读写、取消广播、任务投递）声明在
-// `internal/domain/media/ports.go`，本文件只声明应用层自己需要的、
-// 由 infrastructure 适配器实现的端口（ffprobe / ffmpeg / 断点目录 / 源文件准备）。
+// 本层接收 context.Context 与命令/查询参数，不接收 gin.Context，也不选择 GORM、Redis 或 Kafka 实现。
+// provider.go 只汇总本上下文构造器；具体实现和跨上下文端口在 bootstrap 绑定。
 package media
 
 import (
@@ -19,6 +18,9 @@ import (
 // -----------------------------------------------------------------------------
 // 基础设施端口（实现位于 internal/infrastructure/mq）
 // -----------------------------------------------------------------------------
+
+// 端口阅读：本文件描述探测、编码、源文件暂存与检查点等应用编排能力；存储、资源和进度的领域端口位于 domain/media/ports.go。
+// 引擎可同时实现多个窄接口，应用只持有自己所需能力，具体选择由组合根完成。
 
 // MediaProber 媒体元信息探测端口（ffprobe + 源文件体积探测）。
 //

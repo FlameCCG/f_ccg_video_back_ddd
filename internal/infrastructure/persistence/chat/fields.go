@@ -1,5 +1,10 @@
-// Package chat 是私信上下文的持久化实现：Mongo 会话/消息仓储、读侧查询、
-// 关注关系读侧投影与启动期索引初始化组件。
+// Package chat 实现私信 MongoDB 仓储、查询与索引初始化。
+//
+// store.go/query.go 处理会话与消息，converter.go 隔离 BSON 持久化模型与应用/领域对象。
+// 消息插入、会话摘要和未读推进的写入步骤要逐项看错误处理；不能套用 MySQL 的 gormx 事务保证。
+// focus_query.go 是关注事实的 SQL 投影；index_initializer.go 将索引准备接入生命周期。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package chat
 
 // Mongo 集合名（与原 chat_service 完全一致，属于存储契约）。

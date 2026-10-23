@@ -1,4 +1,9 @@
-// Package ipregion 提供 ip2region 归属地查询器的构建与关闭（原 core/init_ip_db.go）。
+// Package ipregion 管理 ip2region 查询器并适配 IP 归属地解析端口。
+//
+// searcher.go 负责资源构建与关闭，resolver.go 将技术查询结果转换为上层需要的地区信息。
+// 查询器需要由组合根共享并在使用者停止后关闭；请求代码不应每次重新打开地址库。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package ipregion
 
 import (

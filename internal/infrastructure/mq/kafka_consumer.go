@@ -18,6 +18,9 @@ import (
 )
 
 // MessageHandler 业务消费回调，需自行确认 offset。
+//
+// 回调负责在可确认分支调用 session.MarkMessage；标记会进入 Sarama 的 offset 提交流程，
+// 不等于 broker 此刻已持久提交，也不排除崩溃后的重复消费。
 type MessageHandler func(session sarama.ConsumerGroupSession, msg *sarama.ConsumerMessage) error
 
 // KafkaConsumer 包装 sarama.ConsumerGroup 的生命周期。

@@ -1,4 +1,9 @@
-// Package notification 是通知上下文的持久化实现。
+// Package notification 实现通知记录写入、查询与已读更新。
+//
+// repository.go 实现 domain/notification 的仓储，actor_query.go 获取展示所需的操作者资料。
+// 用户资料投影不属于通知写模型，角标缓存的维护由应用层在相应操作后协调。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package notification
 
 import (

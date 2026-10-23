@@ -6,6 +6,9 @@ import (
 	domain "f_ccg_video_back_ddd/internal/domain/comment"
 )
 
+// 端口阅读：评论列表和评论对象/用户事实是读侧能力，通知、视频计数和热度是跨上下文协作能力。
+// 方法的输入输出采用本上下文类型，提供方差异由 bootstrap/adapters 翻译。
+
 // Query 评论自身的读侧投影端口（实现在 infrastructure/persistence/comment）。
 //
 // 列表方法一次性返回 total 与当页数据，SQL 执行顺序与原实现一致
@@ -28,7 +31,7 @@ type Query interface {
 
 // RelatedQuery 关联对象的读侧投影端口。
 //
-// 这些投影直读 users / videos / dynamics / user_focus 表：按 docs/decisions.md D-011，
+// 这些投影直读 users / videos / dynamics / user_focus 表：按 docs/architecture.md 第 4 节，
 // 读侧投影允许直读其它上下文的表，实现放在消费方（本上下文）的 infrastructure；
 // 写侧（视频计数、通知落库）一律经下方的跨上下文端口。
 type RelatedQuery interface {

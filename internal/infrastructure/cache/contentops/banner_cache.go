@@ -1,4 +1,9 @@
-// Package contentops 是内容运营上下文的缓存适配器：可见轮播图缓存与站点流量统计存储。
+// Package contentops 适配轮播图缓存与站点访问统计。
+//
+// banner_cache.go 缓存可见轮播图，site_stat_store.go 记录访问量与访问去重。
+// 缓存、计数和持久化表有不同权威来源；错误时是否回源由相应应用用例决定。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package contentops
 
 import (

@@ -1,8 +1,10 @@
-// Package search 是搜索限界上下文的读侧 SQL 投影实现：
-// ES 不可用时的回退查询、热词回退采样、@ 提及候选、用户搜索文档来源、向量索引源数据。
+// Package search 实现搜索回退、提及和索引源数据的 SQL 查询。
 //
-// 按 docs/decisions.md D-011，读侧投影允许直读其它上下文的表（videos / users / tags / user_focus）；
-// 写侧仍归各自上下文，本包不做任何写入。
+// search_fallback.go/suggest_fallback.go 处理 ES 不可用时的候选读取，其余查询为热词、用户和向量提供源事实。
+// 本包面向 application/search DTO 做只读投影，可读取多上下文的表；它不负责修改作品或账号。
+// 回退查询与 ES 的排序和匹配能力不必完全等价，应按应用用例的实际策略理解结果。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package search
 
 import (

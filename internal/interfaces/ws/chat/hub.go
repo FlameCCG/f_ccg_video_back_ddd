@@ -306,6 +306,9 @@ func (r *room) closeClients() {
 }
 
 // dispatch 向房间内所有连接派发事件；缓冲区满则关闭该连接。
+//
+// 写入每连接的有界 send 队列，避免慢客户端阻塞整个房间；真正网络写出集中在 writePump。
+// 队列已接受不等于对端已收到，重连后的历史与未读同步仍需查询持久化数据。
 func (r *room) dispatch(event WSEvent) {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -408,6 +411,8 @@ func (c *client) readPump() {
 	}
 }
 
+// writePump 串行负责本连接的业务帧与周期 ping，配合写截止时间淘汰不再读取的客户端。
+// 其他 goroutine 通过 send 队列交付数据，避免并发调用连接的常规写方法。
 func (c *client) writePump() {
 	pingTicker := time.NewTicker(chatWSPingPeriod)
 	defer pingTicker.Stop()

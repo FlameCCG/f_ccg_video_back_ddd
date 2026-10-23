@@ -1,9 +1,10 @@
-// Package config 提供配置的加载、校验接入与热更新机制（viper + fsnotify）。
+// Package config 用 Viper 与 fsnotify 加载和热更新配置。
 //
-// 配置树的数据契约（结构体与校验规则）位于共享内核 internal/config；
-// 本包只保留机制部分：Provider 持有当前生效的配置快照并支持原子替换，
-// Load 读取配置文件并开启热更新监听。application 层不直接依赖本包，
-// 而是通过 internal/application/shared 的 ConfigReader/ConfigStore 端口访问（见 docs/decisions.md D-020）。
+// Provider 用 atomic.Pointer 发布配置快照；加载与校验成功后才替换，热更新失败保留上一份有效配置。
+// internal/config 定义数据形状，本包提供机制，bootstrap 将 Provider 绑定到应用层配置端口。
+// narrow.go 把根配置收窄为连接构造所需的子配置；读取新快照不意味着现有连接自动重建。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package config
 
 import (
@@ -71,6 +72,8 @@ func (p *Provider) log() *zap.Logger {
 }
 
 // Get 返回当前配置快照指针（可能为 nil）。
+//
+// 原子读取只保护顶层指针，不深拷贝配置树；调用方应把返回对象当作只读，不能原地修改嵌套字段。
 func (p *Provider) Get() *config.Config {
 	if p == nil {
 		return nil
@@ -80,7 +83,8 @@ func (p *Provider) Get() *config.Config {
 }
 
 // Set 原子发布新的配置树（初始化、热更新、管理端写配置）。
-// 已发布的配置树应视为只读，更新时请浅拷贝顶层后再 Set。
+// 已发布的树必须视为只读。更新应创建新顶层，并拷贝所有将被修改的嵌套对象、map 或 slice；
+// 仅浅拷贝顶层不能隔离共享子对象。Set 本身不校验数据，也不写文件。
 func (p *Provider) Set(c *config.Config) {
 	if p == nil {
 		return

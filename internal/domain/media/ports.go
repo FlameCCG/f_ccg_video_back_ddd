@@ -65,7 +65,7 @@ type StorageResolver interface {
 //
 // 这些表（videos / video_parts / video_resources / video_part_resources）在领域划分上
 // 属于 video 上下文，但原实现由 mq_service 直接读写；为保持外部行为 1:1，
-// 实现仍放在 internal/infrastructure/persistence/media（见 report 说明）。
+// 实现仍放在 internal/infrastructure/persistence/media。
 type TranscodeResourceRepository interface {
 	// EnsureTaskActive 校验视频（及分P）仍存在且未被删除；已删除时返回 ErrVideoDeleted。
 	EnsureTaskActive(ctx context.Context, task TranscodeTask) error

@@ -1,8 +1,12 @@
-// Package media 是媒体上下文的领域层：转码任务状态机、分辨率/码率决策、
-// 分片切分与合并规则、断点恢复规则、超时看门狗判定与 ffmpeg 进度解析。
+// Package media 表达转码计划、输出目标、任务状态与恢复规则。
 //
-// 本包为纯 Go 实现：不 import gin / gorm / redis / sarama / minio / viper / zap，
-// 所有基础设施能力通过 ports.go 中声明的端口注入。
+// 先读 task.go、meta.go、policy.go，再读 plan.go/target.go 理解源片如何决定输出。
+// progress.go、timeout.go 与 task_registry.go 分别管理进度、超时判定和任务取消状态。
+// ports.go 声明存储、资源、进度和派发能力；FFmpeg 命令、Kafka offset 和 MinIO SDK 不进入领域。
+// 规则中的高度分类与实际像素尺寸是不同概念，超宽视频、源片与高码率标签需要按目标规则理解。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package media
 
 import "errors"

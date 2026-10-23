@@ -1,4 +1,9 @@
-// Package social 是社交关系上下文的持久化实现：GORM 仓储、读侧查询与 PO↔domain 转换。
+// Package social 实现关注关系写入和关注/粉丝列表查询。
+//
+// focus_repo.go 实现关注写仓储，query.go 组合列表，converter.go 隔离持久化模型。
+// 列表隐私由上层领域规则和用例判断；SQL 查询能力本身不等于允许向任意调用者展示。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package social
 
 import (

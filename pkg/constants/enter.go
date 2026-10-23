@@ -1,7 +1,10 @@
-// Package constants provides package functionality.
+// Package constants 集中 Redis key、频道、角色名和搜索索引名等外部标识。
+//
+// 这些常量被生产者、消费者和存量数据共同引用，修改字符串需要考虑迁移与滚动部署兼容。
+// 常量只统一命名，不定义失效、限流或授权策略；行为仍在对应上下文中。
 package constants
 
-// Redis key captcha prefixes.
+// Redis key、集合和频道名称。它们是缓存/回写/广播双方共同遵守的协议，前缀变更需评估存量数据。
 const (
 	EmailCaptchaRedisKeyPrefix        = "captcha:email:"
 	EmailCaptchaSendRateKeyPrefix     = "captcha:email:send:rate:"
@@ -31,23 +34,23 @@ const (
 	ChatUserChannelPrefix             = "chat:user:"
 	VideoHotRankZSetKey               = "video:hot:zset"
 	SearchHotKeywordZSetKey           = "search:hot:keywords:zset"
-	// TranscodeProgressKeyPrefix Redis key prefix for admin-visible transcode progress.
-	// Full key: transcode:progress:{videoId} or transcode:progress:{videoId}:{partId}
+	// TranscodeProgressKeyPrefix 是管理端可读取的转码进度快照前缀。
+	// 完整键为 transcode:progress:{videoId} 或 transcode:progress:{videoId}:{partId}。
 	TranscodeProgressKeyPrefix = "transcode:progress:"
-	// TranscodeProgressChannel carries best-effort progress change notifications.
+	// TranscodeProgressChannel 广播进度变更信号，订阅丢失时可重新读取进度快照。
 	TranscodeProgressChannel = "transcode:progress:events"
-	// TranscodeCancelChannel broadcasts hard-delete cancellation events to every transcode instance.
+	// TranscodeCancelChannel 向转码实例广播物理删除后的取消信号，不是持久化任务队列。
 	TranscodeCancelChannel = "transcode:cancel:events"
 )
 
-// default role.
+// 默认角色显示名称，账号初始化与角色绑定需使用一致取值。
 const (
 	CommonUserRole = "普通用户"
 	AdminUserRole  = "超级管理员"
 	VipUserRole    = "大会员"
 )
 
-// Elasticsearch index names.
+// Elasticsearch 关键词搜索索引名；向量索引使用 AI 配置中的独立索引设置。
 const (
 	VideoSearchIndex = "search_videos"
 	UserSearchIndex  = "search_users"

@@ -14,7 +14,7 @@ import (
 
 // UserRoleRepository 用户-角色绑定仓储的 GORM 实现。
 //
-// 读侧按 docs/decisions.md D-011 直读 identity 的 users 表（仅存在性与 current_role_id）；
+// 读侧按 docs/architecture.md 第 4 节 直读 identity 的 users 表（仅存在性与 current_role_id）；
 // 写侧只操作 rbac 自己的 user_roles 关联表。
 //
 // 与原实现的差异：原代码用 GORM 的 Association("Roles").Append/Replace，

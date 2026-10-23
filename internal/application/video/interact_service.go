@@ -221,6 +221,9 @@ func (s *InteractionService) applyCoin(
 }
 
 // chargeCoins 事务内扣减投币用户余额并给作者发放奖励。
+//
+// CoinLedger 是 video 消费方端口，bootstrap/adapters 将调用委派给 identity 的硬币用例。
+// 保留传入的事务 context 才能让同库的投币关系、余额和流水一起提交；Redis 展示计数在提交后另行更新。
 func (s *InteractionService) chargeCoins(ctx context.Context, videoID, userID, ownerID uint, add int64) error {
 	if err := s.ledger.ApplyChange(
 		ctx,

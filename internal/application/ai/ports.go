@@ -10,6 +10,9 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// 端口阅读：模型调用、流与站内作品候选由 AI 用例消费；RuntimeConfig 是一次请求捕获的参数，客户端与 HTTP 实现在 external/ark。
+// 即使保留了现有流协议相关类型，也不应在本文件构造 HTTP 客户端或请求。
+
 // RuntimeConfig 是一次 AI 公开用例调用捕获的上游运行配置。
 //
 // 它属于应用层端口契约，不暴露配置机制细节。值在用例入口完成

@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// SaveHistoryReq is an exported API type.
+// SaveHistoryReq 记录作品播放进度与总时长，当前用户从认证上下文取得，单位为秒。
 type SaveHistoryReq struct {
 	VideoID  uint `json:"videoId" binding:"required" label:"视频ID"`
 	Progress int  `json:"progress" binding:"min=0" label:"播放进度"` // 允许 0
@@ -35,12 +35,12 @@ func (h *Handler) SaveHistoryView(c *gin.Context) {
 	res.OkWithMsg("保存成功", c)
 }
 
-// HistoryQueryReq is an exported API type.
+// HistoryQueryReq 指定要读取的作品播放进度，查询范围限定为当前用户。
 type HistoryQueryReq struct {
 	VideoID uint `form:"videoId" binding:"required"`
 }
 
-// HistoryResp is an exported API type.
+// HistoryResp 是单条播放历史响应；Progress/Duration 对应已播放位置与总时长。
 type HistoryResp struct {
 	VideoID  uint `json:"videoId"`
 	Progress int  `json:"progress"`
@@ -50,7 +50,7 @@ type HistoryResp struct {
 // GetHistoryView 获取播放进度.
 //
 // 原项目定义了该处理器但从未挂载任何路由（死代码）；按规范禁止悄悄丢弃代码，
-// 完整迁移并同样不挂载，保持路由清单与原项目 1:1（见 report.md 对应条目）。
+// 完整迁移并同样不挂载，保持路由清单与原项目 1:1。
 func (h *Handler) GetHistoryView(c *gin.Context) {
 	req := middlewares.GetBound[HistoryQueryReq](c)
 
@@ -75,14 +75,14 @@ func (h *Handler) GetHistoryView(c *gin.Context) {
 	}, c)
 }
 
-// HistoryListReq is an exported API type.
+// HistoryListReq 描述当前用户历史记录的分页与标题关键字筛选。
 type HistoryListReq struct {
 	Page     int    `form:"page" binding:"omitempty,min=1"`
 	PageSize int    `form:"pageSize" binding:"omitempty,min=1,max=50"`
 	Keyword  string `form:"keyword" binding:"omitempty,max=100"`
 }
 
-// DeleteHistoryReq is an exported API type.
+// DeleteHistoryReq 指定当前用户要清理历史的作品 ID 集合，不表示删除作品本身。
 type DeleteHistoryReq struct {
 	VideoIDs []uint `json:"videoIds" binding:"required,min=1,dive,gt=0"`
 }

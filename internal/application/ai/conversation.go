@@ -158,6 +158,8 @@ func composeMessageText(text string, images []string) string {
 	return text + "\n" + marker
 }
 
+// trimHistory 保留系统消息，并从最新非系统消息向前按消息条数和 rune 文本预算取历史。
+// 最新一条即使超出文本预算也会保留；随后去掉开头非 user 消息，因此预算并非严格的总 token 上限。
 func (c conversation) trimHistory(cfg *config.AI) conversation {
 	maxTurns, maxChars := historyLimits(cfg)
 
@@ -249,6 +251,8 @@ func (c conversation) prependSystem(text string) conversation {
 	return c
 }
 
+// modelMessages 汇合 system 文本并合并相邻同角色消息，为模型适配器构造规范会话。
+// 它处理消息形状，不验证模型输出是否可信，也不把文本字符预算换算为真实 tokenizer 计数。
 func (c conversation) modelMessages() []*schema.Message {
 	var systemTexts []string
 	messages := make([]*schema.Message, 0, len(c.Messages))

@@ -143,11 +143,17 @@ name=site
       "usernamePwdLogin": true,
       "textGraphicCaptcha": false,
       "textClickCaptcha": false,
+      "slideCaptcha": false,
+      "slideCaptchaTTL": 300,
+      "slideCaptchaPadding": 10,
       "textClickCaptchaTTL": 300,
       "textClickCaptchaPadding": 20
     },
     "register": {
       "emailCaptcha": false,
+      "textClickCaptcha": false,
+      "textClickCaptchaTTL": 300,
+      "textClickCaptchaPadding": 20,
       "textGraphicCaptcha": false,
       "slideCaptcha": false,
       "slideCaptchaTTL": 300,
@@ -373,11 +379,17 @@ name=site
     "usernamePwdLogin": true,
     "textGraphicCaptcha": false,
     "textClickCaptcha": false,
+    "slideCaptcha": false,
+    "slideCaptchaTTL": 300,
+    "slideCaptchaPadding": 10,
     "textClickCaptchaTTL": 300,
     "textClickCaptchaPadding": 20
   },
   "register": {
     "emailCaptcha": false,
+    "textClickCaptcha": false,
+    "textClickCaptchaTTL": 300,
+    "textClickCaptchaPadding": 20,
     "textGraphicCaptcha": false,
     "slideCaptcha": false,
     "slideCaptchaTTL": 300,
@@ -549,6 +561,17 @@ name=jwt
   "msg": "更新成功"
 }
 ```
+
+## 交互验证码配置
+
+普通用户与管理员密码登录统一读取 `site.login`；发送邮箱验证码（注册、重置密码、绑定邮箱）统一读取 `site.register`。使用 `PUT /admin/site/config?name=site` 保存完整 site 对象时，应带上当前验证码设置，避免遗漏字段被零值覆盖。
+
+| 场景 | 点选配置 | 滑块配置 |
+| --- | --- | --- |
+| login | `textClickCaptcha`、`textClickCaptchaTTL`、`textClickCaptchaPadding` | `slideCaptcha`、`slideCaptchaTTL`、`slideCaptchaPadding` |
+| register | `textClickCaptcha`、`textClickCaptchaTTL`、`textClickCaptchaPadding` | `slideCaptcha`、`slideCaptchaTTL`、`slideCaptchaPadding` |
+
+两种类型可同时开启，此时类型接口等概率返回一种；都关闭时返回 `none`。两场景的开关、TTL 和容错边距独立，不会回退到另一个场景的配置。TTL 未配置或不大于 0 时用 300 秒；padding 为 0 时不放宽落点。发邮件额外读取 `site.register.textGraphicCaptcha`，开启后图形验证码与交互验证码分别校验。调用顺序见[验证码管理](../user/02-captcha-management.md#交互验证码调用顺序)。
 
 ## 视频投稿开关
 

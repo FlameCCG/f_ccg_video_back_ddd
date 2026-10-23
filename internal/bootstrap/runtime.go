@@ -36,6 +36,9 @@ type RuntimeComponents struct {
 }
 
 // NewRuntimeComponents 把所有后台组件纳入应用生命周期，避免 Wire 因无人引用而剪枝。
+//
+// 构造函数只登记引用，真正开始消费、调度或接收事件要等 Start。
+// 停机时按显式序列调用 Stop，不依赖垃圾回收、构造器的相反顺序或 cleanup 自动推断。
 func NewRuntimeComponents(
 	riverComponent *river.RiverComponent,
 	videoScheduler *videoapp.Scheduler,
@@ -126,6 +129,9 @@ func (c *RuntimeComponents) stopOrder() []namedRuntimeComponent {
 }
 
 // NewDanmuHub 构造弹幕 Hub 并回填广播端口，显式打断 Hub ↔ DanmuService 构造环。
+//
+// DanmuService 先构造，Hub 随后依赖服务构造，最后将 Hub 的广播能力回填到服务。
+// 这一步属于组合根装配，必须在组件 Start 和对外服务前完成；运行中不应反复更换该引用。
 func NewDanmuHub(
 	service *videoapp.DanmuService,
 	bus danmuws.EventBus,

@@ -13,7 +13,7 @@ import (
 // ActorQuery 操作者资料的读侧投影实现。
 //
 // 原 api/notification_api/create.go 在处理器里直接查 users 表取管理员的用户名与头像；
-// 新架构把它收敛为应用层端口 + 读侧投影（按 docs/decisions.md D-011，
+// 新架构把它收敛为应用层端口 + 读侧投影（按 docs/architecture.md 第 4 节，
 // 读侧投影允许直读其它上下文的表；用户资料写侧仍归 identity）。
 type ActorQuery struct {
 	db *gorm.DB

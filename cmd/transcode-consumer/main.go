@@ -1,4 +1,8 @@
-// Command transcode-consumer 只运行 Kafka 转码消费者。
+// Package main 是独立 Kafka 转码消费者的进程入口。
+//
+// 它复用 bootstrap.InitializeTranscodeWorker 和 media 用例，不装配 HTTP 路由、River 或站点 cron。
+// 运行上下文由退出信号取消，worker 先停止消费与任务，再由 Wire cleanup 回收连接。
+// 与主服务同时部署时应结合 Kafka consumer group 与本地消费开关理解任务分配。
 package main
 
 import (

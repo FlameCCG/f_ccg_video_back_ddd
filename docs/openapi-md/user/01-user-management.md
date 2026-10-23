@@ -9,7 +9,7 @@ Base URL：/v1
 - 接口路径: POST /common/user/register/email
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: POST /common/captcha/email
-- 接口说明: 通过邮箱注册新用户；滑块验证码在发送邮箱验证码阶段校验，注册阶段仅校验邮箱验证码
+- 接口说明: 通过邮箱注册新用户；图形/交互验证码按配置在发送邮箱验证码阶段校验，注册阶段仅校验邮箱验证码
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -36,8 +36,8 @@ Base URL：/v1
 
 - 接口路径: POST /common/user/login/pwd
 - 认证: 可选登录（客户端可携带 Token）
-- 依赖接口: 图形/滑块/点选验证码接口
-- 接口说明: 使用用户名/邮箱和密码登录，需要先通过点击验证码
+- 依赖接口: [交互验证码类型及挑战接口](02-captcha-management.md#交互验证码调用顺序)（`scene=login`）
+- 接口说明: 使用用户名/邮箱和密码登录；按 `login` 场景提交一种已开启的交互验证码，全部关闭时无需交互凭证
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -46,11 +46,28 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | username | body | string | 是 | 用户名或邮箱 |
 | password | body | string | 是 | 密码 |
-| captchaToken | body | string | 是 | 点击验证码token（来自 /common/captcha/click） |
-| captchaDots | body | array<ClickCaptchaPoint> | 是 | 点击点位列表（按顺序） |
-| captchaDots[].index | body | integer | 是 | 点击顺序索引（从0开始） |
-| captchaDots[].x | body | integer | 是 | 点击的X坐标 |
-| captchaDots[].y | body | integer | 是 | 点击的Y坐标 |
+| captchaToken | body | string | 条件必填 | 点选类型的 token，来自 `/common/captcha/click?scene=login` |
+| captchaDots | body | array<ClickCaptchaPoint> | 条件必填 | 点选类型的非空点位列表，按点击顺序提交 |
+| captchaDots[].index | body | integer | 点选时必填 | 点击顺序索引（从0开始） |
+| captchaDots[].x | body | integer | 点选时必填 | 点击的 X 坐标 |
+| captchaDots[].y | body | integer | 点选时必填 | 点击的 Y 坐标 |
+| slideCaptchaToken | body | string | 条件必填 | 滑块类型的 token，来自 `/common/captcha/slide?scene=login` |
+| slideCaptchaX | body | integer | 滑块时必填 | 滑块的 X 坐标 |
+| slideCaptchaY | body | integer | 滑块时必填 | 滑块的 Y 坐标 |
+
+先请求 `GET /common/captcha/type?scene=login`，再获取对应挑战并只提交一种凭证。点选和滑块可同时开启，但不能同时提交两种 token。滑块接口省略 scene 时默认 register，因此登录必须显式传 `scene=login`；跨场景 token 会校验失败。此密码登录路由不额外校验图形验证码。
+
+请求示例（本次选中滑块）:
+
+```json
+{
+  "username": "testuser",
+  "password": "password123",
+  "slideCaptchaToken": "login-slide-token",
+  "slideCaptchaX": 120,
+  "slideCaptchaY": 80
+}
+```
 
 响应字段:
 | 字段 | 类型 | 说明 |

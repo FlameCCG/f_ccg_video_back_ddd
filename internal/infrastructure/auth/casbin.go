@@ -1,4 +1,9 @@
-// Package auth 提供鉴权基础设施：Casbin enforcer 与 JWT 签发/解析适配。
+// Package auth 构造 Casbin 鉴权引擎并提供认证工具的装配入口。
+//
+// casbin.go 创建数据库策略适配器，provider.go 向组合根导出构造能力。
+// 领域授权规则经端口使用引擎，HTTP 中间件负责取得当前用户与路由，再执行请求级鉴权。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package auth
 
 import (

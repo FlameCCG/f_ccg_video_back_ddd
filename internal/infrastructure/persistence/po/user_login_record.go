@@ -10,7 +10,7 @@ type UserLoginRecord struct {
 	LoginType string `gorm:"size:20;index;comment:登录方式(pwd/qq)" json:"loginType"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 user_login_records，保持迁移与仓储 SQL 使用同一张表。
 func (UserLoginRecord) TableName() string {
 	return "user_login_records"
 }

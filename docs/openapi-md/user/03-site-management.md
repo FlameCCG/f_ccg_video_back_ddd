@@ -182,11 +182,17 @@ Base URL：/v1
 | data.site.login.usernamePwdLogin | boolean | 是否开启用户名密码登录 |
 | data.site.login.textGraphicCaptcha | boolean | 是否开启文本图形验证码登录 |
 | data.site.login.textClickCaptcha | boolean | 是否开启文本点击验证码登录 |
+| data.site.login.slideCaptcha | boolean | 是否开启登录滑块验证码；与点选同时开启时随机展示一种 |
+| data.site.login.slideCaptchaTTL | integer | 登录滑块有效期（秒），不大于 0 时使用 300 |
+| data.site.login.slideCaptchaPadding | integer | 登录滑块容错像素，0 表示不放宽落点 |
 | data.site.login.textClickCaptchaTTL | integer | 文本点击验证码有效期(秒) |
 | data.site.login.textClickCaptchaPadding | integer | 文本点击验证码容错像素 |
 | data.site.register | AdminSiteRegisterConfig | - |
 | data.site.register.emailCaptcha | boolean | 是否开启邮箱验证码注册 |
 | data.site.register.textGraphicCaptcha | boolean | 是否开启文本图形验证码注册 |
+| data.site.register.textClickCaptcha | boolean | 是否开启发邮件点选验证码；与登录配置独立 |
+| data.site.register.textClickCaptchaTTL | integer | 发邮件点选有效期（秒），不大于 0 时使用 300 |
+| data.site.register.textClickCaptchaPadding | integer | 发邮件点选容错像素，0 表示不放宽落点 |
 | data.site.register.slideCaptcha | boolean | 是否开启滑块验证码注册 |
 | data.site.register.slideCaptchaTTL | integer | 滑块验证码有效期(秒) |
 | data.site.register.slideCaptchaPadding | integer | 滑块验证码容错像素 |
@@ -220,6 +226,9 @@ Base URL：/v1
         "usernamePwdLogin": true,
         "textGraphicCaptcha": true,
         "textClickCaptcha": true,
+        "slideCaptcha": true,
+        "slideCaptchaTTL": 300,
+        "slideCaptchaPadding": 10,
         "textClickCaptchaTTL": 1,
         "textClickCaptchaPadding": 1
       },
@@ -234,6 +243,9 @@ Base URL：/v1
       },
       "register": {
         "emailCaptcha": true,
+        "textClickCaptcha": true,
+        "textClickCaptchaTTL": 300,
+        "textClickCaptchaPadding": 20,
         "textGraphicCaptcha": true,
         "slideCaptcha": true,
         "slideCaptchaTTL": 1,

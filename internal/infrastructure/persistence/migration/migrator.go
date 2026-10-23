@@ -1,4 +1,9 @@
-// Package migration 提供数据库结构迁移与初始化数据导入（原 flags/flag_db.go、flag_video_partitions.go）。
+// Package migration 实现MySQL 表结构迁移和视频分区初始化。
+//
+// migrator.go 枚举需要迁移的 PO，video_partitions.go 导入分区数据；入口来自一次性 CLI 任务。
+// AutoMigrate 的结构调整与业务数据迁移是不同工作，不能仅凭新增字段就假定旧数据已得到业务正确的值。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package migration
 
 import (

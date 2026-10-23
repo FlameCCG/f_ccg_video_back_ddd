@@ -264,6 +264,9 @@ func (s *Service) AdminUpdate(ctx context.Context, notice *domain.Notification) 
 }
 
 // CountSummary 角标计数汇总（fresh 直接返回；stale 返回旧值并异步刷新）。
+//
+// 计数是展示读模型，允许短时陈旧；通知正文、每用户已读状态与私信未读事实分别来自其查询端口。
+// 缓存的 fresh/stale 状态决定响应等待策略，不能用角标值裁定消息是否存在或能否读取。
 func (s *Service) CountSummary(ctx context.Context, receiverID int) (*NotificationCountSummary, error) {
 	if cached, fresh, ok := s.cache.Load(receiverID); ok {
 		if fresh {
@@ -326,6 +329,8 @@ func (s *Service) invalidateCountForReceivers(receivers []int) {
 	}
 }
 
+// refreshCountSummary 用本 Service 实例内的 singleflight 合并同一接收者的并发重建。
+// 它避免本进程重复查库，不是多实例分布式锁；回调内再次检查 fresh 缓存以复用刚完成的结果。
 func (s *Service) refreshCountSummary(ctx context.Context, receiverID int) (*NotificationCountSummary, error) {
 	value, err, _ := s.countSFG.Do(countSFKey(receiverID), func() (any, error) {
 		if cached, fresh, ok := s.cache.Load(receiverID); ok && fresh {

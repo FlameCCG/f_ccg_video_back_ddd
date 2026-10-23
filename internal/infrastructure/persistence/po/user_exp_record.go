@@ -9,7 +9,7 @@ type UserExpRecord struct {
 	DedupKey *string `gorm:"size:64;uniqueIndex:idx_user_exp_dedup,priority:2;comment:幂等键(可空)" json:"-"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 user_exp_records，保持迁移与仓储 SQL 使用同一张表。
 func (UserExpRecord) TableName() string {
 	return "user_exp_records"
 }

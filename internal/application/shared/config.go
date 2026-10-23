@@ -1,7 +1,9 @@
-// Package shared 声明跨限界上下文复用的应用层端口。
+// Package shared 定义多个应用上下文复用的配置访问端口。
 //
-// 本包只放端口契约（接口）与其直接关联的值类型，不放实现；
-// 实现一律位于 infrastructure，由 bootstrap 装配（依赖倒置，与 domain/shared/tx 同一模式）。
+// ConfigReader/ConfigStore 描述“读取或发布配置”的能力；配置树的数据形状位于 internal/config。
+// Viper、文件监听和原子快照属于 infrastructure/config，应用服务不直接导入这些实现。
+// 一次业务判断宜保存 Get() 的结果再读取字段；多次 Get() 可能跨越热更新，不能假定总是同一版本。
+// arch_deps_test.go 用源码导入检查守护分层与上下文边界，修改依赖前应先阅读这些约束。
 package shared
 
 import "f_ccg_video_back_ddd/internal/config"
@@ -16,7 +18,7 @@ import "f_ccg_video_back_ddd/internal/config"
 //	use cfg.Site.Login ...
 //
 // 实现方：*infrastructure/config.Provider（结构化满足，由 bootstrap 注入）。
-// 应用层不感知 Provider/viper 等具体机制（见 docs/decisions.md D-020）。
+// 应用层不感知 Provider/viper 等具体机制（见 docs/architecture.md 第 6.2 节）。
 type ConfigReader interface {
 	// Get 返回当前配置快照；配置尚未加载时可能为 nil。
 	Get() *config.Config

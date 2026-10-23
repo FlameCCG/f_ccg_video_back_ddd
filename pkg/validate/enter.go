@@ -1,4 +1,8 @@
-// Package validate configures and renders Gin request-validation errors.
+// Package validate 为 Gin 请求校验配置并提供中文错误翻译。
+//
+// New 显式配置 validator 并构造 Translator，Middleware 将翻译器放入当前请求上下文。
+// 结构体 label 用于可读字段名，json 标签用于字段定位，ErrorFromContext 在翻译器缺失时返回通用错误。
+// 组合根负责初始化，无需依赖包级 init；字段格式校验通过后仍要执行领域业务规则。
 package validate
 
 import (

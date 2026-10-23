@@ -143,6 +143,46 @@ components:
         - index
         - x
         - y
+    EmailCaptchaSendRequest:
+      type: object
+      description: >-
+        邮件发送统一使用register场景。按类型接口返回的展示类型提交一种已开启的交互凭证；
+        两种类型都关闭时不需要交互凭证。site.register.textGraphicCaptcha开启时另须提交captchaID及captchaCode。
+      required:
+        - type
+        - email
+      properties:
+        type:
+          type: integer
+          enum: [1, 2, 3]
+          description: 邮箱验证码用途（1注册、2重置密码、3绑定邮箱）；三种用途均使用register场景
+        email:
+          type: string
+          description: 邮箱地址
+        captchaID:
+          type: string
+          description: site.register.textGraphicCaptcha开启时必填，图形验证码ID
+        captchaCode:
+          type: string
+          description: site.register.textGraphicCaptcha开启时必填，图形验证码答案
+        captchaToken:
+          type: string
+          description: 点选类型时必填，来自相同scene的点选挑战；不能同时提交slideCaptchaToken
+        captchaDots:
+          type: array
+          minItems: 1
+          description: 点选类型时必填，按点击顺序提交非空点位列表
+          items:
+            $ref: "#/components/schemas/ClickCaptchaPoint"
+        slideCaptchaToken:
+          type: string
+          description: 滑块类型时必填，来自相同scene的滑块挑战；不能同时提交captchaToken
+        slideCaptchaX:
+          type: integer
+          description: 滑块类型时提交的X坐标
+        slideCaptchaY:
+          type: integer
+          description: 滑块类型时提交的Y坐标
     UserInfo:
       type: object
       description: 当前登录用户信息
@@ -1757,7 +1797,7 @@ components:
           description: 是否开启内容审核
     AdminSiteLoginConfig:
       type: object
-      description: 登录配置
+      description: 普通用户及管理员密码登录配置；点选与滑块可同时开启，此时类型接口等概率选择一种
       properties:
         qqLogin:
           type: boolean
@@ -1783,15 +1823,25 @@ components:
         textClickCaptcha:
           type: boolean
           description: 是否开启文本点击验证码登录
+        slideCaptcha:
+          type: boolean
+          description: 是否开启登录滑块验证码，与登录点选配置同属 login 场景
+        slideCaptchaTTL:
+          type: integer
+          default: 300
+          description: 登录滑块有效期（秒）；未配置或不大于0时使用300
+        slideCaptchaPadding:
+          type: integer
+          description: 登录滑块容错像素；0表示不放宽落点
         textClickCaptchaTTL:
           type: integer
-          description: 文本点击验证码有效期(秒)
+          description: 登录点选有效期（秒）；未配置或不大于0时使用300
         textClickCaptchaPadding:
           type: integer
-          description: 文本点击验证码容错像素
+          description: 登录点选容错像素；0表示不放宽落点
     AdminSiteRegisterConfig:
       type: object
-      description: 注册配置
+      description: 邮箱验证码发送场景配置，适用于注册、重置密码、绑定邮箱；与登录场景独立
       properties:
         emailCaptcha:
           type: boolean
@@ -1799,15 +1849,25 @@ components:
         textGraphicCaptcha:
           type: boolean
           description: 是否开启文本图形验证码注册
+        textClickCaptcha:
+          type: boolean
+          description: 是否开启发邮件点选验证码，与登录场景独立
+        textClickCaptchaTTL:
+          type: integer
+          default: 300
+          description: 发邮件点选有效期（秒）；未配置或不大于0时使用300
+        textClickCaptchaPadding:
+          type: integer
+          description: 发邮件点选容错像素；0表示不放宽落点
         slideCaptcha:
           type: boolean
-          description: 是否开启滑块验证码注册
+          description: 是否开启发邮件滑块验证码
         slideCaptchaTTL:
           type: integer
-          description: 滑块验证码有效期(秒)
+          description: 发邮件滑块有效期（秒）；未配置或不大于0时使用300
         slideCaptchaPadding:
           type: integer
-          description: 滑块验证码容错像素
+          description: 发邮件滑块容错像素；0表示不放宽落点
     AdminSiteStorageConfig:
       type: object
       description: 存储配置
@@ -2407,6 +2467,11 @@ components:
       type: object
       description: 转码配置
       properties:
+        localConsumerDisabled:
+          type: boolean
+          default: false
+          nullable: true
+          description: 当前HTTP实例是否跳过本机转码消费；修改后重启生效，不关闭任务投递。更新时省略或null保留当前值。独立transcode-consumer入口不受此开关影响
         maxWorkers:
           type: integer
         transcodeResolutions:
@@ -2469,7 +2534,7 @@ components:
           description: 是否产出 DASH 自适应流；与 mp4Enable 都为 false 时仍会做源片规范化
         dashSegDuration:
           type: integer
-          description: DASH 分片时长（秒）
+          description: DASH 目标分片时长（秒），默认4；实际时长以FFmpeg原生SegmentTimeline为准
     AdminThirdLoginConfig:
       type: object
       description: 第三方登录配置
@@ -3368,7 +3433,7 @@ paths:
       tags:
         - 用户管理
       summary: 邮箱注册
-      description: 通过邮箱注册新用户；滑块验证码在发送邮箱验证码阶段校验，注册阶段仅校验邮箱验证码
+      description: 通过邮箱注册新用户；图形/交互验证码按配置在发送邮箱验证码阶段校验，注册阶段仅校验邮箱验证码
       requestBody:
         required: true
         content:
@@ -3392,7 +3457,10 @@ paths:
       tags:
         - 用户管理
       summary: 用户名密码登录
-      description: 使用用户名/邮箱和密码登录，需要先通过点击验证码
+      description: >-
+        使用用户名/邮箱和密码登录。先调用 /common/captcha/type?scene=login，再以同一scene获取挑战。
+        仅提交一种已开启的交互验证码：点选提交captchaToken和captchaDots，滑块提交slideCaptchaToken、slideCaptchaX、slideCaptchaY；
+        两种类型都关闭时无需交互凭证。不能同时提交两种token，也不能使用register场景签发的token。
       requestBody:
         required: true
         content:
@@ -3402,8 +3470,6 @@ paths:
               required:
                 - username
                 - password
-                - captchaToken
-                - captchaDots
               properties:
                 username:
                   type: string
@@ -3415,12 +3481,22 @@ paths:
                   example: password123
                 captchaToken:
                   type: string
-                  description: 点击验证码token（来自 /common/captcha/click）
+                  description: 点选类型时必填，来自相同scene的点选挑战；不能同时提交slideCaptchaToken
                 captchaDots:
                   type: array
-                  description: 点击点位列表（按顺序）
+                  minItems: 1
+                  description: 点选类型时必填，按点击顺序提交非空点位列表
                   items:
                     $ref: "#/components/schemas/ClickCaptchaPoint"
+                slideCaptchaToken:
+                  type: string
+                  description: 滑块类型时必填，来自相同scene的滑块挑战；不能同时提交captchaToken
+                slideCaptchaX:
+                  type: integer
+                  description: 滑块类型时提交的X坐标
+                slideCaptchaY:
+                  type: integer
+                  description: 滑块类型时提交的Y坐标
       responses:
         "200":
           description: 登录成功
@@ -4424,52 +4500,68 @@ paths:
                     properties:
                       data:
                         $ref: "#/components/schemas/Tag"
+  /common/captcha/type:
+    get:
+      tags:
+        - 验证码管理
+      summary: 获取交互验证码类型
+      description: >-
+        按当前场景的配置选择展示类型。点选和滑块都开启时等概率选择一种，只开一种时固定返回该类型，都关闭时返回none。
+        本接口不签发token或保存选择结果；校验端按当前场景已启用的类型检查提交的凭证。缺失或非法scene返回业务码1及invalid captcha scene。
+      parameters:
+        - name: scene
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [login, register]
+          description: login用于普通用户及管理员密码登录，register用于发送邮箱验证码
+      responses:
+        "200":
+          description: 业务码0成功，1表示非法或缺失场景
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+              description: 不缓存类型选择结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [type]
+                        properties:
+                          type:
+                            type: string
+                            enum: [click, slide, none]
+              example:
+                code: 0
+                data:
+                  type: slide
+                msg: ok
   /common/captcha/email:
     post:
       tags:
         - 验证码管理
       summary: 发送邮箱验证码
-      description: 发送邮箱验证码，用于注册、重置密码、绑定邮箱
+      description: >-
+        发送邮箱验证码，用于注册、重置密码、绑定邮箱。三种用途均按register场景校验。
+        先调用/common/captcha/type?scene=register，再获取同一场景的点选或滑块挑战并只提交一种凭证。
+        site.register.textGraphicCaptcha开启时还需图形验证码；交互类型为none不免除图形校验。
       requestBody:
         required: true
         content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailCaptchaSendRequest"
           multipart/form-data:
             schema:
-              type: object
-              required:
-                - type
-                - email
-                - captchaID
-                - captchaCode
-                - slideCaptchaToken
-                - slideCaptchaX
-                - slideCaptchaY
-              properties:
-                type:
-                  type: integer
-                  enum:
-                    - 1
-                    - 2
-                    - 3
-                  description: 验证码类型（1注册 2重置密码 3绑定邮箱）
-                email:
-                  type: string
-                  description: 邮箱地址
-                captchaID:
-                  type: string
-                  description: 图形验证码ID
-                captchaCode:
-                  type: string
-                  description: 图形验证码
-                slideCaptchaToken:
-                  type: string
-                  description: 滑块验证码Token
-                slideCaptchaX:
-                  type: integer
-                  description: 滑块验证码X坐标
-                slideCaptchaY:
-                  type: integer
-                  description: 滑块验证码Y坐标
+              $ref: "#/components/schemas/EmailCaptchaSendRequest"
       responses:
         "200":
           description: 发送成功
@@ -4528,7 +4620,16 @@ paths:
       tags:
         - 验证码管理
       summary: 获取点击验证码
-      description: 获取点击式验证码（用于登录）
+      description: 获取点选验证码，token绑定scene；后续校验须使用同一场景。登录获取滑块、发邮件获取点选时务必显式传scene。
+      parameters:
+        - name: scene
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [login, register]
+            default: login
+          description: 登录用login，发送邮箱验证码用register；非法或空字符串返回业务码1
       responses:
         "200":
           description: 获取成功
@@ -4556,7 +4657,16 @@ paths:
       tags:
         - 验证码管理
       summary: 获取滑块验证码
-      description: 获取滑块式验证码（用于注册）
+      description: 获取滑块验证码，token绑定scene；后续校验须使用同一场景。登录获取滑块、发邮件获取点选时务必显式传scene。
+      parameters:
+        - name: scene
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [login, register]
+            default: register
+          description: 登录用login，发送邮箱验证码用register；非法或空字符串返回业务码1
       responses:
         "200":
           description: 获取成功
@@ -6662,6 +6772,69 @@ paths:
                           end:
                             type: integer
                             description: 分段模式播放时间终点（毫秒，不含）
+  /common/video/danmu/month-dates:
+    get:
+      tags:
+        - 视频管理
+      summary: 查询某月有弹幕的发送时刻
+      description: 返回浏览器所看月份内每条弹幕的 createdAt。时间按库内 Asia/Shanghai 给出，带时区偏移。前端再按浏览器本地时区折成日历日。
+      parameters:
+        - name: videoId
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+          description: 视频ID
+        - name: partId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: 分P ID（分P视频必填）
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: ^\d{4}-\d{2}$
+          description: 浏览器本地月份（YYYY-MM）
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: 本地月初的绝对时间（RFC3339，含）
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: 本地下月初的绝对时间（RFC3339，不含），与 start 相距不超过 32 天
+      responses:
+        "200":
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Response"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          month:
+                            type: string
+                            description: 浏览器本地月份（YYYY-MM）
+                          times:
+                            type: array
+                            items:
+                              type: string
+                              format: date-time
+                            description: 该时间窗内每条弹幕的发送时刻，时区为 Asia/Shanghai
   /common/video/danmu/creator/list:
     get:
       tags:
@@ -9454,7 +9627,10 @@ paths:
       tags:
         - 后台-用户管理
       summary: 管理员用户名密码登录
-      description: 管理员用户名密码登录（需通过滑块验证码）
+      description: >-
+        管理员用户名密码登录。先调用 /common/captcha/type?scene=login，再以同一scene获取挑战。
+        仅提交一种已开启的交互验证码：点选提交captchaToken和captchaDots，滑块提交slideCaptchaToken、slideCaptchaX、slideCaptchaY；
+        两种类型都关闭时无需交互凭证。不能同时提交两种token，也不能使用register场景签发的token。
       requestBody:
         required: true
         content:
@@ -9464,9 +9640,6 @@ paths:
               required:
                 - username
                 - password
-                - slideCaptchaToken
-                - slideCaptchaX
-                - slideCaptchaY
               properties:
                 username:
                   type: string
@@ -9474,15 +9647,24 @@ paths:
                 password:
                   type: string
                   description: 密码
+                captchaToken:
+                  type: string
+                  description: 点选类型时必填，来自相同scene的点选挑战；不能同时提交slideCaptchaToken
+                captchaDots:
+                  type: array
+                  minItems: 1
+                  description: 点选类型时必填，按点击顺序提交非空点位列表
+                  items:
+                    $ref: "#/components/schemas/ClickCaptchaPoint"
                 slideCaptchaToken:
                   type: string
-                  description: 滑块验证码Token（来自 /common/captcha/slide）
+                  description: 滑块类型时必填，来自相同scene的滑块挑战；不能同时提交captchaToken
                 slideCaptchaX:
                   type: integer
-                  description: 滑块验证码X坐标
+                  description: 滑块类型时提交的X坐标
                 slideCaptchaY:
                   type: integer
-                  description: 滑块验证码Y坐标
+                  description: 滑块类型时提交的Y坐标
       responses:
         "200":
           description: 登录成功
@@ -10782,10 +10964,16 @@ paths:
                         usernamePwdLogin: true
                         textGraphicCaptcha: false
                         textClickCaptcha: false
+                        slideCaptcha: false
+                        slideCaptchaTTL: 300
+                        slideCaptchaPadding: 10
                         textClickCaptchaTTL: 300
                         textClickCaptchaPadding: 20
                       register:
                         emailCaptcha: false
+                        textClickCaptcha: false
+                        textClickCaptchaTTL: 300
+                        textClickCaptchaPadding: 20
                         textGraphicCaptcha: false
                         slideCaptcha: false
                         slideCaptchaTTL: 300
@@ -10881,6 +11069,7 @@ paths:
                     code: 0
                     msg: ok
                     data:
+                      localConsumerDisabled: false
                       maxWorkers: 2
                       transcodeResolutions:
                         - 360
@@ -10974,10 +11163,16 @@ paths:
                     usernamePwdLogin: true
                     textGraphicCaptcha: false
                     textClickCaptcha: false
+                    slideCaptcha: false
+                    slideCaptchaTTL: 300
+                    slideCaptchaPadding: 10
                     textClickCaptchaTTL: 300
                     textClickCaptchaPadding: 20
                   register:
                     emailCaptcha: false
+                    textClickCaptcha: false
+                    textClickCaptchaTTL: 300
+                    textClickCaptchaPadding: 20
                     textGraphicCaptcha: false
                     slideCaptcha: false
                     slideCaptchaTTL: 300
@@ -11061,6 +11256,7 @@ paths:
               transcode:
                 summary: transcode
                 value:
+                  localConsumerDisabled: false
                   maxWorkers: 2
                   transcodeResolutions:
                     - 360

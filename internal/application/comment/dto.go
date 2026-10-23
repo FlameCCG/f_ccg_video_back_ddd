@@ -1,7 +1,10 @@
-// Package comment 是评论上下文的应用层：用例服务、DTO（含读模型）与查询/协作端口。
+// Package comment 编排评论创建、回复、点赞与管理。
 //
-// 本包不依赖 gin / gorm / redis：数据访问一律经端口，实现在 infrastructure；
-// 跨上下文依赖（通知、视频计数与热度）以本地端口声明，由 bootstrap 绑定对方实现。
+// comment_service.go 组合评论仓储、目标查询、点赞缓存与通知端口，admin_service.go 处理管理端操作。
+// 评论持久化、Redis 点赞和通知各有失败边界；不能从一次 HTTP 成功推断所有派生计数都已回写。
+//
+// 本层接收 context.Context 与命令/查询参数，不接收 gin.Context，也不选择 GORM、Redis 或 Kafka 实现。
+// provider.go 只汇总本上下文构造器；具体实现和跨上下文端口在 bootstrap 绑定。
 package comment
 
 import (

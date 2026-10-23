@@ -28,7 +28,7 @@ func NewAdminDynamicQuery(db *gorm.DB) *AdminDynamicQuery {
 // List 管理端动态分页列表（原 service/dynamic_service/admin_service.go 的 AdminList）。
 //
 // 排序列显式带 dynamics 前缀：按用户名过滤时会 JOIN users，
-// 原实现的裸列名在 MySQL 下会触发 1052「列名歧义」，见 report 中的 bug 条目。
+// 原实现的裸列名在 MySQL 下会触发 1052「列名歧义」，这里通过显式表别名避免歧义。
 func (q *AdminDynamicQuery) List(
 	ctx context.Context,
 	params app.AdminDynamicListParams,

@@ -21,7 +21,7 @@ type VideoReport struct {
 	HandledAt        *time.Time        `gorm:"comment:处理时间" json:"handledAt"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 video_reports，保持迁移与仓储 SQL 使用同一张表。
 func (VideoReport) TableName() string {
 	return "video_reports"
 }

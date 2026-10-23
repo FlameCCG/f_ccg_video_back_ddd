@@ -520,6 +520,9 @@ func (r *room) countOnline(ctx context.Context) int64 {
 }
 
 // localOnline 本实例内的去重在线用户数（游客不计入）。
+//
+// 按用户而非连接去重，同一用户多个标签页不会在本地统计中重复计人。
+// 这是 Redis 不可用时的实例内回退，不能代表多实例部署的全站在线人数。
 func (r *room) localOnline() int64 {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

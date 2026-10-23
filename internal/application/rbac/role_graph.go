@@ -8,6 +8,9 @@ import (
 
 // RoleGraph 角色继承关系查询（原 api/rbac_api/role_inherit_helpers.go 中直连
 // global.CasbinEnforcer 的一组辅助函数，改为经 Enforcer 端口注入）。
+//
+// 把直接父角色与全部可达父角色分开，才能解释某权限来自哪个可解除的直接继承边。
+// 应用层经 Enforcer 查询事实，再交领域规则处理树形展示或权限覆盖，避免领域依赖 Casbin 对象。
 type RoleGraph struct {
 	enforcer Enforcer
 }
@@ -109,6 +112,9 @@ func (g *RoleGraph) IsAlreadyInherited(roleName, targetRole string) (bool, domai
 }
 
 // WouldCreateCycle 若 role 继承 parent，是否会形成环（parent 已直接/间接继承 role）。
+//
+// 检查的是反向可达关系：若 parent 已能到达 role，再添加 role → parent 就会闭环。
+// “已经继承该角色”的重复边检查与“角色不能继承自身”的检查在调用用例中分别处理。
 func (g *RoleGraph) WouldCreateCycle(roleName, parentName string) (bool, error) {
 	// parent 已是 role 的祖先？由 IsAlreadyInherited 另判
 	// role 已是 parent 的祖先？

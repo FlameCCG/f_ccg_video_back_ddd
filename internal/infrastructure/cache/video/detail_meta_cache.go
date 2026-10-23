@@ -27,6 +27,10 @@ const (
 
 // cacheMetaIfGenMatchScript 仅当 generation 与回填时读取的值一致时才写入 meta，
 // 防止删除/改私后的在途旧 DB 快照覆盖失效结果。
+//
+// 协议是读 generation → 回源数据库 → Lua 比较 generation 后回填。
+// 比较与写入必须原子执行；若拆成客户端 GET/SET，中间仍可能插入一次失效操作。
+// 它约束回填竞争，不是 MySQL 与 Redis 的原子事务，也不替代正确的失效调用与故障处理。
 var cacheMetaIfGenMatchScript = redis.NewScript(`
 local genKey = KEYS[1]
 local metaKey = KEYS[2]
@@ -60,7 +64,7 @@ func NewDetailMetaCache(redisClient *redis.Client, logger *zap.Logger) *DetailMe
 	return &DetailMetaCache{redis: redisClient, logger: logger}
 }
 
-// Available 报告 Redis 是否可用。
+// Available 报告 Redis 句柄是否已配置，不执行连通性探测。
 func (c *DetailMetaCache) Available() bool {
 	return c != nil && c.redis != nil
 }

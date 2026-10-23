@@ -1,7 +1,10 @@
-// Package rbac 提供 RBAC 相关 HTTP 接口（原 api/rbac_api）。
+// Package rbac 把角色、菜单、权限和继承关系的 HTTP 请求翻译为应用用例调用。
 //
-// 请求结构体保留在本包（与原 api/rbac_api 同位置语义），
-// gin.Context 止步于此：向应用层只传 context.Context 与 DTO。
+// handler.go 声明显式依赖，其他文件按入口拆分；参数结构体保留 Gin 绑定与校验标签。
+// 从请求取得参数和经过鉴权的身份，构造应用参数后传 c.Request.Context()，最后映射错误和响应。
+// gin.Context 止步于接口层，领域规则、事务、缓存与跨上下文调用由 application 编排。
+// 具体入口与权限链到 internal/interfaces/http/router 中查看，业务允许条件还需由应用与领域判断。
+// JSON 字段、状态码和响应文案属于对外契约，新增注释不应顺带调整这些行为。
 package rbac
 
 import (
@@ -79,7 +82,7 @@ func toDomainPermissions(items []PermissionItem) []domain.PermissionItem {
 // parsePositiveID 解析路径/查询参数中的正整数主键。
 //
 // 原实现把查询串直接交给 GORM 作为主键条件，非数字输入会被 GORM 当作原始 SQL 片段拼接
-// （SQL 注入面，见 report.md）；此处统一显式解析，非法输入按「记录不存在」处理，
+// （可扩大 SQL 条件的输入面）；此处统一显式解析，非法输入按「记录不存在」处理，
 // 合法输入的可观测行为与原实现完全一致。
 func parsePositiveID(raw string) (uint, bool) {
 	value, err := strconv.Atoi(strings.TrimSpace(raw))

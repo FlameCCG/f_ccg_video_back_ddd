@@ -21,6 +21,9 @@ import (
 )
 
 // SharedProviderSet 跨上下文共用的基础能力（事务编排、限流）。
+//
+// 同一个 TxManager 的实现通过 context 传递数据库事务。跨上下文端口若最终使用同库且保留该 context，
+// 可以参加本地事务；仅仅绑定到了同一个接口，并不能使外部系统获得事务语义。
 var SharedProviderSet = wire.NewSet(
 	gormx.NewTxManager,
 	wire.Bind(new(tx.Manager), new(*gormx.TxManager)),
@@ -28,12 +31,15 @@ var SharedProviderSet = wire.NewSet(
 )
 
 // IdentityProviderSet 身份上下文：仓储与缓存实现 + 应用服务 + 领域接口绑定。
+//
+// 对照每组 NewX 与 wire.Bind 阅读：前者产出具体类型，后者声明它能交给哪一个业务接口。
+// 同一具体对象可以满足多个窄接口，避免让每个使用者依赖完整仓储能力。
 var IdentityProviderSet = wire.NewSet(
 	// 持久化实现
 	identityrepo.NewUserRepository,
 	wire.Bind(new(identitydomain.UserRepository), new(*identityrepo.UserRepository)),
 	wire.Bind(new(identitydomain.UserAccountRepository), new(*identityrepo.UserRepository)),
-	// CLI 建号任务复用同一份「默认横幅 ID 注入 ctx」逻辑（见 report.md FIND-002）
+	// CLI 建号任务复用同一份「默认横幅 ID 注入 ctx」逻辑
 	wire.Bind(new(provisioningrepo.UserContextDecorator), new(*identityrepo.UserRepository)),
 	identityrepo.NewExpRecordRepository,
 	wire.Bind(new(identitydomain.ExpRecordRepository), new(*identityrepo.ExpRecordRepository)),

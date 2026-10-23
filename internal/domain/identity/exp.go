@@ -2,13 +2,13 @@ package identity
 
 // 等级与经验规则（原 service/user_service/exp_service.go 中的常量与算法）。
 const (
-	// LevelMax 常量.
+	// LevelMax 是等级计算的最高等级边界，超过阈值后不再继续升级。
 	LevelMax = 6
 	// DailyExpCap 每用户每日经验获取总上限（登录/观看/点赞/投币等所有正向加经验共用）.
 	DailyExpCap = 60
-	// ExpPerLogin 常量.
+	// ExpPerLogin 是每日登录经验规则采用的奖励值；是否已领取由用例和记录仓储判断。
 	ExpPerLogin = 10
-	// ExpPerLike 常量.
+	// ExpPerLike 是点赞行为触发经验规则时使用的奖励值；去重规则在应用用例中执行。
 	ExpPerLike = 10
 	// ExpPerCoin 单枚硬币投币折算经验.
 	ExpPerCoin = 15

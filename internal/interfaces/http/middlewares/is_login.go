@@ -13,7 +13,7 @@ import (
 //
 // 迁移自原 service/user_service/enter.go 的 UserService.isLogin / IsLogin：
 // 该函数读取 HTTP 请求头，属于接口层关注点，且原项目中无任何调用方（死代码）。
-// 为不丢弃原有能力而完整保留，JWT 密钥改为显式传入（见 report.md FIND-006）。
+// 为不丢弃原有能力而完整保留，JWT 密钥改为显式传入。
 func IsLogin(c *gin.Context, jwtConf *config.Jwt) bool {
 	if c == nil || jwtConf == nil {
 		return false

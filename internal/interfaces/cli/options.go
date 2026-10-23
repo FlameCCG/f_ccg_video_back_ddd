@@ -1,4 +1,9 @@
-// Package cli 提供命令行入口相关的选项解析与运维任务（原 flags 包）。
+// Package cli 解析进程选项并把一次性运维意图交给执行器。
+//
+// options.go 解析参数，task.go 决定任务优先级，executor.go 运行具体步骤并返回错误。
+// 无任务参数时启动服务；各任务在 bootstrap/providers_cli.go 有独立注入器，避免为单项任务建立全部连接。
+// executor 不调用 os.Exit，入口收到结果后才决定退出码，使 Wire cleanup 和日志刷盘仍能执行。
+// -all 的顺序在 cmd/server 组织；涉及索引重建等操作时应先阅读对应任务实现。
 package cli
 
 import "flag"

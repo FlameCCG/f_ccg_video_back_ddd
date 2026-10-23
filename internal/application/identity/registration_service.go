@@ -34,6 +34,9 @@ func NewRegistrationService(
 
 // EmailRegister 邮箱注册：写用户 + 默认角色关联（同一事务），提交后再绑定 Casbin 角色。
 //
+// 前置占用查询只改善提示，数据库唯一约束才裁定并发注册冲突。
+// Casbin 绑定是提交后的另一步；失败后的删除属于尽力补偿，补偿自身也可能失败，并非跨系统原子回滚。
+//
 // 事务边界与补偿顺序与原实现一致：Casbin 写在 Commit 之后，绑定失败则补偿删除用户，
 // 避免 Commit 失败留下幽灵权限或无角色的半成品账号。
 func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegisterInput) error {

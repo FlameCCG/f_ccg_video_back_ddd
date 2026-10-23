@@ -32,7 +32,7 @@ func NewStore(db *mongo.Database) *Store {
 	return &Store{db: db}
 }
 
-// Available 报告 Mongo 是否可用。
+// Available 只表示 Mongo 数据库句柄已配置，不执行服务器连通性检查。
 func (s *Store) Available() bool {
 	return s != nil && s.db != nil
 }
@@ -129,6 +129,9 @@ func (s *Store) InsertMessage(ctx context.Context, msg *domain.Message) error {
 }
 
 // ApplySend 按消息推进会话：写入 lastMessage、双方可见、接收方未读 +1（upsert）。
+//
+// 单个会话文档内的修改由一次更新完成，但与 InsertMessage 写消息集合是分开的操作。
+// 会话键由排序后的参与者生成，双方从哪个方向发起对话都应落到同一会话。
 func (s *Store) ApplySend(ctx context.Context, msg *domain.Message, preview string) error {
 	if !s.Available() {
 		return domain.ErrStoreUnavailable

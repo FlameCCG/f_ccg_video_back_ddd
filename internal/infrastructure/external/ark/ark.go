@@ -1,9 +1,10 @@
-// Package ark 是 AI 上游适配器：Anthropic 兼容聊天接口、方舟 Ark 图片模型、
-// 方舟 runtime 视频任务与资源代理拉取。
+// Package ark 实现AI 模型与媒体生成上游的外部协议适配。
 //
-// 原实现集中在 service/ai_service（直读 global.Config() + 包内构建客户端）；
-// 新架构由 application/ai 在公开用例入口捕获运行配置，再按值传给每个上游
-// 适配器。上游请求参数、SSE 事件格式与错误文案与原实现逐字一致。
+// chat_model.go/image_model.go/video_task.go 分别处理聊天、图片和视频能力，asset.go 代理资源拉取。
+// 应用入口捕获运行配置后按值传入；本包负责 HTTP/SDK、流读取和协议转换，不决定业务资格。
+// 流、响应体和上下文都带有资源生命周期，调用方与适配器需要按端口约定关闭和传播取消。
+//
+// 上层依赖端口而非客户端库，测试可替换端口或 HTTP 服务以验证协议边界。
 package ark
 
 import (

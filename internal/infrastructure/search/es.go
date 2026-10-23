@@ -1,4 +1,10 @@
-// Package search 提供 Elasticsearch 客户端构建与关闭（原 core/init_es.go）。
+// Package search 实现 Elasticsearch 搜索、向量索引与嵌入模型适配。
+//
+// es.go/provider.go 管理客户端，keyword_search.go/query.go/parse.go 组织查询与结果投影。
+// video_vector.go/ark_embedding.go 连接向量索引和外部嵌入能力，index_manager.go 管理搜索索引结构。
+// 本包面向应用端口返回结果；业务查询是否回退 SQL、重建进度如何对外展示由 application/search 编排。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package search
 
 import (

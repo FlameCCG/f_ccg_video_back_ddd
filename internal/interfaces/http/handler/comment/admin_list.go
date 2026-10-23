@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminCommentListReq is an exported API type.
+// AdminCommentListReq 描述按用户、用户名、正文关键字筛选和排序的管理端分页查询。
 type AdminCommentListReq struct {
 	UserID   uint   `form:"userId" binding:"omitempty,gt=0"`
 	Username string `form:"username"`

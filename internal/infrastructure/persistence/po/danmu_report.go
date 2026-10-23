@@ -19,7 +19,7 @@ type DanmuReport struct {
 	HandledAt        *time.Time        `gorm:"comment:处理时间" json:"handledAt"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 danmu_reports，保持迁移与仓储 SQL 使用同一张表。
 func (DanmuReport) TableName() string {
 	return "danmu_reports"
 }

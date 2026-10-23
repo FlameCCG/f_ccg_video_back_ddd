@@ -11,7 +11,7 @@ type Role struct {
 	Menus []*Menu `gorm:"many2many:role_menus;" json:"menus,omitempty"` // 多对多：角色-菜单
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 roles，保持迁移与仓储 SQL 使用同一张表。
 func (Role) TableName() string {
 	return "roles"
 }

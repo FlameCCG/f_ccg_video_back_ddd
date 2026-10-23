@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminListReq is an exported API type.
+// AdminListReq 指定管理端系统通知列表的分页窗口。
 type AdminListReq struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
 	PageSize int `form:"pageSize" binding:"omitempty,min=1,max=100"`
@@ -30,7 +30,7 @@ func (h *Handler) AdminList(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// CreateNotificationReq is an exported API type.
+// CreateNotificationReq 表达系统通知内容与目标接收者；ReceiverID=-1 表示全员通知，操作者身份另从上下文取得。
 type CreateNotificationReq struct {
 	Title      string `json:"title" binding:"required,max=200" label:"标题"`
 	Content    string `json:"content" binding:"required" label:"内容"`
@@ -68,7 +68,7 @@ func (h *Handler) Create(c *gin.Context) {
 	res.OkWithMsg("创建成功", c)
 }
 
-// AdminUpdateReq is an exported API type.
+// AdminUpdateReq 携带待更新系统通知 ID 与可编辑内容；记录存在性和通知类型由应用用例检查。
 type AdminUpdateReq struct {
 	ID         uint   `json:"id" binding:"required,gt=0"`
 	Title      string `json:"title" binding:"required,max=200"`

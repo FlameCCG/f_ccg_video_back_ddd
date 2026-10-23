@@ -1,4 +1,9 @@
-// Package logger 构建 zap 日志器（原 core/init_zap.go 的日志构建职责）。
+// Package logger 创建并回收 zap 日志器。
+//
+// logger.go 组织编码、输出、日志文件轮转与 Sync，provider.go 导出 Wire 构造器。
+// 日志实例通过构造器传给使用者；进程停止时在其他资源清理后刷盘，避免最后的错误丢失。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package logger
 
 import (

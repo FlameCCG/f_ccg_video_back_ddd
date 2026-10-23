@@ -31,6 +31,9 @@ func NewTaskRegistry() *TaskRegistry {
 }
 
 // Register 派生可取消的任务上下文，并返回幂等的注销函数。
+//
+// 每次运行获得独立 runID，因此重复投递的同一个视频/分P不会相互覆盖取消函数。
+// 注销只移除本次运行；物理删除则取消该视频下的全部本地运行，跨实例取消另经 Redis 广播。
 func (r *TaskRegistry) Register(parent context.Context, key TaskKey) (context.Context, func()) {
 	if parent == nil {
 		parent = context.Background()
@@ -77,6 +80,9 @@ func (r *TaskRegistry) Register(parent context.Context, key TaskKey) (context.Co
 }
 
 // CancelVideos 取消与给定视频 ID 相关的全部本地运行，返回被取消的运行数。
+//
+// 持锁期间只复制取消函数，解锁后才发取消信号，避免把外部回调执行和登记表锁绑在一起。
+// 返回的是已发送取消信号的运行数量，不代表编码进程已经结束或资源已经释放。
 func (r *TaskRegistry) CancelVideos(videoIDs []uint) int {
 	if r == nil || len(videoIDs) == 0 {
 		return 0

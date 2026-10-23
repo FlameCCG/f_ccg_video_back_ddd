@@ -34,6 +34,9 @@ func (s *CoinService) LockAccounts(ctx context.Context, userIDs []uint) error {
 }
 
 // ApplyChange 增减用户硬币余额并写入记录。
+//
+// 余额在事务行锁内读取，流水创建与余额更新共同提交；dedupKey 通过记录唯一性阻止重复发奖。
+// 返回的 bool 表示是否实际应用；去重命中可返回 (nil, false, nil)，不能把 nil 用户当成“用户不存在”。
 func (s *CoinService) ApplyChange(
 	ctx context.Context,
 	userID uint,
@@ -102,6 +105,8 @@ func (s *CoinService) ApplyChange(
 }
 
 // EnsureEnough 检查用户当前硬币是否足以支付本次消耗。
+//
+// 这是读取时刻的预检查，之后并发消费仍会改变余额；实际扣减必须由 ApplyChange 的锁内校验裁定。
 func (s *CoinService) EnsureEnough(ctx context.Context, userID uint, need float64) error {
 	if userID == 0 {
 		return domain.ErrUserNotLogin

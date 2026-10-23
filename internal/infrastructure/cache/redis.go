@@ -1,4 +1,9 @@
-// Package cache 提供 Redis 客户端构建与关闭（原 core/init_redis.go）。
+// Package cache 构造并关闭共享 Redis 客户端。
+//
+// 本目录只管理连接；各上下文的 key、TTL、Lua 和序列化放在对应子包。
+// 客户端由 Wire 显式注入并在后台组件停止后关闭，避免运行中的回写或广播使用已关闭连接。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package cache
 
 import (

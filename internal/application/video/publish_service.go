@@ -53,6 +53,9 @@ func NewPublishService(
 }
 
 // PublishVideo 执行投稿：校验上传 → 落库视频及发布时间 → 异步转码投递。
+//
+// 返回成功说明同步校验和仓储保存完成，不代表 Kafka 已入队、转码已完成或搜索已更新。
+// 存储对象早于数据库投稿存在，持有哈希锁是为了协调清理，不会把存储系统纳入 MySQL 事务。
 func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoCommand) (*PublishVideoResult, error) {
 	now := time.Now()
 
@@ -67,6 +70,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 
 	storageType := s.storageType()
 
+	// 应用层提供时钟与审核事实，领域只裁定初始状态；待审稿件也可以保留未来发布时间。
 	initialStatus := domain.ResolvePublishVideoStatus(now, &publishTime, cmd.IsPrivate, contentReviewEnabled(s.cfgProvider))
 	var scheduledAt *time.Time
 	if domain.ShouldScheduleVideoPublish(now, publishTime, cmd.IsPrivate) {
@@ -128,6 +132,8 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	}
 
 	// 定时计划已随投稿提交；只有向量同步和转码投递在提交后异步执行。
+	// 这是进程内提交后任务，数据库与 Kafka 之间没有持久化投递意图。
+	// 若提交后进程退出或任务被拒绝/取消，不能靠本地事务自动补投；派发失败只记录日志。
 	s.tasks.Go(ctx, ctxutil.RequestLongTimeout, func(asyncCtx context.Context) {
 		s.vectors.SyncAsync(asyncCtx, video.ID, video.Status)
 
@@ -157,7 +163,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 		}
 	})
 
-	// 3. 直接返回成功响应给前端
+	// 同步结果只描述稿件已保存；媒体就绪情况由转码进度与详情资源另行查询。
 	return &PublishVideoResult{
 		VideoID:     video.ID,
 		Status:      video.Status,

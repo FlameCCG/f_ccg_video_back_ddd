@@ -1,4 +1,9 @@
-// Package dynamic 是动态上下文的持久化实现：GORM 仓储、读侧查询与 PO↔domain 转换。
+// Package dynamic 实现动态写仓储、活动和关注流投影。
+//
+// dynamic_repo.go 保存动态及其关系，feed_query.go/activity_query.go/query.go 构建展示结果。
+// 读侧联查用户、视频等表以减少用例拼接，不表示本上下文拥有这些表的业务写入规则。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package dynamic
 
 import (

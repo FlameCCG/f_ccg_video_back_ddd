@@ -1,6 +1,10 @@
-// Package router 汇总 HTTP 路由装配（原 router 包）。
+// Package router 装配 HTTP 路由、中间件链和各上下文处理器。
 //
-// 路由的 method + path 必须与原项目完全一致：/v1/common/*、/v1/admin/*、静态目录 /uploads。
+// router.go 构建 Gin Engine，register.go 与 *_router.go 描述实际 method/path 和入口所需的权限链。
+// 注册是协议装配，不做业务处理；Handler 再将请求翻译为应用用例调用。
+// RouteSpecs 可由 CLI 读取用于 API 资源同步，复用注册逻辑以避免维护第二份路由真相。
+// 测试将 engine.Routes() 与 testdata/routes_golden.txt 对比；新增路由需同时评估权限和契约变化。
+// /uploads 是静态资源入口，其 GET/HEAD 行为也属于路由契约。
 package router
 
 import (

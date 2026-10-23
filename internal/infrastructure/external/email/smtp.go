@@ -1,8 +1,9 @@
-// Package email 提供 SMTP 发信与邮箱地址校验适配器（原 service/email_service
-// 与 api/captcha_api 中的包级 email-verifier 实例）。
+// Package email 实现SMTP 验证码发信及邮箱地址验证的外部协议适配。
 //
-// 本包实现 application/identity 声明的 EmailCaptchaSender 与 EmailAddressVerifier 端口；
-// 邮件主题、正文模板、SMTP 握手/代理策略与原实现逐字一致。
+// smtp.go 处理 SMTP 连接与发送，template.go/captcha_mail.go 组织邮件内容，verifier.go 适配邮箱验证。
+// 邮件已发送不等于验证码存储、限流与后续验证都成功，这些步骤由 identity 用例编排。
+//
+// 上层依赖端口而非客户端库，测试可替换端口或 HTTP 服务以验证协议边界。
 package email
 
 import (

@@ -12,7 +12,7 @@ import (
 // ErrIndexClientUnavailable 表示 ES 客户端未初始化，索引运维任务无法执行。
 //
 // 原 service/es_service 直接对 nil 客户端调用方法会 panic；此处改为返回错误，
-// 让 CLI 以非 0 退出并给出可读原因（见 report.md）。
+// 让 CLI 以非 0 退出并给出可读原因。
 var ErrIndexClientUnavailable = errors.New("elasticsearch client not initialized")
 
 // IndexManager 负责搜索索引的创建/删除（原 service/es_service/index.go）。

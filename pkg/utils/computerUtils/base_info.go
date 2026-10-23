@@ -1,4 +1,7 @@
-// Package computerUtils provides package functionality.
+// Package computerUtils 采集主机 CPU、内存与磁盘使用信息。
+//
+// base_info.go 通过 gopsutil 查询系统资源供管理展示。
+// 采集结果是某次观测，尤其 CPU 采样可能等待统计窗口，不应在高频请求中忽略采样成本。
 package computerUtils
 
 import (
@@ -10,7 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// GetCpuUsage 导出符号.
+// GetCpuUsage 等待 interval 前后采样总 CPU 时间，计算 0～100 的使用百分比；采样失败返回 0。
 func GetCpuUsage(interval time.Duration) float64 {
 	t1, err := cpu.Times(false)
 	if err != nil || len(t1) == 0 {
@@ -46,7 +49,7 @@ func GetCpuUsage(interval time.Duration) float64 {
 	return cpuPercent
 }
 
-// GetMemoryUsage 导出符号.
+// GetMemoryUsage 返回当前物理内存已用百分比，采集失败记录日志并返回 0。
 func GetMemoryUsage() float64 {
 	vmStat, err := mem.VirtualMemory()
 	if err != nil {
@@ -57,7 +60,7 @@ func GetMemoryUsage() float64 {
 	return vmStat.UsedPercent
 }
 
-// GetDiskUsage 导出符号.
+// GetDiskUsage 按可读取挂载点汇总已用/总容量计算百分比；无法读取的分区跳过。
 func GetDiskUsage() float64 {
 	partitions, err := disk.Partitions(true)
 	if err != nil {

@@ -1,8 +1,10 @@
-// Package identity 是身份上下文的 HTTP 处理器（原 api/user_api 与 api/captcha_api）。
+// Package identity 把账号登录、注册、资料、验证码与第三方回调的 HTTP 请求翻译为应用用例调用。
 //
-// 方法名与原 UserAPI / CaptchaAPI 的导出方法完全一致；请求/响应结构体的字段与 tag 逐字照搬，
-// 保证 JSON 契约 1:1。处理器只做请求解析、参数装配与响应文案映射，业务逻辑全部在 application 层。
-// gin.Context 止步于本包：向应用层只传 context.Context 与 DTO。
+// handler.go 声明显式依赖，其他文件按入口拆分；参数结构体保留 Gin 绑定与校验标签。
+// 从请求取得参数和经过鉴权的身份，构造应用参数后传 c.Request.Context()，最后映射错误和响应。
+// gin.Context 止步于接口层，领域规则、事务、缓存与跨上下文调用由 application 编排。
+// 登录场景的验证码与限流由路由中间件和应用用例共同约束；处理器不能自行认定请求中的身份可信。
+// JSON 字段、状态码和响应文案属于对外契约，新增注释不应顺带调整这些行为。
 package identity
 
 import (

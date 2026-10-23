@@ -1,8 +1,10 @@
-// Package comment 是评论上下文的领域层：评论/评论点赞实体、评论业务规则与仓储接口。
+// Package comment 表达评论实体、回复约束、点赞意图和仓储契约。
 //
-// 本包为纯 Go，不依赖 gin / gorm / redis / viper / zap；
-// 持久化对象（po.Comment / po.CommentLike）与本包实体的转换放在
-// internal/infrastructure/persistence/comment/converter.go。
+// comment.go/rules.go 回答“是否允许创建、回复或操作”，repository.go 表达保存实体所需能力。
+// PO 到领域对象的转换在 persistence/comment；页面列表通过应用查询模型构建，不直接复用落库对象。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package comment
 
 import (

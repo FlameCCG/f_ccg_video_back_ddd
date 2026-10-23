@@ -1,20 +1,16 @@
 # 架构说明：从请求到后台任务
 
-本文以**当前工作树代码**为准，解释这个 Go 视频站后端如何组织代码、保存数据、处理投稿与转码，以及运行时有哪些边界。它是按业务上下文拆包的**单体应用**：HTTP、WebSocket 和后台组件在同一进程中运行；MySQL、Redis、MongoDB、Kafka、Elasticsearch 和存储服务是外部依赖。目录分层不等于已拆成微服务。
-
-第一次接触 DDD，先读[从零读懂本项目的 DDD 架构](./DDD-从零到读懂本项目.md)，跟着投稿源码走完一条链路，再回到本文查完整目录和装配细节。
-
-本次领域边界、改稿事务及技术适配器的审查与改进，见 [DDD 审查记录](./ddd-review.md)，其中区分已修复内容、尚存限制和验证范围。
+本文以**当前工作树代码**为准，解释这个 Go 视频站后端如何组织代码、保存数据、处理投稿与转码，以及运行时有哪些边界。它是按业务上下文拆包的**单体应用**：默认由 `cmd/server` 在同一进程内运行 HTTP、WebSocket 和后台组件，转码也可由 `cmd/transcode-consumer` 单独运行；MySQL、Redis、MongoDB、Kafka、Elasticsearch 和存储服务是外部依赖。目录分层不等于已拆成微服务。
 
 | 你想先弄清什么 | 阅读入口 |
 |---|---|
-| 代码按哪些业务拆，四层分别做什么 | 第 1～3 节；[DDD 入门导读](./DDD-从零到读懂本项目.md) |
+| 代码按哪些业务拆，四层分别做什么 | 第 1～3 节 |
 | 为什么有实体、PO、DTO 三种形状 | 第 4～5 节 |
 | 接口如何得到实现，后台如何启动/关闭 | 第 6～7 节 |
-| 上传之后到底发生了什么 | 第 9 节；[逐条链路与故障演练](./interview/04-架构图逐层讲解与面试演练.md) |
-| 需求变化应该改哪里，面试如何解释 | 第 10～12 节；[学习与面试阅读入口](./interview/README.md) |
+| 上传之后到底发生了什么 | 第 9 节 |
+| 需求变化应该改哪里，如何解释设计取舍 | 第 10～12 节 |
 
-建议先看[交互架构图](./interview/diagrams/system-architecture.html)和[架构图逐层讲解与面试演练](./interview/04-架构图逐层讲解与面试演练.md)，再看下面的运行图，再沿[上传到可播放的链路](#9-从上传到可播放的链路)追一条请求。媒体参数见[架构与媒体原理](./interview/02-架构与媒体原理.md)，数据结构见[基础设施与数据设计](./interview/03-基础设施与数据设计.md)，面试表达见[面试问答](./interview/01-面试问答.md)。旧版迁移说明指向的 `refactor-spec.md` 等文件当前已不在工作树中，因此不再作为本文的现状依据。
+建议先看[交互架构图](./diagrams/system-architecture.html)和下面的运行图，再沿[上传到可播放的链路](#9-从上传到可播放的链路)追一条请求。
 
 ```text
 浏览器 / 管理端
@@ -28,18 +24,19 @@ Gin 路由与中间件 → handler → application 用例 → domain 规则/端�
                    ▼        ▼         ▼          ▼             ▼
                  MySQL    Redis    MongoDB      Kafka      本地/MinIO
                    │                            │
-                   └─ binlog → River → ES       └→ 同进程消费者 → FFmpeg
+                   └─ binlog → River → ES       └→ 转码消费者（同进程或独立进程）→ FFmpeg
 ```
 
 `bootstrap` 是构造时的连接点，不是每个请求经过的网络服务。MySQL 承载主要业务记录，Redis 支持缓存、计数、调度、转码进度和上传协调，MongoDB 保存聊天会话与消息；Kafka 承载转码任务，River 从 MySQL binlog 同步部分数据到 Elasticsearch。搜索是异步读侧，可能落后于 MySQL。证据入口：[进程入口](../cmd/server/main.go)、[组合根](../internal/bootstrap/app.go)、[River](../internal/infrastructure/river/river.go)。
 
-当前 [路由金丝雀](../internal/interfaces/http/router/testdata/routes_golden.txt) 有 **191 条** `method + path`，包含 `POST /v1/common/image/upload` 与 `/uploads` GET/HEAD。历史迁移时记录的 189 条是另一时点的快照；联调应以现行路由代码和金丝雀为准。[路由测试](../internal/interfaces/http/router/routes_test.go)校验注册清单，不能代替请求和响应的端到端验证。
+当前 [路由金丝雀](../internal/interfaces/http/router/testdata/routes_golden.txt) 有 **193 条** `method + path`，包含 `POST /v1/common/image/upload` 与 `/uploads` GET/HEAD。历史迁移时记录的 189 条是另一时点的快照；联调应以现行路由代码和金丝雀为准。[路由测试](../internal/interfaces/http/router/routes_test.go)校验注册清单，不能代替请求和响应的端到端验证。
 
 ## 1. 目录骨架
 
 ```
 f_ccg_video_back_ddd/
 ├── cmd/server/main.go              # 解析 flags → 默认服务或七个 CLI 注入器 → 退出码
+├── cmd/transcode-consumer/main.go  # 独立转码消费者入口，只启动转码及必要依赖
 ├── internal/
 │   ├── bootstrap/                  # 组合根：wire.go(wireinject) + wire_gen.go + App 生命周期
 │   ├── domain/
@@ -208,7 +205,7 @@ go run ./cmd/server -all myadmin mypassword
 | `-rs` | `InitializeResourceSyncTask` | 原执行点前完整基础设施 + 真实 Router 路由清单 |
 | `-rbac` | `InitializeRBACInitTask` | 原执行点前完整基础设施 + RBAC 初始化用例 |
 
-`-rs` 复用生产 Router 的注册代码并由 Gin 实测当前全部路由（金丝雀现为 191 条），但使用不会处理请求的空 handler 壳，
+`-rs` 复用生产 Router 的注册代码并由 Gin 实测当前全部路由（金丝雀现为 193 条），但使用不会处理请求的空 handler 壳，
 因此不构造完整 App、Kafka、对象存储或后台组件。各 Executor 只返回 `error`，不在用例内调用
 `os.Exit`，从而保证 Wire cleanup 和日志刷盘可以执行。
 
@@ -216,9 +213,25 @@ go run ./cmd/server -all myadmin mypassword
 
 `internal/config` 定义配置树，`internal/infrastructure/config.Provider` 使用 Viper 读取 YAML/环境变量、监听文件并以 `atomic.Pointer` 发布当前快照。应用层通过 `shared.ConfigReader/ConfigStore` 端口访问；一次用例操作先 `Get()` 一份快照再读字段，避免同次操作跨版本读取。热更新读取或校验失败保留上一份有效配置。管理端写配置则**先发布内存快照、再写文件**；写文件失败时内存可能已变，这一步没有事务回滚语义。见[Provider](../internal/infrastructure/config/provider.go)、[管理端配置用例](../internal/application/contentops/site_config_service.go)及[配置示例](../config.example.yaml)。
 
+### 6.3 独立转码入口与节点角色
+
+默认 `cmd/server` 仍装配转码消费者。设置 `transcode.localConsumerDisabled: true` 后，当前 HTTP 实例启动时跳过本机消费，但保留 Kafka 生产者，投稿仍会投递任务；修改此开关需重启当前实例。没有其他消费者时任务会排队。管理端更新时省略或传 `null` 保留当前开关值。
+
+独立消费者在项目根目录执行：
+
+```sh
+go run ./cmd/transcode-consumer -f config_dev.yaml
+```
+
+它通过 `InitializeTranscodeWorker` 只构造转码需要的 MySQL、Redis、Kafka、本地/MinIO 存储和附属资源，不启动 HTTP、WebSocket、River、视频调度或 Cron，也不运行初始化任务。此入口始终承担转码角色，不受 `localConsumerDisabled` 影响。消费启动失败返回非零退出码；Ctrl+C / SIGTERM 触发停止消费、关闭生产者池并等待 detached 任务，再执行基础设施 cleanup。详见[独立消费者说明](../cmd/transcode-consumer/README.md)、[组合根](../internal/bootstrap/providers_transcode.go)和[生命周期](../internal/bootstrap/transcode_worker.go)。
+
+独立节点复用完整配置文件及其必填项，需启用 Kafka、安装 FFmpeg/ffprobe，并能访问 MySQL、Redis 和源文件存储。同一 `kafka.groupID` 内按 topic 分区分摊任务，并行度还受分区数与各实例 worker 数限制。跨机器时优先使用双方可访问的 MinIO；若用本地存储，必须让任务中的路径在消费节点也指向同一份文件。
+
+Kafka 的 bootstrap 地址和 broker 宣告的对外地址都必须能从消费节点访问。当前 Compose 的对外 listener 示例为 `192.168.1.3:9094`，部署时替换为实际宿主机地址并重建 Kafka 容器；远程节点的 `kafka.brokers` 也应填写可达地址，不能直接照搬配置示例的 `localhost:9094`。
+
 ## 7. 生命周期与停序
 
-`*App` 聚合 HTTP 服务、后台组件、detached 任务组与基础设施句柄。启动和关闭均由组合根显式控制：
+默认 HTTP 服务的 `*App` 聚合 HTTP 服务、后台组件、detached 任务组与基础设施句柄。下列顺序针对 `cmd/server`；本机消费关闭时转码组件的启动会跳过消费，独立入口的生命周期见第 6.3 节。启动和关闭均由组合根显式控制：
 
 1. `App.Start(ctx)` 启动 River → 视频调度器 → 转码消费者 → cron → Chat Hub → Danmu Hub；
    单个后台组件启动失败记录到注入日志器并继续，保持 HTTP 仍可提供服务的既有语义。
@@ -257,7 +270,7 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动�
 
 `video` 负责稿件的投稿、状态与可见性，`media` 负责媒体任务和处理管线。一次投稿会用到两个上下文，并不说明应该合并它们：修改审核政策主要影响稿件业务；改变 FFmpeg 编码方式主要影响媒体处理。两种变化需要不同知识，也有不同失败边界。
 
-限界上下文定义的是概念的责任范围，不是进程数。这里各上下文在同一进程中，通过端口与薄适配器协作；部分持久化适配器还访问共同业务表。因此应说“业务边界显式化”，不能宣称已经物理隔离数据库。具体交叉点见[跨上下文绑定](../internal/bootstrap/providers_cross_context.go)和[video/media 适配器](../internal/bootstrap/adapters/video.go)。
+限界上下文定义的是概念的责任范围，不是进程数。这里各上下文默认在同一服务进程中通过端口与薄适配器协作，转码还支持独立消费者入口；部分持久化适配器还访问共同业务表。因此应说“业务边界显式化”，不能宣称已经物理隔离数据库。具体交叉点见[跨上下文绑定](../internal/bootstrap/providers_cross_context.go)和[video/media 适配器](../internal/bootstrap/adapters/video.go)。
 
 ### 10.2 按代码看：谁依赖接口，谁提供实现？
 
@@ -271,7 +284,7 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动�
 运行时：Handler → PublishService → 注入的 GORM 仓储 → MySQL
 ```
 
-两条路径能同时成立。Go 接口由方法集满足，构造函数负责拿到对象，Wire 生成的是普通构造代码。依赖倒置不阻止访问数据库，它让业务流程不直接绑定数据库实现。换成 fake 可以验证流程；换真实实现则还需验证事务、错误和 ID 回填等契约。完整教学程序见[DDD 导读第 7 节](./DDD-从零到读懂本项目.md#ddd-7)。
+两条路径能同时成立。Go 接口由方法集满足，构造函数负责拿到对象，Wire 生成的是普通构造代码。依赖倒置不阻止访问数据库，它让业务流程不直接绑定数据库实现。换成 fake 可以验证流程；换真实实现则还需验证事务、错误和 ID 回填等契约。
 
 ### 10.3 按时间看：哪些工作完成了，哪些仍待执行？
 
@@ -280,7 +293,7 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动�
     → 投稿校验
     → MySQL 同步事务提交
          ├─ 返回稿件 ID、业务状态
-         └─ 进程内后台任务：向量同步 / 定时安排 / Kafka 投递
+         └─ 进程内后台任务：向量同步 / Kafka 投递
                                               → 消费者处理
                                               → 产物与资源逐步保存
 ```
@@ -301,7 +314,7 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动�
 | 普通用户上传额度改成按另一时区计算 | 额度用例与 Redis store 契约 | 时间窗口与原子去重共同决定正确性 | 跨日、多哈希并发、管理员豁免、旧 key 迁移 |
 | 投稿保存成功必须能恢复未投递任务 | 投稿事务、持久任务意图、投递器与消费者 | 单纯增加 Kafka 重试无法覆盖进程退出 | 多实例领取、重复投递、故障状态、积压与人工处理 |
 
-判断规则归属时，拿掉“Gin、GORM、Redis、Kafka”这些名字再读需求：剩下的允许条件可能是领域规则；为了拿到事实和完成目标的步骤是应用编排；SQL、Lua、协议序列化和命令参数是具体实现。这个判断法比按文件名猜层更有用。详细练习见[DDD 导读第 18 节](./DDD-从零到读懂本项目.md#ddd-18)。
+判断规则归属时，拿掉“Gin、GORM、Redis、Kafka”这些名字再读需求：剩下的允许条件可能是领域规则；为了拿到事实和完成目标的步骤是应用编排；SQL、Lua、协议序列化和命令参数是具体实现。这个判断法比按文件名猜层更有用。
 
 ## 12. 架构解决了什么，还有什么要另外设计？
 
@@ -311,9 +324,9 @@ HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动�
 | 业务流程绑定具体存储 | 消费方声明端口，基础设施实现，组合根接线 | 接口兼容不自动证明实现的行为兼容 |
 | 写模型被页面字段撑大 | 写侧实体与读侧 DTO 分开 | 读侧仍必须有身份、可见性和缓存失效规则 |
 | 投稿相关表只写成功一部分 | MySQL 本地事务保存稿件与关联数据 | 不覆盖上传对象、Redis、Kafka、ES |
-| 耗时转码堵住请求 | 提交后异步派发，消费者受 worker 名额约束 | 同进程转码仍竞争资源；入队前仍有漏投窗口 |
+| 耗时转码堵住请求 | 提交后异步派发，消费者受 worker 名额约束 | 默认同进程转码仍竞争资源，可独立部署消费者；入队前仍有漏投窗口 |
 | 已完成任务被重新消费 | 对象/资源核验、检查点、资源唯一约束 | 重复内部步骤仍可能发生，未入队任务不能靠消费者恢复 |
 
 面试可以先说：“这是一套按业务上下文组织的 DDD 分层单体，我用投稿说明边界：HTTP 负责入口，应用编排流程，领域表达状态与分区规则，仓储实现单库事务，bootstrap 接入具体依赖。转码与索引异步完成，所以我会分别解释它们的成功条件。”然后选一个失败窗口展开，避免把所有保证压成“用了事务，保证最终一致”。
 
-如果讨论后续演进，可以提出持久化投递意图与 Outbox、基于测量拆出转码 worker、进一步收窄仓储端口等方案，但要说明它们需要新增机制与验证。当前实现、教学示例和演进建议应分别表达。完整三分钟口述、11 个追问和故障练习见[架构图逐层讲解与面试演练](./interview/04-架构图逐层讲解与面试演练.md)。
+如果讨论后续演进，可以提出持久化投递意图与 Outbox、基于测量拆出转码 worker、进一步收窄仓储端口等方案，但要说明它们需要新增机制与验证。当前实现、教学示例和演进建议应分别表达。

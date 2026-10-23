@@ -1,29 +1,36 @@
 {
   "schemaVersion": 1,
   "ok": true,
-  "command": "deliver",
+  "command": "documentation-update",
   "type": "architecture",
-  "input": "E:\\f_ccg_video_final\\f_ccg_video_back_ddd\\docs\\interview\\diagrams\\system.architecture.json",
-  "output": "E:\\f_ccg_video_final\\f_ccg_video_back_ddd\\docs\\interview\\diagrams\\system-architecture.html",
+  "input": "E:\\f_ccg_video_final\\f_ccg_video_back_ddd\\docs\\diagrams\\system.architecture.json",
+  "output": "E:\\f_ccg_video_final\\f_ccg_video_back_ddd\\docs\\diagrams\\system-architecture.html",
   "specification": {
-    "sha256": "2bf4a76ba326ca7ee1ca1a35bf7485cbea6d4c652257a1940986b07a5d7e027b",
-    "bytes": 6694
+    "sha256": "cc7870093ddad1d103c3a8ba6c318b9010b26e0623d4ab364458441cf589fd0e",
+    "bytes": 6706
   },
   "artifact": {
-    "sha256": "c3d7743f09aaa0c16ccf98a358d8887562591a48aa747aed57b510aadda2f3b2",
-    "bytes": 715426
+    "sha256": "67f504ece11fd96b7606d2e5ba43f28cce2b8e2fea81508cf4700c5c3acd3b01",
+    "bytes": 715441
   },
   "validation": {
+    "method": "Authored JSON/HTML consistency checks and browser validation after documentation update",
     "checksPassed": 9,
     "checkCount": 9,
-    "compositionProfile": "showcase",
-    "compositionStatus": "pass",
-    "errors": 0,
-    "warnings": 0
+    "checks": [
+      "unique component IDs",
+      "connection endpoints exist",
+      "guided views match authored JSON",
+      "component labels match authored JSON",
+      "connections match authored JSON",
+      "summary cards match authored JSON",
+      "browser scripts report no errors",
+      "8 desktop/theme combinations pass containment and readability",
+      "updated worker node responds to focus interaction"
+    ]
   },
   "visual_review": {
     "status": "passed",
-    "method": "Inspected light and dark captures at 1440x900 and 2048x1320; automated containment passed at four desktop sizes.",
-    "correction_rounds": 0
+    "method": "Inspected all four regenerated light/dark screenshots at 1440x900 and 2048x1320; labels and summary cards fit without clipping"
   }
 }

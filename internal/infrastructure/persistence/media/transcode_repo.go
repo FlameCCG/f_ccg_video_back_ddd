@@ -1,9 +1,10 @@
-// Package media 是媒体上下文的持久化适配器：转码任务的资源行读写。
+// Package media 实现转码任务的资源、时长和任务有效性读写。
 //
-// 说明：videos / video_parts / video_resources / video_part_resources 在领域划分上属于
-// video 上下文，但原 service/mq_service 就是直接读写这些表（转码消费者不经 video 服务）。
-// 为保持外部可观测行为 1:1，这里沿用「媒体上下文自持久化」的方案，
-// SQL 语句、行锁、去重顺序与原实现逐条一致。
+// transcode_repo.go 直接操作 videos/video_parts 及资源表，为 media 的资源端口提供实现。
+// 这是当前共享数据库实现中的跨上下文表访问；不代表媒体领域直接导入 video 领域或两者已物理隔库。
+// SQL 保存与对象存储上传分开完成，资源唯一约束和对象探测共同支持重试。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package media
 
 import (

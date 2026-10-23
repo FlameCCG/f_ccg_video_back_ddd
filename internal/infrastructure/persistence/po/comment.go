@@ -6,6 +6,9 @@ import (
 )
 
 // Comment 评论表.
+//
+// ParentID 指向直接回复目标，RootID 指向整条讨论的根评论；两者服务不同层级的列表和计数。
+// CommentType 决定 VideoID/DynamicID 等目标含义，JSON 数组字段由 GORM serializer 映射。
 type Comment struct {
 	Model
 	Content       string           `gorm:"type:text;not null;comment:评论内容" json:"content"`
@@ -33,7 +36,7 @@ type Comment struct {
 	CommentLike   []CommentLike `gorm:"foreignKey:CommentID" json:"commentLikes,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 comments，保持迁移与仓储 SQL 使用同一张表。
 func (Comment) TableName() string {
 	return "comments"
 }

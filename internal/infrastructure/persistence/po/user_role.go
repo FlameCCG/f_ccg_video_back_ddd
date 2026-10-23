@@ -8,7 +8,7 @@ type UserRole struct {
 	Role   Role `gorm:"foreignKey:RoleID" json:"-"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 user_roles，保持迁移与仓储 SQL 使用同一张表。
 func (UserRole) TableName() string {
 	return "user_roles"
 }

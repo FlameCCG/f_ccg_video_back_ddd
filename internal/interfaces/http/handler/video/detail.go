@@ -12,18 +12,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// VideoDetailReq is an exported API type.
+// VideoDetailReq 指定作品详情 ID，访问者身份独立从令牌解析，不从查询参数信任。
 type VideoDetailReq struct {
 	VideoID uint `form:"videoId" binding:"required"`
 }
 
-// VideoDetailWithProgress is an exported API type.
+// VideoDetailWithProgress 将应用详情读模型与本次访问者的播放进度组合，进度不能写入共享详情缓存。
 type VideoDetailWithProgress struct {
 	*app.VideoDetail
 	WatchProgress int `json:"watchProgress"`
 }
 
-// DetailView handles the corresponding HTTP request.
+// DetailView 以可选登录身份查询公开详情或本人预览，再补充播放进度和动态已读打点。
 func (h *Handler) DetailView(c *gin.Context) {
 	req := middlewares.GetBound[VideoDetailReq](c)
 	ctx := c.Request.Context()

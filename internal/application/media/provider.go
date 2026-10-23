@@ -8,6 +8,9 @@ import (
 
 // ProviderSet 是 media 上下文的应用层 provider 集合。
 //
+// 本集合只登记本上下文的应用构造器，不选择数据库、缓存或外部服务实现。
+// bootstrap 把消费方接口绑定到具体适配器后，Wire 才能生成完整构造链；本层因此可直接注入 fake 做用例测试。
+//
 // 领域侧的进程级共享状态（GPU 冷却窗口、任务取消登记表）在此创建为唯一实例：
 // 原实现分别是 mq_service 的包级变量 gpuUnavailableUntil
 // 与 transcode_cancel_service.DefaultRegistry。

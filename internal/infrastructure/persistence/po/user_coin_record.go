@@ -9,7 +9,7 @@ type UserCoinRecord struct {
 	DedupKey *string `gorm:"size:64;uniqueIndex:idx_user_coin_dedup,priority:2;comment:幂等键(可空)" json:"-"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 user_coin_records，保持迁移与仓储 SQL 使用同一张表。
 func (UserCoinRecord) TableName() string {
 	return "user_coin_records"
 }

@@ -92,6 +92,9 @@ func (s *OAuthLoginService) StoreOAuthState(ctx context.Context, provider, state
 }
 
 // ConsumeOAuthState 校验并消费一次性 OAuth state，防止授权码重放。
+//
+// state 绑定本次发起的 provider，消费成功后不能再用；它是回调关联校验，不替代上游对授权码的验证。
+// 此步骤由接口回调流程调用，Login 方法本身不自动消费 state，新增入口需维持同样的前置校验。
 func (s *OAuthLoginService) ConsumeOAuthState(ctx context.Context, provider, state string) error {
 	return s.states.Consume(ctx, provider, state)
 }
@@ -257,7 +260,6 @@ func (s *OAuthLoginService) completeLogin(
 
 	// 原实现在此处 Association("Roles").Find(&roles) 但从不使用结果，
 	// 唯一作用是「角色关联不可读时拒绝登录」。保留该校验以维持错误分支 1:1，
-	// 见 report.md FIND-013。
 	if _, err := s.roles.LoadRoles(ctx, user.ID); err != nil {
 		s.logger.Error("获取用户角色失败", zap.Error(err))
 

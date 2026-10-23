@@ -1,7 +1,10 @@
-// Package platform 是平台运维上下文的应用层：定时任务用例编排与其依赖端口。
+// Package platform 编排平台周期维护任务的用例编排。
 //
-// 四个用例与原 service/cron_service 的四个定时任务一一对应：
-// 评论点赞增量落库、视频统计缓存回写、热门榜时间衰减、到期用户自动解封。
+// 四条主线是评论点赞增量落库、视频统计回写、热门榜衰减和到期解封；触发时间由 infrastructure/scheduler 决定。
+// 领域计算折叠或衰减结果，应用层安排读取、写入与确认。理解重试时应逐项查看队列确认、版本和失败恢复策略。
+//
+// 本层接收 context.Context 与命令/查询参数，不接收 gin.Context，也不选择 GORM、Redis 或 Kafka 实现。
+// provider.go 只汇总本上下文构造器；具体实现和跨上下文端口在 bootstrap 绑定。
 package platform
 
 // VideoStats 视频统计快照值：Redis 缓存中的六个计数字段。

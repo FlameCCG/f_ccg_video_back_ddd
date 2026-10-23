@@ -175,7 +175,7 @@ func (s *AuthorService) InvalidateUserUsernameCache(userID uint) {
 //
 // 与原 fetchUsernameByID 的前两级一致；原实现的第三级「从 gin.Context 兜底」
 // 依赖 gin.Context 被当作 context.Context 传入，新架构 gin.Context 止步 handler，
-// 该兜底不再可达（见 report.md 对应条目）。
+// 该兜底不再可达。
 func (s *AuthorService) UsernameByID(ctx context.Context, userID uint) string {
 	if userID == 0 {
 		return ""
