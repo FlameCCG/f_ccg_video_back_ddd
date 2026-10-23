@@ -316,6 +316,9 @@ type TranscodeCanceller interface {
 // StorageDriver 对象存储驱动端口（原 service/storage_service.Driver 的视频侧子集）。
 type StorageDriver interface {
 	SaveChunk(ctx context.Context, fileHash, index string, size int64, reader io.Reader) error
+	// ChunkUploadBytes 返回该文件已落盘分片的总字节数，以及 index 这一片的字节数。
+	// index 还没有落盘时 current 为 0。调用方用 total-current+新分片大小判断整文件是否超限。
+	ChunkUploadBytes(ctx context.Context, fileHash, index string) (total, current int64, err error)
 	ListUploadedChunks(ctx context.Context, fileHash string) ([]string, error)
 	GetCompletedFile(ctx context.Context, fileHash string) (string, bool, error)
 	MergeChunks(ctx context.Context, fileHash, fileName string, totalChunks int) (string, error)

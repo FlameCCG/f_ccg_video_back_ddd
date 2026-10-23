@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
@@ -30,6 +32,8 @@ type stubDriver struct {
 	completedErr         error
 	chunkErr             error
 	mergePath            string
+	merged               bool
+	chunkBytes           map[string]int64
 	waitCompletedTimeout bool
 	waitChunkTimeout     bool
 }
@@ -67,7 +71,21 @@ func (s *stubDriver) GetCompletedFile(ctx context.Context, _ string) (string, bo
 }
 
 func (s *stubDriver) MergeChunks(context.Context, string, string, int) (string, error) {
+	s.merged = true
+
 	return s.mergePath, nil
+}
+
+func (s *stubDriver) ChunkUploadBytes(_ context.Context, _ string, index string) (int64, int64, error) {
+	var total, current int64
+	for key, size := range s.chunkBytes {
+		total += size
+		if key == index {
+			current = size
+		}
+	}
+
+	return total, current, nil
 }
 
 func (s *stubDriver) SaveFile(context.Context, string, int64, io.Reader, string) (string, error) {
@@ -124,7 +142,11 @@ func (r *stubResolver) ValidateChunkIndex(index string) error {
 
 // newUploadService 用 stub driver 装配真实 UploadService（测试不走 wire）。
 func newUploadService(driver *stubDriver) *app.UploadService {
-	return app.NewUploadService(&stubResolver{driver: driver}, infraconfig.NewProvider(nil), nil, nil, zap.NewNop())
+	return newUploadServiceWithConfig(driver, nil)
+}
+
+func newUploadServiceWithConfig(driver *stubDriver, cfg *config.Config) *app.UploadService {
+	return app.NewUploadService(&stubResolver{driver: driver}, infraconfig.NewProvider(cfg), nil, nil, zap.NewNop())
 }
 
 // TestValidateUploadID 覆盖原 TestValidateFileHash：上传标识的接受/拒绝集合。
@@ -377,5 +399,98 @@ func TestCompleteUploadReusesExistingWithoutChunks(t *testing.T) {
 
 	if path != driver.completedFilePath {
 		t.Fatalf("path = %q, want %q", path, driver.completedFilePath)
+	}
+}
+
+func TestUploadChunkEnforcesConfiguredSizes(t *testing.T) {
+	t.Parallel()
+
+	const oneMB = int64(1024 * 1024)
+
+	tests := []struct {
+		name       string
+		storage    *site.Storage
+		index      string
+		size       int64
+		chunkBytes map[string]int64
+		wantErr    bool
+	}{
+		{
+			name:    "chunk size caps a part when max chunk size is unset",
+			storage: &site.Storage{ChunkSize: 1},
+			index:   "0",
+			size:    oneMB + 1,
+			wantErr: true,
+		},
+		{
+			name:    "max chunk size stays the part cap when chunk size is smaller",
+			storage: &site.Storage{ChunkSize: 1, MaxChunkSize: 2},
+			index:   "0",
+			size:    oneMB + oneMB/2,
+		},
+		{
+			name:    "single part over max file size",
+			storage: &site.Storage{MaxChunkSize: 20, MaxFileSize: 1},
+			index:   "0",
+			size:    oneMB + 1,
+			wantErr: true,
+		},
+		{
+			name:       "existing parts plus the new part over max file size",
+			storage:    &site.Storage{MaxChunkSize: 20, MaxFileSize: 1},
+			index:      "1",
+			size:       oneMB / 2,
+			chunkBytes: map[string]int64{"0": oneMB},
+			wantErr:    true,
+		},
+		{
+			name:       "replacing a part uses the new size",
+			storage:    &site.Storage{MaxChunkSize: 20, MaxFileSize: 1},
+			index:      "0",
+			size:       oneMB / 2,
+			chunkBytes: map[string]int64{"0": oneMB},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			driver := &stubDriver{chunkBytes: tt.chunkBytes}
+			svc := newUploadServiceWithConfig(driver, &config.Config{
+				Site: &site.Site{Storage: tt.storage},
+			})
+
+			err := svc.UploadChunk(t.Context(), "hash", tt.index, tt.size, strings.NewReader("x"))
+			if tt.wantErr && err == nil {
+				t.Fatal("expected size limit error")
+			}
+
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected upload to pass, got %v", err)
+			}
+		})
+	}
+}
+
+func TestCompleteUploadRejectsMergedFileOverMaxFileSize(t *testing.T) {
+	t.Parallel()
+
+	driver := &stubDriver{
+		uploadedChunks: []string{"0", "1"},
+		chunkBytes:     map[string]int64{"0": 700 * 1024, "1": 700 * 1024},
+		mergePath:      "/uploads/videos/hash/_source_hash.mp4",
+	}
+	svc := newUploadServiceWithConfig(driver, &config.Config{
+		Site: &site.Site{Storage: &site.Storage{MaxFileSize: 1}},
+	})
+
+	_, err := svc.CompleteUpload(t.Context(), "hash", "demo.mp4", 2)
+	if err == nil {
+		t.Fatal("expected max file size error")
+	}
+
+	if driver.merged {
+		t.Fatal("oversized upload must not be merged")
 	}
 }

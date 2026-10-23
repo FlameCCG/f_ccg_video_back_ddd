@@ -216,7 +216,7 @@ func (s *UploadGarbageScanner) listMinIO(ctx context.Context, cfg *site.Storage,
 			continue
 		}
 		out = append(out, app.UploadGarbage{Kind: app.UploadGarbageChunks, Location: app.UploadGarbageMinIO,
-			FileHash: hash, Key: m.chunkPrefixPath(hash) + "/", Root: minioUploadRoot(cfg), LastModified: latest})
+			FileHash: hash, Key: m.chunkPrefixPath(hash), Root: minioUploadRoot(cfg), LastModified: latest})
 	}
 	prefix := strings.Trim(m.videoPrefix, "/")
 	if prefix != "" {
@@ -312,7 +312,7 @@ func (s *UploadGarbageScanner) deleteMinIO(ctx context.Context, cfg *site.Storag
 		return false, err
 	}
 	if item.Kind == app.UploadGarbageChunks {
-		prefix := m.chunkPrefixPath(item.FileHash) + "/"
+		prefix := m.chunkPrefixPath(item.FileHash)
 		if item.Key != prefix {
 			return false, nil
 		}

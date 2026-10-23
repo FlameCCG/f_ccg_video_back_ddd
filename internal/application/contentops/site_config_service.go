@@ -306,6 +306,10 @@ func cloneSiteConfig(src site.Site) site.Site {
 			storage.MinIO = nil
 			storage.ChunkDir = ""
 		}
+		// 前台按 chunkSize 切分。公开配置把它压到不超过 maxChunkSize，避免每片都超过服务端上限。
+		if storage.MaxChunkSize > 0 && storage.ChunkSize > storage.MaxChunkSize {
+			storage.ChunkSize = storage.MaxChunkSize
+		}
 
 		dst.Storage = &storage
 	}

@@ -173,11 +173,8 @@ func (s *UploadService) UploadChunk(
 		return err
 	}
 
-	if maxChunkSize := s.maxChunkSizeMB(); maxChunkSize > 0 {
-		maxBytes := maxChunkSize * 1024 * 1024
-		if size > maxBytes {
-			return fmt.Errorf("分块大小超过限制（最大 %dMB)", maxChunkSize)
-		}
+	if err := s.validateIncomingChunkSize(ctx, driver, fileHash, index, size); err != nil {
+		return err
 	}
 
 	return driver.SaveChunk(ctx, fileHash, index, size, reader)
@@ -336,6 +333,10 @@ func (s *UploadService) CompleteUpload(
 		return "", err
 	}
 
+	if err := s.validateIncomingChunkSize(ctx, driver, fileHash, "", 0); err != nil {
+		return "", err
+	}
+
 	start := time.Now()
 
 	finalPath, err := driver.MergeChunks(ctx, fileHash, fileName, totalChunks)
@@ -450,13 +451,62 @@ func (s *UploadService) validateFileHash(fileHash string) error {
 	return s.storage.ValidateUploadID(trimSpace(fileHash))
 }
 
-func (s *UploadService) maxChunkSizeMB() int64 {
+const mebibyte int64 = 1024 * 1024
+
+// uploadSizeLimits 读取单分片和整文件上限，单位 MB。
+// maxChunkSize 优先；没配时用 chunkSize 卡住单分片。两者都没配则不限制单分片。
+func (s *UploadService) uploadSizeLimits() (chunkMB, fileMB int64) {
 	cfg := s.cfgProvider.Get()
 	if cfg == nil || cfg.Site == nil || cfg.Site.Storage == nil {
-		return 0
+		return 0, 0
 	}
 
-	return cfg.Site.Storage.MaxChunkSize
+	storage := cfg.Site.Storage
+	chunkMB = storage.MaxChunkSize
+	if chunkMB <= 0 {
+		chunkMB = storage.ChunkSize
+	}
+
+	return chunkMB, storage.MaxFileSize
+}
+
+func (s *UploadService) validateIncomingChunkSize(
+	ctx context.Context,
+	driver StorageDriver,
+	fileHash, index string,
+	size int64,
+) error {
+	if size < 0 {
+		return errors.New("分块大小无效")
+	}
+
+	chunkMB, fileMB := s.uploadSizeLimits()
+	if chunkMB > 0 && size > chunkMB*mebibyte {
+		return fmt.Errorf("分块大小超过限制（最大 %dMB)", chunkMB)
+	}
+
+	if fileMB <= 0 {
+		return nil
+	}
+
+	if size > fileMB*mebibyte {
+		return fmt.Errorf("文件大小超过限制（最大 %dMB)", fileMB)
+	}
+
+	total, current, err := driver.ChunkUploadBytes(ctx, fileHash, index)
+	if err != nil {
+		return err
+	}
+
+	if current > total {
+		current = total
+	}
+
+	if total-current+size > fileMB*mebibyte {
+		return fmt.Errorf("文件大小超过限制（最大 %dMB)", fileMB)
+	}
+
+	return nil
 }
 
 func (s *UploadService) ensureChunkIntegrity(

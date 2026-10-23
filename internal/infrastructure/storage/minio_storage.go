@@ -140,12 +140,8 @@ func (m *MinIOStorage) ListUploadedChunks(ctx context.Context, fileHash string) 
 			return nil, fmt.Errorf("列出分片失败: %w", object.Err)
 		}
 
-		if !strings.HasSuffix(object.Key, ".part") { // 非 .part 文件视为无关对象
-			continue
-		}
-
-		index := strings.TrimSuffix(path.Base(object.Key), ".part")
-		if err := ValidateChunkIndex(index); err != nil {
+		index, ok := partIndexInHashDir(object.Key, fileHash)
+		if !ok {
 			continue
 		}
 
@@ -153,6 +149,39 @@ func (m *MinIOStorage) ListUploadedChunks(ctx context.Context, fileHash string) 
 	}
 
 	return chunks, nil
+}
+
+// ChunkUploadBytes 统计已落盘 .part 对象的字节数。
+func (m *MinIOStorage) ChunkUploadBytes(ctx context.Context, fileHash, index string) (int64, int64, error) {
+	if err := ValidateUploadID(fileHash); err != nil {
+		return 0, 0, err
+	}
+
+	prefix := m.chunkPrefixPath(fileHash)
+	objects := m.client.ListObjects(ctx, m.bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+
+	var total, current int64
+
+	for object := range objects {
+		if object.Err != nil {
+			return 0, 0, fmt.Errorf("统计分片大小失败: %w", object.Err)
+		}
+
+		partIndex, ok := partIndexInHashDir(object.Key, fileHash)
+		if !ok {
+			continue
+		}
+
+		total += object.Size
+		if partIndex == index {
+			current = object.Size
+		}
+	}
+
+	return total, current, nil
 }
 
 // GetCompletedFile 检查最终合并文件是否已存在，并返回可访问 URL。
@@ -559,9 +588,32 @@ func (m *MinIOStorage) chunkObjectPath(fileHash, index string) string {
 	return path.Join(m.chunkPrefix, fileHash, filename)
 }
 
-// chunkPrefixPath 返回某个 hash 的目录前缀。
+// chunkPrefixPath 返回某个 hash 的目录前缀。末尾的 / 把列举限制在该目录内。
 func (m *MinIOStorage) chunkPrefixPath(fileHash string) string {
-	return path.Join(m.chunkPrefix, fileHash)
+	prefix := path.Join(m.chunkPrefix, fileHash)
+	if !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	return prefix
+}
+
+// partIndexInHashDir 取出属于该 hash 目录的分片序号。相邻标识下的对象会被跳过。
+func partIndexInHashDir(objectKey, fileHash string) (string, bool) {
+	if fileHash == "" || !strings.HasSuffix(objectKey, ".part") {
+		return "", false
+	}
+
+	if path.Base(path.Dir(objectKey)) != fileHash {
+		return "", false
+	}
+
+	index := strings.TrimSuffix(path.Base(objectKey), ".part")
+	if err := ValidateChunkIndex(index); err != nil {
+		return "", false
+	}
+
+	return index, true
 }
 
 // videoObjectKey 返回合并后源视频的对象 key。
