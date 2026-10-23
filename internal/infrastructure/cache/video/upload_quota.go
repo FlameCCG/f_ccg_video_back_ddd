@@ -28,6 +28,8 @@ redis.call('PEXPIREAT', key, ((day + 1) * 86400 - 28800) * 1000)
 return 1
 `)
 
+// UploadQuotaStore 以 Redis 单脚本原子完成日窗口、哈希去重和名额判定。
+// 不同实例共享 Redis TIME；管理员豁免在应用层处理，这里只实现额度占用协议。
 type UploadQuotaStore struct {
 	redis *redis.Client
 }
@@ -38,6 +40,8 @@ func NewUploadQuotaStore(client *redis.Client) *UploadQuotaStore {
 	return &UploadQuotaStore{redis: client}
 }
 
+// Claim 返回 true 表示该哈希已经或刚刚占有名额，false 表示新哈希被日上限拒绝。
+// 已有哈希必须先于上限检查，否则用户耗尽额度后连上传重试也会被错误阻断。
 func (s *UploadQuotaStore) Claim(ctx context.Context, userID uint, fileHash string, limit int) (bool, error) {
 	if s == nil || s.redis == nil {
 		return false, errors.New("redis unavailable")

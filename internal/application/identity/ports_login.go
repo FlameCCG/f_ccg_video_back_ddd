@@ -154,7 +154,7 @@ type UserRoleQuery interface {
 	RoleIDByName(ctx context.Context, name string) (uint, error)
 	// HasRole 判断用户是否拥有指定角色。
 	HasRole(ctx context.Context, userID, roleID uint) (bool, error)
-	// LoadRoles 加载用户角色列表（OAuth 登录链路的可用性校验，见 report.md FIND-013）。
+	// LoadRoles 加载用户角色列表（OAuth 登录链路的可用性校验）。
 	LoadRoles(ctx context.Context, userID uint) ([]UserRoleItem, error)
 	// RoleMap 返回用户「角色 ID → 角色名」映射；无角色时返回 nil。
 	RoleMap(ctx context.Context, userID uint) (map[uint]string, error)

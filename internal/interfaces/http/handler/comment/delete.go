@@ -7,12 +7,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DeleteCommentReq is an exported API type.
+// DeleteCommentReq 指定一条待删除评论；是否有权删除还需用例校验评论者/作品作者身份。
 type DeleteCommentReq struct {
 	CommentID uint `json:"commentId" binding:"required" label:"评论ID"`
 }
 
-// DeleteView handles the corresponding HTTP request.
+// DeleteView 将当前用户与评论 ID 交给删除用例，不直接执行 SQL 级联清理。
 func (h *Handler) DeleteView(c *gin.Context) {
 	req := middlewares.GetBound[DeleteCommentReq](c)
 

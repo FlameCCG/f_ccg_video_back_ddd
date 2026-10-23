@@ -1,4 +1,10 @@
-// Package identity 是身份上下文的持久化实现：GORM 仓储与 PO↔domain 转换。
+// Package identity 实现用户、配置和身份记录的 MySQL 持久化。
+//
+// user_repo.go/user_write_repo.go 实现账号写侧，record_repo.go 保存经验、硬币、封禁和登录记录。
+// query.go/creator_query.go 等面向页面读取，converter*.go 隔离 po 与领域模型。
+// 涉及并发余额、改名或封禁时，要结合 gormx 的事务 context 和具体锁条件理解一致性。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package identity
 
 import (

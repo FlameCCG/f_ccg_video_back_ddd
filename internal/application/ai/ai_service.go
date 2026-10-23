@@ -90,6 +90,9 @@ func (s *Service) CreateResponse(ctx context.Context, req ResponsesRequest) (any
 }
 
 // OpenResponseStream 打开聊天模型流式响应.
+//
+// 返回流的消费与关闭由接口层负责，客户端断开需沿 context 传播到上游，避免留下无人读取的生成请求。
+// 本用例不直接操作 Gin Writer；HTTP/SSE 编码在接口和外部模型适配器中处理。
 func (s *Service) OpenResponseStream(
 	ctx context.Context,
 	req ResponsesRequest,

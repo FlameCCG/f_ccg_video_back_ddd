@@ -173,6 +173,9 @@ func (m *MinIOStorage) GetCompletedFile(ctx context.Context, fileHash string) (s
 }
 
 // MergeChunks 将顺序分片合并成最终文件并上传回 MinIO。
+//
+// 先探测最终对象支持重试复用；否则优先使用服务端组合，分片尺寸不满足要求时回退流式合并。
+// 成功得到最终对象后才安排分片清理；路径返回只说明上传完成，不表示数据库投稿完成。
 func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName string, totalChunks int) (string, error) {
 	if err := ValidateUploadID(fileHash); err != nil {
 		return "", err
@@ -258,6 +261,9 @@ func (m *MinIOStorage) composeChunks(
 }
 
 // streamMergeChunks 用 io.Pipe 边读边写地把分片流式合并为最终对象。
+//
+// 读端 PutObject 与写端逐片 io.Copy 通过管道背压协调，不把整个视频拼在内存。
+// 分片顺序按数字索引遍历，不能按字符串字典序拼接（例如 10 会排在 2 前）。
 func (m *MinIOStorage) streamMergeChunks(
 	ctx context.Context,
 	finalKey, fileHash, fileName string,

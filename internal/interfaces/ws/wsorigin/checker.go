@@ -1,8 +1,8 @@
-// Package wsorigin 校验浏览器 WebSocket 的 Origin 头（原 pkg/wsorigin）。
+// Package wsorigin 校验浏览器 WebSocket 握手中的 Origin。
 //
-// 原实现是包级函数 + 直读 global.Config()；新架构改为注入 *infraconfig.Provider 的
-// Checker 结构体，判定逻辑与原实现逐行一致。Origin 校验属于接口层职责，
-// 因此归入 interfaces/ws。
+// Checker 读取当前配置决定是否允许跨源升级，把浏览器来源策略留在接口层。
+// Origin 校验与身份认证分别解决来源和用户身份问题，通过 Origin 检查并不授予访问私信或弹幕的权限。
+// 具体无 Origin、同源与配置允许源的行为以 checker.go 的分支为准。
 package wsorigin
 
 import (
@@ -91,7 +91,7 @@ func (c *Checker) configuredOriginAllowed(origin *url.URL) bool {
 //
 // 形参是 any 而非具体类型：`ThirdLogin` 的 5 个字段类型各异但都只需要 Redirect 字段。
 // 注意每个分支都必须判 `item == nil`——配置里缺失某家三方登录时该字段是 typed nil 指针，
-// 装进 any 之后 `v == nil` 为 false，直接取字段会 panic（见 report.md FIND-013）。
+// 装进 any 之后 `v == nil` 为 false，直接取字段会 panic。
 func redirectOf(v any) string {
 	if v == nil {
 		return ""

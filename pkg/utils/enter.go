@@ -1,4 +1,7 @@
-// Package utils provides package functionality.
+// Package utils 提供少量跨入口的数据与分页辅助函数。
+//
+// pagination.go 规范分页边界，enter.go 保存其他无状态转换。
+// 新业务规则优先放入所属 domain/application，避免把 utils 变成绕过上下文边界的业务容器。
 package utils
 
 import (

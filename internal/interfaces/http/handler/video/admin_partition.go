@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CreatePartitionReq is an exported API type.
+// CreatePartitionReq 定义分区名称、展示、排序和启用/可投稿策略；两种开关分别表示可用与接收投稿。
 type CreatePartitionReq struct {
 	Name          string `json:"name" binding:"required,max=50"`
 	Icon          string `json:"icon" binding:"required"`
@@ -18,7 +18,7 @@ type CreatePartitionReq struct {
 	IsSubmittable bool   `json:"isSubmittable"`
 }
 
-// UpdatePartitionReq is an exported API type.
+// UpdatePartitionReq 指定分区 ID 并提供完整更新字段，非指针布尔值的零值会表达关闭。
 type UpdatePartitionReq struct {
 	ID            uint   `json:"id" binding:"required,gt=0"`
 	Name          string `json:"name" binding:"required,max=50"`
@@ -28,18 +28,18 @@ type UpdatePartitionReq struct {
 	IsSubmittable bool   `json:"isSubmittable"`
 }
 
-// PartitionListReq is an exported API type.
+// PartitionListReq 限定管理端分区查询的页码和每页条数。
 type PartitionListReq struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
 	PageSize int `form:"pageSize" binding:"omitempty,min=1,max=100"`
 }
 
-// DeletePartitionReq is an exported API type.
+// DeletePartitionReq 指定待删除分区，分区引用等业务检查由应用用例执行。
 type DeletePartitionReq struct {
 	ID uint `json:"id" binding:"required,gt=0"`
 }
 
-// CreatePartitionView handles the corresponding HTTP request.
+// CreatePartitionView 将分区字段翻译为应用创建参数，返回创建结果。
 func (h *AdminHandler) CreatePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[CreatePartitionReq](c)
 
@@ -66,7 +66,7 @@ func (h *AdminHandler) CreatePartitionView(c *gin.Context) {
 	}, c)
 }
 
-// UpdatePartitionView handles the corresponding HTTP request.
+// UpdatePartitionView 把分区 ID 和更新参数交给应用服务，接口层不直接更新数据库列。
 func (h *AdminHandler) UpdatePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[UpdatePartitionReq](c)
 
@@ -87,7 +87,7 @@ func (h *AdminHandler) UpdatePartitionView(c *gin.Context) {
 	res.OkWithMsg("更新成功", c)
 }
 
-// DeletePartitionView handles the corresponding HTTP request.
+// DeletePartitionView 调用分区删除用例并映射业务错误。
 func (h *AdminHandler) DeletePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[DeletePartitionReq](c)
 	if err := h.partition.Delete(c.Request.Context(), req.ID); err != nil {
@@ -99,7 +99,7 @@ func (h *AdminHandler) DeletePartitionView(c *gin.Context) {
 	res.OkWithMsg("删除成功", c)
 }
 
-// ListPartitionView handles the corresponding HTTP request.
+// ListPartitionView 调用分区分页查询并返回列表和总条数。
 func (h *AdminHandler) ListPartitionView(c *gin.Context) {
 	req := middlewares.GetBound[PartitionListReq](c)
 

@@ -1,4 +1,10 @@
-// Package notification 是通知上下文的应用层：用例服务、DTO 与端口。
+// Package notification 编排通知列表、已读状态与角标计数。
+//
+// notification_service.go 将通知仓储、操作者资料、私信未读数与计数缓存组合为面向页面的结果。
+// 通知实体不承载用户资料查询；资料和跨上下文计数通过消费方端口取得，写入后再处理角标缓存失效。
+//
+// 本层接收 context.Context 与命令/查询参数，不接收 gin.Context，也不选择 GORM、Redis 或 Kafka 实现。
+// provider.go 只汇总本上下文构造器；具体实现和跨上下文端口在 bootstrap 绑定。
 package notification
 
 import (

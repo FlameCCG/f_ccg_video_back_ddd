@@ -1,7 +1,11 @@
-// Package video 是视频上下文的缓存适配器：统计权威计数、详情 meta、作者 ID、
-// 收藏夹列表、分区列表、热度 ZSet、最近弹幕、定时发布任务与进程内短 TTL 缓存。
+// Package video 适配视频统计、详情元数据、上传配额与并发锁。
 //
-// 所有 Redis key 格式与 TTL 均属外部契约，与原 service/video_service 逐字一致。
+// stats_cache.go 管理计数和版本，detail_meta_cache.go 管理可失效的详情快照；两者不能混成同一份静态缓存。
+// upload_quota.go 用 Lua 做日窗口与哈希去重，upload_guard.go 用带令牌的锁协调投稿和清理。
+// 还有作者、收藏夹、分区、热榜和弹幕相关缓存/广播；定时发布时间的权威存储在 MySQL videos.publish_at。
+// 阅读缓存要同时检查 key、TTL、失效与回填条件，锁的过期和所有权也属于正确性的一部分。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package video
 
 import (
@@ -32,6 +36,9 @@ const (
 )
 
 // applyVideoStatsDeltaScript 原子更新 Redis 权威计数，并标记 dirty + 递增 version。
+//
+// 三个动作要放在同一脚本里：若先更新计数再单独登记 dirty，进程中断可能留下永远不回写的新值。
+// version 让回写器只能确认自己读到的快照，避免清掉期间新产生的 dirty；它不负责 SQL/Redis 跨系统原子性。
 var applyVideoStatsDeltaScript = redis.NewScript(`
 local statsKey = KEYS[1]
 local dirtyKey = KEYS[2]
@@ -137,7 +144,7 @@ func NewStatsCache(redisClient *redis.Client, logger *zap.Logger) *StatsCache {
 	return &StatsCache{redis: redisClient, logger: logger}
 }
 
-// Available 报告 Redis 是否可用；不可用时应用层直接写 DB。
+// Available 检查 Redis 句柄是否配置；缺省时应用层直接写 DB，实际网络故障另走错误分支。
 func (c *StatsCache) Available() bool {
 	return c != nil && c.redis != nil
 }

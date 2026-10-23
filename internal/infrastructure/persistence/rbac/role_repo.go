@@ -127,7 +127,7 @@ func (r *RoleRepository) ListBrief(ctx context.Context) ([]*domain.Role, error) 
 // UserCount 统计仍绑定该角色的用户数。
 //
 // 原实现用 Preload("Users") 把关联用户整行读出来再取 len，
-// 这里改为对关联表 COUNT，语义相同但不再随用户数放大内存与网络开销（见 report.md）。
+// 这里改为对关联表 COUNT，语义相同但不再随用户数放大内存与网络开销。
 func (r *RoleRepository) UserCount(ctx context.Context, roleID uint) (int64, error) {
 	var count int64
 	if err := gormx.DB(ctx, r.db).Model(&po.UserRole{}).

@@ -14,6 +14,9 @@ import (
 // CommentLikeSyncService 评论点赞增量落库用例（原 service/cron_service/sync_comment_like.go）。
 //
 // 批内按 (commentId,userId) 合并为最后意图，再相对 DB 行状态写一次（count ±0/±1）。
+//
+// 队列可能重放同一批，因此写侧表达“最终应已赞/未赞”，而不是盲目对计数重复加减。
+// 每个意图的关系与计数在自己的本地事务中修改，整批中途失败时已成功的意图也可能再次执行。
 type CommentLikeSyncService struct {
 	txm        tx.Manager
 	queue      CommentLikeQueue

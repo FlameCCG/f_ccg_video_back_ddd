@@ -1,4 +1,12 @@
-// Package bootstrap 是应用组合根：wire 注入器与 App 生命周期。
+// Package bootstrap 是应用组合根，集中选择具体实现并管理进程生命周期。
+//
+// 阅读顺序：wire.go 的注入器签名 → providers*.go 的构造器与绑定 → wire_gen.go 的实际调用 → app.go/runtime.go 的启停。
+// wire.NewSet 是构建依赖图的声明；wire.Bind 说明哪个具体类型满足消费方接口，二者都不在请求期间执行注入。
+// Wire 从返回类型反向查找依赖，只生成可达构造器；所以后台组件要由 RuntimeComponents 显式持有。
+// application 的 ProviderSet 只登记应用构造器，基础设施实现选择与跨上下文翻译在本包完成。
+// wire.go 仅在 wireinject 构建标签下参与生成；普通构建使用已提交的 wire_gen.go，后者应由工具生成。
+// provider 返回的 cleanup 在构造失败时回退已建资源，在成功后由入口调用；它不替代后台任务的 Stop。
+// 本包允许同时依赖各层来接线，业务层不能反向导入 bootstrap。
 package bootstrap
 
 import (
@@ -83,6 +91,9 @@ type App struct {
 }
 
 // NewApp 组装应用运行期聚合体。
+//
+// App 是进程生命周期对象，不是领域聚合根；领域聚合根维护业务不变量，App 持有运行资源。
+// 将路由与后台组件集中在这里，可以看清哪些工作必须先停、哪些连接最后关闭。
 //
 // infra 放在首位：保证 wire 先按原顺序建立全部基础设施连接，
 // 再构建仓储 / 应用服务 / HTTP 处理器。
@@ -208,6 +219,8 @@ func (a *App) Serve() error {
 func (a *App) Stop(ctx context.Context) error {
 	a.log().Info("graceful stop starting")
 
+	// 先让会继续访问数据库、缓存和消息客户端的组件退出，再回收基础设施连接。
+	// Wire cleanup 用于资源释放兜底，不能代替这个运行期顺序。
 	a.runtime.Stop(ctx)
 
 	detachedCtx, cancel := context.WithTimeout(context.Background(), ctxutil.AsyncLongTimeout)

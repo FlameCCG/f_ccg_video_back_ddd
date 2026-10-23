@@ -5,7 +5,7 @@ import (
 	"net/url"
 )
 
-// Mongo 类型.
+// Mongo 配置 Mongo URI 或分项连接参数，以及连接超时和连接池上限。
 type Mongo struct {
 	URI        string `mapstructure:"uri" json:"uri"`
 	Host       string `mapstructure:"host" json:"host"`
@@ -18,7 +18,8 @@ type Mongo struct {
 	MaxPool    uint64 `mapstructure:"maxPool" json:"maxPool"`
 }
 
-// GetURI 方法.
+// GetURI 优先返回显式 URI，否则拼接分项参数；未指定主机/端口时使用本机默认值。
+// 认证参数需按 URL 规则转义，调用方不应把返回连接串写入日志。
 func (m Mongo) GetURI() string {
 	if m.URI != "" {
 		return m.URI

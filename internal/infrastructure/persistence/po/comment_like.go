@@ -9,7 +9,7 @@ type CommentLike struct {
 	Comment   Comment `gorm:"foreignKey:CommentID" json:"comment,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 comment_likes，保持迁移与仓储 SQL 使用同一张表。
 func (CommentLike) TableName() string {
 	return "comment_likes"
 }

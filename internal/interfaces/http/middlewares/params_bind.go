@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// JsonBindParams 函数.
+// JsonBindParams 以 JSON 绑定并校验 T，成功后将值保存到 request 上下文键，失败写参数错误并 Abort。
 func JsonBindParams[T any](c *gin.Context) {
 	LimitRequestBody(c, DefaultJSONBodyLimit)
 
@@ -24,7 +24,7 @@ func JsonBindParams[T any](c *gin.Context) {
 	c.Next()
 }
 
-// BindParams 函数.
+// BindParams 由 Gin 根据请求方式与 Content-Type 选择绑定器，成功后保存 T 供处理器读取。
 func BindParams[T any](c *gin.Context) {
 	var cr T
 	if err := c.ShouldBind(&cr); err != nil {
@@ -39,7 +39,7 @@ func BindParams[T any](c *gin.Context) {
 	c.Next()
 }
 
-// BindQueryParams 函数.
+// BindQueryParams 只绑定 URL query 到 T，避免将请求体字段误当作该查询入口的参数来源。
 func BindQueryParams[T any](c *gin.Context) {
 	var cr T
 	if err := c.ShouldBindQuery(&cr); err != nil {
@@ -54,7 +54,8 @@ func BindQueryParams[T any](c *gin.Context) {
 	c.Next()
 }
 
-// GetBound 函数.
+// GetBound 取得前置绑定中间件保存的 T；键缺失或类型不同返回 T 的零值。
+// 路由与处理器须使用同一个类型，零值回退不是已完成校验的证明。
 func GetBound[T any](c *gin.Context) T {
 	val, ok := c.Get("request")
 	if !ok {

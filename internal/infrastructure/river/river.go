@@ -1,7 +1,10 @@
-// Package river 负责基于 binlog 把 MySQL 的变更抽取、转换并写入 Elasticsearch.
+// Package river 从 MySQL binlog 派生 Elasticsearch 搜索文档。
 //
-// 原实现从 global.Config() / global.DB 直接取配置与数据库句柄；此处改为构造函数注入，
-// 同步规则、位点文件路径、ES 文档结构与 canal 参数全部与原实现保持一致。
+// river.go 建立 canal 与同步规则，sync.go 转换和批量写 ES，master.go 管理位点，component.go 接入生命周期。
+// 全量覆盖与增量消费要结合位点阅读；批量请求返回成功还需检查每项写入结果。
+// 搜索是异步读模型，MySQL 提交不保证同一时刻已可检索；本链路也不同于应用侧向量同步。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package river
 
 import ( // 导入依赖

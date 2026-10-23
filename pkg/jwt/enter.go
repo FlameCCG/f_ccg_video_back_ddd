@@ -1,4 +1,7 @@
-// Package jwts provides package functionality.
+// Package jwts 签发和解析访问令牌与刷新令牌。
+//
+// 访问与刷新令牌使用不同密钥和解析入口；本包校验签名、声明与过期时间，不直接读取角色权限。
+// 本包依赖显式配置，HTTP 中间件把验证后的声明转换为请求身份；数据库封禁和路由授权仍是后续检查。
 package jwts
 
 import (
@@ -12,7 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-// JwtToken 类型.
+// JwtToken 把访问/刷新令牌及各自的 Unix 秒级过期时间作为一个登录结果返回。
 type JwtToken struct {
 	AccessToken  string `json:"accessToken"`
 	RefreshToken string `json:"refreshToken"`
@@ -58,13 +61,14 @@ func CreateJwtToken(uid, username string, exp time.Duration, secret string, refr
 	}, nil
 }
 
-// ParseJwtToken 导出符号.
+// ParseJwtToken 复用访问令牌解析逻辑，返回用户 ID 与用户名；不查询数据库或角色策略。
 func ParseJwtToken(tokenString, secret string) (uid, username string, err error) {
 	uid, username, err = ParseJwtTokenWithRole(tokenString, secret)
 	return uid, username, err
 }
 
-// ParseJwtTokenWithRole 导出符号.
+// ParseJwtTokenWithRole 验证 HMAC 签名、声明形状与过期时间后返回 uid/username。
+// 名称保留历史叫法，当前实现不返回角色；角色权限仍需经服务端 Casbin 策略判断。
 func ParseJwtTokenWithRole(tokenString, secret string) (uid, username string, err error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -108,7 +112,8 @@ func ParseJwtTokenWithRole(tokenString, secret string) (uid, username string, er
 	return uid, username, err
 }
 
-// ParseRefreshToken 导出符号.
+// ParseRefreshToken 使用调用方给定的刷新密钥验证令牌并提取 uid/exp，不要求 username 声明。
+// 访问与刷新令牌的隔离依赖应用层正确选择解析入口及各自密钥。
 func ParseRefreshToken(tokenString, secret string) (uid string, err error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {

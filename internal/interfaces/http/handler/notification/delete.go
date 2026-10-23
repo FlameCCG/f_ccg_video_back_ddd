@@ -10,12 +10,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DeleteNotificationReq is an exported API type.
+// DeleteNotificationReq 指定当前用户要删除的通知集合，系统/全员通知的删除限制由应用用例执行。
 type DeleteNotificationReq struct {
 	IDs []uint `json:"ids" binding:"required,min=1,dive,gt=0" label:"通知ID列表"`
 }
 
-// Delete handles the corresponding HTTP request.
+// Delete 把登录用户和通知 ID 集合交给删除用例，避免请求体自报接收者身份。
 func (h *Handler) Delete(c *gin.Context) {
 	req := middlewares.GetBound[DeleteNotificationReq](c)
 

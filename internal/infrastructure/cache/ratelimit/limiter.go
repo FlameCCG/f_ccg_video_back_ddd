@@ -1,4 +1,9 @@
-// Package ratelimit 提供基于 Redis 的固定窗口计数限流（原 pkg/ratelimit）。
+// Package ratelimit 适配 Redis 固定窗口限流计数器。
+//
+// limiter.go 将计数和首次过期设置放在 Lua 中，避免并发时留下无过期计数。
+// key 的维度由调用方决定，是否按 IP、账号或操作场景隔离要到相应中间件/用例检查。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package ratelimit
 
 import (
@@ -43,7 +48,7 @@ func New(redisClient *redis.Client) *Limiter {
 	return &Limiter{redis: redisClient}
 }
 
-// Allow increments a Redis counter and reports whether it is still within limit.
+// Allow 原子增加窗口计数并判断是否仍在上限内，超限尝试也会进入计数。
 // Redis 缺失或参数非法时放行（与原实现一致）。
 func (l *Limiter) Allow(ctx context.Context, key string, limit int64, window time.Duration) (bool, error) {
 	if l == nil || l.redis == nil || key == "" || limit <= 0 || window <= 0 {

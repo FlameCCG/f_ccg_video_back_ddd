@@ -1,4 +1,9 @@
-// Package danmu 是弹幕 WebSocket 端点：连接升级、房间管理、在线人数与跨实例事件广播。
+// Package danmu 管理弹幕 WebSocket 连接和实时事件分发。
+//
+// Hub 负责升级、连接登记、读写循环与关闭，ports.go 声明事件总线等外部能力。
+// 连接按视频/分P房间组织，并维护在线信息、最近弹幕与跨实例事件转发。
+// 长连接读写有独立生命周期，HTTP 请求返回不代表连接退出；Hub 需在 Redis 和底层依赖关闭前停止。
+// 实时广播与持久化事实分开，连接断开或 Pub/Sub 丢失事件后需重新查询，不能将广播当作持久队列。
 package danmu
 
 import "context"

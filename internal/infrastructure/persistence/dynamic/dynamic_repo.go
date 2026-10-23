@@ -204,7 +204,7 @@ func (r *LikeRepository) Delete(ctx context.Context, dynamicID, userID uint) (in
 // isDynamicLikeDuplicateKey 判定点赞插入是否命中唯一键冲突。
 //
 // 判定范围与原 isDynamicLikeDuplicateKey 一致：只认 MySQL 1062，
-// 不做 gorm.ErrDuplicatedKey 与错误文案匹配（见 report 中的一致性条目）。
+// 不做 gorm.ErrDuplicatedKey 与错误文案匹配。
 func isDynamicLikeDuplicateKey(err error) bool {
 	var mysqlErr *mysqlDriver.MySQLError
 	if errors.As(err, &mysqlErr) {

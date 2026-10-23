@@ -68,6 +68,9 @@ func (s *VideoStatSyncService) Run(ctx context.Context) {
 }
 
 // syncSnapshots 逐个回写快照：落库成功后才 CAS 摘除脏标记。
+//
+// 读取快照后若又有新互动，缓存版本会变化；AckVersion 只能确认自己写回的版本，不能清掉新产生的脏标记。
+// 版本确认保护待同步标记，不把 Redis 快照与 SQL 写入变成一个原子事务。
 func (s *VideoStatSyncService) syncSnapshots(ctx context.Context, snapshots []VideoStatsSnapshot) {
 	for _, snapshot := range snapshots {
 		if snapshot.VideoID == 0 || snapshot.Stats == nil {

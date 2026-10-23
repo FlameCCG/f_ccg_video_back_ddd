@@ -1,4 +1,7 @@
-// Package uploadcheck provides package functionality.
+// Package uploadcheck 在图片进入存储前校验大小和内容类型。
+//
+// image.go 读取前 512 字节探测 MIME 类型，文件扩展名或请求 Content-Type 不能独立证明文件有效。
+// 本包不写对象存储，校验后复位 reader，调用方再将同一数据流和检测类型交给上传适配器。
 package uploadcheck
 
 import (
@@ -12,7 +15,7 @@ import (
 )
 
 const (
-	// DefaultMaxImageBytes 常量.
+	// DefaultMaxImageBytes 是未指定上限时使用的 10 MiB 图片大小限制，单位为字节。
 	DefaultMaxImageBytes = 10 * 1024 * 1024
 )
 

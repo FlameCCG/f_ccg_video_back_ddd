@@ -1,7 +1,9 @@
-// Package comment 是评论上下文的缓存适配器：评论点赞集合/计数缓存与原子切换脚本。
+// Package comment 适配评论点赞集合、计数和待回写意图。
 //
-// Redis key 前缀、TTL、Lua 脚本与回写队列 key 均与原 service/comment_service/like_cache.go
-// 完全一致，属于外部契约的一部分。
+// like_cache.go 用 Lua 原子翻转单次点赞并登记队列意图；平台任务随后折叠并落库。
+// Redis 原子性只覆盖脚本内操作，不包含之后的 SQL 写回，需结合 processing 队列理解故障恢复。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package comment
 
 import (

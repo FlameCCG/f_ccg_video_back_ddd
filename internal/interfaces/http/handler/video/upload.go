@@ -17,13 +17,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// UploadChunkReq is an exported API type.
+// UploadChunkReq 标识整文件哈希和从 0 开始的分片序号，二进制内容由 multipart 的 chunk 字段传入。
 type UploadChunkReq struct {
 	FileHash string `json:"fileHash" form:"fileHash" binding:"required"` // 整个文件内容哈希（用于目录/断点续传）
 	Index    string `json:"index" form:"index" binding:"required"`       // 当前分片索引（从 0 开始）
 }
 
-// UploadChunkView handles the corresponding HTTP request.
+// UploadChunkView 打开 multipart 分片流并交给带用户额度校验的上传用例，返回前关闭上传流。
 func (h *Handler) UploadChunkView(c *gin.Context) {
 	req := middlewares.GetBound[UploadChunkReq](c)
 	uid, ok := getUID(c)
@@ -52,12 +52,12 @@ func (h *Handler) UploadChunkView(c *gin.Context) {
 	res.OkWithMsg("分片上传成功", c)
 }
 
-// ChunkStatusReq is an exported API type.
+// ChunkStatusReq 按文件哈希查询续传状态，查询已完成对象仍需应用层探测存储。
 type ChunkStatusReq struct {
 	FileHash string `form:"fileHash" binding:"required"` // 文件 hash (identifier)
 }
 
-// ChunkStatusResp is an exported API type.
+// ChunkStatusResp 同时表达秒传完成状态与已上传分片；Completed=false 时不能把空 FilePath 当成已完成源文件。
 type ChunkStatusResp struct {
 	FileHash       string   `json:"fileHash"`       // 当前文件标识，便于前端直接用于投稿
 	Completed      bool     `json:"completed"`      // 是否已完成上传，可用于秒传
@@ -94,19 +94,19 @@ func (h *Handler) ChunkStatusView(c *gin.Context) {
 	}, c)
 }
 
-// CompleteUploadReq is an exported API type.
+// CompleteUploadReq 提供合并目标的哈希、原文件名和预期分片总数，完整性核对由上传用例执行。
 type CompleteUploadReq struct {
 	FileHash    string `json:"fileHash" binding:"required"`
 	FileName    string `json:"fileName" binding:"required"`
 	TotalChunks int    `json:"totalChunks" binding:"required"`
 }
 
-// CompleteUploadResp is an exported API type.
+// CompleteUploadResp 返回合并后可用于投稿的存储路径，仍不表示稿件已写入或媒体已转码。
 type CompleteUploadResp struct {
 	FilePath string `json:"filePath"`
 }
 
-// CompleteUploadView handles the corresponding HTTP request.
+// CompleteUploadView 调用完整性检查与分片合并，认证后允许脱离客户端取消继续收尾，但保留独立上传超时。
 func (h *Handler) CompleteUploadView(c *gin.Context) {
 	req := middlewares.GetBound[CompleteUploadReq](c)
 	uid, ok := getUID(c)

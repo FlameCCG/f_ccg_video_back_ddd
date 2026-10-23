@@ -14,7 +14,7 @@ type VideoPlayHistory struct {
 	Video Video `gorm:"foreignKey:VideoID" json:"video,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 video_play_histories，保持迁移与仓储 SQL 使用同一张表。
 func (VideoPlayHistory) TableName() string {
 	return "video_play_histories"
 }

@@ -11,9 +11,14 @@ import (
 
 // InitializeApp 构造完整应用（HTTP 服务 + 后台组件 + 基础设施）。
 //
-// 生成命令（见 docs/refactor-spec.md 第 2 节）：
+// 本文件带 wireinject 标签，只供 Wire 分析；这里的 panic(wire.Build(...)) 是生成声明，
+// 不会进入正常服务的运行路径。普通构建使用 wire_gen.go 中同名的普通 Go 函数。
+// 返回的 func() 是清理已成功构造依赖的闭包，error 对应返回错误的 provider；
+// provider 自身发生 panic（如配置加载失败）时，不应假定会走普通 error 回退路径。
 //
-//	go run github.com/google/wire/cmd/wire ./internal/bootstrap
+// 生成命令（在项目根目录执行；依赖图说明见 docs/architecture.md 第 6 节）：
+//
+//	go run -mod=mod github.com/google/wire/cmd/wire ./internal/bootstrap
 func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	panic(wire.Build(AppProviderSet))
 }

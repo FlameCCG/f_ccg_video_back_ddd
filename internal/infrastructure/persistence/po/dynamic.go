@@ -14,7 +14,7 @@ type Dynamic struct {
 	User      User       `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 dynamics，保持迁移与仓储 SQL 使用同一张表。
 func (Dynamic) TableName() string {
 	return "dynamics"
 }

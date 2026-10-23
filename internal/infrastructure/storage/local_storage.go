@@ -1,7 +1,11 @@
-// Package storage 提供本地磁盘与 MinIO 对象存储驱动实现（原 service/storage_service）。
+// Package storage 实现本地磁盘与 MinIO 存储驱动。
 //
-// 驱动实现 internal/domain/media.StorageDriver 端口；
-// 站点配置由 Resolver 从 *infraconfig.Provider 读取，包内不存在包级可变状态。
+// StorageDriver 端口位于 domain/media，Resolver 按当前配置或显式存储类型选择实现。
+// local_storage.go/minio_storage.go 对齐分片、合并、探测、流式写入和删除能力；safety.go 约束路径与上传标识。
+// 数据库中的相对路径/对象 key、浏览器访问 URL 和 FFmpeg 可读源路径是不同表示，转换要经过驱动。
+// upload_garbage.go 只扫描和删除存储候选，是否仍被数据库引用及并发协调由上传清理用例决定。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package storage
 
 import (
@@ -492,6 +496,9 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 }
 
 // ResolveSource 把根相对路径解析为本地绝对路径；已是绝对路径时原样返回。
+//
+// 此入口面向仓储保存的源路径和内部绝对路径；当前实现先判断 filepath.IsAbs。
+// 在类 Unix 系统中 /uploads/... 同样会被视为绝对路径，不能仅凭浏览器 URL 形式推断一定经过存储根目录拼接。
 func (l *LocalStorage) ResolveSource(_ context.Context, storedPath string) (string, error) {
 	trimmed := strings.TrimSpace(storedPath)
 	if trimmed == "" {

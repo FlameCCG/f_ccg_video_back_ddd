@@ -11,7 +11,7 @@ import (
 // 项目的 MySQL 与部署环境均使用 Asia/Shanghai，显式固定后不再受应用节点 time.Local 影响。
 const DefaultMysqlTimezone = "Asia/Shanghai"
 
-// Mysql 类型.
+// Mysql 描述 MySQL 连接与业务时间解释方式；Timezone 也供 binlog 时间转换使用。
 type Mysql struct {
 	Username string `mapstructure:"username" json:"username"`
 	Password string `mapstructure:"password" json:"password"`
@@ -40,7 +40,8 @@ func (d Mysql) LoadLocation() (*time.Location, error) {
 	return location, nil
 }
 
-// GetDSN 方法.
+// GetDSN 构造启用 parseTime 的 MySQL DSN，并显式设置时间解析的 loc。
+// loc 决定驱动如何解释时间，不等于修改 MySQL 服务端的 session time_zone。
 func (d Mysql) GetDSN() string {
 	// 参数插值把 prepare/execute/close 合并为一次往返；utf8mb4 不属于驱动禁止的危险字符集。
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=%s&allowNativePasswords=true&interpolateParams=true&timeout=3s",

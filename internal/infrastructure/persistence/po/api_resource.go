@@ -11,7 +11,7 @@ type ApiResource struct {
 	Tags    datatypes.JSON `gorm:"type:json;comment:标签" json:"tags"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 api_resources，保持迁移与仓储 SQL 使用同一张表。
 func (ApiResource) TableName() string {
 	return "api_resources"
 }

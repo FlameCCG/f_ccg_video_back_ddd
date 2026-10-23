@@ -80,6 +80,9 @@ type roleNodeInfo struct {
 
 // BuildRoleInheritTree 依据角色清单与 Casbin g 分组策略构建角色继承树。
 //
+// 角色关系本质上可有多个父节点；这里生成的是面向展示的树形投影，同一角色可能出现在多个分支。
+// path 只检测当前递归路径的环，visited 用来补齐全局不可达角色，两者不能互相替代。
+//
 // 语义与原 api/rbac_api/role_inherit_tree.go 的 buildRoleInheritTree 完全一致：
 //   - 跳过残缺策略行、user: 前缀主体与不在角色表中的名字；
 //   - 同一父节点的子节点按名称排序，根节点集合按名称排序；

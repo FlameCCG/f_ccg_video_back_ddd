@@ -1,5 +1,9 @@
-// Package contentops 是内容运营上下文的持久化实现：
-// 轮播图 GORM 仓储、跨上下文读侧投影（分区存在性、站点统计）与配置文件写回。
+// Package contentops 实现轮播图仓储、站点统计投影和配置文件写回。
+//
+// banner_repo.go/converter.go 负责轮播图持久化，query.go 读取运营所需的跨表事实。
+// config_file_writer.go 写回 YAML 文件，它不与内存配置发布共享数据库事务。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package contentops
 
 import (

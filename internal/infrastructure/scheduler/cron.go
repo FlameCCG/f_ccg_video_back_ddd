@@ -1,7 +1,10 @@
-// Package scheduler 提供 cron 定时任务调度组件与其数据适配器（原 service/cron_service）。
+// Package scheduler 将 cron 触发器接到平台维护和上传清理用例。
 //
-// 原实现是包级单例（cron_service.Cron / cron_service.Stop），
-// 新架构改为可注入组件 CronComponent，由 bootstrap 创建唯一实例并纳入 App 生命周期。
+// cron.go/jobs.go 负责调度生命周期与触发；其余文件适配点赞队列、视频统计、热榜和到期封禁的数据访问。
+// 业务计算留在 application/platform 与 domain/platform，上传清理经 UploadCleanupJob 端口调用 video 用例。
+// Redis 到数据库的回写跨越两个系统，消费确认与版本比较决定失败后的恢复行为，不能按数据库事务理解整个任务。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package scheduler
 
 import (

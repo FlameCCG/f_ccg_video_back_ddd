@@ -21,7 +21,7 @@ type DynamicRead struct {
 	User   User `gorm:"foreignKey:UserID" json:"user,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 dynamic_reads，保持迁移与仓储 SQL 使用同一张表。
 func (DynamicRead) TableName() string {
 	return "dynamic_reads"
 }

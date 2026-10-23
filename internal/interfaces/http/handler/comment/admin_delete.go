@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminDeleteCommentReq is an exported API type.
+// AdminDeleteCommentReq 携带管理端批量删除的评论 ID；是否允许管理操作由路由鉴权链保证。
 type AdminDeleteCommentReq struct {
 	CommentIDs []uint `json:"commentIds" binding:"required,min=1,dive,gt=0"`
 }

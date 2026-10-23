@@ -1,4 +1,9 @@
-// Package chat 是私信上下文的缓存/消息适配器：跨实例 WebSocket 事件广播。
+// Package chat 适配私信跨实例事件总线。
+//
+// event_bus.go 使用 Redis Pub/Sub 将用户事件传到持有 WebSocket 连接的实例。
+// Pub/Sub 不保存离线事件；消息历史和未读事实仍由持久化查询提供。
+//
+// 本包实现所属上下文声明的端口，序列化和 Redis 命令留在外层；改变 key 需考虑已存在的数据。
 package chat
 
 import (

@@ -1,4 +1,10 @@
-// Package mysql 提供 GORM MySQL 连接池的构建与关闭（原 core/init_db.go）。
+// Package mysql 构造和关闭 MySQL/GORM 连接池。
+//
+// mysql.go 读取连接、时区、日志和池参数并暴露供仓储使用的 GORM 句柄。
+// 连接构造失败会通过 zap.Panic 中断，不能当作普通 Wire error 返回；成功后由 cleanup 或 Infrastructure.Stop 关闭。
+// 业务事务另由 gormx 管理。
+//
+// provider.go 只导出构造器与窄化访问能力，不应在业务用例中再次创建全局连接。
 package mysql
 
 import (

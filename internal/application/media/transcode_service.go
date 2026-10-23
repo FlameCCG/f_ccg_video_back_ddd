@@ -128,6 +128,9 @@ func (s *TranscodeService) policy() *domain.TranscodePolicy {
 
 // ProcessTask 执行一次完整转码任务（原 processMessage）。
 //
+// 一个任务跨数据库、Redis、对象存储和本地检查点，不能以一个数据库事务包住整条管线。
+// 分阶段探测任务有效性并在重试时核对产物，让已完成单元有机会复用；这不等于恰好执行一次。
+//
 // ctx 需已携带进度跟踪器与取消登记（由消费者组件准备）；
 // 返回的错误语义与原实现一致：*domain.PermanentMessageError 表示投 DLQ，
 // domain.ErrVideoDeleted 表示任务作废（可提交 offset），其余为可重试失败。

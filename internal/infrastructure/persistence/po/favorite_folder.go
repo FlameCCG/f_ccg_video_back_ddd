@@ -9,7 +9,7 @@ type FavoriteFolder struct {
 	Videos    []*Video `gorm:"many2many:favorite_folder_videos" json:"videos,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 favorite_folders，保持迁移与仓储 SQL 使用同一张表。
 func (FavoriteFolder) TableName() string {
 	return "favorite_folders"
 }

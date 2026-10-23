@@ -9,7 +9,7 @@ type FavoriteFolderVideo struct {
 	CreatedAt        time.Time `gorm:"index" json:"-"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 favorite_folder_videos，保持迁移与仓储 SQL 使用同一张表。
 func (FavoriteFolderVideo) TableName() string {
 	return "favorite_folder_videos"
 }

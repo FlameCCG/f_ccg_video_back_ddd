@@ -1,6 +1,10 @@
-// Package provisioning 是运维初始化用例（原 flags 包中的 -su / -br 任务）。
+// Package provisioning 编排超级管理员和默认横幅的一次性初始化。
 //
-// 这些用例只在 CLI 一次性任务中执行，不参与 HTTP 请求链路。
+// superuser_service.go 与 banner_service.go 只在 CLI 任务中调用；-db 等任务的选择和依赖范围在 bootstrap/providers_cli.go。
+// 初始化可能涉及数据库、角色绑定和存储等多个步骤；重复执行与中途失败的行为应按每个端口实现判断。
+//
+// 本层接收 context.Context 与命令/查询参数，不接收 gin.Context，也不选择 GORM、Redis 或 Kafka 实现。
+// provider.go 只汇总本上下文构造器；具体实现和跨上下文端口在 bootstrap 绑定。
 package provisioning
 
 import (
@@ -9,6 +13,9 @@ import (
 
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
+
+// 端口阅读：一次性建号和横幅初始化经最小存取能力执行，CLI 任务本身不直接依赖数据库句柄。
+// 角色引擎和对象存储具有独立失败点，重复执行规则应查看服务与适配器的实际约定。
 
 // SuperUserRepository 超级管理员初始化所需的持久化端口。
 type SuperUserRepository interface {

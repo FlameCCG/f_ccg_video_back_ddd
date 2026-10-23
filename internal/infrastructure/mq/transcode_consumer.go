@@ -131,6 +131,9 @@ func (tc *TranscodeConsumer) Stop() error {
 }
 
 // handleMessage 处理一条 Kafka 消息：登记取消上下文 → 抢 worker → 跑转码 → 决定是否提交 offset。
+//
+// workerPool 是本实例并发上限，不是集群全局限流；Kafka 分区与同步 claim 处理也影响实际并行度。
+// 先登记取消再等待名额，使排队任务也能响应删除；所有返回路径均需释放 worker 与取消登记。
 func (tc *TranscodeConsumer) handleMessage(session sarama.ConsumerGroupSession, msg *sarama.ConsumerMessage) error {
 	key := taskIdentityFromMessage(msg.Value)
 
@@ -179,6 +182,9 @@ func (tc *TranscodeConsumer) processMessage(ctx context.Context, payloadBytes []
 }
 
 // finishMessage 依据处理结果决定是否提交 offset（原 finishMessage）。
+//
+// 成功与已删除任务可以标记消息；永久错误交给外层死信流程，普通失败保留重试机会。
+// 这里的 MarkMessage 是可提交标记，提交时机由 consumer group 管理；任务实现仍需容忍重投。
 func (tc *TranscodeConsumer) finishMessage(
 	session sarama.ConsumerGroupSession,
 	msg *sarama.ConsumerMessage,

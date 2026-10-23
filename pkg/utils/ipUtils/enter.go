@@ -1,4 +1,7 @@
-// Package ipUtils provides package functionality.
+// Package ipUtils 组合 IP 识别、地址分类和地区查询。
+//
+// 本地/公网地址探测与请求 IP 归属地是不同用途，涉及外部查询的函数要检查超时和回退。
+// RegionResolver 通过端口注入，避免每次调用都构造 ip2region 资源；代理来源可信度由 HTTP 层配置负责。
 package ipUtils
 
 import (
@@ -14,7 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// GetLocalIPv4 导出符号.
+// GetLocalIPv4 枚举本机网卡并返回首个非回环 IPv4；不保证它就是服务对外可达的地址。
 func GetLocalIPv4() (string, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -32,7 +35,7 @@ func GetLocalIPv4() (string, error) {
 	return "", errors.New("no ipv4 found")
 }
 
-// HasLocalIPAddr 导出符号.
+// HasLocalIPAddr 解析文本 IP 后按回环、私网、链路本地或未指定地址规则判断。
 func HasLocalIPAddr(ip string) bool {
 	return HasLocalIP(net.ParseIP(ip))
 }
@@ -63,7 +66,7 @@ func HasLocalIP(ip net.IP) bool {
 		(ip4[0] == 192 && ip4[1] == 168) // 192.168.0.0/16
 }
 
-// GetPublicIP 导出符号.
+// GetPublicIP 向外部 IP 服务查询本机出网地址，使用独立短超时；它不是当前请求客户端的 IP。
 func GetPublicIP() (string, error) {
 	client := &http.Client{Timeout: ctxutil.ExternalShortTimeout}
 
@@ -98,7 +101,7 @@ type RegionResolver interface {
 	Region(ip string) string
 }
 
-// GetIPAndAddr 导出符号.
+// GetIPAndAddr 兼容旧调用入口，现直接解析请求客户端 IP 并用注入的归属地查询器获取地区。
 func GetIPAndAddr(c *gin.Context, resolver RegionResolver) (ip, addr string) {
 	// 保持兼容旧调用方，但实际记录客户端 IP，避免请求外部服务导致接口阻塞。
 	return GetClientIPAndAddr(c, resolver)

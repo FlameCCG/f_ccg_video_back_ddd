@@ -1,7 +1,12 @@
-// Package video 是视频上下文的领域层：视频/弹幕/收藏夹/分区/举报实体、
-// 视频状态机、互动（点赞/投币/收藏/三连）规则、热度分算法、DASH MPD 解析与仓储接口。
+// Package video 表达视频、分P、弹幕、收藏夹、互动和发布规则。
 //
-// 本包为纯 Go：不依赖 gin / gorm / redis / sarama / minio / viper / zap 等任何框架。
+// 从 video.go 与 revision.go 阅读实体行为，再读 status_resolve.go 理解私密、待审与定时发布的组合。
+// repository.go 声明写侧契约；页面详情、列表和管理端组合字段定义在 application/video。
+// resource.go/upload.go 描述源文件与资源规则，dash_mpd.go 解析协议数据而不发送网络请求。
+// 定时意图、审核状态和转码进度是不同维度，不能用一个“已发布”状态推断媒体产物已就绪。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package video
 
 import "errors"

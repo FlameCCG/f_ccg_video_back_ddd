@@ -236,7 +236,7 @@ func (c *ClickCaptcha) padding(scenes ...string) int {
 // buildClickTargets 把生成器返回的目标 map 转成按索引排序的稳定切片。
 //
 // 原实现在此处有一行 fmt.Println(targets) 会把验证码答案打到标准输出，
-// 属安全隐患，已删除（见 report.md FIND-010【行为变更】）。
+// 属安全隐患，已删除。
 func buildClickTargets(raw map[int]*click.Dot) []clickCaptchaTarget {
 	targets := make([]clickCaptchaTarget, 0, len(raw)) // 预分配容量
 	for idx, dot := range raw {                        // 遍历所有目标

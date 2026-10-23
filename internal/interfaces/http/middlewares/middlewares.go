@@ -1,7 +1,10 @@
-// Package middlewares 提供 gin 中间件（原 pkg/middlewares）。
+// Package middlewares 实现 HTTP 请求进入用例前的通用协议与身份处理。
 //
-// 原实现全部为包级函数并直读 global.*；新架构把有依赖的中间件收敛为
-// *Middlewares 的方法，依赖由 wire 注入；无状态的泛型绑定与工具函数仍为包级函数。
+// Middlewares 的依赖由组合根注入；鉴权、封禁、投稿开关、验证码、限流和超时围绕 Gin 请求执行。
+// 中间件顺序会影响可用的身份字段与失败响应，例如读取 UID 前需要先建立可信认证上下文。
+// params_bind.go 处理参数绑定，uid.go 集中提取用户 ID，业务层只接收普通值与 context.Context。
+// JWT 证明令牌通过验证，Casbin 决定当前路由权限，领域仍校验作者身份和资源状态。
+// RequestTimeout 传播取消信号，耗时外部调用还需实际使用 context；它不等同于强制终止任意 Go 代码。
 package middlewares
 
 import (

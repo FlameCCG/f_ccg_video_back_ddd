@@ -40,10 +40,10 @@
 上传源文件完成
     → 提交投稿请求
     → 校验分区、源文件、额度，确定稿件状态
-    → MySQL 提交稿件及关联数据
+    → MySQL 提交稿件、关联数据及定时计划
     → 调用 tasks.Go 安排后台工作，之后不等待后台完成
        ├─ 同步路径：返回稿件 ID 和状态 → Handler 返回 HTTP 响应
-       └─ 后台路径：尝试安排定时发布、投递转码等任务
+       └─ 后台路径：同步向量、投递转码等任务
                     → 消费者生成产物、补充资源信息
                     → 详情/搜索按各自规则与数据链路展示结果
 ```
@@ -171,7 +171,7 @@ video 的数据变化 → 关键词/向量等派生链路 → search 查询
 | `chat` / `notification` | 私信会话与消息、站内通知 | 同名的 `internal/application/<ctx>` |
 | `contentops` / `ai` / `platform` | 站点运营、AI 能力、后台维护用例 | 同名的 `internal/application/<ctx>` |
 
-“投稿”主要由 `video` 负责，但源文件存储能力来自 `media`，转码投递也需要 `media`；搜索索引和定时任务随后更新自己的投影。**跨上下文协作是正常的，关键是别让一个上下文直接偷用另一个上下文的内部结构。** 具体接线可看[跨上下文 ProviderSet](../internal/bootstrap/providers_cross_context.go)。
+“投稿”主要由 `video` 负责，但源文件存储能力来自 `media`，转码投递也需要 `media`；搜索索引随后异步更新，定时发布意图则随稿件保存在同库视频行。**跨上下文协作是正常的，关键是别让一个上下文直接偷用另一个上下文的内部结构。** 具体接线可看[跨上下文 ProviderSet](../internal/bootstrap/providers_cross_context.go)。
 
 边界按**谁定义语义和规则**划分，不是按“谁碰了这张表”划分。`videos`、`video_resources` 在业务上属于视频上下文；为了保持既有转码行为，[media 的资源仓储端口](../internal/domain/media/ports.go)仍会经 media 侧持久化适配器读写这些表。不要据此推断 media 拥有“稿件审核规则”，也不要因为两个包共用 MySQL 就宣布它们是同一个上下文。读这类交叉位置时，先问“为什么需要这项能力”，再找端口与适配器。
 
@@ -298,9 +298,9 @@ sequenceDiagram
 1. **路由决定入口策略。** `POST /v1/common/video/publish` 经过请求超时、JWT、投稿开关、封禁检查和 JSON 绑定，再进入 Handler。这里的校验有协议层含义，例如 `binding:"required"`；后台权限、投稿暂停也在这一层拦截。见[路由](../internal/interfaces/http/router/video_router.go)。
 2. **Handler 翻译协议。** `PublishVideoView` 从 `gin.Context` 取 uid/username，把 JSON 请求转成 `PublishVideoCommand`，调用应用服务，再把结果转成响应。`gin.Context` 没传进应用层。见[Handler](../internal/interfaces/http/handler/video/publish.go)。
 3. **应用层编排业务步骤。** `PublishService` 根据请求时间、私密标志和内容审核配置调用 `ResolvePublishVideoStatus`；检查分 P 数量；对每个上传哈希取得锁，确认源对象存在、占用上传额度。这里的“按什么顺序做”是用例职责。见[投稿服务](../internal/application/video/publish_service.go)和[上传服务](../internal/application/video/upload_service.go)。
-4. **领域层给出规则与数据形状。** `Partition.EnsureSubmittable()` 判断分区是否启用并允许投稿；`BuildInitialResourceDraft()` 描述源片初始资源；`PublishDraft` 表示这次投稿要一起写入的主体、标签、分 P 和资源。见[分区实体](../internal/domain/video/partition.go)、[投稿草稿](../internal/domain/video/part.go)。
-5. **仓储实现 MySQL 事务。** `VideoRepository.Persist` 用 GORM `Transaction` 写 `videos`、标签关联、分 P 与初始资源；失败则回滚这些数据库写入，成功后回填视频/分 P ID。它实现的是领域接口中的 `Persist`，不是应用层直接 `gorm.Create`。见[接口](../internal/domain/video/repository.go)与[实现](../internal/infrastructure/persistence/video/publish_repo.go)。
-6. **同步阶段结束，异步阶段开始。** MySQL 成功后，`DetachedTaskGroup` 执行向量同步、定时发布安排和 Kafka 投递；Kafka 投递成功后尽力写 `queued` 进度。失败只记录日志，不会回滚已经提交的稿件。见[投稿服务](../internal/application/video/publish_service.go)与[media 投递服务](../internal/application/media/dispatch_service.go)。
+4. **领域层给出规则与数据形状。** `Partition.EnsureSubmittable()` 判断分区是否启用并允许投稿；`BuildInitialResourceDraft()` 描述源片初始资源；`PublishDraft` 表示这次投稿要一起写入的主体、发布时间、标签、分 P 和资源。见[分区实体](../internal/domain/video/partition.go)、[投稿草稿](../internal/domain/video/part.go)。
+5. **仓储实现 MySQL 事务。** `VideoRepository.Persist` 用 GORM `Transaction` 写包含发布时间的 `videos`、标签关联、分 P 与初始资源；失败则回滚这些数据库写入，成功后回填视频/分 P ID。它实现的是领域接口中的 `Persist`，不是应用层直接 `gorm.Create`。见[接口](../internal/domain/video/repository.go)与[实现](../internal/infrastructure/persistence/video/publish_repo.go)。
+6. **同步阶段结束，异步阶段开始。** MySQL 成功后，`DetachedTaskGroup` 执行向量同步和 Kafka 投递；定时计划已在投稿事务内保存；Kafka 投递成功后尽力写 `queued` 进度。失败只记录日志，不会回滚已经提交的稿件。见[投稿服务](../internal/application/video/publish_service.go)与[media 投递服务](../internal/application/media/dispatch_service.go)。
 
 这条链路最重要的四种结论要分开说：**稿件已保存、转码已入队、产物已落库/可访问、公众可见**。它们不是一个状态。源资源行已在投稿事务中写入；消费者后来会用 ffprobe 补全媒体信息，再增加转码产物。详情和审核状态也要分别判断。
 
@@ -321,9 +321,9 @@ sequenceDiagram
 
 1. 用例确定 20:00 是未来时间，把审核开关作为入参交给领域函数。
 2. 初始状态得到 `Review`，不是 `Scheduled`，也不是 `Published`。
-3. 本次稿件及关联数据通过 MySQL 事务保存。用户得到 ID 和待审状态。
-4. 异步阶段仍会尝试写定时任务和投递转码；成功保存不证明这两步均成功。
-5. 若到了 20:00 仍是 `Review` 且审核开关仍开启，调度判定保留待审、移除到期调度任务，**不会自动公开**。
+3. 本次稿件、20:00 的 `publish_at`、定时标记及关联数据通过 MySQL 事务保存。用户得到 ID 和待审状态。
+4. 异步阶段同步向量并投递转码；成功保存不证明 Kafka 投递也已成功。定时意图不依赖这一步。
+5. 若到了 20:00 仍是 `Review` 且审核开关仍开启，保留待审和原计划时间，**不会自动公开**；审核通过时再按计划时间决定立即或定时发布。
 
 因此，“到点了”“转码完成了”“Kafka 消费成功了”都不是审核通过的替代条件。若要分析人工审核后怎样处理已过期或未来的发布时间，还应继续追[管理端用例](../internal/application/video/admin_video_service.go)，不能从本例自行推定。
 
@@ -378,11 +378,11 @@ sequenceDiagram
 | 到期时状态 | 此时审核开关 | `ResolveScheduledPublishOutcome` 结论 | 调度器动作 |
 |---|---|---|---|
 | `Scheduled` | 开或关 | `ScheduledPublishFromScheduled` | 尝试条件更新为 `Published` |
-| `Review` | 开 | `ScheduledPublishKeepReview` | 保持待审，移除到期调度项 |
+| `Review` | 开 | `ScheduledPublishKeepReview` | 保持待审和原计划时间；正常扫描不选待审稿 |
 | `Review` | 关 | `ScheduledPublishFromReview` | 兼容历史数据，尝试条件更新为 `Published` |
-| 其他状态 | 开或关 | `ScheduledPublishDrop` | 清理过期调度项，不公开 |
+| 其他状态 | 开或关 | `ScheduledPublishDrop` | 已发布稿保留计划历史，其他不适用状态可清空计划，不再公开 |
 
-读第二张表时注意：当前代码对 `Scheduled` 直接尝试发布，不会因为后来开启审核就统一改为待审。这是已实现的规则，不能用你想象的产品要求替换它。条件更新的瞬时错误会保留任务重试；并发改变状态导致零行更新时会丢弃调度项，详见[调度器](../internal/application/video/scheduler.go)。
+读第二张表时注意：当前代码对 `Scheduled` 直接尝试发布，不会因为后来开启审核就统一改为待审。这是已实现的规则，不能用你想象的产品要求替换它。调度器先取得视频行锁，重读当前状态和时间；条件更新失败返回错误，不会无条件清掉计划；成功发布后保留计划历史，已发布状态不再进入到期扫描，详见[调度器](../internal/application/video/scheduler.go)。
 
 **动手推三次：** 私密 + 未来 + 审核关应为 `Private`；公开 + 未来 + 审核开应为 `Review` 且需要调度；`Review` 到期 + 审核开仍是待审。能不看表推出来，就掌握了这条业务规则。
 
@@ -898,7 +898,7 @@ HTTP 入口与身份：
 
 ### 17.8 “定时稿到点会不会绕过审核？”
 
-**短答案：** 初次未来公开且审核开时进入 `Review`，仍尝试建立调度；到期若仍待审且审核仍开，保持待审并移除调度项，不自动公开。`Scheduled` 到期则尝试条件更新，不能把它和待审状态混为一谈。
+**短答案：** 初次未来公开且审核开时进入 `Review`，计划时间随稿件同事务保存；到期仍待审且审核仍开时保留待审与计划，不自动公开。`Scheduled` 到期则尝试条件更新，不能把它和待审状态混为一谈。
 
 **追问“为什么还要条件更新？”：** 读到状态后可能有管理员并发修改。`UpdateStatusFrom` 在提交时要求当前状态仍等于预期，避免用旧快照覆盖新的状态。
 
@@ -970,7 +970,7 @@ HTTP 入口与身份：
 
 先查第 6 节真值表：当前 `Scheduled` 到期会尝试公开，审核开关不会自动把它改成 `Review`。新需求改变的是状态政策，不是简单修改一处配置读取。
 
-需要确定开关变更时是否批量迁移状态、既有人工审核是否失效、正在执行的调度怎样避免竞态、已有 ZSet 任务如何处理，并检查管理端审核、用户改稿和缓存/索引失效路径。验证历史 `Scheduled`、新投稿、管理员并发批准、到期临界点及重复开关。先写清产品规则，再选择状态函数、管理用例和条件更新的改法。
+需要确定开关变更时是否批量迁移状态、既有人工审核是否失效、正在执行的调度怎样避免竞态、数据库中既有 `publish_at` 计划如何处理，并检查管理端审核、用户改稿和缓存/索引失效路径。验证历史 `Scheduled`、新投稿、管理员并发批准、到期临界点及重复开关。先写清产品规则，再选择状态函数、管理用例和条件更新的改法。
 
 </details>
 

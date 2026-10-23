@@ -34,6 +34,9 @@ func (m *Middlewares) JwtAuthWithQueryToken(queryKey string) gin.HandlerFunc {
 }
 
 // JwtAuthWithQueryTokenPreflight 仅在升级/流式请求的前置校验阶段使用短超时，校验后恢复原请求上下文。
+//
+// 认证查询可以有短预算，但将其直接沿用到 WebSocket/SSE 会使长连接在短时间后被取消。
+// 恢复原 context 后，长连接仍需响应客户端断开和其自身生命周期取消。
 func (m *Middlewares) JwtAuthWithQueryTokenPreflight(queryKey string, timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := strings.TrimSpace(c.Query(queryKey))

@@ -7,6 +7,9 @@ import (
 )
 
 // Revision 是作者改稿的业务意图；nil 字段保留原值，不包含数据库列名。
+//
+// 例如 IsPrivate == nil 表示不提出可见性变更，指向 false 则明确提出公开意图。
+// 它只携带领域需要的修改，不包含缓存失效、标签查询、数据库事务或接口响应规则。
 type Revision struct {
 	Title       *string
 	Description *string

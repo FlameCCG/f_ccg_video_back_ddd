@@ -1,7 +1,11 @@
-// Package mq 提供 Kafka 驱动、消息契约与转码消费能力（原 pkg/mq + service/mq_service）。
+// Package mq 实现 Kafka 传输和 FFmpeg 转码执行适配器。
 //
-// 包内不存在包级可变状态：生产者缓存、worker 计数、GPU 冷却等原包级变量
-// 全部改为结构体字段并由构造函数注入。
+// 先读 payload.go 与 kafka_driver.go 的消息契约，再读 kafka_consumer.go 的确认、重试和死信分支。
+// transcode_consumer*.go 将消息接到 media 用例并限制任务并发，transcode_engine.go 等文件负责进程与产物。
+// 领域计划描述要做什么，本包决定如何执行命令、记录检查点、上传并验证 DASH。
+// 消息标记、实际提交 offset 与业务成功是不同阶段，进程中断或 rebalance 仍可能重投，恢复机制需容忍重复执行。
+//
+// 具体对象由 bootstrap 构造并通过端口交给内层，技术实现不应反过来要求业务层导入本包。
 package mq
 
 import (

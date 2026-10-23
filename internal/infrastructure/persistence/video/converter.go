@@ -1,4 +1,11 @@
-// Package video 是视频上下文的持久化实现：GORM 仓储、读侧查询与 PO↔domain 转换。
+// Package video 实现视频写仓储、发布计划和页面查询投影。
+//
+// publish_repo.go 在单个 MySQL 事务中保存稿件、标签、分P、初始资源及发布时刻。
+// video_repo.go/schedule_store.go 经 gormx 复用事务与行锁，避免改稿、审核和到期发布互相覆盖。
+// *_query.go 直接构建应用读模型，converter.go 隔离 po 与领域实体；查询不必先重建整个写侧聚合。
+// hard_delete_repo.go 返回待删对象，数据库提交不代表对象存储已清理；共享引用还需再次确认。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package video
 
 import (

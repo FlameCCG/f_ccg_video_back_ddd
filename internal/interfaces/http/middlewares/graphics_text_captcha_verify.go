@@ -11,13 +11,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// CaptchaMiddlewareRequest 类型.
+// CaptchaMiddlewareRequest 是图形验证码中间件读取的局部载荷，不包含后续登录/注册请求的全部字段。
 type CaptchaMiddlewareRequest struct {
 	CaptchaID   string `form:"captchaID" json:"captchaID"`
 	CaptchaCode string `form:"captchaCode" json:"captchaCode"`
 }
 
-// GraphicsTextCaptchaMiddleware 函数.
+// GraphicsTextCaptchaMiddleware 按图形验证码开关校验当前请求，读取请求体后复位以供后续参数绑定继续使用。
 func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !m.captcha.GraphicCaptchaEnabled() {

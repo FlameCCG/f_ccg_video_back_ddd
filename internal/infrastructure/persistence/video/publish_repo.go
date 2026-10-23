@@ -12,6 +12,9 @@ import (
 
 // Persist 在单事务内落库一次投稿（视频 + 标签 + 分P + 初始资源）。
 //
+// publish_at 与 is_scheduled 也写入视频行，避免出现稿件已提交但发布时间尚未保存的窗口。
+// 此事务覆盖本库写入，既不回滚已上传的源对象，也不替提交后 Kafka 投递提供可靠消息保证。
+//
 // 事务内的错误文案与原 api/video_api/publish.go 的 persistVideo 逐字一致；
 // 源文件名超长等 DB 错误经 domain.MapSourceFileNameDBError 转为可读业务文案。
 func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraft) error {
@@ -86,6 +89,8 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 		return err
 	}
 
+	// 只有数据库事务成功后才向投稿结果回填视频主键与时间。
+	// 分P ID 在事务中回填用于后续派发；调用方必须先检查 Persist 的错误再使用这些结果。
 	draft.Video.ID = row.ID
 	draft.Video.CreatedAt = row.CreatedAt
 	draft.Video.UpdatedAt = row.UpdatedAt

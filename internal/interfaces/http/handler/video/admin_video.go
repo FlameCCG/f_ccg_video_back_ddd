@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// AdminVideoDetailReq is an exported API type.
+// AdminVideoDetailReq 指定管理端详情目标；管理查询可查看非公开稿，不能复用为公开详情入口。
 type AdminVideoDetailReq struct {
 	VideoID uint `form:"videoId" binding:"required,gt=0"`
 }
@@ -34,7 +34,7 @@ func (h *AdminHandler) AdminDetailView(c *gin.Context) {
 	res.OkWithData(detail, c)
 }
 
-// AdminVideoListReq is an exported API type.
+// AdminVideoListReq 组织管理端筛选与排序；IsScheduled 为 nil 表示不按定时标记过滤，指向 false 表示只查非定时。
 type AdminVideoListReq struct {
 	IsScheduled *bool  `form:"isScheduled"`
 	UserID      uint   `form:"userId" binding:"omitempty,gt=0"`
@@ -69,7 +69,7 @@ func (h *AdminHandler) AdminListView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// AdminVideoReviewReq is an exported API type.
+// AdminVideoReviewReq 表达批量审核的视频集合与目标状态，领域规则限制允许的审核结果。
 type AdminVideoReviewReq struct {
 	VideoIDs []uint `json:"videoIds" binding:"required,min=1,dive,gt=0"`
 	Status   int    `json:"status" binding:"required,oneof=1 2 3"`
@@ -92,7 +92,7 @@ func (h *AdminHandler) AdminReviewView(c *gin.Context) {
 	res.OkWithData(map[string]int64{"updated": affected}, c)
 }
 
-// AdminRestoreVideoReq is an exported API type.
+// AdminRestoreVideoReq 表达管理端恢复已删除稿件的目标集合，与作者改稿权限分开。
 type AdminRestoreVideoReq struct {
 	VideoIDs []uint `json:"videoIds" binding:"required,min=1,dive,gt=0"`
 }
@@ -111,7 +111,7 @@ func (h *AdminHandler) AdminRestoreVideoView(c *gin.Context) {
 	res.OkWithData(gin.H{"restored": affected}, c)
 }
 
-// AdminDeleteVideoReq is an exported API type.
+// AdminDeleteVideoReq 表达批量删除意图；HardDelete 区分状态删除与物理清理，存储清理还需核对共享引用。
 type AdminDeleteVideoReq struct {
 	VideoIDs   []uint `json:"videoIds" binding:"required,min=1,dive,gt=0"`
 	HardDelete bool   `json:"hardDelete"`

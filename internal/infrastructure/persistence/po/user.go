@@ -9,6 +9,9 @@ import (
 )
 
 // User 用户.
+//
+// Videos 通过用户名关联而非用户 ID；改名不仅修改 users，还需由账号用例协调作品作者和相关缓存/索引。
+// BeforeCreate/BeforeSave 处理落库细节，业务凭据、封禁和额度规则仍属于领域与应用层。
 type User struct {
 	Model
 	Username    string     `gorm:"size:50;not null;uniqueIndex;comment:用户名" json:"username"`
@@ -39,7 +42,7 @@ type User struct {
 	Folders        []FavoriteFolder `gorm:"foreignKey:UserID" json:"folders,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 users，保持迁移与仓储 SQL 使用同一张表。
 func (User) TableName() string {
 	return "users"
 }
@@ -65,7 +68,6 @@ func (u *User) normalizeOpenIDColumn(tx *gorm.DB) error {
 	// 原实现无条件调用 SetColumn，而 SetColumn 对 map 目标是直接写入 Dest，
 	// 于是任何与 open_id 无关的部分更新（如硬币变动 Update("coin_count", x)）
 	// 都会额外拼上 open_id = NULL，静默清空 OAuth 用户的第三方绑定。
-	// 见 report.md FIND-005【行为变更】。
 	if dest, ok := tx.Statement.Dest.(map[string]any); ok {
 		raw, exists := dest["open_id"]
 		if !exists {

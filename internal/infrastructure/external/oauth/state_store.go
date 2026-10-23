@@ -19,6 +19,9 @@ type stateEntry struct {
 
 // StateStore 一次性 OAuth state 存储：Redis 优先，Redis 缺失时回退进程内内存。
 //
+// 仅在未配置 Redis 句柄时使用内存，Redis 运行故障会直接返回错误。
+// 内存 state 不跨实例共享，生成授权链接与处理回调必须落在持有该 state 的实例。
+//
 // 原实现是 service/login_service 的包级 map + init() 初始化；
 // 新架构改为可注入实例，内存兜底状态收敛为结构体字段。
 type StateStore struct {
@@ -63,6 +66,9 @@ func (s *StateStore) Store(ctx context.Context, provider, state string) error {
 }
 
 // Consume 校验并消费 OAuth state，防止重放。
+//
+// Redis GetDel 在同一原子操作中读取并删除，不能替换为分开的 GET/DEL，否则并发回调可能重复通过。
+// 内存分支在互斥锁内查询并删除；即使发现已过期，也不恢复该条目。
 func (s *StateStore) Consume(ctx context.Context, provider, state string) error {
 	provider, state, err := domain.NormalizeOAuthState(provider, state)
 	if err != nil {

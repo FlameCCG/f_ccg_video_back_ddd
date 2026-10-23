@@ -27,6 +27,10 @@ import (
 // CrossContextProviderSet 在组合根集中装配各限界上下文之间的显式端口。
 //
 // 方法集完全一致时直接 bind；DTO 或返回类型不同时使用 adapters 中的薄转换层。
+//
+// 接口属于消费方：例如 video 需要派发转码，只声明自己的 TranscodeDispatcher。
+// 这里选择 media 的提供能力，必要时经过 adapters 翻译，避免 video 与 media 相互导入。
+// Bind 只声明类型对应，具体对象仍须由本集合或其依赖集合中的构造器提供。
 var CrossContextProviderSet = wire.NewSet(
 	ConfigProviderSet,
 	InfrastructureProviderSet,
@@ -96,6 +100,7 @@ var CrossContextProviderSet = wire.NewSet(
 	wire.Bind(new(videoapp.CoinLedger), new(*adapters.IdentityCoinLedger)),
 	adapters.NewVideoStorageResolver,
 	wire.Bind(new(videoapp.StorageResolver), new(*adapters.VideoStorageResolver)),
+	// 投稿侧只依赖 video 的任务形状；此处把它接到 media 用例，Kafka 传输细节继续留在 mq。
 	adapters.NewVideoTranscodeDispatcher,
 	wire.Bind(new(videoapp.TranscodeDispatcher), new(*adapters.VideoTranscodeDispatcher)),
 	adapters.NewVideoTranscodeProgressReader,

@@ -1,4 +1,9 @@
-// Package mongodb 提供 Mongo 客户端构建与关闭（原 core/init_mongo.go）。
+// Package mongodb 构造和关闭 MongoDB 客户端。
+//
+// mongo.go 创建连接并选择数据库，持久化子包负责 collection、索引与读写。
+// 客户端关闭必须晚于私信处理和后台任务，避免在途请求使用已经断开的连接。
+//
+// provider.go 只导出构造器与窄化访问能力，不应在业务用例中再次创建全局连接。
 package mongodb
 
 import (

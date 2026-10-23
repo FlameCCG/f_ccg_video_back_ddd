@@ -1,7 +1,10 @@
-// Package platform 承载平台运维上下文（定时调度）的领域规则：
-// 热门榜时间衰减、到期自动解封计划、评论点赞增量意图折叠。
+// Package platform 表达热门榜衰减、到期解封和评论点赞意图折叠。
 //
-// 本包为纯 Go，不依赖 gin / gorm / redis / cron 等任何框架。
+// hot_rank.go、ban_release.go、comment_like.go 只根据输入事实计算结果。
+// cron 表达式、Redis 队列和 SQL 批量写回由外层负责；把时间和待处理数据显式传入可重现边界条件。
+//
+// 本包保持纯 Go 规则与端口，不依赖 HTTP、数据库、缓存、消息框架或配置加载器。
+// 领域函数尽量显式接收事实与时间，让规则可以脱离运行环境阅读和验证。
 package platform
 
 // 热门榜衰减参数（与原 service/cron_service/decay_video_hot.go 完全一致）。

@@ -195,6 +195,9 @@ func (s *SiteConfigService) UpdateServerCORS(origins []string) error {
 }
 
 // publish 原子发布新配置树，随后把对应配置段写回配置文件。
+//
+// 原子性仅针对内存指针替换，文件写入失败时新快照已经对读者可见，当前没有回滚。
+// 调用方看到错误时应区分“未持久化”与“未生效”，不能把它解释成旧配置仍在内存中。
 func (s *SiteConfigService) publish(next *config.Config, name string, item any) error {
 	s.provider.Set(next)
 

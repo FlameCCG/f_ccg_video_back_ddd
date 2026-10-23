@@ -7,14 +7,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ListNotificationReq is an exported API type.
+// ListNotificationReq 描述通知类别与分页，已读状态由用户与通知的关联记录推导。
 type ListNotificationReq struct {
 	Page     int    `form:"page" binding:"omitempty,min=1"`
 	PageSize int    `form:"pageSize" binding:"omitempty,min=1,max=100"`
 	Category string `form:"category" binding:"omitempty,oneof=all reply like at system"`
 }
 
-// List handles the corresponding HTTP request.
+// List 按认证用户读取通知列表，返回列表与总数。
 func (h *Handler) List(c *gin.Context) {
 	req := middlewares.GetBound[ListNotificationReq](c)
 

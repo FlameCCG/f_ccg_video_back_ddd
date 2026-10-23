@@ -6,6 +6,10 @@ import (
 )
 
 // Video 视频主表.
+//
+// Status 决定稿件状态；PublishAt 是计划时间，ApprovedAt 是审核事实，IsScheduled 保留定时作品属性。
+// 它们不能合并成一个状态字段：定时稿可以待审，已发布定时稿也需要保留原计划供后台查看。
+// 这些 GORM 关联描述表关系，并不意味着每个查询都预加载全部对象。
 type Video struct {
 	Model
 	Title          string                `gorm:"size:200;not null;index;comment:视频标题" json:"title"`
@@ -38,7 +42,7 @@ type Video struct {
 	FavoriteFolder []FavoriteFolder      `gorm:"many2many:favorite_folder_videos" json:"favoriteFolders,omitempty"`
 }
 
-// TableName 方法.
+// TableName 显式绑定表名 videos，保持迁移与仓储 SQL 使用同一张表。
 func (Video) TableName() string {
 	return "videos"
 }

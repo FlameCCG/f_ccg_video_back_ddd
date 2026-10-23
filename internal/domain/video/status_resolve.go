@@ -63,19 +63,19 @@ const (
 	ScheduledPublishFromScheduled
 	// ScheduledPublishFromReview 从 Review 状态发布（关闭审核时的历史数据）。
 	ScheduledPublishFromReview
-	// ScheduledPublishKeepReview 保留待审状态，仅丢弃调度。
+	// ScheduledPublishKeepReview 保留待审状态；当前调度用例同时保留原计划时间，等待人工审核。
 	ScheduledPublishKeepReview
 )
 
 // ResolveScheduledPublishOutcome 判定到期定时任务应如何处理。
 //
-// 与原 processDueScheduledVideo 的 switch 分支逐项一致。
+// 只裁定业务结论，不修改数据库；是否保留发布历史与何时清理计划由 Scheduler 执行。
 func ResolveScheduledPublishOutcome(status enum.VideoStatus, contentReviewEnabled bool) ScheduledPublishOutcome {
 	switch status {
 	case enum.VideoStatusScheduled:
 		return ScheduledPublishFromScheduled
 	case enum.VideoStatusReview:
-		// 开启内容审核时 Review 不可自动上架，到期仅丢弃调度，保留待审状态。
+		// 开启审核时到期不能代替人工过审；应用用例保留计划时间供后续审核使用。
 		if contentReviewEnabled {
 			return ScheduledPublishKeepReview
 		}

@@ -110,7 +110,7 @@ type RoleMenuRepository interface {
 //
 // 「用户拥有哪些角色」属于 rbac 上下文的职责，故仓储接口定义在本领域；
 // 其实现需要读 identity 的 users 表（存在性与 current_role_id），
-// 按 docs/decisions.md D-011 的读侧投影约定直读，不引入跨上下文调用链。
+// 按 docs/architecture.md 第 4 节 的读侧投影约定直读，不引入跨上下文调用链。
 type UserRoleRepository interface {
 	// UserExists 判断用户是否存在。
 	UserExists(ctx context.Context, userID uint) (bool, error)

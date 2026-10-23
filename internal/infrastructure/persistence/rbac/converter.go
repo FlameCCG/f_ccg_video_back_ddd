@@ -1,4 +1,10 @@
-// Package rbac 是 RBAC 上下文的持久化实现：GORM 仓储、Casbin 适配器与 PO↔domain 转换。
+// Package rbac 实现RBAC 的 SQL 仓储、Casbin 适配和 OpenAPI 元数据读取。
+//
+// role_repo.go/menu_repo.go 等处理持久化，enforcer.go 把授权引擎接到应用/领域端口。
+// openapi_meta.go 为实际路由补充描述信息，真实路由集合仍由 Router 提供。
+// 数据库角色/菜单、Casbin 策略和接口资源是相关但不同的数据，修改权限需看用例如何协调它们。
+//
+// 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
 package rbac
 
 import (

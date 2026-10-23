@@ -1,6 +1,7 @@
 package site
 
-// Login 类型.
+// Login 配置登录方式与交互验证码候选项，验证码 TTL 和 Padding 分别影响有效期与交互区域。
+// 多个交互验证码启用时由场景选择逻辑决定本次类型，不表示用户必须逐一完成所有候选。
 type Login struct {
 	QQLogin                 bool `mapstructure:"qqLogin" json:"qqLogin"`
 	XLogin                  bool `mapstructure:"xLogin" json:"xLogin"`
