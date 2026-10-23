@@ -176,7 +176,7 @@ go run ./cmd/server -f config_dev.yaml
 go run ./cmd/transcode-consumer -f config_dev.yaml
 ```
 
-同一消费组内的实例按 Kafka topic 分区分摊任务。跨机器部署时，源文件及产物存储必须可共享访问；具体配置见[独立转码消费者说明](cmd/transcode-consumer/README.md)。
+同一消费组内的实例按 Kafka topic 分区分摊任务。跨机器部署时，源文件及产物存储必须可共享访问。节点角色、必填配置和启动方式见[架构说明](docs/architecture.md#63-独立转码入口与节点角色)。
 
 ## 开发与验证
 
@@ -210,5 +210,5 @@ go run -mod=mod github.com/google/wire/cmd/wire ./internal/bootstrap
 | [架构说明](docs/architecture.md) | 上下文划分、分层依赖、配置、生命周期与业务链路 |
 | [HTTP API 导航](docs/openapi-md/index.md) | 普通用户与管理员接口说明 |
 | [OpenAPI 定义](docs/openapi.yaml) | 接口路径、请求参数与响应结构 |
-| [独立转码消费者](cmd/transcode-consumer/README.md) | 转码进程启动与分离部署 |
+| [独立转码入口](docs/architecture.md#63-独立转码入口与节点角色) | 转码进程启动、节点角色与跨机器配置 |
 | [交互架构图](docs/diagrams/system-architecture.html) | 运行时组件与调用链，下载后用浏览器打开 |

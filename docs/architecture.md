@@ -223,7 +223,7 @@ go run ./cmd/server -all myadmin mypassword
 go run ./cmd/transcode-consumer -f config_dev.yaml
 ```
 
-它通过 `InitializeTranscodeWorker` 只构造转码需要的 MySQL、Redis、Kafka、本地/MinIO 存储和附属资源，不启动 HTTP、WebSocket、River、视频调度或 Cron，也不运行初始化任务。此入口始终承担转码角色，不受 `localConsumerDisabled` 影响。消费启动失败返回非零退出码；Ctrl+C / SIGTERM 触发停止消费、关闭生产者池并等待 detached 任务，再执行基础设施 cleanup。详见[独立消费者说明](../cmd/transcode-consumer/README.md)、[组合根](../internal/bootstrap/providers_transcode.go)和[生命周期](../internal/bootstrap/transcode_worker.go)。
+它通过 `InitializeTranscodeWorker` 只构造转码需要的 MySQL、Redis、Kafka、本地/MinIO 存储和附属资源，不启动 HTTP、WebSocket、River、视频调度或 Cron，也不运行初始化任务。此入口始终承担转码角色，不受 `localConsumerDisabled` 影响。消费启动失败返回非零退出码；Ctrl+C / SIGTERM 触发停止消费、关闭生产者池并等待 detached 任务，再执行基础设施 cleanup。详见[组合根](../internal/bootstrap/providers_transcode.go)和[生命周期](../internal/bootstrap/transcode_worker.go)。
 
 独立节点复用完整配置文件及其必填项，需启用 Kafka、安装 FFmpeg/ffprobe，并能访问 MySQL、Redis 和源文件存储。同一 `kafka.groupID` 内按 topic 分区分摊任务，并行度还受分区数与各实例 worker 数限制。跨机器时优先使用双方可访问的 MinIO；若用本地存储，必须让任务中的路径在消费节点也指向同一份文件。
 
