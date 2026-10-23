@@ -2423,8 +2423,6 @@ components:
       type: object
       description: Mongo 配置
       properties:
-        uri:
-          type: string
         host:
           type: string
         port:
