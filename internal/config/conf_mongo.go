@@ -8,14 +8,16 @@ import (
 
 // Mongo 用分项连接参数描述 MongoDB，并包含连接超时和连接池上限。
 type Mongo struct {
-	Host       string `mapstructure:"host" json:"host"`
-	Port       int    `mapstructure:"port" json:"port"`
-	Username   string `mapstructure:"username" json:"username"`
-	Password   string `mapstructure:"password" json:"password"`
-	DBName     string `mapstructure:"db" json:"db"`
-	AuthSource string `mapstructure:"authSource" json:"authSource"`
-	TimeoutSec int    `mapstructure:"timeoutSec" json:"timeoutSec"`
-	MaxPool    uint64 `mapstructure:"maxPool" json:"maxPool"`
+	ReplicaSet       string `mapstructure:"replicaSet" json:"replicaSet"`
+	DirectConnection bool   `mapstructure:"directConnection" json:"directConnection"`
+	Host             string `mapstructure:"host" json:"host"`
+	Port             int    `mapstructure:"port" json:"port"`
+	Username         string `mapstructure:"username" json:"username"`
+	Password         string `mapstructure:"password" json:"password"`
+	DBName           string `mapstructure:"db" json:"db"`
+	AuthSource       string `mapstructure:"authSource" json:"authSource"`
+	TimeoutSec       int    `mapstructure:"timeoutSec" json:"timeoutSec"`
+	MaxPool          uint64 `mapstructure:"maxPool" json:"maxPool"`
 }
 
 // GetURI 由主机、端口和账号拼接 Mongo 连接串。未指定主机或端口时使用本机默认值。
@@ -35,19 +37,22 @@ func (m Mongo) GetURI() string {
 		Scheme: "mongodb",
 		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
 	}
-	if m.Username == "" {
-		return u.String()
-	}
-
-	authSource := m.AuthSource
-	if authSource == "" {
-		authSource = "admin"
-	}
-
-	u.User = url.UserPassword(m.Username, m.Password)
-	u.Path = "/"
 	query := u.Query()
-	query.Set("authSource", authSource)
+	if m.ReplicaSet != "" {
+		query.Set("replicaSet", m.ReplicaSet)
+	}
+	if m.DirectConnection {
+		query.Set("directConnection", "true")
+	}
+	if m.Username != "" {
+		authSource := m.AuthSource
+		if authSource == "" {
+			authSource = "admin"
+		}
+		u.User = url.UserPassword(m.Username, m.Password)
+		u.Path = "/"
+		query.Set("authSource", authSource)
+	}
 	u.RawQuery = query.Encode()
 
 	return u.String()
