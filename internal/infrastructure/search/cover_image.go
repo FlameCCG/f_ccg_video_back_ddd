@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -40,7 +39,7 @@ func resolveCoverEmbedSource(
 			return cover, nil
 		}
 
-		return fetchImageAsDataURI(ctx, client, cover)
+		return "", errCoverUnavailable
 	}
 
 	if absolute := joinAssetBaseURL(assetBaseURL, cover); absolute != "" {
@@ -48,7 +47,7 @@ func resolveCoverEmbedSource(
 			return absolute, nil
 		}
 
-		return fetchImageAsDataURI(ctx, client, absolute)
+		return readLocalImageAsDataURI(localStorageRoot, cover)
 	}
 
 	return readLocalImageAsDataURI(localStorageRoot, cover)
@@ -77,39 +76,10 @@ func isPubliclyReachableHost(host string) bool {
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		return !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
+		return ip.IsGlobalUnicast() && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
 	}
 
 	return true
-}
-
-func fetchImageAsDataURI(ctx context.Context, client *http.Client, rawURL string) (string, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("%w: build cover request failed: %w", errCoverUnavailable, err)
-	}
-	request.Header.Set("Accept", "image/*")
-
-	response, err := client.Do(request)
-	if err != nil {
-		return "", fmt.Errorf("%w: fetch cover failed: %w", errCoverUnavailable, err)
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf(
-			"%w: fetch cover got status %d",
-			errCoverUnavailable,
-			response.StatusCode,
-		)
-	}
-
-	data, err := io.ReadAll(io.LimitReader(response.Body, maxCoverImageBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("%w: read cover failed: %w", errCoverUnavailable, err)
-	}
-
-	return buildImageDataURI(data, response.Header.Get("Content-Type"))
 }
 
 func readLocalImageAsDataURI(root, cover string) (string, error) {

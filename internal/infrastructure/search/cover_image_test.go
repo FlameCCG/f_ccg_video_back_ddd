@@ -68,25 +68,16 @@ func TestResolveCoverEmbedSourceKeepsPublicURL(t *testing.T) {
 	}
 }
 
-func TestResolveCoverEmbedSourceFetchesPrivateHost(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("Content-Type", "image/png")
-		_, _ = writer.Write(pngPixel)
+func TestResolveCoverEmbedSourceRejectsPrivateHostWithoutFetching(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Redirect(w, r, "http://127.0.0.1/private", http.StatusFound)
 	}))
-	t.Cleanup(server.Close)
-
-	got, err := resolveCoverEmbedSource(
-		context.Background(),
-		server.Client(),
-		server.URL+"/cover.png",
-		"",
-		"",
-	)
-	if err != nil {
-		t.Fatalf("resolveCoverEmbedSource() error = %v", err)
-	}
-	if !strings.HasPrefix(got, "data:image/png;base64,") {
-		t.Fatalf("resolveCoverEmbedSource() = %q, want png data URI", got)
+	defer server.Close()
+	_, err := resolveCoverEmbedSource(context.Background(), server.Client(), server.URL+"/cover.png", "", "")
+	if !errors.Is(err, errCoverUnavailable) || calls != 0 {
+		t.Fatalf("private fetch: calls=%d err=%v", calls, err)
 	}
 }
 

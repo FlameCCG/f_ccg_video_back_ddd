@@ -44,14 +44,14 @@ func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery, logger 
 // 标签总量是本次视频命中派生的标签数，不是独立搜索整个标签表的总数。
 // ES 超时后的 SQL 回退使用父 context，既避免复用已过期的子预算，也仍受请求总取消约束。
 func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
-	if !s.index.Available() {
-		return s.fallbackSearch(ctx, opts)
-	}
-
 	page := domain.NormalizePagination(opts.Page, opts.PageSize)
 	videoSort := domain.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
 	userSort := domain.NormalizeUserSort(opts.UserSort, opts.UserOrder)
 	opts = applyNormalized(opts, page, videoSort, userSort)
+
+	if !s.index.Available() {
+		return s.fallbackSearch(ctx, opts)
+	}
 
 	parent := ensureContext(ctx)
 
@@ -89,14 +89,14 @@ func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*Search
 
 // SearchVideos 仅返回视频结果，同时返回用户总量（用于前端展示）。
 func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*VideoSearchResult, error) {
-	if !s.index.Available() {
-		return s.fallbackSearchVideos(ctx, opts)
-	}
-
 	page := domain.NormalizePagination(opts.Page, opts.PageSize)
 	videoSort := domain.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
 	opts.Page, opts.PageSize = page.Page, page.PageSize
 	opts.VideoSort, opts.VideoOrder = videoSort.Field, videoSort.Order
+
+	if !s.index.Available() {
+		return s.fallbackSearchVideos(ctx, opts)
+	}
 
 	parent := ensureContext(ctx)
 
