@@ -91,6 +91,9 @@ func (m *Migrator) AutoMigrate() error {
 		return fmt.Errorf("创建 OAuth 唯一索引失败: %w", err)
 	}
 
+	if err := migrateLegacySchedules(m.db); err != nil {
+		return fmt.Errorf("迁移旧定时计划失败: %w", err)
+	}
 	m.logger.Info("数据库迁移成功!")
 
 	return nil
