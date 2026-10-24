@@ -40,37 +40,23 @@ func (q *UserVideoQuery) ListByAuthor(
 
 	switch sort {
 	case domain.UserVideoSortViews:
-		query = query.Order("views DESC")
+		query = query.Order("views DESC, id DESC")
 	case domain.UserVideoSortFavorite:
-		query = query.Order("favorite_count DESC")
+		query = query.Order("favorite_count DESC, id DESC")
 	default:
-		query = query.Order("created_at DESC")
+		query = query.Order("created_at DESC, id DESC")
 	}
 
-	var rows []po.Video
-	if err := query.
-		Select("id", "title", "cover", "views", "likes", "favorite_count",
-			"created_at", "duration", "danmu_count", "status").
-		Offset((page - 1) * pageSize).
-		Limit(pageSize + 1).
-		Find(&rows).Error; err != nil {
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-
-	if len(rows) == 0 {
-		return []app.UserVideoRow{}, 0, nil
-	}
-
-	total := int64((page-1)*pageSize + len(rows))
-	if len(rows) > pageSize {
-		rows = rows[:pageSize]
-		total = 0
-	}
-
-	if total == 0 {
-		if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-			return nil, 0, err
-		}
+	var rows []po.Video
+	if err := query.Session(&gorm.Session{}).
+		Select("id", "title", "cover", "views", "likes", "favorite_count",
+			"created_at", "duration", "danmu_count", "status").
+		Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
+		return nil, 0, err
 	}
 
 	items := make([]app.UserVideoRow, 0, len(rows))
