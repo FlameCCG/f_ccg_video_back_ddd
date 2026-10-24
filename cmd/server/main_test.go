@@ -180,7 +180,7 @@ func TestRunAllSuperUserCredentials(t *testing.T) {
 		wantArgs []string
 		wantCode int
 	}{
-		{name: "default credentials", wantArgs: []string{"ccg", "123456"}},
+		{name: "missing credentials fail before initialization", wantCode: 1},
 		{name: "custom credentials", args: []string{"custom-admin", "test-password"}, wantArgs: []string{"custom-admin", "test-password"}},
 		{name: "partial credentials fail before initialization", args: []string{"custom-admin"}, wantCode: 1},
 	} {

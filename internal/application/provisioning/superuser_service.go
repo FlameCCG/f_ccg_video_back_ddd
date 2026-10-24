@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/encrypt"
 )
 
@@ -24,13 +26,14 @@ type SuperUserResult struct {
 
 // SuperUserService 超级管理员初始化用例（原 flags.FlagSuperUserInit）。
 type SuperUserService struct {
+	txm    tx.Manager
 	repo   SuperUserRepository
 	binder CasbinRoleBinder
 }
 
 // NewSuperUserService 构造超级管理员初始化用例。
-func NewSuperUserService(repo SuperUserRepository, binder CasbinRoleBinder) *SuperUserService {
-	return &SuperUserService{repo: repo, binder: binder}
+func NewSuperUserService(repo SuperUserRepository, binder CasbinRoleBinder, txm tx.Manager) *SuperUserService {
+	return &SuperUserService{repo: repo, binder: binder, txm: txm}
 }
 
 // Provision 创建或更新超级管理员，并在 MySQL 与 Casbin 两侧绑定管理员角色。
@@ -40,30 +43,33 @@ func NewSuperUserService(repo SuperUserRepository, binder CasbinRoleBinder) *Sup
 // → 覆盖用户角色关联 → Casbin 清旧角色后绑定并保存策略。
 func (s *SuperUserService) Provision(ctx context.Context, args []string) (*SuperUserResult, error) {
 	const requiredArgs = 2
-	if len(args) < requiredArgs {
+	if len(args) < requiredArgs || strings.TrimSpace(args[0]) == "" || strings.TrimSpace(args[1]) == "" {
 		return nil, ErrSuperUserArgsRequired
 	}
 
 	username := args[0]
 	password := args[1]
 
-	roleID, roleName, roleCreated, err := s.repo.EnsureAdminRole(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	hashedPassword, err := encrypt.GenPasswordHash([]byte(password))
 	if err != nil {
-		return nil, fmt.Errorf("生成密码哈希失败: %w", err)
+		return nil, fmt.Errorf("generate password hash: %w", err)
 	}
-
-	userID, userCreated, err := s.repo.UpsertSuperUser(ctx, username, string(hashedPassword), roleID)
-	if err != nil {
+	var roleID, userID uint
+	var roleName string
+	var roleCreated, userCreated bool
+	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		var err error
+		roleID, roleName, roleCreated, err = s.repo.EnsureAdminRole(txCtx)
+		if err != nil {
+			return err
+		}
+		userID, userCreated, err = s.repo.UpsertSuperUser(txCtx, username, string(hashedPassword), roleID)
+		if err != nil {
+			return err
+		}
+		return s.repo.ReplaceUserRoles(txCtx, userID, roleID)
+	}); err != nil {
 		return nil, err
-	}
-
-	if err := s.repo.ReplaceUserRoles(ctx, userID, roleID); err != nil {
-		return nil, fmt.Errorf("绑定管理员角色关联失败: %w", err)
 	}
 
 	if err := s.binder.BindUserRole(userID, roleName); err != nil {

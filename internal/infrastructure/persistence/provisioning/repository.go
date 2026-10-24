@@ -42,11 +42,11 @@ type SuperUserRepository struct {
 }
 
 // UserContextDecorator 用于给创建用户的 ctx 附加默认横幅 ID
-// （供 po.User 的 AfterCreate 钩子读取）。
 //
 // 由 identity 的用户仓储实现，避免 CLI 建号路径与注册路径行为分叉。
 type UserContextDecorator interface {
 	WithDefaultBanner(ctx context.Context) context.Context
+	InitializeDefaults(ctx context.Context, userID uint) error
 }
 
 var _ app.SuperUserRepository = (*SuperUserRepository)(nil)
@@ -101,6 +101,8 @@ func (r *SuperUserRepository) UpsertSuperUser(
 	if err == nil {
 		// Update existing user
 		user.Password = passwordHash
+		user.MustChangePassword = true
+		user.RefreshTokenHash = ""
 		user.Level = superUserLevel
 		user.Exp = superUserExp
 		user.CurrentRoleID = roleID
@@ -123,18 +125,24 @@ func (r *SuperUserRepository) UpsertSuperUser(
 	}
 
 	user = po.User{
-		Username:       username,
-		Email:          username + superUserEmailSuffix,
-		Password:       passwordHash,
-		Level:          superUserLevel,
-		Exp:            superUserExp,
-		CurrentRoleID:  roleID,
-		RegisterSource: superUserRegisterSource,
+		Username:           username,
+		Email:              username + superUserEmailSuffix,
+		Password:           passwordHash,
+		MustChangePassword: true,
+		Level:              superUserLevel,
+		Exp:                superUserExp,
+		CurrentRoleID:      roleID,
+		RegisterSource:     superUserRegisterSource,
 	}
 	if createErr := gormx.DB(createCtx, r.db).Create(&user).Error; createErr != nil {
 		return 0, false, fmt.Errorf("创建超级管理员用户失败: %w", createErr)
 	}
 
+	if r.userRepoCtx != nil {
+		if err := r.userRepoCtx.InitializeDefaults(createCtx, user.ID); err != nil {
+			return 0, false, err
+		}
+	}
 	return user.ID, true, nil
 }
 

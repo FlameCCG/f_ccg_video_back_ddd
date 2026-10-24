@@ -5,8 +5,10 @@ import (
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
 	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/internal/infrastructure/auth"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	identityrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/migration"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
@@ -68,6 +70,8 @@ var BannerTaskProviderSet = wire.NewSet(
 // SuperUserTaskProviderSet 组装 -su；Casbin 只出现在该早期数据库任务的图中。
 var SuperUserTaskProviderSet = wire.NewSet(
 	CLIDatabaseProviderSet,
+	gormx.NewTxManager,
+	wire.Bind(new(tx.Manager), new(*gormx.TxManager)),
 	auth.NewEnforcer,
 	identityrepo.NewUserRepository,
 	wire.Bind(new(provisioningrepo.UserContextDecorator), new(*identityrepo.UserRepository)),
