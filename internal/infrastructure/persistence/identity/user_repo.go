@@ -46,7 +46,6 @@ func (r *UserRepository) LockAccounts(ctx context.Context, userIDs []uint) error
 
 // NewUserRepository 构造用户仓储。
 //
-// cfgProvider 用于把「注册默认横幅 ID」注入 context，供 po.User 的 AfterCreate 钩子读取
 // （原实现由 models 层直接读全局配置）。
 func NewUserRepository(db *gorm.DB, cfgProvider *infraconfig.Provider) *UserRepository {
 	return &UserRepository{db: db, cfgProvider: cfgProvider}

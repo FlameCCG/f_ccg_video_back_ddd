@@ -88,7 +88,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 			return createErr
 		}
 
-		return nil
+		return s.users.InitializeDefaults(txCtx, user.ID)
 	}); err != nil {
 		return ErrRegisterFailed
 	}

@@ -221,3 +221,36 @@ func (s *BanRecordService) AdminList(
 ) ([]AdminBanRecordItem, int64, error) {
 	return s.query.AdminList(ctx, params)
 }
+
+// EnsureCanPublish rechecks DB status for every content write, including long-lived sockets.
+func (s *BanService) EnsureCanPublish(ctx context.Context, userID uint) error {
+	if userID == 0 {
+		return domain.ErrUserNotLogin
+	}
+	user, err := s.users.FindStatusByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return domain.ErrUserNotFound
+	}
+	if user.Status == enum.UserStatusBanned {
+		if _, err := s.ReleaseExpired(ctx, userID, time.Now()); err != nil {
+			return err
+		}
+		user, err = s.users.FindStatusByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if user == nil {
+			return domain.ErrUserNotFound
+		}
+	}
+	if user.IsPermanentlyBanned() {
+		return domain.ErrAccountPermanentlyBanned
+	}
+	if user.IsBanned() {
+		return domain.ErrAccountBanned
+	}
+	return nil
+}

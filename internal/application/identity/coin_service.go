@@ -70,9 +70,15 @@ func (s *CoinService) ApplyChange(
 		if err != nil {
 			return err
 		}
+		if dedupKey != nil {
+			exists, err := s.records.HasDedupKey(txCtx, userID, *dedupKey)
+			if err != nil || exists {
+				return err
+			}
+		}
 
 		afterCoins := coinutil.Round(before + delta)
-		if afterCoins < 0 {
+		if delta < 0 && afterCoins < 0 {
 			return domain.ErrCoinInsufficient
 		}
 
@@ -188,4 +194,35 @@ func (s *CoinService) CoinReward(ctx context.Context, userID uint, coins int64) 
 	)
 
 	return err
+}
+
+// RevokeFavoriteReward reverses the one lifetime reward only if it was granted.
+// A reversal can make the earned balance negative if the reward was already spent;
+// spending remains disallowed by ApplyChange until the debt is covered.
+func (s *CoinService) RevokeFavoriteReward(ctx context.Context, authorID, actorID, videoID uint) error {
+	if authorID == 0 || authorID == actorID {
+		return nil
+	}
+	return s.txm.Do(ctx, func(txCtx context.Context) error {
+		if err := s.users.LockAccounts(txCtx, []uint{authorID}); err != nil {
+			return err
+		}
+		key := fmt.Sprintf("favorite:%d:%d", actorID, videoID)
+		earned, err := s.records.HasDedupKey(txCtx, authorID, key)
+		if err != nil || !earned {
+			return err
+		}
+		balance, err := s.users.CoinBalanceForUpdate(txCtx, authorID)
+		if err != nil {
+			return err
+		}
+		revokeKey := "revoke:" + key
+		if err := s.records.Create(txCtx, authorID, -domain.CoinFavoriteReward, "取消收藏，收回作品收藏奖励", &revokeKey); err != nil {
+			if errors.Is(err, domain.ErrDuplicateRecord) {
+				return nil
+			}
+			return err
+		}
+		return s.users.UpdateCoinBalance(txCtx, authorID, coinutil.Round(balance-domain.CoinFavoriteReward))
+	})
 }

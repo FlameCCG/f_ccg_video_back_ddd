@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"strconv"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
@@ -90,4 +91,31 @@ func (s *UserStatusService) Invalidate(userID uint) {
 
 	s.group.Forget(strconv.FormatUint(uint64(userID), 10))
 	s.cache.Invalidate(userID)
+}
+
+// ValidateAccessToken checks current DB credential state on every authenticated
+// request so password changes revoke tokens across all server instances.
+func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secret string) (*domain.User, error) {
+	uid, _, err := jwts.ParseJwtToken(token, secret)
+	if err != nil {
+		return nil, err
+	}
+	id, err := strconv.ParseUint(uid, 10, 64)
+	if err != nil || id == 0 {
+		return nil, domain.ErrUserNotLogin
+	}
+	user, err := s.users.FindByID(ctx, uint(id))
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, domain.ErrUserNotFound
+	}
+	if err := jwts.CheckPasswordVersion(token, secret, user.Password, "access"); err != nil {
+		return nil, err
+	}
+	if user.IsBanned() {
+		return nil, domain.ErrAccountBanned
+	}
+	return user, nil
 }

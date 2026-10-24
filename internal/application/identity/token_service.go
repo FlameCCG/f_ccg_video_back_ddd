@@ -1,6 +1,8 @@
 package identity
 
 import (
+	"context"
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"strconv"
 	"time"
 
@@ -20,23 +22,6 @@ type TokenService struct {
 // NewTokenService 构造令牌服务。
 func NewTokenService(cfgProvider shared.ConfigReader) *TokenService {
 	return &TokenService{cfgProvider: cfgProvider}
-}
-
-// Issue 为指定用户签发 access/refresh 令牌对。
-func (s *TokenService) Issue(userID uint, username string) (*jwts.JwtToken, error) {
-	jwtConf := s.jwtConf()
-	if jwtConf == nil {
-		jwtConf = &config.Jwt{}
-	}
-
-	return jwts.CreateJwtToken(
-		strconv.Itoa(int(userID)),
-		username,
-		jwtConf.AccessExp*24*time.Hour,
-		jwtConf.AccessSecret,
-		jwtConf.RefreshExp*24*time.Hour,
-		jwtConf.RefreshSecret,
-	)
 }
 
 // ParseRefresh 解析 refresh 令牌并返回其中的用户 ID；非法时返回 ErrRefreshTokenInvalid。
@@ -66,4 +51,49 @@ func (s *TokenService) jwtConf() *config.Jwt {
 	}
 
 	return cfg.Jwt
+}
+
+// IssueForUser persists the refresh digest; a subsequent login replaces the prior
+// refresh session while existing access tokens remain bounded by credential state.
+func (s *TokenService) IssueForUser(ctx context.Context, user *domain.User, users domain.UserAccountRepository) (*jwts.JwtToken, error) {
+	pair, err := s.issueCredentialPair(user)
+	if err != nil {
+		return nil, err
+	}
+	ok, err := users.SetRefreshToken(ctx, user.ID, user.Password, jwts.TokenDigest(pair.RefreshToken))
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrRefreshTokenInvalid
+	}
+	return pair, nil
+}
+func (s *TokenService) issueCredentialPair(user *domain.User) (*jwts.JwtToken, error) {
+	conf := s.jwtConf()
+	if conf == nil {
+		return nil, ErrRefreshTokenInvalid
+	}
+	return jwts.CreateJwtTokenWithPassword(strconv.FormatUint(uint64(user.ID), 10), user.Username, user.Password, user.MustChangePassword, conf.AccessExp*24*time.Hour, conf.AccessSecret, conf.RefreshExp*24*time.Hour, conf.RefreshSecret)
+}
+func (s *TokenService) Rotate(ctx context.Context, user *domain.User, oldToken string, users domain.UserAccountRepository) (*jwts.JwtToken, error) {
+	conf := s.jwtConf()
+	if conf == nil {
+		return nil, ErrRefreshTokenInvalid
+	}
+	if err := jwts.CheckPasswordVersion(oldToken, conf.RefreshSecret, user.Password, "refresh"); err != nil {
+		return nil, ErrRefreshTokenInvalid
+	}
+	pair, err := s.issueCredentialPair(user)
+	if err != nil {
+		return nil, err
+	}
+	ok, err := users.RotateRefreshToken(ctx, user.ID, user.Password, jwts.TokenDigest(oldToken), jwts.TokenDigest(pair.RefreshToken))
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrRefreshTokenReused
+	}
+	return pair, nil
 }

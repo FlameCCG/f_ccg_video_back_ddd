@@ -37,7 +37,7 @@ func TestLoginServiceRefreshTokenDistinguishesQueryFailure(t *testing.T) {
 		RefreshSecret: "test-refresh-secret",
 	}}}
 	tokens := NewTokenService(reader)
-	pair, err := tokens.Issue(7, "tester")
+	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: "tester"})
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestLoginServiceRefreshTokenReportsMissingUser(t *testing.T) {
 		RefreshSecret: "test-refresh-secret",
 	}}}
 	tokens := NewTokenService(reader)
-	pair, err := tokens.Issue(7, "tester")
+	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: "tester"})
 	if err != nil {
 		t.Fatalf("issue token: %v", err)
 	}

@@ -96,6 +96,9 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 
 	// 生成验证码（答案仅存验证码存储，禁止打印到日志/控制台）。
 	id, code := s.generator.Generate(emailCaptchaCodeLength, emailCaptchaCodeCharset)
+	if id == "" || code == "" {
+		return nil, ErrEmailCaptchaStoreFailed
+	}
 
 	if err := s.captcha.StoreEmailCaptcha(ctx, id, in.Email, code); err != nil {
 		s.logger.Error("验证码保存失败", zap.Int("type", in.Type), zap.String("emailID", id), zap.Error(err))

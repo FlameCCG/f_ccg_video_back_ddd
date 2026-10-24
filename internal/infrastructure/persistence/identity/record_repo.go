@@ -192,3 +192,9 @@ func (r *LoginRecordRepository) Create(ctx context.Context, userID uint, ip, add
 
 	return gormx.DB(ctx, r.db).Create(&rec).Error
 }
+
+func (r *CoinRecordRepository) HasDedupKey(ctx context.Context, uid uint, key string) (bool, error) {
+	var n int64
+	err := gormx.DB(ctx, r.db).Model(&po.UserCoinRecord{}).Where("user_id = ? AND dedup_key = ?", uid, key).Count(&n).Error
+	return n > 0, err
+}

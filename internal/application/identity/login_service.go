@@ -119,12 +119,20 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 		return nil, domain.ErrUserNotFound
 	}
 
-	if user.IsPermanentlyBanned() {
-		return nil, domain.ErrAccountPermanentlyBanned
+	if user.IsBanned() {
+		return nil, domain.ErrAccountBanned
 	}
 
-	token, err := s.tokens.Issue(user.ID, user.Username)
+	token, err := s.tokens.Rotate(ctx, user, refreshToken, s.users)
 	if err != nil {
+		if err == ErrRefreshTokenReused {
+			s.logger.Warn("refresh token reuse or credential change detected", zap.Uint("user_id", user.ID))
+			if user.RefreshTokenHash != "" {
+				if _, revokeErr := s.users.RotateRefreshToken(ctx, user.ID, user.Password, user.RefreshTokenHash, ""); revokeErr != nil {
+					s.logger.Error("revoke refresh session after reuse failed", zap.Error(revokeErr))
+				}
+			}
+		}
 		return nil, ErrRefreshTokenFailed
 	}
 
@@ -152,8 +160,8 @@ func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, logSc
 		return nil, domain.ErrCredentialsInvalid
 	}
 
-	if user.IsPermanentlyBanned() {
-		return nil, domain.ErrAccountPermanentlyBanned
+	if user.IsBanned() {
+		return nil, domain.ErrAccountBanned
 	}
 
 	return user, nil
@@ -173,7 +181,7 @@ func (s *LoginService) finishLogin(
 
 	s.RecordLoginAsync(ctx, user.ID, in.IP, in.Addr, in.UserAgent, loginType)
 
-	token, err := s.tokens.Issue(user.ID, user.Username)
+	token, err := s.tokens.IssueForUser(ctx, user, s.users)
 	if err != nil {
 		s.logger.Error("create jwt token failed", zap.Error(err))
 

@@ -13,6 +13,8 @@ import (
 // Videos 通过用户名关联而非用户 ID；改名不仅修改 users，还需由账号用例协调作品作者和相关缓存/索引。
 // BeforeCreate/BeforeSave 处理落库细节，业务凭据、封禁和额度规则仍属于领域与应用层。
 type User struct {
+	RefreshTokenHash   string `gorm:"size:64" json:"-"`
+	MustChangePassword bool   `gorm:"not null;default:false" json:"-"`
 	Model
 	Username    string     `gorm:"size:50;not null;uniqueIndex;comment:用户名" json:"username"`
 	Email       string     `gorm:"size:100;not null;uniqueIndex;comment:邮箱" json:"email"`
@@ -88,35 +90,6 @@ func (u *User) normalizeOpenIDColumn(tx *gorm.DB) error {
 	u.OpenID = ""
 	// 强制写 SQL NULL（string 零值默认是 ''，会破坏「多行空 open_id」语义）。
 	tx.Statement.SetColumn("open_id", nil)
-
-	return nil
-}
-
-// AfterCreate 创建用户后，自动创建用户配置.
-//
-// 默认横幅 ID 来自 ctx（由仓储层从注入的配置写入，见 WithDefaultUserBannerID）；
-// 原实现在此直接读 global.Config()，新架构禁止 PO 反向依赖全局配置。
-func (u User) AfterCreate(tx *gorm.DB) error {
-	userConf := UserConf{
-		UserID:   u.ID,
-		BannerID: DefaultUserBannerIDFromContext(tx.Statement.Context),
-	}
-	if err := tx.Create(&userConf).Error; err != nil {
-		tx.Logger.Error(tx.Statement.Context, "create user conf failed: %v", err)
-
-		return err
-	}
-	// 默认收藏夹
-	defaultFolder := FavoriteFolder{
-		UserID:    u.ID,
-		Name:      "默认收藏夹",
-		IsDefault: true,
-	}
-	if err := tx.Create(&defaultFolder).Error; err != nil {
-		tx.Logger.Error(tx.Statement.Context, "create default favorite folder failed: %v", err)
-
-		return err
-	}
 
 	return nil
 }

@@ -23,6 +23,8 @@ type OAuthStateStore interface {
 
 // OAuthUserInfo 第三方用户信息（各 provider 适配器归一化后的结果）。
 type OAuthUserInfo struct {
+	// EmailVerified is an explicit provider assertion of email ownership.
+	EmailVerified bool
 	// OpenID 第三方用户唯一标识。
 	OpenID string
 	// Email 第三方返回的邮箱，可能为空。

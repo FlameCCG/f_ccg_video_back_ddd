@@ -75,3 +75,9 @@ var (
 	// ErrEmailCaptchaStoreFailed 验证码写入存储失败。
 	ErrEmailCaptchaStoreFailed = errors.New("验证码保存失败")
 )
+
+var ErrOAuthAccountBindingRequired = errors.New("existing account requires explicit OAuth binding")
+
+var ErrRefreshTokenReused = errors.New("refresh token has already been used")
+
+var ErrInitialPasswordUnchanged = errors.New("new password must differ from initial password")

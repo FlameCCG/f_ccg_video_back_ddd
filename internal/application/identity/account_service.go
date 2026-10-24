@@ -85,6 +85,9 @@ func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordIn
 		}
 	}
 
+	if user.MustChangePassword && encrypt.ValidatePasswordHash(in.NewPassword, user.Password) {
+		return ErrInitialPasswordUnchanged
+	}
 	passwordHash, err := encrypt.GenPasswordHash([]byte(in.NewPassword))
 	if err != nil {
 		return domain.ErrPasswordHashFailed

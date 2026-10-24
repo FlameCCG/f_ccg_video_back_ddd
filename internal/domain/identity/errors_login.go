@@ -64,3 +64,5 @@ var (
 	// ErrBannerAlreadyRegisterDefault 该横幅已是注册默认横幅。
 	ErrBannerAlreadyRegisterDefault = errors.New("该横幅已是注册默认横幅")
 )
+
+var ErrAccountBanned = errors.New("account is banned")

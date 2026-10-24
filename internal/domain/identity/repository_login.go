@@ -28,6 +28,11 @@ func (c ProfileChanges) IsEmpty() bool {
 // 与 UserRepository 同由 infrastructure/persistence/identity.UserRepository 实现；
 // 拆成两个接口是为了让只读状态的调用方（中间件、封禁流程）不被迫依赖写能力。
 type UserAccountRepository interface {
+	// RotateRefreshToken conditionally replaces a refresh digest, tied to the current password.
+	RotateRefreshToken(ctx context.Context, userID uint, passwordHash, oldHash, newHash string) (bool, error)
+	// SetRefreshToken sets the current refresh digest if the password has not changed.
+	SetRefreshToken(ctx context.Context, userID uint, passwordHash, tokenHash string) (bool, error)
+
 	// WithDefaultBanner 在 context 上附加「注册默认横幅 ID」，供用户创建钩子读取。
 	//
 	// 所有创建用户的路径（邮箱注册、5 家 OAuth 首次登录）都必须使用包装后的 ctx，
@@ -54,6 +59,8 @@ type UserAccountRepository interface {
 	// Create 创建用户并写入 user_roles 关联，回填 user.ID。
 	// 要求在事务内调用；ctx 必须先经 WithDefaultBanner 包装。
 	Create(ctx context.Context, user *User, roleID uint) error
+	// InitializeDefaults creates user configuration and default folder in the caller transaction.
+	InitializeDefaults(ctx context.Context, userID uint) error
 	// DeleteByID 删除用户（Casbin 绑定失败后的补偿路径）。
 	DeleteByID(ctx context.Context, userID uint) error
 
