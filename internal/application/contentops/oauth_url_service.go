@@ -12,6 +12,7 @@ import (
 
 // OAuth 提供商标识（写入 state 存储的 key 组成部分，属于外部契约）。
 const (
+	oauthProviderQQ      = "qq"
 	oauthProviderGoogle  = "google"
 	oauthProviderGitHub  = "github"
 	oauthProviderLinuxDo = "linuxdo"
@@ -41,8 +42,7 @@ type XURLParams struct {
 // OAuthURLService 三方登录授权链接用例服务
 // （原 api/site_api 的 qq_url.go / google_url.go / github_url.go / linuxdo_url.go / x_url.go）。
 //
-// 各方法都先落库一次性 state 再生成链接，顺序与原实现一致；
-// 配置缺失时返回空串（而非报错），同样与原实现一致。
+// Configuration is checked before generating and storing a one-time state.
 type OAuthURLService struct {
 	provider shared.ConfigReader
 	states   OAuthStateStore
@@ -53,37 +53,37 @@ func NewOAuthURLService(provider shared.ConfigReader, states OAuthStateStore) *O
 	return &OAuthURLService{provider: provider, states: states}
 }
 
-// QQURL 生成 QQ 互联授权链接（QQ 登录不使用 state）。
-func (s *OAuthURLService) QQURL() string {
+// QQURL generates a server-issued one-time state and QQ authorization URL.
+func (s *OAuthURLService) QQURL(ctx context.Context) (string, error) {
 	cfg := s.provider.Get()
-	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.QQ == nil {
-		return ""
+	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.QQ == nil || strings.TrimSpace(cfg.ThirdLogin.QQ.AppID) == "" || strings.TrimSpace(cfg.ThirdLogin.QQ.AppKey) == "" || strings.TrimSpace(cfg.ThirdLogin.QQ.Redirect) == "" {
+		return "", nil
 	}
 
+	state, err := s.newState(ctx, oauthProviderQQ)
+	if err != nil {
+		return "", err
+	}
 	params := url.Values{}
+	params.Set("state", state)
 	params.Set("which", "Login")
 	params.Set("display", "pc")
 	params.Set("response_type", "code")
 	params.Set("client_id", cfg.ThirdLogin.QQ.AppID)
 	params.Set("redirect_uri", cfg.ThirdLogin.QQ.Redirect)
 
-	return "https://graph.qq.com/oauth2.0/show?" + params.Encode()
+	return "https://graph.qq.com/oauth2.0/show?" + params.Encode(), nil
 }
 
 // GoogleURL 保存 state 并生成 Google 授权链接；state 为空时自动生成 UUID。
 func (s *OAuthURLService) GoogleURL(ctx context.Context, state string) (string, error) {
-	state = strings.TrimSpace(state)
-	if state == "" {
-		state = uuid.NewString()
-	}
-
-	if err := s.states.StoreOAuthState(ctx, oauthProviderGoogle, state); err != nil {
-		return "", err
-	}
-
 	cfg := s.provider.Get()
-	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.Google == nil {
+	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.Google == nil || strings.TrimSpace(cfg.ThirdLogin.Google.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.Google.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.Google.Redirect) == "" {
 		return "", nil
+	}
+	state, err := s.newState(ctx, oauthProviderGoogle)
+	if err != nil {
+		return "", err
 	}
 
 	params := url.Values{}
@@ -102,14 +102,15 @@ func (s *OAuthURLService) GoogleURL(ctx context.Context, state string) (string, 
 
 // GitHubURL 保存 state 并生成 GitHub 授权链接（支持 PKCE）。
 func (s *OAuthURLService) GitHubURL(ctx context.Context, params GitHubURLParams) (string, error) {
-	if err := s.states.StoreOAuthState(ctx, oauthProviderGitHub, params.State); err != nil {
-		return "", err
-	}
-
 	cfg := s.provider.Get()
-	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.GitHub == nil {
+	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.GitHub == nil || strings.TrimSpace(cfg.ThirdLogin.GitHub.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.GitHub.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.GitHub.Redirect) == "" {
 		return "", nil
 	}
+	state, err := s.newState(ctx, oauthProviderGitHub)
+	if err != nil {
+		return "", err
+	}
+	params.State = state
 
 	query := url.Values{}
 	query.Set("client_id", cfg.ThirdLogin.GitHub.ClientID)
@@ -136,13 +137,13 @@ func (s *OAuthURLService) GitHubURL(ctx context.Context, params GitHubURLParams)
 
 // LinuxDoURL 保存 state 并生成 Linux.do 授权链接。
 func (s *OAuthURLService) LinuxDoURL(ctx context.Context, state string) (string, error) {
-	if err := s.states.StoreOAuthState(ctx, oauthProviderLinuxDo, state); err != nil {
-		return "", err
-	}
-
 	cfg := s.provider.Get()
-	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.LinuxDo == nil {
+	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.LinuxDo == nil || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.Redirect) == "" {
 		return "", nil
+	}
+	state, err := s.newState(ctx, oauthProviderLinuxDo)
+	if err != nil {
+		return "", err
 	}
 
 	query := url.Values{}
@@ -160,14 +161,15 @@ func (s *OAuthURLService) LinuxDoURL(ctx context.Context, state string) (string,
 
 // XURL 保存 state 并生成 X（Twitter）授权链接（强制 PKCE）。
 func (s *OAuthURLService) XURL(ctx context.Context, params XURLParams) (string, error) {
-	if err := s.states.StoreOAuthState(ctx, oauthProviderX, params.State); err != nil {
-		return "", err
-	}
-
 	cfg := s.provider.Get()
-	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.X == nil {
+	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.X == nil || strings.TrimSpace(cfg.ThirdLogin.X.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.X.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.X.Redirect) == "" {
 		return "", nil
 	}
+	state, err := s.newState(ctx, oauthProviderX)
+	if err != nil {
+		return "", err
+	}
+	params.State = state
 
 	query := url.Values{}
 	query.Set("response_type", "code")
@@ -188,4 +190,13 @@ func (s *OAuthURLService) XURL(ctx context.Context, params XURLParams) (string, 
 	}
 
 	return "https://x.com/i/oauth2/authorize?" + query.Encode(), nil
+}
+
+// newState always generates state on the server; caller-selected values are not trusted.
+func (s *OAuthURLService) newState(ctx context.Context, provider string) (string, error) {
+	state := uuid.NewString()
+	if err := s.states.StoreOAuthState(ctx, provider, state); err != nil {
+		return "", err
+	}
+	return state, nil
 }

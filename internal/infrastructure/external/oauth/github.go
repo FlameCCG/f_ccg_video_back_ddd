@@ -76,9 +76,10 @@ func (c *GitHubClient) FetchUser(ctx context.Context, code, codeVerifier string)
 	}
 
 	return &app.OAuthUserInfo{
-		OpenID: strconv.FormatInt(info.ID, 10),
-		Email:  info.Email,
-		Avatar: info.AvatarURL,
+		OpenID:        strconv.FormatInt(info.ID, 10),
+		Email:         info.Email,
+		EmailVerified: strings.TrimSpace(info.Email) != "",
+		Avatar:        info.AvatarURL,
 	}, nil
 }
 
@@ -115,11 +116,10 @@ func (c *GitHubClient) GetUserInfo(ctx context.Context, code, codeVerifier strin
 		return nil, errors.New("github user id is empty")
 	}
 
-	if strings.TrimSpace(userInfo.Email) == "" {
-		email, err := c.primaryEmail(ctx, accessToken.AccessToken)
-		if err == nil {
-			userInfo.Email = email
-		}
+	// /user does not attest email ownership. Only /user/emails verified entries are trusted.
+	userInfo.Email = ""
+	if email, emailErr := c.primaryEmail(ctx, accessToken.AccessToken); emailErr == nil {
+		userInfo.Email = email
 	}
 
 	return &userInfo, nil
@@ -184,7 +184,7 @@ func (c *GitHubClient) accessToken(ctx context.Context, code, codeVerifier strin
 	return &accessToken, nil
 }
 
-// primaryEmail 按「主邮箱且已验证 → 已验证 → 主邮箱 → 任意」的优先级挑选邮箱。
+// primaryEmail returns verified addresses only, preferring the primary address.
 func (c *GitHubClient) primaryEmail(ctx context.Context, accessToken string) (string, error) {
 	resp, err := DoWithRetry(c.httpClient, func() (*http.Request, error) {
 		return newGitHubRequest(ctx, http.MethodGet, githubUserEmailsURL, accessToken)
@@ -216,18 +216,6 @@ func (c *GitHubClient) primaryEmail(ctx context.Context, accessToken string) (st
 
 	for _, item := range emails {
 		if item.Verified && strings.TrimSpace(item.Email) != "" {
-			return item.Email, nil
-		}
-	}
-
-	for _, item := range emails {
-		if item.Primary && strings.TrimSpace(item.Email) != "" {
-			return item.Email, nil
-		}
-	}
-
-	for _, item := range emails {
-		if strings.TrimSpace(item.Email) != "" {
 			return item.Email, nil
 		}
 	}

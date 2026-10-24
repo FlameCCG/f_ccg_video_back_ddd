@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 
@@ -102,7 +103,19 @@ func TestGitHubUrlViewStoresState(t *testing.T) {
 		t.Fatalf("unexpected response code: %d", response.Code)
 	}
 
-	if err := states.consume("github", "github-state"); err != nil {
+	authURL, ok := response.Data.(string)
+	if !ok {
+		t.Fatalf("authorization URL is %T", response.Data)
+	}
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" || state == "github-state" {
+		t.Fatal("state must be server generated")
+	}
+	if err := states.consume("github", state); err != nil {
 		t.Fatalf("expected github state stored, got err: %v", err)
 	}
 }
@@ -139,7 +152,19 @@ func TestXUrlViewStoresState(t *testing.T) {
 		t.Fatalf("unexpected response code: %d", response.Code)
 	}
 
-	if err := states.consume("x", "x-state"); err != nil {
+	authURL, ok := response.Data.(string)
+	if !ok {
+		t.Fatalf("authorization URL is %T", response.Data)
+	}
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" || state == "x-state" {
+		t.Fatal("state must be server generated")
+	}
+	if err := states.consume("x", state); err != nil {
 		t.Fatalf("expected x state stored, got err: %v", err)
 	}
 }
@@ -175,7 +200,71 @@ func TestLinuxDoUrlViewStoresState(t *testing.T) {
 		t.Fatalf("unexpected response code: %d", response.Code)
 	}
 
-	if err := states.consume("linuxdo", "linuxdo-state"); err != nil {
+	authURL, ok := response.Data.(string)
+	if !ok {
+		t.Fatalf("authorization URL is %T", response.Data)
+	}
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" || state == "linuxdo-state" {
+		t.Fatal("state must be server generated")
+	}
+	if err := states.consume("linuxdo", state); err != nil {
 		t.Fatalf("expected linuxdo state stored, got err: %v", err)
+	}
+}
+
+func TestQQURLStoresOneTimeServerState(t *testing.T) {
+	handler, states := newOAuthHandler(t, &config.Config{ThirdLogin: &config.ThirdLogin{QQ: &thirdlogin.QQ{AppID: "app", AppKey: "secret", Redirect: "https://example.com/qq"}}})
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/site/qq-url", nil)
+	handler.QQUrlView(ctx)
+	var response res.Response
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := response.Data.(string)
+	if !ok {
+		t.Fatal("missing authorization URL")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" {
+		t.Fatal("QQ state missing")
+	}
+	if err := states.consume("qq", state); err != nil {
+		t.Fatal(err)
+	}
+	if err := states.consume("qq", state); err == nil {
+		t.Fatal("QQ state reused")
+	}
+}
+func TestOAuthMissingConfigDoesNotStoreState(t *testing.T) {
+	states := newFakeOAuthStateStore()
+	provider := infraconfig.NewProvider(&config.Config{})
+	service := app.NewOAuthURLService(provider, states)
+	calls := []func() (string, error){
+		func() (string, error) { return service.GoogleURL(t.Context(), "caller-state") },
+		func() (string, error) {
+			return service.GitHubURL(t.Context(), app.GitHubURLParams{State: "caller-state"})
+		},
+		func() (string, error) { return service.LinuxDoURL(t.Context(), "caller-state") },
+		func() (string, error) { return service.XURL(t.Context(), app.XURLParams{State: "caller-state"}) },
+		func() (string, error) { return service.QQURL(t.Context()) },
+	}
+	for _, call := range calls {
+		if raw, err := call(); err != nil || raw != "" {
+			t.Fatalf("raw=%q err=%v", raw, err)
+		}
+	}
+	if len(states.stored) != 0 {
+		t.Fatalf("missing configuration polluted state store: %v", states.stored)
 	}
 }

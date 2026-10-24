@@ -74,9 +74,10 @@ func (c *GoogleClient) FetchUser(ctx context.Context, code string) (*app.OAuthUs
 	}
 
 	return &app.OAuthUserInfo{
-		OpenID: info.Sub,
-		Email:  info.Email,
-		Avatar: info.Picture,
+		OpenID:        info.Sub,
+		Email:         info.Email,
+		EmailVerified: info.EmailVerified,
+		Avatar:        info.Picture,
 	}, nil
 }
 

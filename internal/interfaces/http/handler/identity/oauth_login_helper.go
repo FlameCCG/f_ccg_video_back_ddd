@@ -2,6 +2,7 @@ package identity
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -43,7 +44,7 @@ func (h *Handler) completeOAuthLogin(c *gin.Context, params oauthLoginParams) {
 			return
 		}
 
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
