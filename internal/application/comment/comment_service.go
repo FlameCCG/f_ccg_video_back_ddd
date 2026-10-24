@@ -2,6 +2,7 @@ package comment
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -560,37 +561,36 @@ func (s *Service) ToggleLike(ctx context.Context, userID, commentID uint) (int64
 
 // toggleLikeWithDB DB 回退路径：读当前点赞记录，落库切换后重读点赞数。
 func (s *Service) toggleLikeWithDB(ctx context.Context, userID, commentID uint) (int64, bool, error) {
-	existing, err := s.likes.Find(ctx, commentID, userID)
-	if err != nil {
-		return 0, false, err
-	}
-
-	isLiked := existing == nil
-
-	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		if existing == nil {
-			// 点赞
-			like := &domain.Like{CommentID: commentID, UserID: userID}
-			if err := s.likes.Create(txCtx, like); err != nil {
+	var count int64
+	liked := false
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		err := s.likes.Create(txCtx, &domain.Like{CommentID: commentID, UserID: userID})
+		if err == nil {
+			liked = true
+			if err := s.comments.IncrLikeCount(txCtx, commentID); err != nil {
 				return err
 			}
-
-			return s.comments.IncrLikeCount(txCtx, commentID)
-		}
-		// 取消点赞
-		if err := s.likes.DeleteByID(txCtx, existing.ID); err != nil {
+		} else if errors.Is(err, domain.ErrLikeDuplicated) {
+			existing, err := s.likes.Find(txCtx, commentID, userID)
+			if err != nil {
+				return err
+			}
+			if existing != nil {
+				if err := s.likes.DeleteByID(txCtx, existing.ID); err != nil {
+					return err
+				}
+				if err := s.comments.DecrLikeCount(txCtx, commentID); err != nil {
+					return err
+				}
+			}
+		} else {
 			return err
 		}
-
-		return s.comments.DecrLikeCount(txCtx, commentID)
-	}); err != nil {
-		return 0, false, err
-	}
-
-	// 与原实现一致：提交后重读点赞数并忽略读取错误（失败时返回 0）。
-	likeCount, _ := s.comments.LikeCountByID(ctx, commentID)
-
-	return likeCount, isLiked, nil
+		var countErr error
+		count, countErr = s.comments.LikeCountByID(txCtx, commentID)
+		return countErr
+	})
+	return count, liked, err
 }
 
 // ensureLikeCacheReady 点赞热路径：缓存不完整则查 DB。

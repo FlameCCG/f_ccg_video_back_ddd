@@ -4,6 +4,7 @@ import "errors"
 
 // 评论流程的领域错误（消息与原 service/comment_service 逐字一致，保证接口错误文案不变）。
 var (
+	ErrLikeDuplicated = errors.New("comment like already exists")
 	// ErrUserNotLogin 用户未登录.
 	ErrUserNotLogin = errors.New("用户未登录")
 	// ErrTargetRequired videoId 与 dynamicId 必须且只能给一个.
