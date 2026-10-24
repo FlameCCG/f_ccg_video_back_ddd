@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
@@ -96,6 +97,52 @@ func (s *Store) EnsureIndexes(ctx context.Context) error {
 	return nil
 }
 
+// SendMessage commits message insertion and conversation state together. WithTransaction
+// retries transient transaction failures and uncertain commits with the same message ID.
+func (s *Store) SendMessage(ctx context.Context, msg *domain.Message, preview string) error {
+	if !s.Available() {
+		return domain.ErrStoreUnavailable
+	}
+	if msg == nil {
+		return nil
+	}
+	if msg.ID == "" {
+		msg.ID = primitive.NewObjectID().Hex()
+	}
+	session, err := s.db.Client().StartSession()
+	if err != nil {
+		return err
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(txCtx mongo.SessionContext) (interface{}, error) {
+		oid, err := primitive.ObjectIDFromHex(msg.ID)
+		if err != nil {
+			return nil, err
+		}
+		var existing mongopo.ChatMessage
+		err = s.db.Collection(chatMessagesCol).FindOne(txCtx, bson.D{{Key: fieldID, Value: oid}}).Decode(&existing)
+		if err == nil {
+			if existing.ConversationID != msg.ConversationID || existing.SenderID != msg.SenderID || existing.ReceiverID != msg.ReceiverID || existing.Type != msg.Type || existing.Text != msg.Text || existing.Emoji != msg.Emoji || !reflect.DeepEqual(existing.Media, toPOMedia(msg.Media)) {
+				return nil, errors.New("message ID already belongs to different content")
+			}
+			msg.CreatedAt = existing.CreatedAt
+			return nil, nil
+		}
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, err
+		}
+		if err := s.InsertMessage(txCtx, msg); err != nil {
+			return nil, err
+		}
+		if err := s.ApplySend(txCtx, msg, preview); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	})
+	return err
+}
+
 // InsertMessage 落库一条消息并回填 ObjectID 的十六进制表示。
 func (s *Store) InsertMessage(ctx context.Context, msg *domain.Message) error {
 	if !s.Available() {
@@ -107,6 +154,13 @@ func (s *Store) InsertMessage(ctx context.Context, msg *domain.Message) error {
 	}
 
 	oid := primitive.NewObjectID()
+	if msg.ID != "" {
+		var err error
+		oid, err = primitive.ObjectIDFromHex(msg.ID)
+		if err != nil {
+			return err
+		}
+	}
 	row := mongopo.ChatMessage{
 		ID:             oid,
 		ConversationID: msg.ConversationID,

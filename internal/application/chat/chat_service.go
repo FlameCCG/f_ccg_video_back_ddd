@@ -40,8 +40,7 @@ func NewService(
 
 // SendMessage 校验并落库一条私信，同时推进会话摘要与接收方未读数。
 //
-// InsertMessage 与 ApplySend 当前是连续两次仓储调用，没有共同的 Mongo 事务。
-// 后一步失败时消息可能已经存在；错误不代表此前写入均被撤销，调用方重试也不能假定自动去重。
+// The repository commits the message and conversation summary in one Mongo transaction.
 func (s *Service) SendMessage(
 	ctx context.Context,
 	senderID, receiverID uint,
@@ -79,11 +78,7 @@ func (s *Service) SendMessage(
 		CreatedAt:      now,
 	}
 
-	if err := s.repo.InsertMessage(ctx, msg); err != nil {
-		return nil, err
-	}
-
-	if err := s.repo.ApplySend(ctx, msg, domain.BuildPreview(msg)); err != nil {
+	if err := s.repo.SendMessage(ctx, msg, domain.BuildPreview(msg)); err != nil {
 		return nil, err
 	}
 
