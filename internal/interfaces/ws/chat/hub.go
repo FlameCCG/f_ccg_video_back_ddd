@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"fmt"
 	"net/http"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	chatapp "f_ccg_video_back_ddd/internal/application/chat"
 	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
+	"f_ccg_video_back_ddd/pkg/authsession"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -420,6 +422,16 @@ func (c *client) writePump() {
 	for {
 		select {
 		case msg, ok := <-c.send:
+			if ok && c.userID != 0 {
+				authCtx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
+				err := authsession.Validate(authCtx)
+				cancel()
+				if err != nil {
+					c.closeWithReason("session revoked")
+					return
+				}
+			}
+
 			_ = c.conn.SetWriteDeadline(time.Now().Add(chatWSWriteWait))
 
 			if !ok {
@@ -432,6 +444,16 @@ func (c *client) writePump() {
 				return
 			}
 		case <-pingTicker.C:
+			if c.userID != 0 {
+				authCtx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
+				err := authsession.Validate(authCtx)
+				cancel()
+				if err != nil {
+					c.closeWithReason("session revoked")
+					return
+				}
+			}
+
 			_ = c.conn.SetWriteDeadline(time.Now().Add(chatWSWriteWait))
 
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -474,10 +496,14 @@ func (c *client) handleSend(evt clientEvent) {
 
 	ctx, cancel := context.WithTimeout(c.ctx, sendTimeout)
 	defer cancel()
+	if err := authsession.Validate(ctx); err != nil {
+		c.sendSystem("session expired, please sign in again")
+		return
+	}
 
 	msg, err := c.room.hub.service.SendMessage(ctx, c.userID, evt.To, evt.MsgType, evt.Text, evt.Emoji, evt.Media)
 	if err != nil {
-		c.sendSystem(err.Error())
+		c.sendSystem(clienterror.Message(err))
 
 		return
 	}
@@ -501,6 +527,10 @@ func (c *client) handleRead(evt clientEvent) {
 
 	ctx, cancel := context.WithTimeout(c.ctx, readTimeout)
 	defer cancel()
+	if err := authsession.Validate(ctx); err != nil {
+		c.sendSystem("session expired, please sign in again")
+		return
+	}
 
 	if err := c.room.hub.service.MarkRead(ctx, c.userID, evt.PeerID); err != nil {
 		return
