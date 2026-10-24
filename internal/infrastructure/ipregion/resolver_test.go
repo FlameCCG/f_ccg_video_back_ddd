@@ -1,6 +1,7 @@
 package ipregion
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/lionsoul2014/ip2region/binding/golang/xdb"
@@ -86,4 +87,33 @@ func TestResolverNilReceiver(t *testing.T) {
 	if got := resolver.Region("8.8.8.8"); got != "未知地址" {
 		t.Fatalf("nil resolver Region = %q, want 未知地址", got)
 	}
+}
+
+func TestResolverConcurrentSearchesRemainConsistent(t *testing.T) {
+	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, xdbTestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer searcher.Close()
+	resolver := NewResolver(searcher, zap.NewNop())
+	ips := []string{"8.8.8.8", "1.1.1.1", "114.114.114.114"}
+	want := make(map[string]string)
+	for _, ip := range ips {
+		want[ip] = resolver.Region(ip)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for n := 0; n < 20; n++ {
+				for _, ip := range ips {
+					if got := resolver.Region(ip); got != want[ip] {
+						t.Errorf("%s: %q != %q", ip, got, want[ip])
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 
@@ -17,6 +18,7 @@ const regionFieldCount = 5
 // Resolver 基于 ip2region 的归属地解析器，实现 ipUtils.RegionResolver。
 // 替代原 pkg/utils/ipUtils.GetIpAddr 对 global.IPSearcher 的全局引用。
 type Resolver struct {
+	mu       sync.Mutex // xdb Search mutates ioCount and seeks a shared file.
 	searcher *xdb.Searcher
 	logger   *zap.Logger
 }
@@ -39,7 +41,9 @@ func (r *Resolver) Region(ip string) string {
 		return "未知地址"
 	}
 
+	r.mu.Lock()
 	region, err := r.searcher.SearchByStr(ip)
+	r.mu.Unlock()
 	if err != nil {
 		r.logger.Warn("ipUtils.GetIpAddr failed", zap.Error(err))
 
