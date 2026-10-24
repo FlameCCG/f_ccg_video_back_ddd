@@ -2,6 +2,7 @@ package identity
 
 import (
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
@@ -90,7 +91,7 @@ func (h *Handler) UpdateUserConfView(c *gin.Context) {
 		BannerURL:     req.BannerURL,
 		LikeTags:      req.LikeTags,
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

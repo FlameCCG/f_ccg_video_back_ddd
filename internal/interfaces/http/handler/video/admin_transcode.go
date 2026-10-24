@@ -2,6 +2,7 @@ package video
 
 import (
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
@@ -47,7 +49,7 @@ func (h *AdminHandler) AdminTranscodeProgressView(c *gin.Context) {
 
 	ids, err := parseVideoIDList(req.VideoIDs)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -69,7 +71,7 @@ func (h *AdminHandler) AdminTranscodeProgressStreamView(c *gin.Context) {
 
 	ids, err := parseVideoIDList(req.VideoIDs)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -81,6 +83,13 @@ func (h *AdminHandler) AdminTranscodeProgressStreamView(c *gin.Context) {
 		return
 	}
 
+	// Gin wraps the original writer; ResponseController needs its unwrapped writer.
+	deadline := time.Now().Add(ctxutil.RequestTranscodeProgressSSETimeout)
+	if err := http.NewResponseController(c.Writer).SetWriteDeadline(deadline); err != nil && err != http.ErrNotSupported {
+		h.log().Warn("set SSE write deadline failed", zap.Error(err))
+		res.FailWithMsg("启动进度流失败", c)
+		return
+	}
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")

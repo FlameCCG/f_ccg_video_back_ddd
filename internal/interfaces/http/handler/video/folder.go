@@ -2,6 +2,7 @@ package video
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/video"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -26,7 +27,7 @@ func (h *Handler) CreateFolderView(c *gin.Context) {
 
 	folder, err := h.folders.CreateFolder(c.Request.Context(), uid, req.Name)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -58,7 +59,7 @@ func (h *Handler) UpdateFolderView(c *gin.Context) {
 
 	folder, err := h.folders.UpdateFolder(c.Request.Context(), uid, req.FolderID, req.Name)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -88,7 +89,7 @@ func (h *Handler) DeleteFolderView(c *gin.Context) {
 	}
 
 	if err := h.folders.DeleteFolder(c.Request.Context(), uid, req.FolderID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -114,7 +115,7 @@ func (h *Handler) FolderListView(c *gin.Context) {
 
 	list, err := h.folders.ListFolders(c.Request.Context(), uid, req.VideoID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -151,7 +152,7 @@ func (h *Handler) FolderVideosView(c *gin.Context) {
 			return
 		}
 
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

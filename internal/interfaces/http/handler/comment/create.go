@@ -2,6 +2,7 @@ package comment
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/comment"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
@@ -50,7 +51,7 @@ func (h *Handler) CreateView(c *gin.Context) {
 		Addr:      addr,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

@@ -2,6 +2,7 @@ package video
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/video"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -41,7 +42,7 @@ func (h *Handler) SendDanmuView(c *gin.Context) {
 		Position:    req.Position,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -65,12 +66,12 @@ func (h *Handler) DanmuWSView(c *gin.Context) {
 
 	partID, err := h.danmu.ResolveDanmuPart(ctx, req.VideoID, req.PartID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
 
-	uid := h.parseUIDFromToken(req.Token, c.GetHeader("Authorization"))
+	uid := h.parseUIDFromToken(c, req.Token, c.GetHeader("Authorization"))
 	if err := h.hub.ServeWS(c, req.VideoID, partID, uid); err != nil {
 		// Upgrade 阶段失败时才会走到这里，正常情况下连接会由客户端维护
 		res.FailWithMsg("连接弹幕服务失败", c)
@@ -106,7 +107,7 @@ func (h *Handler) DanmuHistoryView(c *gin.Context) {
 		Limit:       req.Limit,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -148,7 +149,7 @@ func (h *Handler) DanmuRoomListView(c *gin.Context) {
 		UseTimeRange: useTimeRange,
 	})
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -191,7 +192,7 @@ func (h *Handler) DanmuMonthDatesView(c *gin.Context) {
 		req.End,
 	)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -217,7 +218,7 @@ func (h *Handler) DanmuLikeView(c *gin.Context) {
 
 	result, err := h.danmu.ToggleLike(c.Request.Context(), uid, req.DanmuID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -242,7 +243,7 @@ func (h *Handler) DeleteDanmuView(c *gin.Context) {
 	}
 
 	if err := h.danmu.DeleteByUser(c.Request.Context(), uid, req.DanmuID); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -271,7 +272,7 @@ func (h *Handler) CreatorDanmuListView(c *gin.Context) {
 
 	list, total, err := h.danmu.CreatorList(c.Request.Context(), uid, req.Page, req.PageSize, req.Sort, req.Keyword)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

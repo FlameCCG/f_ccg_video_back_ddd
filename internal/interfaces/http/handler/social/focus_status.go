@@ -1,6 +1,7 @@
 package social
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"strconv"
 	"strings"
 
@@ -40,7 +41,7 @@ func (h *Handler) FocusStatusView(c *gin.Context) {
 
 	relation, err := h.relations.FocusStatus(c.Request.Context(), uid, targetUID)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 		return
 	}
 

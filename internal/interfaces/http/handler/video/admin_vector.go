@@ -2,6 +2,7 @@ package video
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
@@ -26,12 +27,12 @@ func (h *AdminHandler) AdminRebuildVectorIndexView(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrVectorRebuildInProgress) {
-			res.FailWithMsg(err.Error(), c)
+			res.FailWithMsg(clienterror.Message(err), c)
 
 			return
 		}
 
-		res.FailWithMsg("启动向量索引重建失败: "+err.Error(), c)
+		res.FailWithMsg("启动向量索引重建失败: "+clienterror.Message(err), c)
 
 		return
 	}

@@ -448,6 +448,13 @@ func (s *stubRepository) InsertMessage(_ context.Context, msg *domain.Message) e
 
 func (s *stubRepository) ApplySend(context.Context, *domain.Message, string) error { return nil }
 
+func (s *stubRepository) SendMessage(ctx context.Context, msg *domain.Message, preview string) error {
+	if err := s.InsertMessage(ctx, msg); err != nil {
+		return err
+	}
+	return s.ApplySend(ctx, msg, preview)
+}
+
 func (s *stubRepository) UpsertConversation(
 	context.Context,
 	uint, uint,

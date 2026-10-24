@@ -1,6 +1,7 @@
 package video
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -85,7 +86,7 @@ func (h *Handler) RecommendView(c *gin.Context) {
 
 	list, err := h.recommend.RelatedVideos(c.Request.Context(), req.VideoID, req.Size)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

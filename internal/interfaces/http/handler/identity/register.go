@@ -2,6 +2,7 @@ package identity
 
 import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
@@ -30,7 +31,7 @@ func (h *Handler) EmailRegisterView(c *gin.Context) {
 		RegisterIP:   ip,
 		RegisterAddr: addr,
 	}); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

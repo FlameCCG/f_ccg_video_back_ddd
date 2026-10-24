@@ -2,6 +2,7 @@ package contentops
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
@@ -113,7 +114,7 @@ func (h *Handler) AdminCreateView(c *gin.Context) {
 		// 分区裁定失败回显原始文案，落库失败回显固定文案（与原实现一致）。
 		var partitionErr *app.PartitionResolveError
 		if errors.As(err, &partitionErr) {
-			res.FailWithMsg(partitionErr.Error(), c)
+			res.FailWithMsg(clienterror.Message(partitionErr), c)
 
 			return
 		}
@@ -145,7 +146,7 @@ func (h *Handler) AdminUpdateView(c *gin.Context) {
 			return
 		}
 
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

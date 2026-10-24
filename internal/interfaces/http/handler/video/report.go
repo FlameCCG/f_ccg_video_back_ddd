@@ -2,6 +2,7 @@ package video
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"net/http"
 	"path"
 
@@ -45,7 +46,7 @@ func (h *Handler) ReportVideoView(c *gin.Context) {
 
 	images, err := h.saveReportImages(c, "video")
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -54,7 +55,7 @@ func (h *Handler) ReportVideoView(c *gin.Context) {
 		c.Request.Context(), uid, req.VideoID, req.Reason, req.Detail, images,
 	)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -82,7 +83,7 @@ func (h *Handler) ReportDanmuView(c *gin.Context) {
 
 	report, err := h.reports.CreateDanmuReport(c.Request.Context(), uid, req.DanmuID, req.Reason, req.Detail)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -94,6 +95,7 @@ func (h *Handler) ReportDanmuView(c *gin.Context) {
 //
 // 非 multipart 请求返回 (nil, nil)；校验与错误文案与原 saveReportImages 逐字一致。
 func (h *Handler) saveReportImages(c *gin.Context, reportType string) ([]string, error) {
+	middlewares.LimitRequestBody(c, 52<<20)
 	form, err := c.MultipartForm()
 	if err != nil {
 		if errors.Is(err, http.ErrNotMultipart) {

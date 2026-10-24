@@ -1,6 +1,7 @@
 package contentops
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
@@ -14,7 +15,7 @@ func (h *Handler) AdminStatsView(c *gin.Context) {
 
 	stats, err := h.stats.AdminStats(ctx)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -31,7 +32,7 @@ func (h *Handler) StatTouchView(c *gin.Context) {
 
 	result, err := h.stats.Touch(ctx, uid, ip)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -48,7 +49,7 @@ func (h *Handler) StatHeartbeatView(c *gin.Context) {
 
 	result, err := h.stats.Heartbeat(ctx, uid, ip)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

@@ -1,6 +1,7 @@
 package video
 
 import (
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -27,7 +28,7 @@ func (h *Handler) SaveHistoryView(c *gin.Context) {
 	}
 
 	if err := h.history.SavePlayHistory(c.Request.Context(), uid, req.VideoID, req.Progress, req.Duration); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -100,7 +101,7 @@ func (h *Handler) GetVideoHistoryView(c *gin.Context) {
 
 	list, total, err := h.history.ListUserHistory(c.Request.Context(), uid, req.Page, req.PageSize, req.Keyword)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -121,7 +122,7 @@ func (h *Handler) DeleteHistoryView(c *gin.Context) {
 
 	if err := h.history.DeleteHistory(c.Request.Context(), uid, req.VideoIDs); err != nil {
 		h.log().Error("delete history failed", zap.Error(err), zap.Uint("userId", uid))
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}

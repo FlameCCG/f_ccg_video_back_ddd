@@ -3,6 +3,7 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"path"
 	"strings"
 
@@ -44,7 +45,7 @@ func (h *Handler) UploadChunkView(c *gin.Context) {
 
 	if err := h.uploads.UploadChunkForUser(c.Request.Context(), uid, req.FileHash, req.Index, header.Size, file); err != nil {
 		h.log().Error("upload chunk failed", zap.Error(err))
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -78,7 +79,7 @@ func (h *Handler) ChunkStatusView(c *gin.Context) {
 	if err != nil {
 		h.log().Error("list uploaded chunks failed", zap.Error(err))
 		if errors.Is(err, app.ErrDailyUploadLimit) || errors.Is(err, app.ErrUploadQuotaUnavailable) {
-			res.FailWithMsg(err.Error(), c)
+			res.FailWithMsg(clienterror.Message(err), c)
 		} else {
 			res.FailWithMsg("检查上传状态失败", c)
 		}
@@ -125,7 +126,7 @@ func (h *Handler) CompleteUploadView(c *gin.Context) {
 	finalPath, err := h.uploads.CompleteUploadForUser(mergeCtx, uid, req.FileHash, req.FileName, req.TotalChunks)
 	if err != nil {
 		h.log().Error("complete upload failed", zap.Error(err))
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -137,9 +138,10 @@ func (h *Handler) CompleteUploadView(c *gin.Context) {
 
 // UploadImageView 接收前端上传的图片并返回存储地址.
 func (h *Handler) UploadImageView(c *gin.Context) {
+	middlewares.LimitRequestBody(c, 12<<20)
 	fileHash := strings.TrimSpace(c.PostForm("fileHash"))
 	if err := h.uploads.ValidateUploadID(fileHash); err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
@@ -157,7 +159,7 @@ func (h *Handler) UploadImageView(c *gin.Context) {
 		file, header.Filename, header.Size, uploadcheck.DefaultMaxImageBytes,
 	)
 	if err != nil {
-		res.FailWithMsg(err.Error(), c)
+		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
