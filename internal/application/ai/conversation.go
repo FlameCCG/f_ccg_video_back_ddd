@@ -61,14 +61,6 @@ func parseConversation(raw json.RawMessage) (conversation, error) {
 		role := strings.ToLower(strings.TrimSpace(conversationString(item["role"])))
 		text, images := splitContentParts(item["content"])
 
-		if role == string(schema.System) {
-			if text != "" {
-				result.Messages = append(result.Messages, schema.SystemMessage(text))
-			}
-
-			continue
-		}
-
 		messageRole := schema.User
 		if role == string(schema.Assistant) {
 			messageRole = schema.Assistant

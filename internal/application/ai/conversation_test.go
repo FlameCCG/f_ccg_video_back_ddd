@@ -26,8 +26,8 @@ func TestParseConversationKeepsHistoryAndSplitsImages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseConversation() error = %v", err)
 	}
-	if len(conv.Messages) != 4 || conv.Messages[0].Role != schema.System {
-		t.Fatalf("messages = %#v, want leading system message", conv.Messages)
+	if len(conv.Messages) != 4 || conv.Messages[0].Role != schema.User {
+		t.Fatalf("messages = %#v, want client system role downgraded to user", conv.Messages)
 	}
 	if conv.LatestUserText != "找找这个" || len(conv.LatestUserImages) != 1 || conv.LatestUserImages[0] != testDataURI {
 		t.Fatalf("conversation = %#v", conv)
