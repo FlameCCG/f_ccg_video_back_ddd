@@ -22,6 +22,7 @@ import (
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
+	"f_ccg_video_back_ddd/internal/infrastructure/mq"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongodb"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mysql"
 	"f_ccg_video_back_ddd/internal/infrastructure/search"
@@ -88,6 +89,7 @@ type App struct {
 	detached    *ctxutil.DetachedTaskGroup
 	runtime     *RuntimeComponents
 	infra       *Infrastructure
+	producers   *mq.ProducerPool
 }
 
 // NewApp 组装应用运行期聚合体。
@@ -104,6 +106,7 @@ func NewApp(
 	httpRouter *router.Router,
 	detached *ctxutil.DetachedTaskGroup,
 	runtime *RuntimeComponents,
+	producers *mq.ProducerPool,
 ) *App {
 	return &App{
 		cfgProvider: cfgProvider,
@@ -111,6 +114,7 @@ func NewApp(
 		router:      httpRouter,
 		detached:    detached,
 		runtime:     runtime,
+		producers:   producers,
 		infra:       infra,
 	}
 }
@@ -230,6 +234,9 @@ func (a *App) Stop(ctx context.Context) error {
 
 	cancel()
 
+	if err := a.producers.Close(); err != nil {
+		a.log().Warn("close Kafka producers failed", zap.Error(err))
+	}
 	a.infra.Stop()
 	a.lg.Stop()
 

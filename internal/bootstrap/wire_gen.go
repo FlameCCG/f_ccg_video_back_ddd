@@ -87,9 +87,14 @@ import (
 
 // InitializeApp 构造完整应用（HTTP 服务 + 后台组件 + 基础设施）。
 //
-// 生成命令（见 docs/refactor-spec.md 第 2 节）：
+// 本文件带 wireinject 标签，只供 Wire 分析；这里的 panic(wire.Build(...)) 是生成声明，
+// 不会进入正常服务的运行路径。普通构建使用 wire_gen.go 中同名的普通 Go 函数。
+// 返回的 func() 是清理已成功构造依赖的闭包，error 对应返回错误的 provider；
+// provider 自身发生 panic（如配置加载失败）时，不应假定会走普通 error 回退路径。
 //
-//	go run github.com/google/wire/cmd/wire ./internal/bootstrap
+// 生成命令（在项目根目录执行；依赖图说明见 docs/architecture.md 第 6 节）：
+//
+//	go run -mod=mod github.com/google/wire/cmd/wire ./internal/bootstrap
 func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
 	provider, err := config.Load(string2)
@@ -265,7 +270,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	feedQuery := video.NewFeedQuery(gormDB)
 	feedService := video3.NewFeedService(feedQuery, historyRepository, hotRankCache, statsService)
 	detailQuery := video.NewDetailQuery(gormDB)
-	httpdashVariantResolver := video4.NewHTTPDASHVariantResolver(zapLogger)
+	httpdashVariantResolver := video4.NewStoredDASHVariantResolver(resolver, zapLogger)
 	detailService := video3.NewDetailService(detailQuery, detailMetaCache, statsService, httpdashVariantResolver)
 	recommendQuery := video.NewRecommendQuery(gormDB)
 	recommendService := video3.NewRecommendService(recommendQuery, statsService)
@@ -278,7 +283,8 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	danmuRepository := video.NewDanmuRepository(gormDB)
 	danmuQuery := video.NewDanmuQuery(gormDB)
 	danmuRecentCache := video2.NewDanmuRecentCache(client, zapLogger)
-	danmuService := video3.NewDanmuService(videoRepository, danmuRepository, danmuQuery, danmuRecentCache, statsService, authorService, creatorAnalyticsService, zapLogger)
+	identityContentAuthorizer := adapters.NewIdentityContentAuthorizer(banService)
+	danmuService := video3.NewDanmuService(videoRepository, danmuRepository, danmuQuery, danmuRecentCache, statsService, authorService, creatorAnalyticsService, zapLogger, identityContentAuthorizer)
 	historyQuery := video.NewHistoryQuery(gormDB)
 	historyService := video3.NewHistoryService(videoRepository, historyRepository, historyQuery)
 	partitionRepository := video.NewPartitionRepository(gormDB)
@@ -323,7 +329,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	danmuEventBus := video2.NewDanmuEventBus(client, zapLogger)
 	checker := wsorigin.NewChecker(provider)
 	hub := NewDanmuHub(danmuService, danmuEventBus, checker, zapLogger)
-	videoHandler := video5.NewHandler(feedService, detailService, recommendService, interactionService, danmuService, historyService, folderService, partitionService, publishService, updateService, uploadService, reportService, videoSearcher, readService, hub, provider, ipregionResolver, zapLogger)
+	videoHandler := video5.NewHandler(feedService, detailService, recommendService, interactionService, danmuService, historyService, folderService, partitionService, publishService, updateService, uploadService, reportService, videoSearcher, readService, hub, provider, ipregionResolver, zapLogger, userStatusService)
 	adminVideoQuery := video.NewAdminVideoQuery(gormDB)
 	adminVideoService := video3.NewAdminVideoService(txManager, videoRepository, adminVideoQuery, statsService, authorService, detailMetaCache, hotRankCache, scheduleStore, vectorSyncService, purgeRepository, cancelService, videoStorageResolver, uploadService, zapLogger)
 	progressQueryService := media.NewProgressQueryService(progressCache)
@@ -350,7 +356,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	dynamicLikeRepository := dynamic.NewLikeRepository(gormDB)
 	likeService := dynamic2.NewLikeService(txManager, dynamicRepository, dynamicLikeRepository, userProfileQuery, notifier, detachedTaskGroup, zapLogger)
 	adminDynamicQuery := dynamic.NewAdminDynamicQuery(gormDB)
-	adminService := dynamic2.NewAdminService(dynamicRepository, adminDynamicQuery)
+	adminService := dynamic2.NewAdminService(dynamicRepository, adminDynamicQuery, txManager, purgeRepository)
 	dynamicHandler := dynamic4.NewHandler(dynamicService, dynamicFeedService, followService, likeService, readService, adminService)
 	roleRepository := rbac.NewRoleRepository(gormDB)
 	menuRepository := rbac.NewMenuRepository(gormDB)
@@ -389,7 +395,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	uploadCleanupService := video3.NewUploadCleanupService(uploadGarbageScanner, videoRepository, uploadHashGuard, provider, zapLogger)
 	cronComponent := scheduler.NewCronComponent(commentLikeSyncService, videoStatSyncService, hotRankDecayService, autoUnbanService, uploadCleanupService, zapLogger)
 	runtimeComponents := NewRuntimeComponents(riverComponent, videoScheduler, transcodeConsumerComponent, cronComponent, chatHub, hub, zapLogger)
-	app := NewApp(infrastructure, provider, loggerLogger, routerRouter, detachedTaskGroup, runtimeComponents)
+	app := NewApp(infrastructure, provider, loggerLogger, routerRouter, detachedTaskGroup, runtimeComponents, producerPool)
 	return app, func() {
 		cleanup6()
 		cleanup5()
@@ -534,7 +540,8 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 		return nil, nil, err
 	}
 	casbinRoleBinder := provisioning.NewCasbinRoleBinder(syncedEnforcer, zapLogger)
-	superUserService := provisioning2.NewSuperUserService(superUserRepository, casbinRoleBinder)
+	txManager := gormx.NewTxManager(gormDB)
+	superUserService := provisioning2.NewSuperUserService(superUserRepository, casbinRoleBinder, txManager)
 	executor := cli.NewSuperUserExecutor(superUserService, zapLogger)
 	return executor, func() {
 		cleanup2()
