@@ -25,12 +25,16 @@ type MessageHandler func(session sarama.ConsumerGroupSession, msg *sarama.Consum
 
 // KafkaConsumer 包装 sarama.ConsumerGroup 的生命周期。
 type KafkaConsumer struct {
-	cfg       *config.Kafka
-	group     sarama.ConsumerGroup
-	topics    []string
-	fn        MessageHandler
-	producers *ProducerPool
-	logger    *zap.Logger
+	cfg           *config.Kafka
+	group         sarama.ConsumerGroup
+	groupMu       sync.RWMutex
+	closed        bool
+	topics        []string
+	fn            MessageHandler
+	producers     *ProducerPool
+	dlqProducer   sarama.SyncProducer
+	ownsProducers bool
+	logger        *zap.Logger
 	// consumeCtx 仅控制拉取循环；与长任务处理解耦，避免 rebalance 取消转码。
 	consumeCtx    context.Context
 	consumeCancel context.CancelFunc
@@ -86,8 +90,22 @@ func NewKafkaConsumer(
 		return nil, errors.New("message handler required")
 	}
 
+	if err := validateConsumerDLQ(cfg, topics, logger); err != nil {
+		return nil, err
+	}
+	ownsProducers := producers == nil
+	if ownsProducers {
+		producers = NewProducerPool(logger)
+	}
+	dlqProducer, err := producers.Producer(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("initialize dlq producer: %w", err)
+	}
 	cg, err := newConsumerGroup(cfg, logger)
 	if err != nil {
+		if ownsProducers {
+			_ = producers.Close()
+		}
 		return nil, err
 	}
 
@@ -100,12 +118,33 @@ func NewKafkaConsumer(
 		topics:         topics,
 		fn:             handler,
 		producers:      producers,
+		dlqProducer:    dlqProducer,
+		ownsProducers:  ownsProducers,
 		logger:         logger,
 		consumeCtx:     consumeCtx,
 		consumeCancel:  consumeCancel,
 		shutdownCtx:    shutdownCtx,
 		shutdownCancel: shutdownCancel,
 	}, nil
+}
+
+// validateConsumerDLQ fails before consuming if deployment omitted the dead-letter topic.
+// Topic creation is explicit in docker-compose; production operators may provision it with their own replication policy.
+func validateConsumerDLQ(cfg *config.Kafka, topics []string, logger *zap.Logger) error {
+	topic := resolveDLQTopic(cfg, topics)
+	admin, err := sarama.NewClusterAdmin(cfg.Brokers, newConsumerGroupConfig(cfg, logger))
+	if err != nil {
+		return fmt.Errorf("initialize dlq metadata: %w", err)
+	}
+	defer admin.Close()
+	metadata, err := admin.DescribeTopics([]string{topic})
+	if err != nil {
+		return fmt.Errorf("describe dlq topic %q: %w", topic, err)
+	}
+	if len(metadata) != 1 || metadata[0].Err != sarama.ErrNoError {
+		return fmt.Errorf("dlq topic %q must be created before starting the consumer", topic)
+	}
+	return nil
 }
 
 func newConsumerGroup(cfg *config.Kafka, logger *zap.Logger) (sarama.ConsumerGroup, error) {
@@ -173,7 +212,7 @@ func newConsumerGroupConfig(cfg *config.Kafka, logger *zap.Logger) *sarama.Confi
 
 // Start 启动消费循环。
 func (c *KafkaConsumer) Start() error {
-	if c.group == nil {
+	if c.currentGroup() == nil {
 		return errors.New("consumer group not ready")
 	}
 	// 启动消费循环
@@ -218,11 +257,19 @@ func (c *KafkaConsumer) Close() error {
 		c.shutdownCancel()
 	}
 
-	if c.group != nil {
-		return c.group.Close()
+	c.groupMu.Lock()
+	c.closed = true
+	group := c.group
+	c.group = nil
+	c.groupMu.Unlock()
+	var closeErr error
+	if group != nil {
+		closeErr = group.Close()
 	}
-
-	return nil
+	if c.ownsProducers {
+		closeErr = errors.Join(closeErr, c.producers.Close())
+	}
+	return closeErr
 }
 
 // Stop 完整关闭：先停消费，再取消长任务并释放 consumer group。
@@ -236,10 +283,11 @@ func (c *KafkaConsumer) loop() {
 	defer c.wg.Done()
 
 	handler := consumerGroupHandler{
-		fn:       c.fn,
-		producer: c.initConsumerDLQProducer(),
-		dlqTopic: resolveDLQTopic(c.cfg, c.topics),
-		logger:   c.logger,
+		shutdownCtx: c.shutdownCtx,
+		fn:          c.fn,
+		producer:    c.dlqProducer,
+		dlqTopic:    resolveDLQTopic(c.cfg, c.topics),
+		logger:      c.logger,
 	}
 
 	for {
@@ -247,7 +295,11 @@ func (c *KafkaConsumer) loop() {
 			return
 		}
 
-		if err := c.group.Consume(c.consumeCtx, c.topics, handler); err != nil {
+		group := c.currentGroup()
+		if group == nil {
+			return
+		}
+		if err := group.Consume(c.consumeCtx, c.topics, handler); err != nil {
 			if errors.Is(err, sarama.ErrClosedConsumerGroup) {
 				if c.consumeCtx.Err() != nil {
 					return
@@ -288,14 +340,27 @@ func resolveKafkaRebalanceTimeout(cfg *config.Kafka) time.Duration {
 	return defaultKafkaRebalanceTimeout
 }
 
+func (c *KafkaConsumer) currentGroup() sarama.ConsumerGroup {
+	c.groupMu.RLock()
+	defer c.groupMu.RUnlock()
+	return c.group
+}
+
 func (c *KafkaConsumer) recreateGroup() error {
 	nextGroup, err := newConsumerGroup(c.cfg, c.logger)
 	if err != nil {
 		return err
 	}
 
+	c.groupMu.Lock()
+	if c.closed {
+		c.groupMu.Unlock()
+		_ = nextGroup.Close()
+		return sarama.ErrClosedConsumerGroup
+	}
 	oldGroup := c.group
 	c.group = nextGroup
+	c.groupMu.Unlock()
 
 	if oldGroup != nil {
 		_ = oldGroup.Close()
@@ -351,10 +416,11 @@ func isKafkaNetworkTimeout(err error) bool {
 }
 
 type consumerGroupHandler struct {
-	fn       MessageHandler
-	producer sarama.SyncProducer
-	dlqTopic string
-	logger   *zap.Logger
+	shutdownCtx context.Context
+	fn          MessageHandler
+	producer    sarama.SyncProducer
+	dlqTopic    string
+	logger      *zap.Logger
 }
 
 func (h consumerGroupHandler) log() *zap.Logger {
@@ -418,9 +484,7 @@ func (h consumerGroupHandler) ConsumeClaim(
 
 			if err := h.handleMessage(session, msg); err != nil {
 				// 会话/上下文已取消时结束 claim，避免把取消错误当业务失败反复重启
-				if session.Context().Err() != nil ||
-					errors.Is(err, context.Canceled) ||
-					errors.Is(err, context.DeadlineExceeded) {
+				if h.isStopping(session) {
 					h.log().Warn("kafka claim ending due to session/context cancel (offset not committed; may redeliver)",
 						zap.String("topic", msg.Topic),
 						zap.Int32("partition", msg.Partition),
@@ -478,6 +542,10 @@ func (h consumerGroupHandler) ConsumeClaim(
 	}
 }
 
+func (h consumerGroupHandler) isStopping(session sarama.ConsumerGroupSession) bool {
+	return session.Context().Err() != nil || (h.shutdownCtx != nil && h.shutdownCtx.Err() != nil)
+}
+
 func (h consumerGroupHandler) handleMessage(
 	session sarama.ConsumerGroupSession,
 	msg *sarama.ConsumerMessage,
@@ -501,9 +569,7 @@ func (h consumerGroupHandler) handleMessage(
 			return nil
 		}
 
-		if session.Context().Err() != nil ||
-			errors.Is(err, context.Canceled) ||
-			errors.Is(err, context.DeadlineExceeded) {
+		if h.isStopping(session) {
 			h.log().Warn("kafka message handler stopped by session/context cancel",
 				zap.Int("attempt", attempt),
 				zap.String("topic", msg.Topic),
@@ -561,7 +627,7 @@ func (h consumerGroupHandler) handleMessage(
 		}
 	}
 
-	return lastErr
+	return media.PermanentMessage(fmt.Errorf("retries exhausted: %w", lastErr))
 }
 
 // dlqMessage 是死信队列消息体（外部契约）。
@@ -607,23 +673,6 @@ func (h consumerGroupHandler) publishDLQ(msg *sarama.ConsumerMessage, cause erro
 	_, _, err = h.producer.SendMessage(producerMsg)
 
 	return err
-}
-
-// initConsumerDLQProducer 复用共享生产者投递死信；初始化失败只记日志（DLQ 不可用不阻断消费）。
-func (c *KafkaConsumer) initConsumerDLQProducer() sarama.SyncProducer {
-	producers := c.producers
-	if producers == nil {
-		producers = NewProducerPool(c.logger)
-	}
-
-	producer, err := producers.Producer(c.cfg)
-	if err != nil {
-		c.logger.Warn("init kafka dlq producer failed", zap.Error(err))
-
-		return nil
-	}
-
-	return producer
 }
 
 func resolveDLQTopic(cfg *config.Kafka, topics []string) string {

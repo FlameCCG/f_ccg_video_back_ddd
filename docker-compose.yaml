@@ -122,6 +122,18 @@ services:
     networks:
       - f_video_network
   # Kafka UI（Web 可视化管理） ===
+  # Pre-create task and dead-letter topics even when broker auto-creation is disabled.
+  kafka-topics-init:
+    image: apache/kafka:3.9.0
+    depends_on: [kafka]
+    restart: on-failure
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic video_transcode_tasks --partitions 1 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic video_transcode_tasks.dlq --partitions 1 --replication-factor 1
+    networks:
+      - f_video_network
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui

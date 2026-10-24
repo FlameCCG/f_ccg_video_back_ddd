@@ -331,3 +331,64 @@ type timeoutError struct{}
 func (timeoutError) Error() string   { return "i/o timeout" }
 func (timeoutError) Timeout() bool   { return true }
 func (timeoutError) Temporary() bool { return true }
+
+type trackingDLQProducer struct {
+	stubSyncProducer
+	messages []*sarama.ProducerMessage
+	fail     bool
+}
+
+func (p *trackingDLQProducer) SendMessage(m *sarama.ProducerMessage) (int32, int64, error) {
+	if p.fail {
+		return 0, 0, errors.New("dlq unavailable")
+	}
+	p.messages = append(p.messages, m)
+	return 0, 0, nil
+}
+
+type trackingGroupSession struct {
+	stubConsumerGroupSession
+	marked []*sarama.ConsumerMessage
+}
+
+func (s *trackingGroupSession) MarkMessage(m *sarama.ConsumerMessage, _ string) {
+	s.marked = append(s.marked, m)
+}
+func TestRetryExhaustionDeadLettersAndContinuesPartition(t *testing.T) {
+	session := &trackingGroupSession{stubConsumerGroupSession: stubConsumerGroupSession{ctx: t.Context()}}
+	producer := &trackingDLQProducer{}
+	messages := make(chan *sarama.ConsumerMessage, 2)
+	poison := &sarama.ConsumerMessage{Topic: "source", Offset: 1}
+	good := &sarama.ConsumerMessage{Topic: "source", Offset: 2}
+	messages <- poison
+	messages <- good
+	close(messages)
+	handler := consumerGroupHandler{producer: producer, dlqTopic: "source.dlq", fn: func(s sarama.ConsumerGroupSession, m *sarama.ConsumerMessage) error {
+		if m.Offset == 1 {
+			return context.DeadlineExceeded
+		}
+		s.MarkMessage(m, "")
+		return nil
+	}}
+	if err := handler.ConsumeClaim(session, stubConsumerGroupClaim{messages: messages}); err != nil {
+		t.Fatal(err)
+	}
+	if len(producer.messages) != 1 || len(session.marked) != 2 || session.marked[1] != good {
+		t.Fatalf("partition blocked or poison unacknowledged: dlq=%d marked=%d", len(producer.messages), len(session.marked))
+	}
+}
+func TestDeadLetterFailureDoesNotCommitPoison(t *testing.T) {
+	session := &trackingGroupSession{stubConsumerGroupSession: stubConsumerGroupSession{ctx: t.Context()}}
+	messages := make(chan *sarama.ConsumerMessage, 1)
+	messages <- &sarama.ConsumerMessage{Topic: "source"}
+	close(messages)
+	handler := consumerGroupHandler{producer: &trackingDLQProducer{fail: true}, dlqTopic: "source.dlq", fn: func(s sarama.ConsumerGroupSession, m *sarama.ConsumerMessage) error {
+		return media.PermanentMessage(errors.New("invalid"))
+	}}
+	if err := handler.ConsumeClaim(session, stubConsumerGroupClaim{messages: messages}); err == nil {
+		t.Fatal("expected dlq failure")
+	}
+	if len(session.marked) != 0 {
+		t.Fatal("poison acknowledged without durable dlq copy")
+	}
+}
