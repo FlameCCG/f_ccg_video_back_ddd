@@ -290,6 +290,10 @@ func resolveFeedTotal(
 	countFn func(context.Context) (int64, error),
 ) (int64, []FeedRow, error) {
 	if len(rows) == 0 {
+		if offset > 0 && countFn != nil {
+			total, err := countFn(ctx)
+			return total, []FeedRow{}, err
+		}
 		return 0, []FeedRow{}, nil
 	}
 
