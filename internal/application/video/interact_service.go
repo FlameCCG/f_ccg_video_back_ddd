@@ -286,19 +286,33 @@ func (s *InteractionService) removeFavorite(
 	videoID, userID, folderID uint,
 ) (*FavoriteResult, error) {
 	var deltaFavorite int64
-	// 取消该收藏夹的收藏
-	if err := s.folders.DeleteLink(ctx, folderID, videoID); err != nil {
-		return nil, err
-	}
-
-	// 仍在其他收藏夹则不减总数
-	stillFavorited, err := s.folders.UserFavorited(ctx, videoID, userID)
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		authorID, err := s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
+		if err != nil {
+			return err
+		}
+		if err := s.ledger.LockAccounts(txCtx, []uint{userID, authorID}); err != nil {
+			return err
+		}
+		exists, err := s.folders.LinkExists(txCtx, folderID, videoID)
+		if err != nil || !exists {
+			return err
+		}
+		if err := s.folders.DeleteLink(txCtx, folderID, videoID); err != nil {
+			return err
+		}
+		still, err := s.folders.UserFavorited(txCtx, videoID, userID)
+		if err != nil {
+			return err
+		}
+		if !still {
+			deltaFavorite = -1
+			return s.ledger.RevokeFavoriteReward(txCtx, authorID, userID, videoID)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	if !stillFavorited {
-		deltaFavorite = -1
 	}
 
 	s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreFavoriteWeight, deltaFavorite)
@@ -333,10 +347,15 @@ func (s *InteractionService) addFavorite(
 	videoID, userID, folderID uint,
 ) (*FavoriteResult, error) {
 	authorID := uint(0)
+	var err error
 	firstFavorite := false
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		if err := s.ledger.LockAccounts(txCtx, []uint{userID}); err != nil {
+		authorID, err = s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
+		if err != nil {
+			return err
+		}
+		if err := s.ledger.LockAccounts(txCtx, []uint{userID, authorID}); err != nil {
 			return err
 		}
 
@@ -361,16 +380,17 @@ func (s *InteractionService) addFavorite(
 			return err
 		}
 
-		if authorID == 0 {
+		if authorID == 0 || authorID == userID {
 			return nil
 		}
 
+		key := favoriteRewardKey(userID, videoID)
 		return s.ledger.ApplyChange(
 			txCtx,
 			authorID,
 			domain.FavoriteAuthorReward,
 			"作品被收藏 +"+coinutil.Format(domain.FavoriteAuthorReward),
-			nil,
+			&key,
 		)
 	}); err != nil {
 		return nil, err
@@ -408,4 +428,8 @@ func (s *InteractionService) HasCoined(ctx context.Context, videoID, userID uint
 	ok, err := s.coins.Exists(orTODO(ctx), videoID, userID)
 
 	return err == nil && ok
+}
+
+func favoriteRewardKey(userID, videoID uint) string {
+	return fmt.Sprintf("favorite:%d:%d", userID, videoID)
 }

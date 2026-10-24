@@ -23,6 +23,7 @@ type DanmuService struct {
 	creators    CreatorAnalytics
 	broadcaster DanmuBroadcaster
 	logger      *zap.Logger
+	authorizer  ContentAuthorizer
 }
 
 // NewDanmuService 构造弹幕用例服务。
@@ -37,16 +38,18 @@ func NewDanmuService(
 	authors *AuthorService,
 	creators CreatorAnalytics,
 	logger *zap.Logger,
+	authorizer ContentAuthorizer,
 ) *DanmuService {
 	return &DanmuService{
-		videos:   videos,
-		danmus:   danmus,
-		query:    query,
-		recent:   recent,
-		stats:    stats,
-		authors:  authors,
-		creators: creators,
-		logger:   logger,
+		videos:     videos,
+		danmus:     danmus,
+		query:      query,
+		recent:     recent,
+		stats:      stats,
+		authors:    authors,
+		creators:   creators,
+		logger:     logger,
+		authorizer: authorizer,
 	}
 }
 
@@ -76,6 +79,12 @@ func (s *DanmuService) ResolveDanmuPart(ctx context.Context, videoID, partID uin
 
 // Send 发送弹幕。
 func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuParams) (*DanmuDTO, error) {
+	if s.authorizer == nil {
+		return nil, domain.ErrUserNotLogin
+	}
+	if err := s.authorizer.EnsureCanPublish(ctx, userID); err != nil {
+		return nil, err
+	}
 	cmd, err := domain.NormalizeSendDanmu(userID, domain.SendDanmuCommand{
 		VideoID:     params.VideoID,
 		VideoPartID: params.VideoPartID,

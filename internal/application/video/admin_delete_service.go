@@ -49,25 +49,27 @@ func (s *AdminVideoService) softDelete(ctx context.Context, videoIDs []uint) (*d
 }
 
 func (s *AdminVideoService) hardDelete(ctx context.Context, videoIDs []uint) (*domain.HardDeleteResult, error) {
-	if _, err := s.markDeleted(ctx, videoIDs); err != nil {
+	var result *domain.HardDeleteResult
+	var storageTargets []domain.StorageDeleteTarget
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		if _, err := s.markDeleted(txCtx, videoIDs); err != nil {
+			return err
+		}
+		comments, likes, err := s.comments.PurgeByVideoIDs(txCtx, videoIDs)
+		if err != nil {
+			return err
+		}
+		result, storageTargets, err = s.videos.HardDelete(txCtx, videoIDs)
+		if err != nil {
+			return err
+		}
+		result.Comments, result.CommentLikes = comments, likes
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
-
 	s.notifyDeletedVideoTranscodes(ctx, videoIDs)
-
-	// 评论与评论点赞归 comment 上下文，经端口清理（与原实现的删除顺序一致：先评论再其余）。
-	comments, commentLikes, err := s.comments.PurgeByVideoIDs(ctx, videoIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	result, storageTargets, err := s.videos.HardDelete(ctx, videoIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	result.Comments = comments
-	result.CommentLikes = commentLikes
 
 	s.cleanupVideoCache(ctx, videoIDs)
 	s.vectors.SyncBatchAsync(ctx, videoIDs, enum.VideoStatusDeleted)

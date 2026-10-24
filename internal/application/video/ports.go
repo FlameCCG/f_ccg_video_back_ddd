@@ -408,6 +408,7 @@ type ExpAwarder interface {
 // 在已有事务的 context 中调用 ApplyChange 时，identity 侧会复用同一事务
 // （见 decisions.md D-010），因此三连/投币的跨上下文原子性与原实现一致。
 type CoinLedger interface {
+	RevokeFavoriteReward(ctx context.Context, authorID, actorID, videoID uint) error
 	// LockAccounts 在调用方事务中锁定账户；由 identity 负责排序与去重。
 	LockAccounts(ctx context.Context, userIDs []uint) error
 	// ApplyChange 增减用户硬币余额并写入流水。
@@ -483,4 +484,10 @@ type CommentPurger interface {
 // 绑定目标：dynamic 上下文（原 dynamic_service.DynamicService.MaybeMarkReadByVideo）。
 type DynamicReadMarker interface {
 	MaybeMarkReadByVideo(ctx context.Context, userID, videoID uint) error
+}
+
+// ContentAuthorizer validates current account status for every content mutation,
+// including messages received on an already established WebSocket connection.
+type ContentAuthorizer interface {
+	EnsureCanPublish(context.Context, uint) error
 }
