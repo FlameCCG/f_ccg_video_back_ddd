@@ -293,7 +293,7 @@ var MediaProviderSet = wire.NewSet(
 var VideoProviderSet = wire.NewSet(
 	// internal/application/video
 	applicationVideo.ProviderSet,
-	infrastructureExternalVideo.NewHTTPDASHVariantResolver,
+	infrastructureExternalVideo.NewStoredDASHVariantResolver,
 	wire.Bind(new(applicationVideo.DASHVariantResolver), new(*infrastructureExternalVideo.HTTPDASHVariantResolver)),
 	// internal/infrastructure/persistence/video
 	infrastructurePersistenceVideo.NewAdminVideoQuery,
