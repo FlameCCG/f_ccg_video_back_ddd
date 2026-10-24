@@ -81,15 +81,22 @@ type eventHandler struct { // canal 的回调实现：把 binlog 事件翻译为
 	r *River // 持有 River，以便访问规则、ES 客户端、上下文、队列等
 }
 
+func (r *River) enqueue(value any) error {
+	select {
+	case <-r.ctx.Done():
+		return r.ctx.Err()
+	case r.syncCh <- value:
+		return r.ctx.Err()
+	}
+}
+
 func (h *eventHandler) OnRotate(e *replication.RotateEvent) error { // binlog 切换文件事件
 	pos := mysql.Position{
 		Name: string(e.NextLogName), // 下一份 binlog 文件名
 		Pos:  uint32(e.Position),    // 下一写入位置
 	}
 
-	h.r.syncCh <- posSaver{pos, true} // 强制保存：发送 posSaver(force=true)，确保在切换时立即刷位点
-
-	return h.r.ctx.Err() // 返回 ctx 错误可触发上游停止（当 Close/cancel 时）
+	return h.r.enqueue(posSaver{pos, true})
 }
 
 func (h *eventHandler) OnTableChanged(schema, table string) error { // 表结构/元数据变化
@@ -102,15 +109,11 @@ func (h *eventHandler) OnTableChanged(schema, table string) error { // 表结构
 }
 
 func (h *eventHandler) OnDDL(nextPos mysql.Position, _ *replication.QueryEvent) error { // 执行 DDL 事件
-	h.r.syncCh <- posSaver{nextPos, true} // 强制保存位点：结构变更必须快速保证一致
-
-	return h.r.ctx.Err() // 支持优雅退出
+	return h.r.enqueue(posSaver{nextPos, true})
 }
 
 func (h *eventHandler) OnXID(nextPos mysql.Position) error { // 事务提交（commit）事件
-	h.r.syncCh <- posSaver{nextPos, false} // 非强制保存：通常结合 3s 限流在 syncLoop 中落盘
-
-	return h.r.ctx.Err() // 支持优雅退出
+	return h.r.enqueue(posSaver{nextPos, false})
 }
 
 func (h *eventHandler) OnRow(e *canal.RowsEvent) error { // 核心：行变更事件（INSERT/UPDATE/DELETE）
@@ -173,9 +176,7 @@ func (h *eventHandler) OnRow(e *canal.RowsEvent) error { // 核心：行变更�
 		return errors.Errorf("make %s ES request err %v, close sync", e.Action, err)
 	}
 
-	h.r.syncCh <- reqs // 将本批次请求推送到主循环的批处理队列
-
-	return h.r.ctx.Err() // 返回 ctx 错误支持优雅退出
+	return h.r.enqueue(reqs)
 }
 
 func (h *eventHandler) OnGTID(_ mysql.GTIDSet) error { // GTID 事件（本实现未使用 GTID 位点）
