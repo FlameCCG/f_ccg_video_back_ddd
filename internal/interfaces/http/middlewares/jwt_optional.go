@@ -3,7 +3,7 @@ package middlewares
 import (
 	"strings"
 
-	jwts "f_ccg_video_back_ddd/pkg/jwt"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,9 +21,11 @@ func (m *Middlewares) JwtOptional() gin.HandlerFunc {
 		}
 
 		token = strings.TrimPrefix(token, "Bearer ")
-		if uid, username, err := jwts.ParseJwtTokenWithRole(token, m.accessSecret()); err == nil {
-			c.Set("uid", uid)
-			c.Set("username", username)
+		if m.userStatus != nil {
+			if user, err := m.userStatus.ValidateAccessToken(c.Request.Context(), token, m.accessSecret()); err == nil && !user.MustChangePassword {
+				c.Set("uid", strconv.FormatUint(uint64(user.ID), 10))
+				c.Set("username", user.Username)
+			}
 		}
 
 		c.Next()

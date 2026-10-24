@@ -8,13 +8,16 @@
 package video
 
 import (
+	"context"
+	"errors"
+	identityapp "f_ccg_video_back_ddd/internal/application/identity"
+	"f_ccg_video_back_ddd/pkg/authsession"
 	"strconv"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	wsdanmu "f_ccg_video_back_ddd/internal/interfaces/ws/danmu"
-	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +27,7 @@ import (
 // Handler 视频公开侧与创作者侧 HTTP 处理器
 // （首页流 / 详情 / 互动 / 弹幕 / 历史 / 收藏夹 / 投稿 / 上传 / 举报）。
 type Handler struct {
+	userStatus  *identityapp.UserStatusService
 	feed        *app.FeedService
 	detail      *app.DetailService
 	recommend   *app.RecommendService
@@ -67,8 +71,10 @@ func NewHandler(
 	cfgProvider *infraconfig.Provider,
 	resolver ipUtils.RegionResolver,
 	logger *zap.Logger,
+	userStatus *identityapp.UserStatusService,
 ) *Handler {
 	return &Handler{
+		userStatus:  userStatus,
 		feed:        feed,
 		detail:      detail,
 		recommend:   recommend,
@@ -128,6 +134,9 @@ func (h *Handler) resolveUID(c *gin.Context) uint {
 		return uid
 	}
 
+	if h.userStatus == nil {
+		return 0
+	}
 	token := c.GetHeader("Authorization")
 	if token == "" {
 		return 0
@@ -135,23 +144,19 @@ func (h *Handler) resolveUID(c *gin.Context) uint {
 
 	token = strings.TrimPrefix(token, "Bearer ")
 
-	uidStr, _, err := jwts.ParseJwtToken(token, h.accessSecret())
-	if err != nil {
+	user, err := h.userStatus.ValidateAccessToken(c.Request.Context(), token, h.accessSecret())
+	if err != nil || user.MustChangePassword {
 		return 0
 	}
 
+	uidStr := strconv.FormatUint(uint64(user.ID), 10)
 	c.Set("uid", uidStr)
 
-	uidUint64, err := strconv.ParseUint(uidStr, 10, 32)
-	if err != nil {
-		return 0
-	}
-
-	return uint(uidUint64)
+	return user.ID
 }
 
 // parseUIDFromToken 从 query token 或 Authorization 头解析 uid（WebSocket 入口使用）。
-func (h *Handler) parseUIDFromToken(queryToken, headerToken string) uint {
+func (h *Handler) parseUIDFromToken(c *gin.Context, queryToken, headerToken string) uint {
 	token := strings.TrimSpace(queryToken)
 	if token == "" {
 		token = strings.TrimSpace(headerToken)
@@ -162,15 +167,22 @@ func (h *Handler) parseUIDFromToken(queryToken, headerToken string) uint {
 		return 0
 	}
 
-	uidStr, _, err := jwts.ParseJwtToken(token, h.accessSecret())
-	if err != nil {
+	if h.userStatus == nil {
 		return 0
 	}
-
-	uid, err := strconv.ParseUint(uidStr, 10, 64)
-	if err != nil {
+	user, err := h.userStatus.ValidateAccessToken(c.Request.Context(), token, h.accessSecret())
+	if err != nil || user.MustChangePassword {
 		return 0
 	}
-
-	return uint(uid)
+	c.Request = c.Request.WithContext(authsession.WithValidator(c.Request.Context(), func(ctx context.Context) error {
+		current, err := h.userStatus.ValidateAccessToken(ctx, token, h.accessSecret())
+		if err != nil {
+			return err
+		}
+		if current.MustChangePassword {
+			return errors.New("initial password change required")
+		}
+		return nil
+	}))
+	return user.ID
 }

@@ -1,11 +1,12 @@
 package middlewares
 
 import (
-	"strconv"
 	"strings"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"context"
+	"errors"
+	"f_ccg_video_back_ddd/pkg/authsession"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -51,7 +52,7 @@ func (m *Middlewares) JwtAuthWithQueryTokenPreflight(queryKey string, timeout ti
 
 		cancel()
 
-		c.Request = c.Request.WithContext(originalCtx)
+		c.Request = c.Request.WithContext(authsession.Copy(originalCtx, c.Request.Context()))
 		if !ok || shouldSkipNext(c) {
 			return
 		}
@@ -91,6 +92,32 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 		return false
 	}
 
+	if m.userStatus == nil {
+		c.Abort()
+		return false
+	}
+	user, validationErr := m.userStatus.ValidateAccessToken(c.Request.Context(), token, m.accessSecret())
+	if validationErr != nil {
+		m.log().Warn("JWT credential validation failed", zap.Error(validationErr))
+		res.FailWithMsg("token invalid or account unavailable", c)
+		c.Abort()
+		return false
+	}
+	if user.MustChangePassword && c.FullPath() != "/v1/common/user/password/change" {
+		res.FailWithMsg("please change your initial password", c)
+		c.Abort()
+		return false
+	}
+	c.Request = c.Request.WithContext(authsession.WithValidator(c.Request.Context(), func(ctx context.Context) error {
+		current, err := m.userStatus.ValidateAccessToken(ctx, token, m.accessSecret())
+		if err != nil {
+			return err
+		}
+		if current.MustChangePassword {
+			return errors.New("initial password change required")
+		}
+		return nil
+	}))
 	return m.authenticateResolvedUser(c, uid, username)
 }
 
@@ -104,18 +131,6 @@ func (m *Middlewares) authenticateResolvedUser(c *gin.Context, uid, username str
 
 	c.Set("uid", uid)
 	c.Set("username", username)
-
-	if uidInt, err := strconv.ParseUint(uid, 10, 64); err == nil && uidInt > 0 {
-		status, err := m.userStatus.CachedStatus(c.Request.Context(), uint(uidInt))
-		if err == nil {
-			if status == enum.UserStatusPermanentlyBanned {
-				res.FailWithMsg("账号已被永久封禁", c)
-				c.Abort()
-
-				return false
-			}
-		}
-	}
 
 	return true
 }

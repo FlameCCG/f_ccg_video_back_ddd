@@ -35,6 +35,12 @@ func (s *submissionStatusCache) Load(context.Context, uint) (enum.UserStatus, bo
 	return s.status, true
 }
 
+type routeSubmissionUsers struct{ identitydomain.UserRepository }
+
+func (*routeSubmissionUsers) FindByID(context.Context, uint) (*identitydomain.User, error) {
+	return &identitydomain.User{ID: 7, Username: "admin", Status: enum.UserStatusActive}, nil
+}
+
 type routeSubmissionRoles struct {
 	identityapp.UserRoleQuery
 	admin bool
@@ -53,11 +59,11 @@ func TestVideoSubmissionRoutesEnforcePolicyBeforeBinding(t *testing.T) {
 	provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{DisableUserSubmission: true}, Jwt: &config.Jwt{AccessSecret: secret}})
 	roles := &routeSubmissionRoles{}
 	statuses := &submissionStatusCache{status: enum.UserStatusActive}
-	mw := middlewares.New(provider, nil, identityapp.NewUserStatusService(statuses, nil), roles, nil, nil, nil, nil, nil)
+	mw := middlewares.New(provider, nil, identityapp.NewUserStatusService(statuses, &routeSubmissionUsers{}), roles, nil, nil, nil, nil, nil)
 	engine := gin.New()
 	engine.Use(validate.New().Middleware())
 	uploads := videoapp.NewUploadService(&submissionStorage{}, provider, nil, nil, nil)
-	handler := videohandler.NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, uploads, nil, nil, nil, nil, provider, nil, nil)
+	handler := videohandler.NewHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, uploads, nil, nil, nil, nil, provider, nil, nil, identityapp.NewUserStatusService(statuses, &routeSubmissionUsers{}))
 	registerVideoCommonRoutes(engine.Group("/v1/common"), mw, handler)
 	registerIdentityCommonRoutes(engine.Group("/v1/common"), mw, &identityhandler.Handler{})
 	token, err := jwts.CreateJwtToken("7", "admin", time.Hour, secret, time.Hour, secret)

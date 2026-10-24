@@ -71,3 +71,6 @@ func (l *Limiter) Allow(ctx context.Context, key string, limit int64, window tim
 
 	return allowed == 1, nil
 }
+
+// Available reports whether enforcement has a configured backing store.
+func (l *Limiter) Available() bool { return l != nil && l.redis != nil }
