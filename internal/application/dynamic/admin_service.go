@@ -5,17 +5,20 @@ import (
 	"strings"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // AdminService 管理端动态用例服务（原 service/dynamic_service/admin_service.go）。
 type AdminService struct {
 	dynamics domain.DynamicRepository
+	txm      tx.Manager
+	comments DynamicCommentPurger
 	query    AdminDynamicQuery
 }
 
 // NewAdminService 构造管理端动态用例服务。
-func NewAdminService(dynamics domain.DynamicRepository, query AdminDynamicQuery) *AdminService {
-	return &AdminService{dynamics: dynamics, query: query}
+func NewAdminService(dynamics domain.DynamicRepository, query AdminDynamicQuery, txm tx.Manager, comments DynamicCommentPurger) *AdminService {
+	return &AdminService{dynamics: dynamics, query: query, txm: txm, comments: comments}
 }
 
 // List 管理端动态分页列表（支持按用户 ID / 用户名 / 正文关键字过滤）。
@@ -36,5 +39,16 @@ func (s *AdminService) Delete(ctx context.Context, dynamicIDs []uint) (int64, er
 		return 0, domain.ErrDynamicIDsRequired
 	}
 
-	return s.dynamics.DeleteByIDs(ctx, dynamicIDs)
+	var affected int64
+	err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		for _, id := range dynamicIDs {
+			if _, _, err := s.comments.PurgeByDynamic(txCtx, id); err != nil {
+				return err
+			}
+		}
+		var err error
+		affected, err = s.dynamics.DeleteByIDs(txCtx, dynamicIDs)
+		return err
+	})
+	return affected, err
 }
