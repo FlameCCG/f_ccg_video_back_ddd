@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"sync"
 
 	domain "f_ccg_video_back_ddd/internal/domain/media"
 )
@@ -77,18 +78,24 @@ func (s *ProgressQueryService) Subscribe(ctx context.Context) (*ProgressSubscrip
 		return nil, err
 	}
 
-	return newProgressSubscription(sub), nil
+	return newProgressSubscription(ctx, sub), nil
 }
 
 // ProgressSubscription 是进度变更订阅句柄，把领域快照映射为读模型事件。
 type ProgressSubscription struct {
-	inner  domain.ProgressSubscription
-	events chan TranscodeProgressItem
+	ctx       context.Context
+	done      chan struct{}
+	closeOnce sync.Once
+	closeErr  error
+	inner     domain.ProgressSubscription
+	events    chan TranscodeProgressItem
 }
 
 // newProgressSubscription 启动映射 goroutine 并返回订阅句柄。
-func newProgressSubscription(inner domain.ProgressSubscription) *ProgressSubscription {
+func newProgressSubscription(ctx context.Context, inner domain.ProgressSubscription) *ProgressSubscription {
 	s := &ProgressSubscription{
+		ctx:    ctx,
+		done:   make(chan struct{}),
 		inner:  inner,
 		events: make(chan TranscodeProgressItem, 32),
 	}
@@ -101,9 +108,27 @@ func newProgressSubscription(inner domain.ProgressSubscription) *ProgressSubscri
 // pump 把领域事件通道转成读模型事件通道；上游关闭时随之关闭。
 func (s *ProgressSubscription) pump() {
 	defer close(s.events)
+	defer s.Close()
+	input := s.inner.Events()
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-s.ctx.Done():
+			return
+		case snapshot, ok := <-input:
+			if !ok {
+				return
+			}
 
-	for snapshot := range s.inner.Events() {
-		s.events <- progressItemFrom(snapshot)
+			select {
+			case <-s.done:
+				return
+			case <-s.ctx.Done():
+				return
+			case s.events <- progressItemFrom(snapshot):
+			}
+		}
 	}
 }
 
@@ -114,7 +139,8 @@ func (s *ProgressSubscription) Events() <-chan TranscodeProgressItem {
 
 // Close 关闭底层订阅（pump goroutine 随之退出）。
 func (s *ProgressSubscription) Close() error {
-	return s.inner.Close()
+	s.closeOnce.Do(func() { close(s.done); s.closeErr = s.inner.Close() })
+	return s.closeErr
 }
 
 // progressItemsFrom 批量转换进度快照。

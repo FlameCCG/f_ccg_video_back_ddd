@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/media"
@@ -250,20 +251,26 @@ func (c *ProgressCache) Subscribe(ctx context.Context) (domain.ProgressSubscript
 		return nil, err
 	}
 
-	return newProgressSubscription(pubsub, c.logger), nil
+	return newProgressSubscription(ctx, pubsub, c.logger), nil
 }
 
 // progressSubscription 把 Redis Pub/Sub 消息解码成领域进度快照。
 type progressSubscription struct {
-	pubsub *redis.PubSub
-	events chan domain.TranscodeProgress
-	logger *zap.Logger
+	ctx       context.Context
+	done      chan struct{}
+	closeOnce sync.Once
+	closeErr  error
+	pubsub    *redis.PubSub
+	events    chan domain.TranscodeProgress
+	logger    *zap.Logger
 }
 
 var _ domain.ProgressSubscription = (*progressSubscription)(nil)
 
-func newProgressSubscription(pubsub *redis.PubSub, logger *zap.Logger) *progressSubscription {
+func newProgressSubscription(ctx context.Context, pubsub *redis.PubSub, logger *zap.Logger) *progressSubscription {
 	s := &progressSubscription{
+		ctx:    ctx,
+		done:   make(chan struct{}),
 		pubsub: pubsub,
 		events: make(chan domain.TranscodeProgress, 32),
 		logger: logger,
@@ -276,14 +283,30 @@ func newProgressSubscription(pubsub *redis.PubSub, logger *zap.Logger) *progress
 
 func (s *progressSubscription) pump() {
 	defer close(s.events)
-
-	for message := range s.pubsub.Channel() {
-		p, ok := decodeTranscodeProgress(message.Payload, s.logger)
-		if !ok {
-			continue
+	defer s.Close()
+	input := s.pubsub.Channel()
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-s.ctx.Done():
+			return
+		case message, ok := <-input:
+			if !ok {
+				return
+			}
+			p, ok := decodeTranscodeProgress(message.Payload, s.logger)
+			if !ok {
+				continue
+			}
+			select {
+			case <-s.done:
+				return
+			case <-s.ctx.Done():
+				return
+			case s.events <- p:
+			}
 		}
-
-		s.events <- p
 	}
 }
 
@@ -294,7 +317,8 @@ func (s *progressSubscription) Events() <-chan domain.TranscodeProgress {
 
 // Close 关闭底层订阅（pump goroutine 随之退出）。
 func (s *progressSubscription) Close() error {
-	return s.pubsub.Close()
+	s.closeOnce.Do(func() { close(s.done); s.closeErr = s.pubsub.Close() })
+	return s.closeErr
 }
 
 func decodeTranscodeProgress(raw string, logger *zap.Logger) (domain.TranscodeProgress, bool) {

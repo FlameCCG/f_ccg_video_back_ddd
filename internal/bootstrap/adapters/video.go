@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"sync"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
 	searchapp "f_ccg_video_back_ddd/internal/application/search"
@@ -124,7 +125,7 @@ func (a *VideoTranscodeProgressReader) Subscribe(
 		return nil, err
 	}
 
-	return newVideoProgressSubscription(subscription), nil
+	return newVideoProgressSubscription(ctx, subscription), nil
 }
 
 // IsTerminalStatus 判断进度是否处于终态。
@@ -133,12 +134,17 @@ func (a *VideoTranscodeProgressReader) IsTerminalStatus(status string) bool {
 }
 
 type videoProgressSubscription struct {
-	inner  *mediaapp.ProgressSubscription
-	events chan videoapp.TranscodeProgressItem
+	ctx       context.Context
+	done      chan struct{}
+	closeOnce sync.Once
+	closeErr  error
+	inner     *mediaapp.ProgressSubscription
+	events    chan videoapp.TranscodeProgressItem
 }
 
-func newVideoProgressSubscription(inner *mediaapp.ProgressSubscription) *videoProgressSubscription {
+func newVideoProgressSubscription(ctx context.Context, inner *mediaapp.ProgressSubscription) *videoProgressSubscription {
 	subscription := &videoProgressSubscription{
+		ctx: ctx, done: make(chan struct{}),
 		inner:  inner,
 		events: make(chan videoapp.TranscodeProgressItem, 32),
 	}
@@ -149,9 +155,25 @@ func newVideoProgressSubscription(inner *mediaapp.ProgressSubscription) *videoPr
 
 func (s *videoProgressSubscription) pump() {
 	defer close(s.events)
-
-	for item := range s.inner.Events() {
-		s.events <- videoProgressItem(item)
+	defer s.Close()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-s.done:
+			return
+		case item, ok := <-s.inner.Events():
+			if !ok {
+				return
+			}
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-s.done:
+				return
+			case s.events <- videoProgressItem(item):
+			}
+		}
 	}
 }
 
@@ -160,7 +182,8 @@ func (s *videoProgressSubscription) Events() <-chan videoapp.TranscodeProgressIt
 }
 
 func (s *videoProgressSubscription) Close() error {
-	return s.inner.Close()
+	s.closeOnce.Do(func() { close(s.done); s.closeErr = s.inner.Close() })
+	return s.closeErr
 }
 
 func videoProgressItems(items []mediaapp.TranscodeProgressItem) []videoapp.TranscodeProgressItem {
