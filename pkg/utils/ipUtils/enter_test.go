@@ -52,7 +52,7 @@ func TestGetClientIPAndAddrPrefersXForwardedFor(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	ctx, engine := gin.CreateTestContext(recorder)
-	_ = engine.SetTrustedProxies([]string{"127.0.0.0/8"})
+	_ = engine.SetTrustedProxies([]string{"127.0.0.0/8", "10.0.0.1"})
 	engine.RemoteIPHeaders = []string{"X-Forwarded-For", "X-Real-IP"}
 
 	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/user/login", nil)
@@ -142,5 +142,20 @@ func TestNormalizeIPString(t *testing.T) {
 		if got := normalizeIPString(in); got != want {
 			t.Fatalf("normalizeIPString(%q)=%q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestResolveClientIPRejectsSpoofedHeadersFromUntrustedPeer(t *testing.T) {
+	ctx, engine := gin.CreateTestContext(httptest.NewRecorder())
+	if err := engine.SetTrustedProxies([]string{"127.0.0.1"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	ctx.Request.RemoteAddr = "198.51.100.10:1234"
+	for _, header := range []string{"CF-Connecting-IP", "True-Client-IP", "X-Real-IP", "X-Forwarded-For"} {
+		ctx.Request.Header.Set(header, "203.0.113.99")
+	}
+	if got := ResolveClientIP(ctx); got != "198.51.100.10" {
+		t.Fatalf("spoofed header trusted: %s", got)
 	}
 }
