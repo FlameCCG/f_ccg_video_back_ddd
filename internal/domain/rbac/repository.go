@@ -34,6 +34,8 @@ type RoleRepository interface {
 	UpdateName(ctx context.Context, roleID uint, name string) error
 	// DeleteByID 删除角色（触发清理角色-菜单、角色-用户关联的持久化钩子）。
 	DeleteByID(ctx context.Context, roleID uint) error
+	// DeleteBindings removes role links and resets stale current-role selections.
+	DeleteBindings(ctx context.Context, roleID uint) error
 	// AppendMenus 向角色追加直连菜单关联。
 	AppendMenus(ctx context.Context, role *Role, menus []*Menu) error
 }

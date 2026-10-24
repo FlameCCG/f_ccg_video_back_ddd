@@ -55,7 +55,15 @@ func (s *RoleService) List(ctx context.Context) ([]*domain.Role, error) {
 //
 // 与原 create_role.go 的时序完全一致——权限策略在事务提交之后写入，
 // 因此「角色已创建但权限写入失败」的部分成功语义被保留。
-func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) error {
+func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
 	// 与原实现一致：重名预检不校验 Count 的错误，查询失败时按 0 处理并继续。
 	count, _ := s.roles.CountByName(ctx, params.Name)
 	if count > 0 {
@@ -159,7 +167,15 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) error
 }
 
 // Update 更新角色名与描述；角色名变更时同步迁移 Casbin 策略与分组关系。
-func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) error {
+func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
 	if params.Name == nil && params.Desc == nil {
 		return domain.ErrNoUpdatableFields
 	}
@@ -210,7 +226,10 @@ func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) error
 	if newName != oldName {
 		if err := s.renameInCasbin(oldName, newName); err != nil {
 			s.logger.Error("同步 Casbin 角色名失败", zap.Error(err))
-			_ = s.roles.UpdateName(ctx, role.ID, oldName)
+			if rollbackErr := s.roles.UpdateName(context.WithoutCancel(ctx), role.ID, oldName); rollbackErr != nil {
+				s.logger.Error("RBAC role rename compensation failed", zap.Error(rollbackErr))
+				return errors.Join(domain.ErrPermissionSyncFailed, err, rollbackErr)
+			}
 
 			return domain.ErrPermissionSyncFailed
 		}
@@ -276,7 +295,15 @@ func (s *RoleService) renameInCasbin(oldName, newName string) error {
 }
 
 // Delete 删除角色：角色下仍有用户时拒绝；删除后清理 Casbin 策略。
-func (s *RoleService) Delete(ctx context.Context, roleID uint) error {
+func (s *RoleService) Delete(ctx context.Context, roleID uint) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
 		return domain.ErrRoleNotFound
@@ -294,11 +321,6 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) error {
 	}
 
 	// 删除角色（持久化钩子会自动清理关联）
-	if err := s.roles.DeleteByID(ctx, role.ID); err != nil {
-		s.logger.Error("删除角色失败", zap.Error(err))
-
-		return domain.ErrDeleteFailed
-	}
 
 	// 删除 Casbin 中该角色的所有权限
 	if _, err := s.enforcer.DeleteRole(role.Name); err != nil {
@@ -311,6 +333,15 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) error {
 		s.logger.Error("保存 Casbin 策略失败", zap.Error(err))
 
 		return domain.ErrRolePolicySaveFailed
+	}
+
+	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		if err := s.roles.DeleteBindings(txCtx, role.ID); err != nil {
+			return err
+		}
+		return s.roles.DeleteByID(txCtx, role.ID)
+	}); err != nil {
+		return errors.Join(domain.ErrDeleteFailed, err)
 	}
 
 	return nil
@@ -358,268 +389,95 @@ func (s *RoleService) UserPermissions(ctx context.Context, userID uint) ([]UserP
 
 // AssignUserRoles 为用户追加角色绑定，并同步 Casbin 分组策略。
 func (s *RoleService) AssignUserRoles(ctx context.Context, userID uint, roleIDs []uint) error {
-	var bizErr error
-
-	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		bizErr = nil
-
-		existing, err := s.userRoles.RolesByUser(txCtx, userID)
-		if err != nil {
-			bizErr = s.mapUserLookupError(err)
-
-			return bizErr
-		}
-
-		roles, err := s.roles.FindByIDs(txCtx, roleIDs)
-		if err != nil {
-			s.logger.Error("查询角色失败", zap.Error(err))
-			bizErr = domain.ErrQueryRoleFailed
-
-			return bizErr
-		}
-
-		// 验证角色是否都存在
-		if len(roles) != len(roleIDs) {
-			bizErr = domain.ErrSomeRolesNotFound
-
-			return bizErr
-		}
-
-		// 检查是否有角色已经分配
-		existingRoleIDs := make(map[uint]bool, len(existing))
-		for _, role := range existing {
-			existingRoleIDs[role.ID] = true
-		}
-
-		var (
-			newRoles       []*domain.Role
-			duplicateRoles []string
-		)
-
-		for _, role := range roles {
-			if existingRoleIDs[role.ID] {
-				duplicateRoles = append(duplicateRoles, role.Name)
-			} else {
-				newRoles = append(newRoles, role)
-			}
-		}
-
-		if len(duplicateRoles) > 0 {
-			bizErr = domain.DuplicateRoleAssignedError(duplicateRoles[0])
-
-			return bizErr
-		}
-
-		// 分配新角色
-		if len(newRoles) > 0 {
-			if err := s.userRoles.AppendRoles(txCtx, userID, newRoles); err != nil {
-				s.logger.Error("分配角色失败", zap.Error(err))
-				bizErr = domain.ErrAssignFailed
-
-				return bizErr
-			}
-		}
-
-		// 同步到 Casbin
-		sub := casbins.GetUserSub(userID)
-		for _, role := range newRoles {
-			if _, err := s.enforcer.AddRoleForUser(sub, role.Name); err != nil {
-				s.logger.Error("Casbin添加角色失败",
-					zap.Error(err),
-					zap.String("user", sub),
-					zap.String("role", role.Name))
-
-				bizErr = domain.ErrPermissionSyncFailed
-
-				return bizErr
-			}
-		}
-
-		if err := s.enforcer.SavePolicy(); err != nil {
-			s.logger.Error("Casbin保存策略失败", zap.Error(err))
-			bizErr = domain.ErrPermissionSaveFailed
-
-			return bizErr
-		}
-
-		return nil
-	}); err != nil {
-		if bizErr != nil {
-			return bizErr
-		}
-
-		s.logger.Error("提交事务失败", zap.Error(err))
-
-		return domain.ErrAssignFailed
-	}
-
-	return nil
+	return s.changeUserRoles(ctx, userID, roleIDs, "assign")
 }
 
-// RemoveUserRoles 移除用户的角色绑定，并同步 Casbin 分组策略。
-//
-// 与原实现一致：Casbin 单条解绑失败仅记日志不中断，最终以 SavePolicy 的结果为准。
+// RemoveUserRoles removes only the requested direct roles after database commit.
 func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs []uint) error {
-	var bizErr error
-
-	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		bizErr = nil
-
-		exists, err := s.userRoles.UserExists(txCtx, userID)
-		if err != nil {
-			s.logger.Error("查询用户失败", zap.Error(err))
-			bizErr = domain.ErrQueryUserFailed
-
-			return bizErr
-		}
-
-		if !exists {
-			bizErr = domain.ErrUserNotFound
-
-			return bizErr
-		}
-
-		// 批量查询要移除的角色
-		roles, err := s.roles.FindByIDs(txCtx, roleIDs)
-		if err != nil {
-			s.logger.Error("查询角色失败", zap.Error(err))
-			bizErr = domain.ErrQueryRoleFailed
-
-			return bizErr
-		}
-
-		// 验证角色是否都存在
-		if len(roles) != len(roleIDs) {
-			bizErr = domain.ErrSomeRolesNotFound
-
-			return bizErr
-		}
-
-		// 批量移除角色关联
-		if err := s.userRoles.RemoveRoles(txCtx, userID, roles); err != nil {
-			s.logger.Error("移除角色失败", zap.Error(err))
-			bizErr = domain.ErrRemoveFailed
-
-			return bizErr
-		}
-
-		// 从 Casbin 批量删除
-		sub := casbins.GetUserSub(userID)
-		for _, role := range roles {
-			if _, err := s.enforcer.DeleteRoleForUser(sub, role.Name); err != nil {
-				s.logger.Error("Casbin删除角色失败",
-					zap.Error(err),
-					zap.String("user", sub),
-					zap.String("role", role.Name))
-			}
-		}
-
-		if err := s.enforcer.SavePolicy(); err != nil {
-			s.logger.Error("Casbin保存策略失败", zap.Error(err))
-			bizErr = domain.ErrPermissionSaveFailed
-
-			return bizErr
-		}
-
-		return nil
-	}); err != nil {
-		if bizErr != nil {
-			return bizErr
-		}
-
-		s.logger.Error("提交事务失败", zap.Error(err))
-
-		return domain.ErrRemoveFailed
-	}
-
-	return nil
+	return s.changeUserRoles(ctx, userID, roleIDs, "remove")
 }
 
-// ReplaceUserRoles 用给定角色集合整体替换用户角色，并同步 Casbin 分组策略。
+// ReplaceUserRoles replaces the direct role set after database commit.
 func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs []uint) error {
-	var bizErr error
-
-	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		bizErr = nil
-
-		// 查询用户并读取旧角色
-		oldRoles, err := s.userRoles.RolesByUser(txCtx, userID)
-		if err != nil {
-			bizErr = s.mapUserLookupError(err)
-
-			return bizErr
-		}
-
-		// 批量查询新角色
-		newRoles, err := s.roles.FindByIDs(txCtx, roleIDs)
-		if err != nil {
-			s.logger.Error("查询角色失败", zap.Error(err))
-			bizErr = domain.ErrQueryRoleFailed
-
-			return bizErr
-		}
-
-		// 验证角色是否都存在
-		if len(newRoles) != len(roleIDs) {
-			bizErr = domain.ErrSomeRolesNotFound
-
-			return bizErr
-		}
-
-		// 替换用户角色（先清空再添加）
-		if err := s.userRoles.ReplaceRoles(txCtx, userID, newRoles); err != nil {
-			s.logger.Error("更新用户角色失败", zap.Error(err))
-			bizErr = domain.ErrUpdateFailed
-
-			return bizErr
-		}
-
-		// 同步到 Casbin
-		sub := casbins.GetUserSub(userID)
-
-		// 删除旧角色
-		for _, oldRole := range oldRoles {
-			if _, err := s.enforcer.DeleteRoleForUser(sub, oldRole.Name); err != nil {
-				s.logger.Error("Casbin删除旧角色失败",
-					zap.Error(err),
-					zap.String("user", sub),
-					zap.String("role", oldRole.Name))
-			}
-		}
-
-		// 添加新角色
-		for _, newRole := range newRoles {
-			if _, err := s.enforcer.AddRoleForUser(sub, newRole.Name); err != nil {
-				s.logger.Error("Casbin添加新角色失败",
-					zap.Error(err),
-					zap.String("user", sub),
-					zap.String("role", newRole.Name))
-
-				bizErr = domain.ErrPermissionSyncFailed
-
-				return bizErr
-			}
-		}
-
-		// 保存 Casbin 策略
-		if err := s.enforcer.SavePolicy(); err != nil {
-			s.logger.Error("Casbin保存策略失败", zap.Error(err))
-			bizErr = domain.ErrPermissionSaveFailed
-
-			return bizErr
-		}
-
-		return nil
-	}); err != nil {
-		if bizErr != nil {
-			return bizErr
-		}
-
-		s.logger.Error("提交事务失败", zap.Error(err))
-
-		return domain.ErrUpdateFailed
+	return s.changeUserRoles(ctx, userID, roleIDs, "replace")
+}
+func (s *RoleService) changeUserRoles(ctx context.Context, userID uint, roleIDs []uint, mode string) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
 	}
-
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
+	var oldRoles, newRoles []*domain.Role
+	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
+		var err error
+		oldRoles, err = s.userRoles.RolesByUser(txCtx, userID)
+		if err != nil {
+			return s.mapUserLookupError(err)
+		}
+		selected, err := s.roles.FindByIDs(txCtx, roleIDs)
+		if err != nil {
+			return domain.ErrQueryRoleFailed
+		}
+		if len(selected) != len(roleIDs) {
+			return domain.ErrSomeRolesNotFound
+		}
+		switch mode {
+		case "assign":
+			newRoles = append(newRoles, oldRoles...)
+			for _, r := range selected {
+				for _, old := range oldRoles {
+					if r.ID == old.ID {
+						return domain.DuplicateRoleAssignedError(r.Name)
+					}
+				}
+				newRoles = append(newRoles, r)
+			}
+		case "remove":
+			remove := map[uint]bool{}
+			for _, r := range selected {
+				remove[r.ID] = true
+			}
+			for _, r := range oldRoles {
+				if !remove[r.ID] {
+					newRoles = append(newRoles, r)
+				}
+			}
+		default:
+			newRoles = selected
+		}
+		return s.userRoles.ReplaceRoles(txCtx, userID, newRoles)
+	}); err != nil {
+		return err
+	}
+	// No Casbin write is made before the user_roles transaction commits.
+	syncErr := func() error {
+		sub := casbins.GetUserSub(userID)
+		existing, err := s.enforcer.GetRolesForUser(sub)
+		if err != nil {
+			return err
+		}
+		for _, name := range existing {
+			if _, err := s.enforcer.DeleteRoleForUser(sub, name); err != nil {
+				return err
+			}
+		}
+		for _, r := range newRoles {
+			if _, err := s.enforcer.AddRoleForUser(sub, r.Name); err != nil {
+				return err
+			}
+		}
+		return s.enforcer.SavePolicy()
+	}()
+	if syncErr != nil {
+		rollbackErr := s.txm.Do(context.WithoutCancel(ctx), func(txCtx context.Context) error { return s.userRoles.ReplaceRoles(txCtx, userID, oldRoles) })
+		if rollbackErr != nil {
+			s.logger.Error("RBAC role binding compensation failed", zap.Error(rollbackErr))
+		}
+		return errors.Join(domain.ErrPermissionSyncFailed, syncErr, rollbackErr)
+	}
 	return nil
 }
 

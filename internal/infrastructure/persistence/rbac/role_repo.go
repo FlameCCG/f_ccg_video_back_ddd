@@ -177,7 +177,6 @@ func (r *RoleRepository) UpdateName(ctx context.Context, roleID uint, name strin
 	return gormx.DB(ctx, r.db).Model(&po.Role{Model: po.Model{ID: roleID}}).Update("name", name).Error
 }
 
-// DeleteByID 删除角色（触发 po.Role.AfterDelete 清理角色-菜单、角色-用户关联）。
 func (r *RoleRepository) DeleteByID(ctx context.Context, roleID uint) error {
 	return gormx.DB(ctx, r.db).Delete(&po.Role{Model: po.Model{ID: roleID}}).Error
 }
@@ -201,4 +200,16 @@ func ignoreNotFound(err error) error {
 	}
 
 	return err
+}
+
+// DeleteBindings is explicitly orchestrated with DeleteByID by the application transaction.
+func (r *RoleRepository) DeleteBindings(ctx context.Context, roleID uint) error {
+	db := gormx.DB(ctx, r.db)
+	if err := db.Where("role_id = ?", roleID).Delete(&po.RoleMenu{}).Error; err != nil {
+		return err
+	}
+	if err := db.Where("role_id = ?", roleID).Delete(&po.UserRole{}).Error; err != nil {
+		return err
+	}
+	return db.Model(&po.User{}).Where("current_role_id = ?", roleID).Update("current_role_id", 0).Error
 }

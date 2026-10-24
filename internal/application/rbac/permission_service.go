@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 
@@ -43,7 +44,16 @@ func NewPermissionService(
 }
 
 // Assign 为角色追加权限：拒绝列表内部冗余与已被有效权限覆盖的项。
-func (s *PermissionService) Assign(ctx context.Context, params AssignPermissionParams) error {
+func (s *PermissionService) Assign(ctx context.Context, params AssignPermissionParams) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
+	s.graph = NewRoleGraph(scoped)
 	perms, err := domain.CollectPermissions(params.Permissions)
 	if err != nil {
 		return err
@@ -84,7 +94,16 @@ func (s *PermissionService) Assign(ctx context.Context, params AssignPermissionP
 }
 
 // Remove 移除角色的指定直接权限。
-func (s *PermissionService) Remove(ctx context.Context, params AssignPermissionParams) error {
+func (s *PermissionService) Remove(ctx context.Context, params AssignPermissionParams) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
+	s.graph = NewRoleGraph(scoped)
 	perms, err := domain.CollectPermissions(params.Permissions)
 	if err != nil {
 		return err
@@ -268,7 +287,16 @@ func (s *PermissionService) RolePermissions(ctx context.Context, roleName string
 //
 // BreakInheritance 为 true 时先清除该角色的全部继承关系与继承菜单，
 // 用于「取消勾选通配符/继承覆盖的具体 API」场景。
-func (s *PermissionService) UpdateRolePermissions(ctx context.Context, params UpdateRolePermissionsParams) error {
+func (s *PermissionService) UpdateRolePermissions(ctx context.Context, params UpdateRolePermissionsParams) (result error) {
+	scoped, finish, err := beginPolicyChange(s.enforcer)
+	if err != nil {
+		return err
+	}
+	defer finish(&result)
+	service := *s
+	service.enforcer = scoped
+	s = &service
+	s.graph = NewRoleGraph(scoped)
 	role, err := s.roles.FindByID(ctx, params.RoleID)
 	if err != nil || role == nil {
 		return domain.ErrRoleNotFound
@@ -285,6 +313,23 @@ func (s *PermissionService) UpdateRolePermissions(ctx context.Context, params Up
 	}
 
 	if params.BreakInheritance {
+		previousMenus, err := s.roleMenus.InheritedMenuIDs(ctx, role.ID)
+		if err != nil {
+			return domain.ErrBreakInheritanceFailed
+		}
+		defer func() {
+			if result == nil {
+				return
+			}
+			ids := make([]uint, 0, len(previousMenus))
+			for id := range previousMenus {
+				ids = append(ids, id)
+			}
+			if err := s.roleMenus.CreateIgnoreConflict(context.WithoutCancel(ctx), domain.NewInheritedRoleMenus(role.ID, ids)); err != nil {
+				s.logger.Error("RBAC inherited menu compensation failed", zap.Error(err))
+				result = errors.Join(result, err)
+			}
+		}()
 		if err := s.clearRoleInheritance(ctx, role); err != nil {
 			return err
 		}
