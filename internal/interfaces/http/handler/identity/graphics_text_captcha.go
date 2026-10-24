@@ -1,7 +1,12 @@
 package identity
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"image/color"
+	"math/big"
+	"strconv"
 
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
@@ -42,21 +47,74 @@ type GraphicsCaptchaResponse struct {
 func (h *CaptchaHandler) GraphicsTextCaptchaView(c *gin.Context) {
 	req := middlewares.GetBound[GraphicsCaptchaRequest](c)
 
-	// 存储由 application 层提供（取代原 global.CaptchaStore 包级单例）。
-	captcha := base64Captcha.NewCaptcha(newGraphicCaptchaDriver(req.Type), h.captcha.GraphicStore())
-
-	// 生成验证码（答案仅存验证码存储，禁止打印到日志/控制台）。
-	id, b64s, _, err := captcha.Generate()
+	// Only rendering uses the library. IDs and answers use the OS CSPRNG,
+	// independently of the math/rand state used for decorative image noise.
+	id, question, answer, err := newGraphicChallenge(req.Type)
 	if err != nil {
 		res.FailWithMsg("验证码生成失败", c)
-
+		return
+	}
+	image, err := newGraphicCaptchaDriver(req.Type).DrawCaptcha(question)
+	if err != nil {
+		res.FailWithMsg("验证码生成失败", c)
+		return
+	}
+	if err := h.captcha.GraphicStore().Set(id, answer); err != nil {
+		res.FailWithMsg("验证码生成失败", c)
 		return
 	}
 
 	res.OkWithData(GraphicsCaptchaResponse{
 		CaptchaID:  id,
-		CaptchaB64: b64s,
+		CaptchaB64: image.EncodeB64string(),
 	}, c)
+}
+
+func newGraphicChallenge(captchaType int) (id, question, answer string, err error) {
+	var rawID [32]byte
+	if _, err = rand.Read(rawID[:]); err != nil {
+		return "", "", "", err
+	}
+	id = hex.EncodeToString(rawID[:])
+	source := ""
+	switch captchaType {
+	case 2:
+		source = graphicCaptchaAlphanumericSource
+	case 3:
+		source = graphicCaptchaDigitSource
+	case 4:
+		source = graphicCaptchaLetterSource
+	}
+	if source != "" {
+		for range graphicCaptchaLength {
+			index, err := rand.Int(rand.Reader, big.NewInt(int64(len(source))))
+			if err != nil {
+				return "", "", "", err
+			}
+			answer += string(source[index.Int64()])
+		}
+		return id, answer, answer, nil
+	}
+	a, err := rand.Int(rand.Reader, big.NewInt(20))
+	if err != nil {
+		return "", "", "", err
+	}
+	b, err := rand.Int(rand.Reader, big.NewInt(20))
+	if err != nil {
+		return "", "", "", err
+	}
+	op, err := rand.Int(rand.Reader, big.NewInt(3))
+	if err != nil {
+		return "", "", "", err
+	}
+	operator, result := "+", a.Int64()+b.Int64()
+	if op.Int64() == 1 {
+		operator, result = "-", a.Int64()-b.Int64()
+	}
+	if op.Int64() == 2 {
+		operator, result = "x", a.Int64()*b.Int64()
+	}
+	return id, fmt.Sprintf("%d%s%d=?", a.Int64(), operator, b.Int64()), strconv.FormatInt(result, 10), nil
 }
 
 // newGraphicCaptchaDriver 按请求类型构造 base64Captcha 驱动。

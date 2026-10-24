@@ -149,17 +149,14 @@ func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.Cl
 		return false, ErrCaptchaExpired
 	}
 
-	targetMap := make(map[int]clickCaptchaTarget, len(payload.Dots)) // 构建索引映射加速查找
-	for _, target := range payload.Dots {
-		targetMap[target.Index] = target
-	}
+	sort.Slice(payload.Dots, func(i, j int) bool { return payload.Dots[i].Index < payload.Dots[j].Index })
 
 	padding := c.padding(scene)
 	success := true // 默认校验成功
 
-	for _, point := range points {
-		target, ok := targetMap[point.Index] // 查找对应答案
-		if !ok {
+	for i, point := range points {
+		target := payload.Dots[i]
+		if point.Index != target.Index || (i > 0 && target.Index == payload.Dots[i-1].Index) {
 			success = false
 
 			break
