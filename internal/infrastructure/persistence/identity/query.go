@@ -60,7 +60,7 @@ func (q *AdminUserQuery) List(
 	}
 
 	if needDistinct {
-		query = query.Select("users.*").Distinct("users.id")
+		query = query.Select("DISTINCT users.*")
 	}
 
 	var total int64
