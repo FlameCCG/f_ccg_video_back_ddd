@@ -14,6 +14,7 @@ import (
 	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/uploadscope"
 
 	"go.uber.org/zap"
 )
@@ -21,23 +22,18 @@ import (
 // uploadStatusProbeTimeout 上传状态探测的单次超时。
 const uploadStatusProbeTimeout = 4 * time.Second
 
-// uploadStatusCacheTTL 「已完成」标记的进程内缓存 TTL。
-const uploadStatusCacheTTL = 30 * time.Minute
-
 // ErrUploadStorageUnavailable 存储驱动不可用（原 NewUploadService 失败时的响应文案）。
 var ErrUploadStorageUnavailable = errors.New("上传配置错误")
 
 // UploadService 分片上传用例服务（原 service/video_service/upload_service.go）。
 //
-// 原实现用包级 mergeLockMgr / uploadStatusCacheStore 单例；
-// 新架构改为实例字段，由 bootstrap 创建唯一实例注入，语义等价且无包级可变状态。
+// 合并锁由服务实例持有；完成状态直接探测存储，避免源文件删除后误判秒传。
 type UploadService struct {
 	storage     StorageResolver
 	cfgProvider shared.ConfigReader
 	quota       *UploadQuotaService
 	guard       UploadHashGuard
 	mergeLocks  *mergeLockManager
-	statusCache *uploadStatusCache
 	logger      *zap.Logger
 }
 
@@ -55,13 +51,13 @@ func NewUploadService(
 		quota:       quota,
 		guard:       guard,
 		mergeLocks:  newMergeLockManager(),
-		statusCache: newUploadStatusCache(uploadStatusCacheTTL),
 		logger:      logger,
 	}
 }
 
 // UploadChunkForUser 在首片实际写入前占用当天名额；失败或放弃均不退还。
 func (s *UploadService) UploadChunkForUser(ctx context.Context, userID uint, fileHash, index string, size int64, reader io.Reader) error {
+	ctx = uploadscope.WithOwner(ctx, userID)
 	fileHash = trimSpace(fileHash)
 	index = trimSpace(index)
 	if err := s.validateFileHash(fileHash); err != nil {
@@ -73,19 +69,20 @@ func (s *UploadService) UploadChunkForUser(ctx context.Context, userID uint, fil
 	if err := s.claimQuota(ctx, userID, fileHash); err != nil {
 		return err
 	}
-	return s.withHashes(ctx, []string{fileHash}, func(guardCtx context.Context) error {
+	return s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
 		return s.UploadChunk(guardCtx, fileHash, index, size, reader)
 	})
 }
 
 // GetUploadStatusForUser 仅在确认完整对象存在后为秒传占额，才返回 completed=true。
 func (s *UploadService) GetUploadStatusForUser(ctx context.Context, userID uint, fileHash string) (*UploadStatus, error) {
+	ctx = uploadscope.WithOwner(ctx, userID)
 	fileHash = trimSpace(fileHash)
 	if err := s.validateFileHash(fileHash); err != nil {
 		return nil, err
 	}
 	var status *UploadStatus
-	err := s.withHashes(ctx, []string{fileHash}, func(guardCtx context.Context) error {
+	err := s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
 		var err error
 		status, err = s.GetUploadStatus(guardCtx, fileHash)
 		if err != nil || !status.Completed {
@@ -98,6 +95,7 @@ func (s *UploadService) GetUploadStatusForUser(ctx context.Context, userID uint,
 
 // CompleteUploadForUser 在复用已完成对象或合并分片前做服务端额度兜底。
 func (s *UploadService) CompleteUploadForUser(ctx context.Context, userID uint, fileHash, fileName string, totalChunks int) (string, error) {
+	ctx = uploadscope.WithOwner(ctx, userID)
 	fileHash = trimSpace(fileHash)
 	if err := s.validateFileHash(fileHash); err != nil {
 		return "", err
@@ -106,7 +104,7 @@ func (s *UploadService) CompleteUploadForUser(ctx context.Context, userID uint, 
 		return "", err
 	}
 	var path string
-	err := s.withHashes(ctx, []string{fileHash}, func(guardCtx context.Context) error {
+	err := s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
 		var err error
 		path, err = s.CompleteUpload(guardCtx, fileHash, fileName, totalChunks)
 		return err
@@ -244,7 +242,6 @@ func (s *UploadService) GetUploadStatus(ctx context.Context, fileHash string) (*
 
 	completedRes := <-completedCh
 	if completedRes.err == nil && completedRes.completed && trimSpace(completedRes.filePath) != "" {
-		s.statusCache.rememberCompleted(fileHash, completedRes.filePath)
 		cancelStatus()
 
 		return &UploadStatus{
@@ -253,11 +250,6 @@ func (s *UploadService) GetUploadStatus(ctx context.Context, fileHash string) (*
 			FilePath:       completedRes.filePath,
 			UploadedChunks: []string{},
 		}, nil
-	}
-
-	// 对象不存在：清掉陈旧 completed 缓存，避免误导前端秒传
-	if completedRes.err == nil && !completedRes.completed {
-		s.statusCache.forgetCompleted(fileHash)
 	}
 
 	chunksRes := <-chunksCh
@@ -321,7 +313,6 @@ func (s *UploadService) CompleteUpload(
 
 	// 最终对象已在存储中：直接复用（分片可能已在上次 complete 后清理）
 	if existing, ok, probeErr := driver.GetCompletedFile(ctx, fileHash); probeErr == nil && ok && trimSpace(existing) != "" {
-		s.statusCache.rememberCompleted(fileHash, existing)
 		s.logger.Info("complete upload reused existing object",
 			zap.String("fileHash", fileHash),
 			zap.String("filePath", existing))
@@ -356,14 +347,13 @@ func (s *UploadService) CompleteUpload(
 		zap.String("fileName", fileName),
 		zap.Int("totalChunks", totalChunks),
 		zap.Duration("cost", time.Since(start)))
-	s.statusCache.rememberCompleted(fileHash, finalPath)
 
 	return finalPath, nil
 }
 
-// InvalidateUploadCompletedCache 丢弃陈旧的「已完成」标记，避免源对象被硬删后仍然秒传成功。
+// InvalidateUploadCompletedCache 保留删除用例的兼容端口；完成状态已不再缓存。
 func (s *UploadService) InvalidateUploadCompletedCache(fileHash string) {
-	s.statusCache.forgetCompleted(trimSpace(fileHash))
+	// Completion is always probed directly from storage.
 }
 
 // InvalidateUploadCompletedCacheByStoredPath 从对象路径中尽力提取 fileHash 后失效缓存。
@@ -524,7 +514,7 @@ func (s *UploadService) ensureChunkIntegrity(
 }
 
 // ---------------------------------------------------------------------------
-// 进程内合并锁与「已完成」缓存（原包级单例，改为 UploadService 的实例字段）
+// 进程内合并锁
 // ---------------------------------------------------------------------------
 
 type mergeLockManager struct {
@@ -567,87 +557,14 @@ func (m *mergeLockManager) lock(key string) func() {
 	}
 }
 
-type uploadStatusCache struct {
-	mu      sync.Mutex
-	ttl     time.Duration
-	entries map[string]*uploadStatusCacheEntry
-}
-
-type uploadStatusCacheEntry struct {
-	updatedAt time.Time
-	completed bool
-	filePath  string
-}
-
 type completedFileProbeResult struct {
 	filePath  string
 	completed bool
 	err       error
 }
-
 type uploadedChunksProbeResult struct {
 	chunks []string
 	err    error
-}
-
-func newUploadStatusCache(ttl time.Duration) *uploadStatusCache {
-	if ttl <= 0 {
-		ttl = uploadStatusCacheTTL
-	}
-
-	return &uploadStatusCache{
-		ttl:     ttl,
-		entries: make(map[string]*uploadStatusCacheEntry),
-	}
-}
-
-func (c *uploadStatusCache) clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.entries = make(map[string]*uploadStatusCacheEntry)
-}
-
-func (c *uploadStatusCache) rememberCompleted(fileHash, filePath string) {
-	if fileHash == "" || filePath == "" {
-		return
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	c.entries[fileHash] = &uploadStatusCacheEntry{
-		updatedAt: time.Now(),
-		completed: true,
-		filePath:  filePath,
-	}
-}
-
-func (c *uploadStatusCache) forgetCompleted(fileHash string) {
-	if fileHash == "" {
-		return
-	}
-
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	delete(c.entries, fileHash)
-}
-
-// entryLocked 读取未过期的缓存项（调用方需持有锁）。
-func (c *uploadStatusCache) entryLocked(fileHash string) (*uploadStatusCacheEntry, bool) {
-	entry, ok := c.entries[fileHash]
-	if !ok {
-		return nil, false
-	}
-
-	if c.ttl > 0 && time.Since(entry.updatedAt) > c.ttl {
-		delete(c.entries, fileHash)
-
-		return nil, false
-	}
-
-	return entry, true
 }
 
 func isTransientUploadStatusError(err error) bool {

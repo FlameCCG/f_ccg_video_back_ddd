@@ -9,12 +9,15 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
-
+	"f_ccg_video_back_ddd/pkg/uploadscope"
+	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
+
 	"go.uber.org/zap"
 )
 
@@ -90,6 +93,7 @@ func (m *MinIOStorage) SaveChunk(
 	size int64,
 	reader media.ChunkReader,
 ) error {
+	fileHash = uploadscope.ChunkNamespace(ctx, fileHash)
 	if err := ValidateUploadID(fileHash); err != nil {
 		return err
 	}
@@ -123,6 +127,7 @@ func (m *MinIOStorage) SaveChunk(
 
 // ListUploadedChunks 列出指定文件 hash 已经上传的分片索引。
 func (m *MinIOStorage) ListUploadedChunks(ctx context.Context, fileHash string) ([]string, error) {
+	fileHash = uploadscope.ChunkNamespace(ctx, fileHash)
 	if err := ValidateUploadID(fileHash); err != nil {
 		return nil, err
 	}
@@ -153,6 +158,7 @@ func (m *MinIOStorage) ListUploadedChunks(ctx context.Context, fileHash string) 
 
 // ChunkUploadBytes 统计已落盘 .part 对象的字节数。
 func (m *MinIOStorage) ChunkUploadBytes(ctx context.Context, fileHash, index string) (int64, int64, error) {
+	fileHash = uploadscope.ChunkNamespace(ctx, fileHash)
 	if err := ValidateUploadID(fileHash); err != nil {
 		return 0, 0, err
 	}
@@ -227,24 +233,38 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 		return m.publicPath(finalKey), nil
 	}
 
-	if ok, err := m.composeChunks(ctx, finalKey, fileHash, fileName, totalChunks); err != nil {
+	verifier, err := newUploadHashVerifier(ctx, fileHash)
+	if err != nil {
 		return "", err
-	} else if ok {
-		m.cleanupChunksAsync(ctx, fileHash)
-		m.logger.Info("complete upload composed chunks on minio",
-			zap.String("fileHash", fileHash),
-			zap.String("key", finalKey),
-			zap.Int("totalChunks", totalChunks))
-
-		return m.publicPath(finalKey), nil
 	}
-
-	m.logger.Info("complete upload falling back to stream merge",
-		zap.String("fileHash", fileHash),
-		zap.String("key", finalKey),
-		zap.Int("totalChunks", totalChunks))
-
-	return m.streamMergeChunks(ctx, finalKey, fileHash, fileName, totalChunks)
+	stagingKey := finalKey + ".merging-" + uuid.NewString()
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_ = m.client.RemoveObject(cleanupCtx, m.bucket, stagingKey, minio.RemoveObjectOptions{})
+	}()
+	if ok, err := m.composeChunks(ctx, stagingKey, fileHash, fileName, totalChunks); err != nil {
+		return "", err
+	} else if !ok {
+		if _, err := m.streamMergeChunks(ctx, stagingKey, fileHash, fileName, totalChunks); err != nil {
+			return "", err
+		}
+	}
+	object, err := m.client.GetObject(ctx, m.bucket, stagingKey, minio.GetObjectOptions{})
+	if err != nil {
+		return "", err
+	}
+	_, readErr := io.Copy(verifier, object)
+	closeErr := object.Close()
+	if err := errors.Join(readErr, closeErr, verifier.verify()); err != nil {
+		return "", err
+	}
+	_, err = m.client.CopyObject(ctx, minio.CopyDestOptions{Bucket: m.bucket, Object: finalKey}, minio.CopySrcOptions{Bucket: m.bucket, Object: stagingKey})
+	if err != nil {
+		return "", fmt.Errorf("commit verified upload: %w", err)
+	}
+	m.cleanupChunksAsync(ctx, fileHash)
+	return m.publicPath(finalKey), nil
 }
 
 // composeChunks 用服务端 ComposeObject 合并分片；有分片不满 5MiB 时返回 false 让调用方回退流式合并。
@@ -257,7 +277,7 @@ func (m *MinIOStorage) composeChunks(
 
 	for i := range totalChunks {
 		index := strconv.Itoa(i)
-		chunkKey := m.chunkObjectPath(fileHash, index)
+		chunkKey := m.chunkObjectPath(uploadscope.ChunkNamespace(ctx, fileHash), index)
 
 		info, err := m.client.StatObject(ctx, m.bucket, chunkKey, minio.StatObjectOptions{})
 		if err != nil {
@@ -298,14 +318,23 @@ func (m *MinIOStorage) streamMergeChunks(
 	finalKey, fileHash, fileName string,
 	totalChunks int,
 ) (string, error) {
-	pr, pw := io.Pipe() // Pipe 允许边读边写，节省磁盘空间
+	ctx, cancel := context.WithCancel(ctx)
+	pr, pw := io.Pipe()
+	writerDone := make(chan struct{})
+	defer func() {
+		cancel()
+		_ = pr.Close()
+		_ = pw.Close()
+		<-writerDone
+	}() // Pipe 允许边读边写，节省磁盘空间
 
 	go func() {
+		defer close(writerDone)
 		defer func() { _ = pw.Close() }()
 
 		for i := range totalChunks {
 			index := strconv.Itoa(i)
-			chunkKey := m.chunkObjectPath(fileHash, index)
+			chunkKey := m.chunkObjectPath(uploadscope.ChunkNamespace(ctx, fileHash), index)
 
 			obj, err := m.client.GetObject(ctx, m.bucket, chunkKey, minio.GetObjectOptions{})
 			if err != nil {
@@ -333,8 +362,6 @@ func (m *MinIOStorage) streamMergeChunks(
 	if err != nil {
 		return "", fmt.Errorf("写入最终文件失败: %w", err)
 	}
-
-	m.cleanupChunksAsync(ctx, fileHash)
 
 	return m.publicPath(finalKey), nil
 }
@@ -558,6 +585,7 @@ func (m *MinIOStorage) cleanupChunksAsync(parent context.Context, fileHash strin
 
 // cleanupChunks 删除某个文件 hash 下所有已上传分片。
 func (m *MinIOStorage) cleanupChunks(ctx context.Context, fileHash string) {
+	fileHash = uploadscope.ChunkNamespace(ctx, fileHash)
 	if err := ValidateUploadID(fileHash); err != nil {
 		m.logger.Warn("skip cleanup chunks with invalid fileHash", zap.Error(err))
 

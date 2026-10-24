@@ -19,10 +19,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
+	"f_ccg_video_back_ddd/pkg/uploadscope"
 
 	"go.uber.org/zap"
 )
@@ -47,7 +47,7 @@ func NewLocalStorage(cfg *site.Storage, logger *zap.Logger) *LocalStorage {
 
 // SaveChunk 把单个分片写入本地分块目录（先写 .uploading 临时文件再原子 rename）。
 func (l *LocalStorage) SaveChunk(
-	_ context.Context,
+	ctx context.Context,
 	fileHash, index string,
 	size int64,
 	reader media.ChunkReader,
@@ -64,7 +64,7 @@ func (l *LocalStorage) SaveChunk(
 		return err
 	}
 
-	dir, err := safeJoinLocal(l.cfg.ChunkDir, fileHash)
+	dir, err := safeJoinLocal(l.cfg.ChunkDir, uploadscope.ChunkNamespace(ctx, fileHash))
 	if err != nil {
 		return err
 	}
@@ -74,23 +74,11 @@ func (l *LocalStorage) SaveChunk(
 	}
 
 	chunkPath := filepath.Join(dir, index+".part")
-	if stat, statErr := os.Stat(chunkPath); statErr == nil {
-		if stat.Size() == size {
-			// 同大小续传虽无需重写内容，仍视为一次成功分片请求。
-			return os.Chtimes(chunkPath, time.Now(), time.Now())
-		}
-
-		if err := os.Remove(chunkPath); err != nil {
-			return fmt.Errorf("删除旧的(损坏的)分块失败: %w", err)
-		}
-	}
-
-	tmpPath := chunkPath + ".uploading"
-
-	out, err := os.Create(tmpPath)
+	out, err := os.CreateTemp(dir, index+".part.*.uploading")
 	if err != nil {
-		return fmt.Errorf("创建分块文件失败: %w", err)
+		return fmt.Errorf("create chunk: %w", err)
 	}
+	tmpPath := out.Name()
 
 	closed := false
 	defer func() {
@@ -102,7 +90,11 @@ func (l *LocalStorage) SaveChunk(
 		_ = os.Remove(tmpPath)
 	}()
 
-	if _, err = io.Copy(out, reader); err != nil {
+	written, err := io.Copy(out, reader)
+	if err == nil && size >= 0 && written != size {
+		err = fmt.Errorf("chunk size mismatch: expected %d, got %d", size, written)
+	}
+	if err != nil {
 		// 如果写入失败（例如客户端断开连接、磁盘已满），
 		// 必须删除这个刚创建的、不完整的临时文件，防止留下垃圾数据。
 		_ = os.Remove(tmpPath)
@@ -122,7 +114,7 @@ func (l *LocalStorage) SaveChunk(
 		return fmt.Errorf("关闭分块文件失败: %w", closeErr)
 	}
 
-	if err = os.Rename(tmpPath, chunkPath); err != nil {
+	if err = atomicRename(tmpPath, chunkPath); err != nil {
 		_ = os.Remove(tmpPath)
 
 		return fmt.Errorf("保存分块失败: %w", err)
@@ -132,12 +124,12 @@ func (l *LocalStorage) SaveChunk(
 }
 
 // ListUploadedChunks 列出指定文件 hash 已上传的分片索引。
-func (l *LocalStorage) ListUploadedChunks(_ context.Context, fileHash string) ([]string, error) {
+func (l *LocalStorage) ListUploadedChunks(ctx context.Context, fileHash string) ([]string, error) {
 	if err := ValidateUploadID(fileHash); err != nil {
 		return nil, err
 	}
 
-	dir, err := safeJoinLocal(l.cfg.ChunkDir, fileHash)
+	dir, err := safeJoinLocal(l.cfg.ChunkDir, uploadscope.ChunkNamespace(ctx, fileHash))
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +167,7 @@ func (l *LocalStorage) ListUploadedChunks(_ context.Context, fileHash string) ([
 }
 
 // ChunkUploadBytes 统计已落盘 .part 的字节数。正在写入的 .uploading 临时文件不计入。
-func (l *LocalStorage) ChunkUploadBytes(_ context.Context, fileHash, index string) (int64, int64, error) {
+func (l *LocalStorage) ChunkUploadBytes(ctx context.Context, fileHash, index string) (int64, int64, error) {
 	if l.cfg == nil || l.cfg.ChunkDir == "" {
 		return 0, 0, errors.New("未设置本地分块目录")
 	}
@@ -184,7 +176,7 @@ func (l *LocalStorage) ChunkUploadBytes(_ context.Context, fileHash, index strin
 		return 0, 0, err
 	}
 
-	dir, err := safeJoinLocal(l.cfg.ChunkDir, fileHash)
+	dir, err := safeJoinLocal(l.cfg.ChunkDir, uploadscope.ChunkNamespace(ctx, fileHash))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -264,7 +256,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		return "", err
 	}
 
-	chunkDir, err := safeJoinLocal(l.cfg.ChunkDir, fileHash)
+	chunkDir, err := safeJoinLocal(l.cfg.ChunkDir, uploadscope.ChunkNamespace(ctx, fileHash))
 	if err != nil {
 		return "", err
 	}
@@ -290,7 +282,6 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 
 	finalName := "_source_" + fileHash + ".mp4"
 	finalPath := filepath.Join(finalDir, finalName)
-	tmpFinalPath := finalPath + ".merging"
 
 	// 如果最终文件已经存在，则直接返回路径
 	if _, err := os.Stat(finalPath); err == nil {
@@ -303,9 +294,17 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		return l.publicPath(rel), nil
 	}
 
-	out, err := os.Create(tmpFinalPath)
+	out, err := os.CreateTemp(finalDir, ".source-*.merging")
 	if err != nil {
 		return "", fmt.Errorf("创建最终文件失败: %w", err)
+	}
+
+	tmpFinalPath := out.Name()
+	verifier, err := newUploadHashVerifier(ctx, fileHash)
+	if err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmpFinalPath)
+		return "", err
 	}
 
 	closed := false
@@ -335,7 +334,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 			return "", fmt.Errorf("打开分片文件失败: %w", err)
 		}
 
-		if _, err = io.Copy(out, chunkFile); err != nil {
+		if _, err = io.Copy(io.MultiWriter(out, verifier), chunkFile); err != nil {
 			_ = chunkFile.Close()
 			_ = os.Remove(tmpFinalPath)
 
@@ -349,6 +348,9 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		}
 	}
 	// 数据落盘
+	if err := verifier.verify(); err != nil {
+		return "", err
+	}
 	if err = out.Sync(); err != nil {
 		_ = os.Remove(tmpFinalPath)
 
@@ -361,7 +363,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		return "", fmt.Errorf("关闭最终文件失败: %w", closeErr)
 	}
 
-	if err = os.Rename(tmpFinalPath, finalPath); err != nil {
+	if err = atomicRename(tmpFinalPath, finalPath); err != nil {
 		_ = os.Remove(tmpFinalPath)
 
 		return "", fmt.Errorf("提交最终文件失败: %w", err)
@@ -397,23 +399,8 @@ func (l *LocalStorage) SaveFile(
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	out, err := os.Create(destPath)
-	if err != nil {
-		return "", fmt.Errorf("创建文件失败: %w", err)
-	}
-
-	defer func() {
-		if closeErr := out.Close(); closeErr != nil {
-			l.logger.Warn("close saved file failed", zap.Error(closeErr), zap.String("path", destPath))
-		}
-	}()
-
-	if _, err = io.Copy(out, reader); err != nil {
-		return "", fmt.Errorf("写入文件失败: %w", err)
-	}
-
-	if err = out.Sync(); err != nil {
-		return "", fmt.Errorf("落盘失败: %w", err)
+	if _, err := atomicWriteFile(destPath, reader, false); err != nil {
+		return "", err
 	}
 
 	return l.publicPath(relativePath), nil
@@ -444,52 +431,11 @@ func (l *LocalStorage) SaveTranscodeVideo(
 	}
 
 	// 创建目标文件
-	out, err := os.Create(destPath)
-	if err != nil {
-		return "", 0, fmt.Errorf("创建文件失败: %w", err)
-	}
-
-	closed := false
-
-	// 使用 defer 关闭文件，确保资源释放（否则文件句柄泄露）。
-	defer func() {
-		if closed {
-			return
-		}
-
-		if cerr := out.Close(); cerr != nil {
-			l.logger.Warn("close transcode file failed", zap.Error(cerr), zap.String("path", destPath))
-		}
-	}()
-
 	progress := newProgressLogger(size, label, l.logger)
 	defer progress.finish()
-
-	tee := io.TeeReader(reader, progress)
-
-	// io.Copy 会阻塞直到 reader 返回 EOF
-	written, err := io.Copy(out, tee)
+	written, err := atomicWriteFile(destPath, io.TeeReader(reader, progress), true)
 	if err != nil {
-		return "", 0, fmt.Errorf("写入文件失败: %w", err)
-	}
-
-	if written <= 0 {
-		if closeErr := out.Close(); closeErr != nil {
-			return "", 0, fmt.Errorf("关闭空转码文件失败: %w", closeErr)
-		}
-
-		closed = true
-
-		if removeErr := os.Remove(destPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			l.logger.Warn("remove empty transcode file failed", zap.Error(removeErr), zap.String("path", destPath))
-		}
-
-		return "", 0, errors.New("转码输出为空，已拒绝提交")
-	}
-
-	// 强制落盘，确保数据物理写入
-	if err = out.Sync(); err != nil {
-		return "", 0, fmt.Errorf("落盘失败: %w", err)
+		return "", 0, err
 	}
 
 	return l.publicPath(relativePath), written, nil

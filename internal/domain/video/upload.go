@@ -100,9 +100,6 @@ func ValidateCompleteUpload(fileName string, totalChunks int) error {
 //
 // validateIndex 由调用方注入（分片索引格式校验属存储端口能力）。
 func ValidateChunkSet(chunks []string, totalChunks int, validateIndex func(string) error) error {
-	if len(chunks) != totalChunks {
-		return fmt.Errorf("分片数量不完整，期望 %d 个，实际 %d 个", totalChunks, len(chunks))
-	}
 
 	seen := make(map[string]struct{}, len(chunks))
 
