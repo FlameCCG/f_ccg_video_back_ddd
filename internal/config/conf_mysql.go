@@ -13,12 +13,13 @@ const DefaultMysqlTimezone = "Asia/Shanghai"
 
 // Mysql 描述 MySQL 连接与业务时间解释方式；Timezone 也供 binlog 时间转换使用。
 type Mysql struct {
-	Username string `mapstructure:"username" json:"username"`
-	Password string `mapstructure:"password" json:"password"`
-	Host     string `mapstructure:"host" json:"host"`
-	Port     int    `mapstructure:"port" json:"port"`
-	DBName   string `mapstructure:"db" json:"db"`
-	Timezone string `mapstructure:"timezone" json:"timezone"`
+	SlowQueryThresholdMS int    `mapstructure:"slowQueryThresholdMs" json:"slowQueryThresholdMs"`
+	Username             string `mapstructure:"username" json:"username"`
+	Password             string `mapstructure:"password" json:"password"`
+	Host                 string `mapstructure:"host" json:"host"`
+	Port                 int    `mapstructure:"port" json:"port"`
+	DBName               string `mapstructure:"db" json:"db"`
+	Timezone             string `mapstructure:"timezone" json:"timezone"`
 }
 
 // TimezoneName 返回显式配置或项目默认的 MySQL 时区名。

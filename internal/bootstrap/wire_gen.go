@@ -109,7 +109,12 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	}
 	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	es := config.ProvideESConf(provider)
 	searchES, cleanup4 := search.Provide(es, zapLogger)
 	redis := config.ProvideRedisConf(provider)
@@ -428,7 +433,12 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 		return nil, nil, err
 	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	gormDB := mysql.ProvideGorm(db)
 	txManager := gormx.NewTxManager(gormDB)
 	transcodeResourceRepository := media3.NewTranscodeResourceRepository(gormDB, txManager)
@@ -478,7 +488,12 @@ func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
 		return nil, nil, err
 	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	gormDB := mysql.ProvideGorm(db)
 	migrator := migration.NewMigrator(gormDB, zapLogger)
 	executor := cli.NewMigrateDBExecutor(migrator)
@@ -504,7 +519,12 @@ func InitializeVideoPartitionsTask(opts *cli.Options) (*cli.Executor, func(), er
 		return nil, nil, err
 	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	gormDB := mysql.ProvideGorm(db)
 	migrator := migration.NewMigrator(gormDB, zapLogger)
 	executor := cli.NewVideoPartitionsExecutor(migrator, zapLogger)
@@ -534,7 +554,12 @@ func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
 	bannerStorageResolverAdapter := NewBannerStorageResolverAdapter(resolver)
 	configMysql := config.ProvideMysqlConf(provider)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	gormDB := mysql.ProvideGorm(db)
 	bannerRepository := provisioning.NewBannerRepository(gormDB)
 	executor := cli.NewBannerExecutor(bannerStorageResolverAdapter, bannerRepository, zapLogger)
@@ -560,7 +585,12 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 		return nil, nil, err
 	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	gormDB := mysql.ProvideGorm(db)
 	userRepository := identity2.NewUserRepository(gormDB, provider)
 	superUserRepository := provisioning.NewSuperUserRepository(gormDB, userRepository, zapLogger)
@@ -597,7 +627,12 @@ func InitializeESIndexTask(opts *cli.Options) (*cli.Executor, func(), error) {
 		return nil, nil, err
 	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	es := config.ProvideESConf(provider)
 	searchES, cleanup4 := search.Provide(es, zapLogger)
 	client := search.ProvideV7(searchES)
@@ -626,7 +661,12 @@ func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error
 	}
 	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	es := config.ProvideESConf(provider)
 	searchES, cleanup4 := search.Provide(es, zapLogger)
 	redis := config.ProvideRedisConf(provider)
@@ -680,7 +720,12 @@ func InitializeRBACInitTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	}
 	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3, err := mysql.Provide(configMysql, zapLogger)
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	es := config.ProvideESConf(provider)
 	searchES, cleanup4 := search.Provide(es, zapLogger)
 	redis := config.ProvideRedisConf(provider)
