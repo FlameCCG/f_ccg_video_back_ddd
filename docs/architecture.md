@@ -109,7 +109,7 @@ interfaces ──▶ application ──▶ domain（规则与写侧仓储端口�
 - 构造与运行状态尽量显式注入，避免用包级可变单例隐藏生命周期；例如上传合并锁和完成标记现在是 `UploadService` 实例字段。
 - 每个 `application/<ctx>.ProviderSet` 只列应用构造器；应用层不得为了 `wire.Bind`
   反向 import infrastructure。具体适配器选择与 interface binding 只出现在 bootstrap 组合根。
-- 日志器经构造函数注入，HTTP 监听错误返回 `cmd/server` 决定退出码。**配置加载是例外**：当前 `infrastructure/config.Load` 对启动时读取、解析和必填项校验失败使用 `panic`；不能宣称所有启动错误都经 `error` 返回。
+- 日志器经构造函数注入，HTTP 监听错误返回 `cmd/server` 决定退出码。配置加载与数据库客户端构造的可预期故障经 Wire 返回 `error`；入口在日志器尚不可用时使用 stderr 安全诊断。
 - `validate.New()` 生成注入式 Translator；Router middleware 把它传入请求上下文，
   handler 的统一错误响应从当前请求读取，不存在包级 translator 或校验器 `init()` 装配。
 
@@ -211,7 +211,7 @@ go run ./cmd/server -all myadmin mypassword
 
 ### 6.2 配置快照与热更新
 
-`internal/config` 定义配置树，`internal/infrastructure/config.Provider` 使用 Viper 读取 YAML/环境变量、监听文件并以 `atomic.Pointer` 发布当前快照。应用层通过 `shared.ConfigReader/ConfigStore` 端口访问；一次用例操作先 `Get()` 一份快照再读字段，避免同次操作跨版本读取。热更新读取或校验失败保留上一份有效配置。管理端写配置则**先发布内存快照、再写文件**；写文件失败时内存可能已变，这一步没有事务回滚语义。见[Provider](../internal/infrastructure/config/provider.go)、[管理端配置用例](../internal/application/contentops/site_config_service.go)及[配置示例](../config.example.yaml)。
+`internal/config` 定义配置树，`internal/infrastructure/config.Provider` 使用 Viper 读取 YAML/环境变量、监听文件并以 `atomic.Pointer` 发布当前快照。应用层通过 `shared.ConfigReader/ConfigStore` 端口访问；一次用例操作先 `Get()` 一份快照再读字段，避免同次操作跨版本读取。热更新读取或校验失败保留上一份有效配置。管理端更新先校验并原子持久化配置段，再与文件监听通过同一路径发布快照及通知订阅者；持久化或校验失败保留旧值。见[Provider](../internal/infrastructure/config/provider.go)、[管理端配置用例](../internal/application/contentops/site_config_service.go)及[配置示例](../config.example.yaml)。
 
 ### 6.3 独立转码入口与节点角色
 
@@ -241,7 +241,7 @@ Kafka 的 bootstrap 地址和 broker 宣告的对外地址都必须能从消费�
    视频调度器 → River → cron；随后关闭 Chat Hub → Danmu Hub，再停止并等待 detached 任务。
 4. 后台工作全部退出后关闭 Mongo → MySQL → Redis → ES → IPDB，最后 Sync/关闭 Logger。
 
-HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动错误仅记日志并继续，`RuntimeComponents.Stop` 的组件停止错误也仅记告警，`App.Stop` 当前返回 `nil`。因此“HTTP 仍启动”只表示服务监听策略，**不保证转码、River、搜索等依赖能力可用**。入口保留 Wire `cleanup` 的 defer，正常停序仍由 `App.Stop` 显式执行。配置加载会 `panic`，见[配置 Provider](../internal/infrastructure/config/provider.go)，不属于这里的逐层错误返回路径。
+HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动错误仅记日志并继续，`RuntimeComponents.Stop` 的组件停止错误也仅记告警，`App.Stop` 当前返回 `nil`。因此“HTTP 仍启动”只表示服务监听策略，**不保证转码、River、搜索等依赖能力可用**。入口保留 Wire `cleanup` 的 defer，正常停序仍由 `App.Stop` 显式执行。配置加载返回错误，见[配置 Provider](../internal/infrastructure/config/provider.go)。日志器在配置监听停止后最后关闭，日志与采集契约见[日志规范](logging.md)。
 
 ## 8. 测试策略
 

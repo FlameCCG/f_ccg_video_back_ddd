@@ -207,6 +207,8 @@ go run -mod=mod github.com/google/wire/cmd/wire ./internal/bootstrap
 
 | 文档 | 内容 |
 | --- | --- |
+| [日志治理验证记录](docs/logging-verification.md) | 验证范围与检查结果 |
+| [日志与采集契约](docs/logging.md) | 错误链、关联、日志配置、脱敏与排障规范 |
 | [架构说明](docs/architecture.md) | 上下文划分、分层依赖、配置、生命周期与业务链路 |
 | [HTTP API 导航](docs/openapi-md/index.md) | 普通用户与管理员接口说明 |
 | [OpenAPI 定义](docs/openapi.yaml) | 接口路径、请求参数与响应结构 |

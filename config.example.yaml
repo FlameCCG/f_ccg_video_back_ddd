@@ -72,16 +72,22 @@ kafka:
 
 # 日志
 logger:
+  level: debug
+  output: both
+  consoleFormat: console
+  service: video-backend
+  env: development
+  instance: ""
   # Debug 日志文件路径
-  debugFileName: ./runtime/debug/f_ccg_video-debug.log
+  debugFileName: ./runtime/{service}/{instance}/debug.log
   # 是否开发模式（更详细的日志格式）
   development: true
   # 是否同时输出到控制台
   enableConsole: true
   # Error 日志文件路径
-  errorFileName: ./runtime/error/f_ccg_video-error.log
+  errorFileName: ./runtime/{service}/{instance}/error.log
   # Info 日志文件路径
-  infoFileName: ./runtime/info/f_ccg_video-info.log
+  infoFileName: ./runtime/{service}/{instance}/info.log
   # 单文件最大保留天数
   maxAge: 28
   # 历史日志文件最大备份数
@@ -89,7 +95,7 @@ logger:
   # 单文件最大体积（MB）
   maxSize: 500
   # Warn 日志文件路径
-  warnFileName: ./runtime/warn/f_ccg_video-warn.log
+  warnFileName: ./runtime/{service}/{instance}/warn.log
 
 # MongoDB（弹幕等文档数据）
 mongo:
@@ -114,6 +120,7 @@ mongo:
 
 # MySQL 主库
 mysql:
+  slowQueryThresholdMs: 200
   # 数据库名
   db: f_ccg_video
   # 主机地址
