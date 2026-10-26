@@ -173,9 +173,11 @@ func (f *fakeRepository) SendMessage(ctx context.Context, msg *domain.Message, p
 	if err := f.InsertMessage(ctx, msg); err != nil {
 		return err
 	}
+
 	if err := f.ApplySend(ctx, msg, preview); err != nil {
 		f.inserted = f.inserted[:before]
 		return err
 	}
+
 	return nil
 }

@@ -2,16 +2,23 @@ package oauth
 
 import (
 	"f_ccg_video_back_ddd/internal/config"
-	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
+
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+
+	"go.uber.org/zap"
 )
 
 func TestGooglePreservesProviderEmailVerificationAssertion(t *testing.T) {
+	t.Parallel()
+
 	for _, verified := range []bool{false, true} {
 		provider := infraconfig.NewProvider(&config.Config{ThirdLogin: &config.ThirdLogin{Google: &thirdlogin.Google{ClientID: "id", ClientSecret: "secret"}}})
 		client := NewGoogleClient(provider, zap.NewNop())
@@ -23,14 +30,13 @@ func TestGooglePreservesProviderEmailVerificationAssertion(t *testing.T) {
 					body = strings.Replace(body, ":false", ":true", 1)
 				}
 			}
-			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 		})}
+
 		info, err := client.FetchUser(t.Context(), "code")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.EmailVerified != verified {
-			t.Fatalf("email verified=%t want=%t", info.EmailVerified, verified)
-		}
+		require.NoError(t, err)
+
+		require.Equal(t, info.EmailVerified, verified, "email verified=%t want=%t", info.EmailVerified, verified)
 	}
 }

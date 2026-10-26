@@ -2,13 +2,14 @@ package search
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 var pngPixel = []byte{
@@ -36,8 +37,9 @@ func TestIsPubliclyReachableHost(t *testing.T) {
 	}
 
 	for host, want := range tests {
-		if got := isPubliclyReachableHost(host); got != want {
-			t.Fatalf("isPubliclyReachableHost(%q) = %v, want %v", host, got, want)
+		{
+			got := isPubliclyReachableHost(host)
+			require.Equal(t, want, got, "isPubliclyReachableHost(%q) = %v, want %v", host, got, want)
 		}
 	}
 }
@@ -46,42 +48,44 @@ func TestResolveCoverEmbedSourcePassesThroughDataURI(t *testing.T) {
 	t.Parallel()
 
 	const uri = "data:image/png;base64,AAAA"
+
 	got, err := resolveCoverEmbedSource(context.Background(), http.DefaultClient, uri, "", "")
-	if err != nil {
-		t.Fatalf("resolveCoverEmbedSource() error = %v", err)
-	}
-	if got != uri {
-		t.Fatalf("resolveCoverEmbedSource() = %q, want %q", got, uri)
-	}
+	require.NoError(t, err, "resolveCoverEmbedSource() error = %v", err)
+
+	require.Equal(t, uri, got, "resolveCoverEmbedSource() = %q, want %q", got, uri)
 }
 
 func TestResolveCoverEmbedSourceKeepsPublicURL(t *testing.T) {
 	t.Parallel()
 
 	const cover = "https://cdn.example.com/covers/1.jpg"
+
 	got, err := resolveCoverEmbedSource(context.Background(), http.DefaultClient, cover, "", "")
-	if err != nil {
-		t.Fatalf("resolveCoverEmbedSource() error = %v", err)
-	}
-	if got != cover {
-		t.Fatalf("public URL changed: got %q", got)
-	}
+	require.NoError(t, err, "resolveCoverEmbedSource() error = %v", err)
+
+	require.Equal(t, cover, got, "public URL changed: got %q", got)
 }
 
 func TestResolveCoverEmbedSourceRejectsPrivateHostWithoutFetching(t *testing.T) {
+	t.Parallel()
+
 	calls := 0
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
+
 		http.Redirect(w, r, "http://127.0.0.1/private", http.StatusFound)
 	}))
 	defer server.Close()
+
 	_, err := resolveCoverEmbedSource(context.Background(), server.Client(), server.URL+"/cover.png", "", "")
-	if !errors.Is(err, errCoverUnavailable) || calls != 0 {
-		t.Fatalf("private fetch: calls=%d err=%v", calls, err)
-	}
+	require.ErrorIs(t, err, errCoverUnavailable, "private fetch: calls=%d err=%v", calls, err)
+	require.Equal(t, 0, calls, "private fetch: calls=%d err=%v", calls, err)
 }
 
 func TestResolveCoverEmbedSourceRejectsNonImage(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/html")
 		_, _ = writer.Write([]byte("<html>not found</html>"))
@@ -89,18 +93,17 @@ func TestResolveCoverEmbedSourceRejectsNonImage(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	_, err := resolveCoverEmbedSource(context.Background(), server.Client(), server.URL, "", "")
-	if !errors.Is(err, errCoverUnavailable) {
-		t.Fatalf("error = %v, want errCoverUnavailable", err)
-	}
+	require.ErrorIs(t, err, errCoverUnavailable, "error = %v, want errCoverUnavailable", err)
 }
 
 func TestResolveCoverEmbedSourceRejectsEmptyCover(t *testing.T) {
 	t.Parallel()
 
-	if _, err := resolveCoverEmbedSource(
-		context.Background(), http.DefaultClient, "   ", "", "",
-	); !errors.Is(err, errCoverUnavailable) {
-		t.Fatalf("error = %v, want errCoverUnavailable", err)
+	{
+		_, err := resolveCoverEmbedSource(
+			context.Background(), http.DefaultClient, "   ", "", "",
+		)
+		require.ErrorIs(t, err, errCoverUnavailable, "error = %v, want errCoverUnavailable", err)
 	}
 }
 
@@ -117,8 +120,9 @@ func TestJoinAssetBaseURL(t *testing.T) {
 		{base: "", relative: "uploads/a.jpg", want: ""},
 	}
 	for _, test := range tests {
-		if got := joinAssetBaseURL(test.base, test.relative); got != test.want {
-			t.Fatalf("joinAssetBaseURL(%q, %q) = %q, want %q", test.base, test.relative, got, test.want)
+		{
+			got := joinAssetBaseURL(test.base, test.relative)
+			require.Equal(t, test.want, got, "joinAssetBaseURL(%q, %q) = %q, want %q", test.base, test.relative, got, test.want)
 		}
 	}
 }
@@ -126,8 +130,9 @@ func TestJoinAssetBaseURL(t *testing.T) {
 func TestSafeJoinUnderRootBlocksTraversal(t *testing.T) {
 	t.Parallel()
 
-	if _, err := safeJoinUnderRoot(t.TempDir(), "../../etc/passwd"); !errors.Is(err, errCoverUnavailable) {
-		t.Fatalf("error = %v, want errCoverUnavailable", err)
+	{
+		_, err := safeJoinUnderRoot(t.TempDir(), "../../etc/passwd")
+		require.ErrorIs(t, err, errCoverUnavailable, "error = %v, want errCoverUnavailable", err)
 	}
 }
 
@@ -135,37 +140,30 @@ func TestSafeJoinUnderRootDeduplicatesRootPrefix(t *testing.T) {
 	t.Parallel()
 
 	root := filepath.Join(t.TempDir(), "uploads")
-	if err := os.MkdirAll(filepath.Join(root, "cover"), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+	{
+		err := os.MkdirAll(filepath.Join(root, "cover"), 0o750)
+		require.NoError(t, err, "mkdir: %v", err)
 	}
 
 	got, err := safeJoinUnderRoot(root, "uploads/cover/x.jpg")
-	if err != nil {
-		t.Fatalf("safeJoinUnderRoot() error = %v", err)
-	}
+	require.NoError(t, err, "safeJoinUnderRoot() error = %v", err)
+
 	want := filepath.Join(root, "cover", "x.jpg")
-	if got != want {
-		t.Fatalf("safeJoinUnderRoot() = %q, want %q", got, want)
-	}
+	require.Equal(t, want, got, "safeJoinUnderRoot() = %q, want %q", got, want)
 }
 
 func TestBuildImageDataURISniffsContentType(t *testing.T) {
 	t.Parallel()
 
 	got, err := buildImageDataURI(pngPixel, "application/octet-stream")
-	if err != nil {
-		t.Fatalf("buildImageDataURI() error = %v", err)
-	}
-	if !strings.HasPrefix(got, "data:image/png;base64,") {
-		t.Fatalf("buildImageDataURI() = %q, want png data URI", got)
-	}
+	require.NoError(t, err, "buildImageDataURI() error = %v", err)
+
+	require.True(t, strings.HasPrefix(got, "data:image/png;base64,"), "buildImageDataURI() = %q, want png data URI", got)
 }
 
 func TestBuildImageDataURIRejectsOversize(t *testing.T) {
 	t.Parallel()
 
 	_, err := buildImageDataURI(make([]byte, maxCoverImageBytes+1), "image/png")
-	if !errors.Is(err, errCoverUnavailable) {
-		t.Fatalf("error = %v, want errCoverUnavailable", err)
-	}
+	require.ErrorIs(t, err, errCoverUnavailable, "error = %v, want errCoverUnavailable", err)
 }

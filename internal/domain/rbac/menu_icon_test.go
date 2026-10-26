@@ -1,14 +1,17 @@
 package rbac_test
 
 import (
-	"errors"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 )
 
 func TestValidateMenuIconAcceptsSafeIcons(t *testing.T) {
+	t.Parallel()
+
 	for _, icon := range []string{
 		"",
 		"icon-class-name", // 手工路径允许非 SVG 图标（字体图标类名等）
@@ -17,13 +20,16 @@ func TestValidateMenuIconAcceptsSafeIcons(t *testing.T) {
 		"data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=", // base64 data URI：原文不含危险 token，放行
 		strings.Repeat("a", 2048),                    // 恰好上限
 	} {
-		if err := domain.ValidateMenuIcon(icon); err != nil {
-			t.Errorf("ValidateMenuIcon(%q) = %v, want nil", icon, err)
+		{
+			err := domain.ValidateMenuIcon(icon)
+			assert.NoError(t, err, "ValidateMenuIcon(%q) = %v, want nil", icon, err)
 		}
 	}
 }
 
 func TestValidateMenuIconRejectsUnsafeIcons(t *testing.T) {
+	t.Parallel()
+
 	for _, icon := range []string{
 		"<script>alert(1)</script>",
 		"<svg><script>alert(1)</script></svg>",
@@ -36,15 +42,19 @@ func TestValidateMenuIconRejectsUnsafeIcons(t *testing.T) {
 		"<a href=\"javascript:alert(1)\">x</a>",
 		"javascript:alert(1)",
 	} {
-		if err := domain.ValidateMenuIcon(icon); !errors.Is(err, domain.ErrMenuIconUnsafe) {
-			t.Errorf("ValidateMenuIcon(%q) = %v, want ErrMenuIconUnsafe", icon, err)
+		{
+			err := domain.ValidateMenuIcon(icon)
+			assert.ErrorIs(t, err, domain.ErrMenuIconUnsafe, "ValidateMenuIcon(%q) = %v, want ErrMenuIconUnsafe", icon, err)
 		}
 	}
 }
 
 func TestValidateMenuIconRejectsTooLong(t *testing.T) {
+	t.Parallel()
+
 	icon := strings.Repeat("a", 2049)
-	if err := domain.ValidateMenuIcon(icon); !errors.Is(err, domain.ErrMenuIconTooLong) {
-		t.Errorf("ValidateMenuIcon(2049 bytes) = %v, want ErrMenuIconTooLong", err)
+	{
+		err := domain.ValidateMenuIcon(icon)
+		assert.ErrorIs(t, err, domain.ErrMenuIconTooLong, "ValidateMenuIcon(2049 bytes) = %v, want ErrMenuIconTooLong", err)
 	}
 }

@@ -3,21 +3,25 @@ package contentops
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNormalizeAdminCorsOrigins(t *testing.T) {
-	t.Run("empty", func(t *testing.T) {
-		out, err := normalizeAdminCorsOrigins(nil)
-		if err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
+	t.Parallel()
 
-		if len(out) != 0 {
-			t.Fatalf("expected empty, got %v", out)
-		}
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+
+		out, err := normalizeAdminCorsOrigins(nil)
+		require.NoError(t, err, "unexpected err: %v", err)
+
+		require.Empty(t, out, "expected empty, got %v", out)
 	})
 
 	t.Run("star and urls", func(t *testing.T) {
+		t.Parallel()
+
 		out, err := normalizeAdminCorsOrigins([]string{
 			" * ",
 			"https://www.example.com/path",
@@ -25,27 +29,21 @@ func TestNormalizeAdminCorsOrigins(t *testing.T) {
 			"http://localhost:3000",
 			"",
 		})
-		if err != nil {
-			t.Fatalf("unexpected err: %v", err)
-		}
+		require.NoError(t, err, "unexpected err: %v", err)
 
-		if len(out) != 3 {
-			t.Fatalf("expected 3 unique origins, got %v", out)
-		}
+		require.Len(t, out, 3, "expected 3 unique origins, got %v", out)
 
-		if out[0] != "*" || out[1] != "https://www.example.com" || out[2] != "http://localhost:3000" {
-			t.Fatalf("unexpected normalized list: %v", out)
-		}
+		require.Equal(t, "*", out[0], "unexpected normalized list: %v", out)
+		require.Equal(t, "https://www.example.com", out[1], "unexpected normalized list: %v", out)
+		require.Equal(t, "http://localhost:3000", out[2], "unexpected normalized list: %v", out)
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		_, err := normalizeAdminCorsOrigins([]string{"ftp://x.com"})
-		if err == nil {
-			t.Fatal("expected error for ftp scheme")
-		}
+		t.Parallel()
 
-		if !strings.Contains(err.Error(), "scheme") && !strings.Contains(err.Error(), "无效") {
-			t.Fatalf("unexpected error: %v", err)
-		}
+		_, err := normalizeAdminCorsOrigins([]string{"ftp://x.com"})
+		require.Error(t, err, "expected error for ftp scheme")
+
+		require.False(t, !strings.Contains(err.Error(), "scheme") && !strings.Contains(err.Error(), "无效"), "unexpected error: %v", err)
 	})
 }

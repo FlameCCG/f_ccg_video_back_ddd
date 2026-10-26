@@ -1,11 +1,11 @@
 package dynamic_test
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"testing"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 func TestFollowActivityLatest(t *testing.T) {

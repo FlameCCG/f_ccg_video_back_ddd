@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -19,14 +21,10 @@ import (
 func TestStoreAvailableReportsNilHandles(t *testing.T) {
 	t.Parallel()
 
-	if NewStore(nil).Available() {
-		t.Fatal("nil database handle must report unavailable")
-	}
+	require.False(t, NewStore(nil).Available(), "nil database handle must report unavailable")
 
 	var nilStore *Store
-	if nilStore.Available() {
-		t.Fatal("nil store must report unavailable")
-	}
+	require.False(t, nilStore.Available(), "nil store must report unavailable")
 }
 
 // TestStoreWriteMethodsReturnStoreUnavailable 写侧方法在 Mongo 缺失时统一返回
@@ -41,48 +39,54 @@ func TestStoreWriteMethodsReturnStoreUnavailable(t *testing.T) {
 	t.Run("EnsureIndexes", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.EnsureIndexes(ctx); !errors.Is(err, domain.ErrStoreUnavailable) {
-			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
+		{
+			err := store.EnsureIndexes(ctx)
+			require.ErrorIs(t, err, domain.ErrStoreUnavailable, "err = %v, want ErrStoreUnavailable", err)
 		}
 	})
 
 	t.Run("InsertMessage", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.InsertMessage(ctx, &domain.Message{}); !errors.Is(err, domain.ErrStoreUnavailable) {
-			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
+		{
+			err := store.InsertMessage(ctx, &domain.Message{})
+			require.ErrorIs(t, err, domain.ErrStoreUnavailable, "err = %v, want ErrStoreUnavailable", err)
 		}
 	})
 
 	t.Run("ApplySend", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.ApplySend(ctx, &domain.Message{}, "预览"); !errors.Is(err, domain.ErrStoreUnavailable) {
-			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
+		{
+			err := store.ApplySend(ctx, &domain.Message{}, "预览")
+			require.ErrorIs(t, err, domain.ErrStoreUnavailable, "err = %v, want ErrStoreUnavailable", err)
 		}
 	})
 
 	t.Run("UpsertConversation", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := store.UpsertConversation(ctx, 1, 2, now); !errors.Is(err, domain.ErrStoreUnavailable) {
-			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
+		{
+			_, err := store.UpsertConversation(ctx, 1, 2, now)
+			require.ErrorIs(t, err, domain.ErrStoreUnavailable, "err = %v, want ErrStoreUnavailable", err)
 		}
 	})
 
 	t.Run("HideConversation", func(t *testing.T) {
 		t.Parallel()
 
-		if err := store.HideConversation(ctx, 1, 2, now); !errors.Is(err, domain.ErrStoreUnavailable) {
-			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
+		{
+			err := store.HideConversation(ctx, 1, 2, now)
+			require.ErrorIs(t, err, domain.ErrStoreUnavailable, "err = %v, want ErrStoreUnavailable", err)
 		}
 	})
 
 	t.Run("MarkRead", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := store.MarkRead(ctx, 1, 2, now); !errors.Is(err, domain.ErrStoreUnavailable) {
-			t.Fatalf("err = %v, want ErrStoreUnavailable", err)
+		{
+			_, err := store.MarkRead(ctx, 1, 2, now)
+			require.ErrorIs(t, err, domain.ErrStoreUnavailable, "err = %v, want ErrStoreUnavailable", err)
 		}
 	})
 }
@@ -95,16 +99,19 @@ func TestStoreReadMethodsReturnStoreUnavailable(t *testing.T) {
 	store := NewStore(nil)
 	ctx := context.Background()
 
-	if _, _, err := store.ListConversations(ctx, 1, 1, 20); !errors.Is(err, domain.ErrStoreUnavailable) {
-		t.Fatalf("ListConversations err = %v, want ErrStoreUnavailable", err)
+	{
+		_, _, err := store.ListConversations(ctx, 1, 1, 20)
+		require.ErrorIs(t, err, domain.ErrStoreUnavailable, "ListConversations err = %v, want ErrStoreUnavailable", err)
 	}
 
-	if _, err := store.TotalUnread(ctx, 1); !errors.Is(err, domain.ErrStoreUnavailable) {
-		t.Fatalf("TotalUnread err = %v, want ErrStoreUnavailable", err)
+	{
+		_, err := store.TotalUnread(ctx, 1)
+		require.ErrorIs(t, err, domain.ErrStoreUnavailable, "TotalUnread err = %v, want ErrStoreUnavailable", err)
 	}
 
-	if _, err := store.ListMessagesBefore(ctx, 1, 2, "", 11); !errors.Is(err, domain.ErrStoreUnavailable) {
-		t.Fatalf("ListMessagesBefore err = %v, want ErrStoreUnavailable", err)
+	{
+		_, err := store.ListMessagesBefore(ctx, 1, 2, "", 11)
+		require.ErrorIs(t, err, domain.ErrStoreUnavailable, "ListMessagesBefore err = %v, want ErrStoreUnavailable", err)
 	}
 }
 
@@ -137,13 +144,9 @@ func TestExistsMessageBetweenDegradesToFalse(t *testing.T) {
 			exists, err := tt.store.ExistsMessageBetween(
 				ctx, tt.conversationID, tt.senderID, tt.receiverID, start, end,
 			)
-			if err != nil {
-				t.Fatalf("err = %v, want nil", err)
-			}
+			require.NoError(t, err, "err = %v, want nil", err)
 
-			if exists {
-				t.Fatal("exists = true, want false")
-			}
+			require.False(t, exists, "exists = true, want false")
 		})
 	}
 }
@@ -155,24 +158,19 @@ func TestVisibleConversationFilterShape(t *testing.T) {
 
 	filter := visibleConversationFilter(7)
 
-	if got := filter[fieldParticipants]; got != uint(7) {
-		t.Fatalf("participants = %v, want 7", got)
+	{
+		got := filter[fieldParticipants]
+		require.EqualValues(t, uint(7), got, "participants = %v, want 7", got)
 	}
 
 	or, ok := filter["$or"]
-	if !ok {
-		t.Fatalf("filter must contain $or: %+v", filter)
-	}
+	require.True(t, ok, "filter must contain $or: %+v", filter)
 
 	// bson.A 是 primitive.A（命名类型），按其自身类型断言。
 	list, ok := or.(bson.A)
-	if !ok {
-		t.Fatalf("$or = %T, want bson.A", or)
-	}
+	require.True(t, ok, "$or = %T, want bson.A", or)
 
-	if len(list) != 3 {
-		t.Fatalf("$or has %d clauses, want 3", len(list))
-	}
+	require.Len(t, list, 3, "$or has %d clauses, want 3", len(list))
 }
 
 // TestFieldConstantsMatchStorageContract Mongo 集合名与字段路径是存储契约，
@@ -184,7 +182,7 @@ func TestFieldConstantsMatchStorageContract(t *testing.T) {
 		chatMessagesCol:                 "chat_messages",
 		chatConversationsCol:            "chat_conversations",
 		fieldConversationID:             "conversationId",
-		fieldID:                         "_id",
+		fieldID:                         fieldID,
 		fieldCreatedAt:                  "createdAt",
 		fieldUpdatedAt:                  "updatedAt",
 		fieldParticipants:               "participants",
@@ -206,22 +204,23 @@ func TestFieldConstantsMatchStorageContract(t *testing.T) {
 	}
 
 	for got, want := range pairs {
-		if got != want {
-			t.Fatalf("storage contract drift: got %q, want %q", got, want)
-		}
+		require.Equal(t, want, got, "storage contract drift: got %q, want %q", got, want)
 	}
 
 	// 成员字段前缀 + 后缀拼出的路径必须与常量一致。
-	if got := domain.MemberA.String() + suffixUnread; got != fieldMemberAUnread {
-		t.Fatalf("memberA unread path = %q, want %q", got, fieldMemberAUnread)
+	{
+		got := domain.MemberA.String() + suffixUnread
+		require.Equal(t, fieldMemberAUnread, got, "memberA unread path = %q, want %q", got, fieldMemberAUnread)
 	}
 
-	if got := domain.MemberB.String() + suffixVisible; got != "memberB.visible" {
-		t.Fatalf("memberB visible path = %q", got)
+	{
+		got := domain.MemberB.String() + suffixVisible
+		require.Equal(t, "memberB.visible", got, "memberB visible path = %q", got)
 	}
 
-	if got := domain.MemberA.String() + suffixLastReadAt; got != "memberA.lastReadAt" {
-		t.Fatalf("memberA lastReadAt path = %q", got)
+	{
+		got := domain.MemberA.String() + suffixLastReadAt
+		require.Equal(t, "memberA.lastReadAt", got, "memberA lastReadAt path = %q", got)
 	}
 }
 
@@ -248,13 +247,9 @@ func TestFollowRelationQueryDegradesWithoutDB(t *testing.T) {
 			t.Parallel()
 
 			following, err := query.IsFollowing(ctx, tt.userID, tt.targetUserID)
-			if err != nil {
-				t.Fatalf("err = %v, want nil", err)
-			}
+			require.NoError(t, err, "err = %v, want nil", err)
 
-			if following {
-				t.Fatal("following = true, want false")
-			}
+			require.False(t, following, "following = true, want false")
 		})
 	}
 }
@@ -270,12 +265,14 @@ func TestIndexInitializerSkipsWhenMongoMissing(t *testing.T) {
 		NewIndexInitializer(nil, zap.NewNop()),
 		NewIndexInitializer(NewStore(nil), zap.NewNop()),
 	} {
-		if err := initializer.Start(ctx); err != nil {
-			t.Fatalf("Start = %v, want nil", err)
+		{
+			err := initializer.Start(ctx)
+			require.NoError(t, err, "Start = %v, want nil", err)
 		}
 
-		if err := initializer.Stop(ctx); err != nil {
-			t.Fatalf("Stop = %v, want nil", err)
+		{
+			err := initializer.Stop(ctx)
+			require.NoError(t, err, "Stop = %v, want nil", err)
 		}
 	}
 }
@@ -285,13 +282,12 @@ func TestIndexInitializerSwallowsEnsureIndexesFailure(t *testing.T) {
 	t.Parallel()
 
 	repo := &failingRepository{}
-	if err := NewIndexInitializer(repo, zap.NewNop()).Start(context.Background()); err != nil {
-		t.Fatalf("Start = %v, want nil (failures are only logged)", err)
+	{
+		err := NewIndexInitializer(repo, zap.NewNop()).Start(context.Background())
+		require.NoError(t, err, "Start = %v, want nil (failures are only logged)", err)
 	}
 
-	if !repo.called {
-		t.Fatal("EnsureIndexes must be attempted when the store reports available")
-	}
+	require.True(t, repo.called, "EnsureIndexes must be attempted when the store reports available")
 }
 
 // failingRepository 是一个「可用但建索引总失败」的仓储桩。

@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/lionsoul2014/ip2region/binding/golang/xdb"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -17,22 +19,17 @@ func TestResolverRegionPublicIP(t *testing.T) {
 	t.Parallel()
 
 	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, xdbTestPath)
-	if err != nil {
-		t.Fatalf("init ip searcher failed: %v", err)
-	}
+	require.NoError(t, err, "init ip searcher failed: %v", err)
 
 	t.Cleanup(searcher.Close)
 
 	resolver := NewResolver(searcher, zap.NewNop())
 
 	addr := resolver.Region("8.8.8.8")
-	if addr == "" {
-		t.Fatal("expected non-empty addr for public ip")
-	}
+	require.NotEmpty(t, addr, "expected non-empty addr for public ip")
 
-	if addr == "内网" || addr == "异常地址" {
-		t.Fatalf("unexpected addr for public ip: %s", addr)
-	}
+	require.NotEqual(t, "内网", addr, "unexpected addr for public ip: %s", addr)
+	require.NotEqual(t, "异常地址", addr, "unexpected addr for public ip: %s", addr)
 }
 
 // TestResolverRegionPrivateIP 内网地址不查库，直接返回「内网」。
@@ -42,8 +39,9 @@ func TestResolverRegionPrivateIP(t *testing.T) {
 	resolver := NewResolver(nil, zap.NewNop())
 
 	for _, ip := range []string{"127.0.0.1", "10.0.0.1", "192.168.1.1", "172.16.0.1", "169.254.1.1"} {
-		if got := resolver.Region(ip); got != "内网" {
-			t.Fatalf("Region(%q) = %q, want 内网", ip, got)
+		{
+			got := resolver.Region(ip)
+			require.Equal(t, "内网", got, "Region(%q) = %q, want 内网", ip, got)
 		}
 	}
 }
@@ -55,8 +53,9 @@ func TestResolverRegionWithoutSearcher(t *testing.T) {
 
 	resolver := NewResolver(nil, zap.NewNop())
 
-	if got := resolver.Region("8.8.8.8"); got != "未知地址" {
-		t.Fatalf("Region without searcher = %q, want 未知地址", got)
+	{
+		got := resolver.Region("8.8.8.8")
+		require.Equal(t, "未知地址", got, "Region without searcher = %q, want 未知地址", got)
 	}
 }
 
@@ -65,16 +64,15 @@ func TestResolverRegionInvalidIP(t *testing.T) {
 	t.Parallel()
 
 	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, xdbTestPath)
-	if err != nil {
-		t.Fatalf("init ip searcher failed: %v", err)
-	}
+	require.NoError(t, err, "init ip searcher failed: %v", err)
 
 	t.Cleanup(searcher.Close)
 
 	resolver := NewResolver(searcher, zap.NewNop())
 
-	if got := resolver.Region("not-an-ip"); got != "异常地址" {
-		t.Fatalf("Region(invalid) = %q, want 异常地址", got)
+	{
+		got := resolver.Region("not-an-ip")
+		require.Equal(t, "异常地址", got, "Region(invalid) = %q, want 异常地址", got)
 	}
 }
 
@@ -84,36 +82,44 @@ func TestResolverNilReceiver(t *testing.T) {
 
 	var resolver *Resolver
 
-	if got := resolver.Region("8.8.8.8"); got != "未知地址" {
-		t.Fatalf("nil resolver Region = %q, want 未知地址", got)
+	{
+		got := resolver.Region("8.8.8.8")
+		require.Equal(t, "未知地址", got, "nil resolver Region = %q, want 未知地址", got)
 	}
 }
 
 func TestResolverConcurrentSearchesRemainConsistent(t *testing.T) {
+	t.Parallel()
+
 	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, xdbTestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	defer searcher.Close()
+
 	resolver := NewResolver(searcher, zap.NewNop())
 	ips := []string{"8.8.8.8", "1.1.1.1", "114.114.114.114"}
+
 	want := make(map[string]string)
 	for _, ip := range ips {
 		want[ip] = resolver.Region(ip)
 	}
+
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
+	for range 32 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for n := 0; n < 20; n++ {
+
+			for range 20 {
 				for _, ip := range ips {
-					if got := resolver.Region(ip); got != want[ip] {
-						t.Errorf("%s: %q != %q", ip, got, want[ip])
+					{
+						got := resolver.Region(ip)
+						assert.Equal(t, got, want[ip], "%s: %q != %q", ip, got, want[ip])
 					}
 				}
 			}
 		}()
 	}
+
 	wg.Wait()
 }

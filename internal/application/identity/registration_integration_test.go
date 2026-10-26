@@ -2,19 +2,25 @@ package identity_test
 
 import (
 	"context"
-	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	app "f_ccg_video_back_ddd/internal/application/identity"
+
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+
+	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
+
 	"github.com/glebarez/sqlite"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"path/filepath"
-	"testing"
 )
 
 type registrationRoles struct{ app.UserRoleQuery }
@@ -25,73 +31,83 @@ type registrationBinder struct{ calls int }
 
 func (b *registrationBinder) AddRoleForUser(uint, string) error { b.calls++; return nil }
 func TestRegistrationCreatesDefaultsInSameTransaction(t *testing.T) {
+	t.Parallel()
+
+	//nolint:paralleltest // Cases share parent fixtures or must finish before their parent resource cleanup.
 	for _, failure := range []bool{false, true} {
 		name := "success"
 		if failure {
 			name = "defaults failure rolls back account"
 		}
+
 		t.Run(name, func(t *testing.T) {
 			db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "registration.db")), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
+
 			sqlDB, err := db.DB()
-			if err != nil {
-				t.Fatal(err)
-			}
+			require.NoError(t, err)
+
 			t.Cleanup(func() { _ = sqlDB.Close() })
-			if err := db.AutoMigrate(&po.User{}, &po.UserConf{}, &po.FavoriteFolder{}, &po.UserRole{}); err != nil {
-				t.Fatal(err)
+
+			{
+				err := db.AutoMigrate(&po.User{}, &po.UserConf{}, &po.FavoriteFolder{}, &po.UserRole{})
+				require.NoError(t, err)
 			}
+
 			if failure {
-				if err := db.Exec(`CREATE TRIGGER reject_folder BEFORE INSERT ON favorite_folders BEGIN SELECT RAISE(ABORT,'folder failure'); END`).Error; err != nil {
-					t.Fatal(err)
+				{
+					err := db.Exec(`CREATE TRIGGER reject_folder BEFORE INSERT ON favorite_folders BEGIN SELECT RAISE(ABORT,'folder failure'); END`).Error
+					require.NoError(t, err)
 				}
 			}
+
 			provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{DefaultUserBannerID: 29}})
 			repo := persistence.NewUserRepository(db, provider)
 			binder := &registrationBinder{}
 			service := app.NewRegistrationService(gormx.NewTxManager(db), repo, registrationRoles{}, binder, zap.NewNop())
+
 			err = service.EmailRegister(t.Context(), app.EmailRegisterInput{Username: "new-user", Email: "new@example.com", Password: "initial-password"})
 			if failure {
-				if err == nil {
-					t.Fatal("defaults failure ignored")
-				}
+				require.Error(t, err, "defaults failure ignored")
+
 				for _, table := range []string{"users", "user_confs", "favorite_folders", "user_roles"} {
 					var count int64
-					if err := db.Table(table).Count(&count).Error; err != nil {
-						t.Fatal(err)
+					{
+						err := db.Table(table).Count(&count).Error
+						require.NoError(t, err)
 					}
-					if count != 0 {
-						t.Fatalf("partial registration in %s: %d", table, count)
-					}
+
+					require.EqualValues(t, 0, count, "partial registration in %s: %d", table, count)
 				}
-				if binder.calls != 0 {
-					t.Fatal("roles bound before committed account")
-				}
+
+				require.Equal(t, 0, binder.calls, "roles bound before committed account")
+
 				return
 			}
-			if err != nil {
-				t.Fatal(err)
-			}
+
+			require.NoError(t, err)
+
 			var user po.User
-			if err := db.First(&user, "username = ?", "new-user").Error; err != nil {
-				t.Fatal(err)
+			{
+				err := db.First(&user, "username = ?", "new-user").Error
+				require.NoError(t, err)
 			}
+
 			var conf po.UserConf
-			if err := db.First(&conf, "user_id = ?", user.ID).Error; err != nil {
-				t.Fatal(err)
+			{
+				err := db.First(&conf, "user_id = ?", user.ID).Error
+				require.NoError(t, err)
 			}
-			if conf.BannerID != 29 {
-				t.Fatalf("banner=%d", conf.BannerID)
-			}
+
+			require.EqualValues(t, 29, conf.BannerID, "banner=%d", conf.BannerID)
+
 			var folder po.FavoriteFolder
-			if err := db.First(&folder, "user_id = ? AND is_default = ?", user.ID, true).Error; err != nil {
-				t.Fatal(err)
+			{
+				err := db.First(&folder, "user_id = ? AND is_default = ?", user.ID, true).Error
+				require.NoError(t, err)
 			}
-			if binder.calls != 1 {
-				t.Fatalf("role bindings=%d", binder.calls)
-			}
+
+			require.Equal(t, 1, binder.calls, "role bindings=%d", binder.calls)
 		})
 	}
 }

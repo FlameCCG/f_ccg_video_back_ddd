@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/social"
 
 	"go.uber.org/zap"
@@ -44,23 +46,25 @@ func (s *userSearchSpy) SyncUserDocuments(context.Context, ...uint) error {
 }
 
 func TestFocusServiceLeavesSearchIndexingToCDC(t *testing.T) {
+	t.Parallel()
+
 	search := &userSearchSpy{}
 	metrics := &fansMetricSpy{}
 	service := NewFocusService(&focusRepoStub{deleted: 1}, userExistsStub{}, metrics, search, zap.NewNop())
 
-	if err := service.Focus(t.Context(), 1, 2); err != nil {
-		t.Fatalf("Focus: %v", err)
+	{
+		err := service.Focus(t.Context(), 1, 2)
+		require.NoError(t, err, "Focus: %v", err)
 	}
 
-	if err := service.Unfocus(t.Context(), 1, 2); err != nil {
-		t.Fatalf("Unfocus: %v", err)
+	{
+		err := service.Unfocus(t.Context(), 1, 2)
+		require.NoError(t, err, "Unfocus: %v", err)
 	}
 
-	if search.calls != 0 {
-		t.Fatalf("synchronous search calls = %d, want 0", search.calls)
-	}
+	require.Equal(t, 0, search.calls, "synchronous search calls = %d, want 0", search.calls)
 
-	if len(metrics.deltas) != 2 || metrics.deltas[0] != 1 || metrics.deltas[1] != -1 {
-		t.Fatalf("metric deltas = %v, want [1 -1]", metrics.deltas)
-	}
+	require.Len(t, metrics.deltas, 2, "metric deltas = %v, want [1 -1]", metrics.deltas)
+	require.EqualValues(t, 1, metrics.deltas[0], "metric deltas = %v, want [1 -1]", metrics.deltas)
+	require.EqualValues(t, -1, metrics.deltas[1], "metric deltas = %v, want [1 -1]", metrics.deltas)
 }

@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"github.com/glebarez/sqlite"
-	"gorm.io/gorm"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	domain "f_ccg_video_back_ddd/internal/domain/video"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 )
 
 type securityVideoRepo struct {
@@ -45,30 +49,38 @@ func (l *securityLedger) ApplyChange(_ context.Context, _ uint, _ float64, _ str
 	if key == nil {
 		return errors.New("missing dedup key")
 	}
+
 	if !l.keys[*key] {
 		l.keys[*key] = true
 		l.rewards++
 	}
+
 	return nil
 }
 
 func TestTripleFavoriteCyclesShareLifetimeRewardKeyAndExcludeAuthor(t *testing.T) {
+	t.Parallel()
+
 	ledger := &securityLedger{keys: map[string]bool{}}
+
 	s := &InteractionService{videos: securityVideoRepo{author: 1}, likes: securityLikes{}, coins: securityCoins{}, folders: securityFolders{}, ledger: ledger}
-	for i := 0; i < 100; i++ {
-		if _, err := s.applyTriple(t.Context(), 10, 2, 1, 1); err != nil {
-			t.Fatal(err)
+
+	for range 100 {
+		{
+			_, err := s.applyTriple(t.Context(), 10, 2, 1, 1)
+			require.NoError(t, err)
 		}
 	}
-	if ledger.rewards != 1 || !ledger.keys["favorite:2:10"] {
-		t.Fatalf("reward cycles=%d keys=%v", ledger.rewards, ledger.keys)
+
+	require.Equal(t, 1, ledger.rewards, "reward cycles=%d keys=%v", ledger.rewards, ledger.keys)
+	require.True(t, ledger.keys["favorite:2:10"], "reward cycles=%d keys=%v", ledger.rewards, ledger.keys)
+
+	{
+		_, err := s.applyTriple(t.Context(), 10, 1, 1, 1)
+		require.NoError(t, err)
 	}
-	if _, err := s.applyTriple(t.Context(), 10, 1, 1, 1); err != nil {
-		t.Fatal(err)
-	}
-	if ledger.rewards != 1 {
-		t.Fatal("author received self-favorite reward")
-	}
+
+	require.Equal(t, 1, ledger.rewards, "author received self-favorite reward")
 }
 
 type failedDeleteRepo struct {
@@ -81,10 +93,12 @@ func (r failedDeleteRepo) UpdateStatusBatch(ctx context.Context, _ []uint, statu
 	result := gormx.DB(ctx, r.db).Exec("UPDATE videos SET status=?", status)
 	return result.RowsAffected, result.Error
 }
+
 func (r failedDeleteRepo) HardDelete(ctx context.Context, _ []uint) (*domain.HardDeleteResult, []domain.StorageDeleteTarget, error) {
 	if err := gormx.DB(ctx, r.db).Exec("DELETE FROM videos").Error; err != nil {
 		return nil, nil, err
 	}
+
 	return nil, nil, r.failure
 }
 
@@ -103,32 +117,39 @@ type deleteSchedule struct{ ScheduleStore }
 func (deleteSchedule) Remove(context.Context, uint) error { return nil }
 
 func TestHardDeleteFailureRollsBackStatusCommentsAndVideo(t *testing.T) {
+	t.Parallel()
+
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "delete.db")), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	conn, _ := db.DB()
+
 	t.Cleanup(func() { _ = conn.Close() })
+
 	for _, sql := range []string{"CREATE TABLE videos(id integer,status integer)", "CREATE TABLE comments(id integer)", "INSERT INTO videos VALUES(1,1)", "INSERT INTO comments VALUES(1)"} {
-		if err := db.Exec(sql).Error; err != nil {
-			t.Fatal(err)
+		{
+			err := db.Exec(sql).Error
+			require.NoError(t, err)
 		}
 	}
+
 	failure := errors.New("failure after dependent deletes")
+
 	s := &AdminVideoService{txm: gormx.NewTxManager(db), videos: failedDeleteRepo{db: db, failure: failure}, comments: deleteComments{db: db}, schedule: deleteSchedule{}}
-	if _, err := s.hardDelete(t.Context(), []uint{1}); !errors.Is(err, failure) {
-		t.Fatalf("error=%v", err)
+	{
+		_, err := s.hardDelete(t.Context(), []uint{1})
+		require.ErrorIs(t, err, failure, "error=%v", err)
 	}
+
 	var status int
 	db.Raw("SELECT status FROM videos WHERE id=1").Scan(&status)
-	if status != 1 {
-		t.Fatalf("status=%d", status)
-	}
+
+	require.Equal(t, 1, status, "status=%d", status)
+
 	var count int64
 	db.Table("comments").Count(&count)
-	if count != 1 {
-		t.Fatalf("comments=%d", count)
-	}
+
+	require.EqualValues(t, 1, count, "comments=%d", count)
 }
 
 type deniedContent struct {
@@ -138,14 +159,18 @@ type deniedContent struct {
 
 func (a *deniedContent) EnsureCanPublish(context.Context, uint) error { a.calls++; return a.err }
 func TestDanmuChecksLiveAccountBeforeAnyWrite(t *testing.T) {
+	t.Parallel()
+
 	denied := &deniedContent{err: errors.New("account banned")}
+
 	s := &DanmuService{authorizer: denied}
-	for i := 0; i < 2; i++ {
-		if _, err := s.Send(t.Context(), 1, SendDanmuParams{VideoID: 1, Content: "hello"}); !errors.Is(err, denied.err) {
-			t.Fatal(err)
+
+	for range 2 {
+		{
+			_, err := s.Send(t.Context(), 1, SendDanmuParams{VideoID: 1, Content: "hello"})
+			require.ErrorIs(t, err, denied.err, err)
 		}
 	}
-	if denied.calls != 2 {
-		t.Fatal("account check not repeated for each message")
-	}
+
+	require.Equal(t, 2, denied.calls, "account check not repeated for each message")
 }

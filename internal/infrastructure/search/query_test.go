@@ -2,12 +2,14 @@ package search
 
 import (
 	"encoding/json"
-	"strings"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/search"
+
 	domain "f_ccg_video_back_ddd/internal/domain/search"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/olivere/elastic/v7"
 )
@@ -20,14 +22,10 @@ func marshalSource(t *testing.T, src *elastic.SearchSource) string {
 	t.Helper()
 
 	source, err := src.Source()
-	if err != nil {
-		t.Fatalf("build search source failed: %v", err)
-	}
+	require.NoError(t, err, "build search source failed: %v", err)
 
 	raw, err := json.Marshal(source)
-	if err != nil {
-		t.Fatalf("marshal search source failed: %v", err)
-	}
+	require.NoError(t, err, "marshal search source failed: %v", err)
 
 	return string(raw)
 }
@@ -41,9 +39,8 @@ func TestBuildVideoSearchSourceFiltersPublished(t *testing.T) {
 		PageSize: 20,
 	}, 0))
 
-	if !strings.Contains(payload, `"status"`) || !strings.Contains(payload, "1") {
-		t.Fatalf("expected published status filter in query, got %s", payload)
-	}
+	require.Contains(t, payload, `"status"`, "expected published status filter in query, got %s", payload)
+	require.Contains(t, payload, "1", "expected published status filter in query, got %s", payload)
 }
 
 // TestBuildVideoSearchSourceIncludesContractFields 高亮字段与 `_source` 白名单
@@ -58,61 +55,45 @@ func TestBuildVideoSearchSourceIncludesContractFields(t *testing.T) {
 	}, 30))
 
 	for _, field := range videoSourceIncludes {
-		if !strings.Contains(payload, `"`+field+`"`) {
-			t.Fatalf("missing _source field %q in %s", field, payload)
-		}
+		require.Contains(t, payload, `"`+field+`"`, "missing _source field %q in %s", field, payload)
 	}
 
 	for _, field := range videoHighlightFields {
-		if !strings.Contains(payload, `"`+field+`"`) {
-			t.Fatalf("missing highlight field %q in %s", field, payload)
-		}
+		require.Contains(t, payload, `"`+field+`"`, "missing highlight field %q in %s", field, payload)
 	}
 
-	if !strings.Contains(payload, `"from":30`) || !strings.Contains(payload, `"size":15`) {
-		t.Fatalf("paging not applied: %s", payload)
-	}
+	require.Contains(t, payload, `"from":30`, "paging not applied: %s", payload)
+	require.Contains(t, payload, `"size":15`, "paging not applied: %s", payload)
 
-	if !strings.Contains(payload, `"track_total_hits":true`) {
-		t.Fatalf("track_total_hits must stay enabled: %s", payload)
-	}
+	require.Contains(t, payload, `"track_total_hits":true`, "track_total_hits must stay enabled: %s", payload)
 
 	// olivere/elastic 用 encoding/json 序列化，< > 会被转义成 \u003c / \u003e，
 	// 因此按 json.Marshal 的结果比对，而不是写死转义形态。
 	preTags, err := json.Marshal([]string{"<em>"})
-	if err != nil {
-		t.Fatalf("marshal pre_tags: %v", err)
-	}
+	require.NoError(t, err, "marshal pre_tags: %v", err)
 
 	postTags, err := json.Marshal([]string{"</em>"})
-	if err != nil {
-		t.Fatalf("marshal post_tags: %v", err)
-	}
+	require.NoError(t, err, "marshal post_tags: %v", err)
 
-	if !strings.Contains(payload, `"pre_tags":`+string(preTags)) ||
-		!strings.Contains(payload, `"post_tags":`+string(postTags)) {
-		t.Fatalf("highlight tags must stay <em>/</em>: %s", payload)
-	}
+	require.Contains(t, payload, `"pre_tags":`+string(preTags), "highlight tags must stay <em>/</em>: %s", payload)
+	require.Contains(t, payload, `"post_tags":`+string(postTags), "highlight tags must stay <em>/</em>: %s", payload)
 }
 
 func TestBuildUserSearchSourceIncludesContractFields(t *testing.T) {
 	t.Parallel()
 
 	payload := marshalSource(t, buildUserSearchSource(app.Options{
-		Keyword:  "alice",
+		Keyword:  testAlice,
 		Page:     1,
 		PageSize: 20,
 	}, 0))
 
 	for _, field := range userSourceIncludes {
-		if !strings.Contains(payload, `"`+field+`"`) {
-			t.Fatalf("missing _source field %q in %s", field, payload)
-		}
+		require.Contains(t, payload, `"`+field+`"`, "missing _source field %q in %s", field, payload)
 	}
 
-	if !strings.Contains(payload, `"username.keyword"`) || !strings.Contains(payload, `"username.pinyin"`) {
-		t.Fatalf("user query must hit keyword and pinyin sub-fields: %s", payload)
-	}
+	require.Contains(t, payload, `"username.keyword"`, "user query must hit keyword and pinyin sub-fields: %s", payload)
+	require.Contains(t, payload, `"username.pinyin"`, "user query must hit keyword and pinyin sub-fields: %s", payload)
 }
 
 // TestBuildVideoQueryMatchesAllForEmptyKeyword 空关键词退化为 match_all（浏览态）。
@@ -121,18 +102,12 @@ func TestBuildVideoQueryMatchesAllForEmptyKeyword(t *testing.T) {
 
 	for _, build := range []func(string) elastic.Query{buildVideoQuery, buildUserQuery} {
 		src, err := build("").Source()
-		if err != nil {
-			t.Fatalf("query source: %v", err)
-		}
+		require.NoError(t, err, "query source: %v", err)
 
 		raw, err := json.Marshal(src)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
+		require.NoError(t, err, "marshal: %v", err)
 
-		if !strings.Contains(string(raw), "match_all") {
-			t.Fatalf("empty keyword should build match_all, got %s", raw)
-		}
+		require.Contains(t, string(raw), "match_all", "empty keyword should build match_all, got %s", raw)
 	}
 }
 
@@ -142,18 +117,12 @@ func TestBuildVideoQueryEscapesWildcards(t *testing.T) {
 	t.Parallel()
 
 	src, err := buildVideoQuery("ce6*").Source()
-	if err != nil {
-		t.Fatalf("query source: %v", err)
-	}
+	require.NoError(t, err, "query source: %v", err)
 
 	raw, err := json.Marshal(src)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
+	require.NoError(t, err, "marshal: %v", err)
 
-	if !strings.Contains(string(raw), `ce6\\*`) {
-		t.Fatalf("wildcard must be escaped, got %s", raw)
-	}
+	require.Contains(t, string(raw), `ce6\\*`, "wildcard must be escaped, got %s", raw)
 }
 
 // TestApplyVideoSortToSourceAlwaysFallsBackToScore 非相关性排序在业务字段之后
@@ -180,13 +149,9 @@ func TestApplyVideoSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 			applyVideoSortToSource(source, tt.field, tt.order)
 
 			payload := marshalSource(t, source)
-			if !strings.Contains(payload, tt.want) {
-				t.Fatalf("missing sort field %s in %s", tt.want, payload)
-			}
+			require.Contains(t, payload, tt.want, "missing sort field %s in %s", tt.want, payload)
 
-			if !strings.Contains(payload, `"_score"`) {
-				t.Fatalf("_score tiebreaker missing in %s", payload)
-			}
+			require.Contains(t, payload, `"_score"`, "_score tiebreaker missing in %s", payload)
 		})
 	}
 
@@ -194,9 +159,7 @@ func TestApplyVideoSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 	applyVideoSortToSource(relevance, domain.VideoSortRelevance, domain.SortOrderDesc)
 
 	payload := marshalSource(t, relevance)
-	if strings.Contains(payload, `"views"`) {
-		t.Fatalf("relevance sort must not add business fields: %s", payload)
-	}
+	require.NotContains(t, payload, `"views"`, "relevance sort must not add business fields: %s", payload)
 }
 
 func TestApplyUserSortToSourceAlwaysFallsBackToScore(t *testing.T) {
@@ -220,9 +183,8 @@ func TestApplyUserSortToSourceAlwaysFallsBackToScore(t *testing.T) {
 			applyUserSortToSource(source, tt.field, domain.SortOrderDesc)
 
 			payload := marshalSource(t, source)
-			if !strings.Contains(payload, tt.want) || !strings.Contains(payload, `"_score"`) {
-				t.Fatalf("sort payload = %s", payload)
-			}
+			require.Contains(t, payload, tt.want, "sort payload = %s", payload)
+			require.Contains(t, payload, `"_score"`, "sort payload = %s", payload)
 		})
 	}
 }
@@ -253,7 +215,7 @@ func TestSuggestIndexAndFilterRouting(t *testing.T) {
 			docType:       domain.DocTypeUser,
 			wantIndex:     constants.UserSearchIndex,
 			publishedOnly: false,
-			wantField:     "username",
+			wantField:     fieldUsername,
 		},
 	}
 
@@ -261,32 +223,27 @@ func TestSuggestIndexAndFilterRouting(t *testing.T) {
 		t.Run(tt.docType, func(t *testing.T) {
 			t.Parallel()
 
-			if got := suggestIndexFor(tt.docType); got != tt.wantIndex {
-				t.Fatalf("index = %q, want %q", got, tt.wantIndex)
+			{
+				got := suggestIndexFor(tt.docType)
+				require.Equal(t, tt.wantIndex, got, "index = %q, want %q", got, tt.wantIndex)
 			}
 
-			if got := suggestPublishedOnly(tt.docType); got != tt.publishedOnly {
-				t.Fatalf("publishedOnly = %v, want %v", got, tt.publishedOnly)
+			{
+				got := suggestPublishedOnly(tt.docType)
+				require.Equal(t, got, tt.publishedOnly, "publishedOnly = %v, want %v", got, tt.publishedOnly)
 			}
 
 			fields := suggestSourceFields(tt.docType)
-			if len(fields) != 1 || fields[0] != tt.wantField {
-				t.Fatalf("_source fields = %v, want [%s]", fields, tt.wantField)
-			}
+			require.Len(t, fields, 1, "_source fields = %v, want [%s]", fields, tt.wantField)
+			require.Equal(t, tt.wantField, fields[0], "_source fields = %v, want [%s]", fields, tt.wantField)
 
 			src, err := buildSuggestQuery(tt.docType, "ce6").Source()
-			if err != nil {
-				t.Fatalf("suggest query source: %v", err)
-			}
+			require.NoError(t, err, "suggest query source: %v", err)
 
 			raw, err := json.Marshal(src)
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
+			require.NoError(t, err, "marshal: %v", err)
 
-			if !strings.Contains(string(raw), tt.wantField+".keyword") {
-				t.Fatalf("suggest query must hit %s.keyword, got %s", tt.wantField, raw)
-			}
+			require.Contains(t, string(raw), tt.wantField+".keyword", "suggest query must hit %s.keyword, got %s", tt.wantField, raw)
 		})
 	}
 }
@@ -297,18 +254,12 @@ func TestBuildSuggestFieldQueryRejectsBlankKeyword(t *testing.T) {
 	t.Parallel()
 
 	src, err := buildSuggestFieldQuery("   ", "title", "title.keyword", "title.pinyin").Source()
-	if err != nil {
-		t.Fatalf("query source: %v", err)
-	}
+	require.NoError(t, err, "query source: %v", err)
 
 	raw, err := json.Marshal(src)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
+	require.NoError(t, err, "marshal: %v", err)
 
-	if !strings.Contains(string(raw), "match_none") {
-		t.Fatalf("blank keyword should build match_none, got %s", raw)
-	}
+	require.Contains(t, string(raw), "match_none", "blank keyword should build match_none, got %s", raw)
 }
 
 // TestBuildSearchRequestsCarryIndexAndSort 综合搜索的两个子请求都带上目标索引，
@@ -328,35 +279,22 @@ func TestBuildSearchRequestsCarryIndexAndSort(t *testing.T) {
 	}
 
 	videoReq := buildVideoSearchRequest(opts, 0)
-	if !videoReq.HasIndices() {
-		t.Fatal("video request must target an index")
-	}
+	require.True(t, videoReq.HasIndices(), "video request must target an index")
 
 	videoBody, err := videoReq.Body()
-	if err != nil {
-		t.Fatalf("video request body: %v", err)
-	}
+	require.NoError(t, err, "video request body: %v", err)
 
-	if !strings.Contains(videoBody, `"views"`) || !strings.Contains(videoBody, `"status"`) {
-		t.Fatalf("video request body = %s", videoBody)
-	}
+	require.Contains(t, videoBody, `"views"`, "video request body = %s", videoBody)
+	require.Contains(t, videoBody, `"status"`, "video request body = %s", videoBody)
 
 	userReq := buildUserSearchRequest(opts, 0)
-	if !userReq.HasIndices() {
-		t.Fatal("user request must target an index")
-	}
+	require.True(t, userReq.HasIndices(), "user request must target an index")
 
 	userBody, err := userReq.Body()
-	if err != nil {
-		t.Fatalf("user request body: %v", err)
-	}
+	require.NoError(t, err, "user request body: %v", err)
 
-	if !strings.Contains(userBody, `"follower_count"`) {
-		t.Fatalf("user request body = %s", userBody)
-	}
+	require.Contains(t, userBody, `"follower_count"`, "user request body = %s", userBody)
 
 	// 用户索引不做「仅已发布」过滤（用户没有发布状态）。
-	if strings.Contains(userBody, `"status"`) {
-		t.Fatalf("user request must not filter by video status: %s", userBody)
-	}
+	require.NotContains(t, userBody, `"status"`, "user request must not filter by video status: %s", userBody)
 }

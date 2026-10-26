@@ -77,6 +77,7 @@ func newFolderServiceForTest(folders *folderRepoStub, cache *folderListCacheStub
 
 func TestUpdateFolderSuccess(t *testing.T) {
 	t.Parallel()
+
 	folders := &folderRepoStub{folders: map[uint]*domain.FavoriteFolder{
 		1: {ID: 1, UserID: 7, Name: "旧名字", IsDefault: true},
 	}}
@@ -102,6 +103,7 @@ func TestUpdateFolderSuccess(t *testing.T) {
 
 func TestUpdateFolderUserNotLoggedIn(t *testing.T) {
 	t.Parallel()
+
 	_, err := newFolderServiceForTest(&folderRepoStub{}, &folderListCacheStub{}).UpdateFolder(t.Context(), 0, 1, "名字")
 	if !errors.Is(err, domain.ErrUserNotLogin) {
 		t.Fatalf("err = %v, want %v", err, domain.ErrUserNotLogin)
@@ -110,6 +112,7 @@ func TestUpdateFolderUserNotLoggedIn(t *testing.T) {
 
 func TestUpdateFolderNotFoundOrForbidden(t *testing.T) {
 	t.Parallel()
+
 	folders := &folderRepoStub{folders: map[uint]*domain.FavoriteFolder{
 		1: {ID: 1, UserID: 7, Name: "别人的夹子"},
 	}}
@@ -127,6 +130,7 @@ func TestUpdateFolderNotFoundOrForbidden(t *testing.T) {
 
 func TestUpdateFolderEmptyName(t *testing.T) {
 	t.Parallel()
+
 	folders := &folderRepoStub{folders: map[uint]*domain.FavoriteFolder{
 		1: {ID: 1, UserID: 7, Name: "旧名字"},
 	}}
@@ -139,6 +143,7 @@ func TestUpdateFolderEmptyName(t *testing.T) {
 
 func TestUpdateFolderPropagatesRepoError(t *testing.T) {
 	t.Parallel()
+
 	updateErr := errors.New("db unavailable")
 	folders := &folderRepoStub{
 		folders: map[uint]*domain.FavoriteFolder{

@@ -2,10 +2,9 @@ package chat
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"testing"
 	"time"
-
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"

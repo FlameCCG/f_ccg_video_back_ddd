@@ -5,24 +5,28 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 func TestAutoMigrateReturnsErrorWhenDBNil(t *testing.T) {
-	if err := NewMigrator(nil, zap.NewNop()).AutoMigrate(); err == nil {
-		t.Fatal("expected error when db is nil")
+	t.Parallel()
+
+	{
+		err := NewMigrator(nil, zap.NewNop()).AutoMigrate()
+		require.Error(t, err, "expected error when db is nil")
 	}
 }
 
 func TestAutoMigrateReturnsErrorOrSucceedsOnSQLite(t *testing.T) {
+	t.Parallel()
+
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "flag-db.db")), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	require.NoError(t, err, "open sqlite: %v", err)
 
 	t.Cleanup(func() {
 		if sqlDB, e := db.DB(); e == nil {

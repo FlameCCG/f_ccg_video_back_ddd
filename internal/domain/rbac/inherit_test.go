@@ -1,49 +1,54 @@
 package rbac_test
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 )
 
+const (
+	testVIPRole        = "大会员"
+	testSuperAdminRole = "超级管理员"
+)
+
 func TestFormatAlreadyInheritedMsg(t *testing.T) {
-	msg := domain.FormatAlreadyInheritedMsg("普通用户", domain.InheritKindIndirect, "大会员")
-	if msg == "" {
-		t.Fatal("expected non-empty msg")
-	}
+	t.Parallel()
 
-	if !strings.Contains(msg, "普通用户") || !strings.Contains(msg, "大会员") {
-		t.Fatalf("unexpected msg: %s", msg)
-	}
+	msg := domain.FormatAlreadyInheritedMsg(testRegularRole, domain.InheritKindIndirect, testVIPRole)
+	require.NotEmpty(t, msg, "expected non-empty msg")
 
-	directMsg := domain.FormatAlreadyInheritedMsg("大会员", domain.InheritKindDirect, "大会员")
-	if !strings.Contains(directMsg, "直接") {
-		t.Fatalf("expected direct hint, got: %s", directMsg)
-	}
+	require.Contains(t, msg, testRegularRole, "unexpected msg: %s", msg)
+	require.Contains(t, msg, testVIPRole, "unexpected msg: %s", msg)
+
+	directMsg := domain.FormatAlreadyInheritedMsg(testVIPRole, domain.InheritKindDirect, testVIPRole)
+	require.Contains(t, directMsg, "直接", "expected direct hint, got: %s", directMsg)
 }
 
 func TestFormatIndirectUnlinkMsg(t *testing.T) {
-	msg := domain.FormatIndirectUnlinkMsg("普通用户", "大会员")
-	if !strings.Contains(msg, "间接") || !strings.Contains(msg, "大会员") {
-		t.Fatalf("unexpected msg: %s", msg)
-	}
+	t.Parallel()
+
+	msg := domain.FormatIndirectUnlinkMsg(testRegularRole, testVIPRole)
+	require.Contains(t, msg, "间接", "unexpected msg: %s", msg)
+	require.Contains(t, msg, testVIPRole, "unexpected msg: %s", msg)
 }
 
 func TestContainsRoleName(t *testing.T) {
-	if !domain.ContainsRoleName([]string{"大会员", "普通用户"}, "大会员") {
-		t.Fatal("expected hit")
-	}
+	t.Parallel()
 
-	if domain.ContainsRoleName([]string{"大会员"}, "超级管理员") {
-		t.Fatal("expected miss")
-	}
+	require.True(t, domain.ContainsRoleName([]string{testVIPRole, testRegularRole}, testVIPRole), "expected hit")
+
+	require.False(t, domain.ContainsRoleName([]string{testVIPRole}, testSuperAdminRole), "expected miss")
 }
 
 func TestBuildMenuTree(t *testing.T) {
+	t.Parallel()
+
 	// 空输入返回 nil（响应体表现为 data:null），与原 pkg/recursion 行为一致。
-	if got := domain.BuildMenuTree(nil); got != nil {
-		t.Fatalf("BuildMenuTree(nil) = %v, want nil", got)
+	{
+		got := domain.BuildMenuTree(nil)
+		require.Nil(t, got, "BuildMenuTree(nil) = %v, want nil", got)
 	}
 
 	root := uint(0)
@@ -58,62 +63,58 @@ func TestBuildMenuTree(t *testing.T) {
 	}
 
 	tree := domain.BuildMenuTree(menus)
-	if len(tree) != 3 {
-		t.Fatalf("roots = %d, want 3", len(tree))
-	}
+	require.Len(t, tree, 3, "roots = %d, want 3", len(tree))
 
-	if len(tree[0].Children) != 1 || tree[0].Children[0].ID != 2 {
-		t.Fatalf("unexpected children of root 1: %+v", tree[0].Children)
-	}
+	require.Len(t, tree[0].Children, 1, "unexpected children of root 1: %+v", tree[0].Children)
+	require.EqualValues(t, 2, tree[0].Children[0].ID, "unexpected children of root 1: %+v", tree[0].Children)
 
-	if tree[1].ID != 3 || tree[2].ID != 4 {
-		t.Fatalf("unexpected fallback roots: %d, %d", tree[1].ID, tree[2].ID)
-	}
+	require.EqualValues(t, 3, tree[1].ID, "unexpected fallback roots: %d, %d", tree[1].ID, tree[2].ID)
+	require.EqualValues(t, 4, tree[2].ID, "unexpected fallback roots: %d, %d", tree[1].ID, tree[2].ID)
 }
 
 func TestBuildRoleInheritTree(t *testing.T) {
+	t.Parallel()
+
 	roles := []*domain.Role{
-		{ID: 1, Name: "超级管理员", Desc: "admin"},
-		{ID: 2, Name: "大会员"},
-		{ID: 3, Name: "普通用户"},
+		{ID: 1, Name: testSuperAdminRole, Desc: "admin"},
+		{ID: 2, Name: testVIPRole},
+		{ID: 3, Name: testRegularRole},
 	}
 	// g 策略语义：child 继承 parent，因此树的父子方向与策略相反。
 	policies := [][]string{
-		{"超级管理员", "大会员"},
-		{"大会员", "普通用户"},
-		{"user:1", "超级管理员"},
-		{"未知角色", "普通用户"},
+		{testSuperAdminRole, testVIPRole},
+		{testVIPRole, testRegularRole},
+		{"user:1", testSuperAdminRole},
+		{"未知角色", testRegularRole},
 		{"残缺行"},
 	}
 
 	tree := domain.BuildRoleInheritTree(roles, policies)
-	if len(tree) != 1 || tree[0].Name != "普通用户" {
-		t.Fatalf("unexpected roots: %+v", tree)
-	}
+	require.Len(t, tree, 1, "unexpected roots: %+v", tree)
+	require.Equal(t, testRegularRole, tree[0].Name, "unexpected roots: %+v", tree)
 
-	if len(tree[0].Children) != 1 || tree[0].Children[0].Name != "大会员" {
-		t.Fatalf("unexpected level 2: %+v", tree[0].Children)
-	}
+	require.Len(t, tree[0].Children, 1, "unexpected level 2: %+v", tree[0].Children)
+	require.Equal(t, testVIPRole, tree[0].Children[0].Name, "unexpected level 2: %+v", tree[0].Children)
 
-	if len(tree[0].Children[0].Children) != 1 || tree[0].Children[0].Children[0].Name != "超级管理员" {
-		t.Fatalf("unexpected level 3: %+v", tree[0].Children[0].Children)
-	}
+	require.Len(t, tree[0].Children[0].Children, 1, "unexpected level 3: %+v", tree[0].Children[0].Children)
+	require.Equal(t, testSuperAdminRole, tree[0].Children[0].Children[0].Name, "unexpected level 3: %+v", tree[0].Children[0].Children)
 
-	filtered := domain.FilterRoleInheritTree(tree, "大会员")
-	if len(filtered) != 1 || filtered[0].Name != "普通用户" {
-		t.Fatalf("unexpected filtered roots: %+v", filtered)
-	}
+	filtered := domain.FilterRoleInheritTree(tree, testVIPRole)
+	require.Len(t, filtered, 1, "unexpected filtered roots: %+v", filtered)
+	require.Equal(t, testRegularRole, filtered[0].Name, "unexpected filtered roots: %+v", filtered)
 
-	if len(filtered[0].Children) != 1 || filtered[0].Children[0].Name != "大会员" {
-		t.Fatalf("unexpected filtered subtree: %+v", filtered[0].Children)
-	}
+	require.Len(t, filtered[0].Children, 1, "unexpected filtered subtree: %+v", filtered[0].Children)
+	require.Equal(t, testVIPRole, filtered[0].Children[0].Name, "unexpected filtered subtree: %+v", filtered[0].Children)
 
-	if got := domain.FilterRoleInheritTree(tree, "不存在的角色"); len(got) != 0 {
-		t.Fatalf("expected empty result, got %+v", got)
+	{
+		got := domain.FilterRoleInheritTree(tree, "不存在的角色")
+		require.Empty(t, got, "expected empty result, got %+v", got)
 	}
 }
 
 func TestBuildRoleInheritTreeHandlesCycle(t *testing.T) {
+	t.Parallel()
+
 	roles := []*domain.Role{
 		{ID: 1, Name: "A"},
 		{ID: 2, Name: "B"},
@@ -125,7 +126,7 @@ func TestBuildRoleInheritTreeHandlesCycle(t *testing.T) {
 	}
 
 	tree := domain.BuildRoleInheritTree(roles, policies)
-	if len(tree) == 0 {
-		t.Fatal("expected cyclic roles to still be emitted")
-	}
+	require.NotEmpty(t, tree, "expected cyclic roles to still be emitted")
 }
+
+const testRegularRole = "普通用户"

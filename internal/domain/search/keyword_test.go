@@ -1,8 +1,18 @@
 package search
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	testKeyword = "毛民_ce6ffa102500"
+)
 
 func TestHighlightSuggestionMidStringAndChinese(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		value  string
@@ -11,13 +21,13 @@ func TestHighlightSuggestionMidStringAndChinese(t *testing.T) {
 	}{
 		{
 			name:   "mid ascii segment",
-			value:  "毛民_ce6ffa102500",
+			value:  testKeyword,
 			prefix: "ce6",
 			want:   "毛民_<em>ce6</em>ffa102500",
 		},
 		{
 			name:   "single chinese",
-			value:  "毛民_ce6ffa102500",
+			value:  testKeyword,
 			prefix: "毛",
 			want:   "<em>毛</em>民_ce6ffa102500",
 		},
@@ -29,9 +39,9 @@ func TestHighlightSuggestionMidStringAndChinese(t *testing.T) {
 		},
 		{
 			name:   "pinyin no literal match keeps original",
-			value:  "毛民_ce6ffa102500",
+			value:  testKeyword,
 			prefix: "mao",
-			want:   "毛民_ce6ffa102500",
+			want:   testKeyword,
 		},
 		{
 			name:   "empty prefix",
@@ -43,29 +53,33 @@ func TestHighlightSuggestionMidStringAndChinese(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := HighlightSuggestion(tt.value, tt.prefix); got != tt.want {
-				t.Fatalf("HighlightSuggestion() = %q, want %q", got, tt.want)
+			t.Parallel()
+
+			{
+				got := HighlightSuggestion(tt.value, tt.prefix)
+				require.Equal(t, tt.want, got, "HighlightSuggestion() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
 func TestEscapeESWildcard(t *testing.T) {
+	t.Parallel()
+
 	got, ok := EscapeESWildcard("ce6*")
-	if !ok {
-		t.Fatal("expected ok")
-	}
+	require.True(t, ok, "expected ok")
 
-	if got != `ce6\*` {
-		t.Fatalf("got %q", got)
-	}
+	require.Equal(t, `ce6\*`, got, "got %q", got)
 
-	if _, ok := EscapeESWildcard("   "); ok {
-		t.Fatal("blank should be rejected")
+	{
+		_, ok := EscapeESWildcard("   ")
+		require.False(t, ok, "blank should be rejected")
 	}
 }
 
 func TestParseDocumentID(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name  string
 		docID string
@@ -80,21 +94,26 @@ func TestParseDocumentID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, ok := ParseDocumentID(tt.docID)
-			if got != tt.want || ok != tt.ok {
-				t.Fatalf("ParseDocumentID(%q) = (%d, %v), want (%d, %v)", tt.docID, got, ok, tt.want, tt.ok)
-			}
+			require.Equal(t, tt.want, got, "ParseDocumentID(%q) = (%d, %v), want (%d, %v)", tt.docID, got, ok, tt.want, tt.ok)
+			require.Equal(t, ok, tt.ok, "ParseDocumentID(%q) = (%d, %v), want (%d, %v)", tt.docID, got, ok, tt.want, tt.ok)
 		})
 	}
 }
 
 func TestNormalizeHotKeywordCollapsesBlankAndTruncates(t *testing.T) {
-	if got := NormalizeHotKeyword("  多  空格   词 "); got != "多 空格 词" {
-		t.Fatalf("NormalizeHotKeyword() = %q", got)
+	t.Parallel()
+
+	{
+		got := NormalizeHotKeyword("  多  空格   词 ")
+		require.Equal(t, "多 空格 词", got, "NormalizeHotKeyword() = %q", got)
 	}
 
-	if got := NormalizeHotKeyword("   "); got != "" {
-		t.Fatalf("blank keyword should be dropped, got %q", got)
+	{
+		got := NormalizeHotKeyword("   ")
+		require.Empty(t, got, "blank keyword should be dropped, got %q", got)
 	}
 
 	long := make([]rune, maxHotKeywordLength+10)
@@ -102,45 +121,52 @@ func TestNormalizeHotKeywordCollapsesBlankAndTruncates(t *testing.T) {
 		long[i] = '词'
 	}
 
-	if got := NormalizeHotKeyword(string(long)); len([]rune(got)) != maxHotKeywordLength {
-		t.Fatalf("truncated length = %d, want %d", len([]rune(got)), maxHotKeywordLength)
+	{
+		got := NormalizeHotKeyword(string(long))
+		require.Len(t, []rune(got), maxHotKeywordLength, "truncated length = %d, want %d", len([]rune(got)), maxHotKeywordLength)
 	}
 }
 
 func TestSelectMatchingTags(t *testing.T) {
+	t.Parallel()
+
 	tags := []string{" 教程 ", "vlog", "Go 教程"}
 
-	if got := SelectMatchingTags(tags, "教程"); len(got) != 2 || got[0] != "教程" || got[1] != "Go 教程" {
-		t.Fatalf("literal matches = %v", got)
+	{
+		got := SelectMatchingTags(tags, "教程")
+		require.Len(t, got, 2, "literal matches = %v", got)
+		require.Equal(t, "教程", got[0], "literal matches = %v", got)
+		require.Equal(t, "Go 教程", got[1], "literal matches = %v", got)
 	}
 
 	// 字面不含查询词时只回退一个标签，避免把整篇文档的标签灌进联想。
-	if got := SelectMatchingTags(tags, "zzz"); len(got) != 1 || got[0] != "教程" {
-		t.Fatalf("fallback matches = %v", got)
+	{
+		got := SelectMatchingTags(tags, "zzz")
+		require.Len(t, got, 1, "fallback matches = %v", got)
+		require.Equal(t, "教程", got[0], "fallback matches = %v", got)
 	}
 
-	if got := SelectMatchingTags(nil, "x"); got != nil {
-		t.Fatalf("empty tags should return nil, got %v", got)
+	{
+		got := SelectMatchingTags(nil, "x")
+		require.Nil(t, got, "empty tags should return nil, got %v", got)
 	}
 }
 
 func TestMatchesUsername(t *testing.T) {
-	if !MatchesUsername("Alice", "ali") {
-		t.Fatal("case-insensitive match expected")
-	}
+	t.Parallel()
 
-	if MatchesUsername("Bob", "ali") {
-		t.Fatal("unexpected match")
-	}
+	require.True(t, MatchesUsername("Alice", "ali"), "case-insensitive match expected")
 
-	if !MatchesUsername("anyone", "  ") {
-		t.Fatal("blank keyword should match everything")
-	}
+	require.False(t, MatchesUsername("Bob", "ali"), "unexpected match")
+
+	require.True(t, MatchesUsername("anyone", "  "), "blank keyword should match everything")
 }
 
 func TestSplitTags(t *testing.T) {
+	t.Parallel()
+
 	got := SplitTags(" a , ,b ,")
-	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
-		t.Fatalf("SplitTags() = %v", got)
-	}
+	require.Len(t, got, 2, "SplitTags() = %v", got)
+	require.Equal(t, "a", got[0], "SplitTags() = %v", got)
+	require.Equal(t, "b", got[1], "SplitTags() = %v", got)
 }

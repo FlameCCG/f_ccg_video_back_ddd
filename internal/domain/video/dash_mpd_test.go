@@ -71,7 +71,7 @@ func TestParseMPDVariants_VideoAndAudio(t *testing.T) {
 		t.Fatalf("second should be 360p: %+v", variants[1])
 	}
 
-	if variants[2].ContentType != "audio" || variants[2].Resolution != "音频" {
+	if variants[2].ContentType != mediaTypeAudio || variants[2].Resolution != "音频" {
 		t.Fatalf("audio variant: %+v", variants[2])
 	}
 }

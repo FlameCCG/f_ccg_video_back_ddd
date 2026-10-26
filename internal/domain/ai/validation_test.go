@@ -1,8 +1,9 @@
 package ai
 
 import (
-	"errors"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func intPtr(v int) *int {
@@ -18,20 +19,21 @@ func TestValidateImageGeneration(t *testing.T) {
 		n       *int
 		wantErr error
 	}{
-		{name: "ok without n", prompt: "一只猫", wantErr: nil},
-		{name: "ok with n", prompt: "一只猫", n: intPtr(4), wantErr: nil},
+		{name: "ok without n", prompt: testCatPrompt, wantErr: nil},
+		{name: "ok with n", prompt: testCatPrompt, n: intPtr(4), wantErr: nil},
 		{name: "empty prompt", prompt: "   ", wantErr: ErrEmptyPrompt},
-		{name: "zero n", prompt: "一只猫", n: intPtr(0), wantErr: ErrImageCountRange},
-		{name: "n too large", prompt: "一只猫", n: intPtr(16), wantErr: ErrImageCountRange},
-		{name: "n at max", prompt: "一只猫", n: intPtr(15), wantErr: nil},
+		{name: "zero n", prompt: testCatPrompt, n: intPtr(0), wantErr: ErrImageCountRange},
+		{name: "n too large", prompt: testCatPrompt, n: intPtr(16), wantErr: ErrImageCountRange},
+		{name: "n at max", prompt: testCatPrompt, n: intPtr(15), wantErr: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if err := ValidateImageGeneration(tt.prompt, tt.n); !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ValidateImageGeneration = %v, want %v", err, tt.wantErr)
+			{
+				err := ValidateImageGeneration(tt.prompt, tt.n)
+				require.ErrorIs(t, err, tt.wantErr, "ValidateImageGeneration = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -48,15 +50,15 @@ func TestValidateImageEdit(t *testing.T) {
 		n         *int
 		wantErr   error
 	}{
-		{name: "single image ok", prompt: "换背景", hasImage: true, wantErr: nil},
-		{name: "images ok", prompt: "换背景", imagesLen: 3, n: intPtr(2), wantErr: nil},
+		{name: "single image ok", prompt: testEditPrompt, hasImage: true, wantErr: nil},
+		{name: "images ok", prompt: testEditPrompt, imagesLen: 3, n: intPtr(2), wantErr: nil},
 		{name: "empty prompt", prompt: "", hasImage: true, wantErr: ErrEmptyPrompt},
-		{name: "neither provided", prompt: "换背景", wantErr: ErrImageRefExclusive},
-		{name: "both provided", prompt: "换背景", hasImage: true, imagesLen: 2, wantErr: ErrImageRefExclusive},
-		{name: "too many refs", prompt: "换背景", imagesLen: 15, wantErr: ErrTooManyImageRefs},
-		{name: "n out of range", prompt: "换背景", hasImage: true, n: intPtr(16), wantErr: ErrImageCountRange},
-		{name: "refs plus n too large", prompt: "换背景", imagesLen: 14, n: intPtr(2), wantErr: ErrImageRefPlusCount},
-		{name: "refs plus n at limit", prompt: "换背景", imagesLen: 14, n: intPtr(1), wantErr: nil},
+		{name: "neither provided", prompt: testEditPrompt, wantErr: ErrImageRefExclusive},
+		{name: "both provided", prompt: testEditPrompt, hasImage: true, imagesLen: 2, wantErr: ErrImageRefExclusive},
+		{name: "too many refs", prompt: testEditPrompt, imagesLen: 15, wantErr: ErrTooManyImageRefs},
+		{name: "n out of range", prompt: testEditPrompt, hasImage: true, n: intPtr(16), wantErr: ErrImageCountRange},
+		{name: "refs plus n too large", prompt: testEditPrompt, imagesLen: 14, n: intPtr(2), wantErr: ErrImageRefPlusCount},
+		{name: "refs plus n at limit", prompt: testEditPrompt, imagesLen: 14, n: intPtr(1), wantErr: nil},
 	}
 
 	for _, tt := range tests {
@@ -64,9 +66,7 @@ func TestValidateImageEdit(t *testing.T) {
 			t.Parallel()
 
 			err := ValidateImageEdit(tt.prompt, tt.hasImage, tt.imagesLen, tt.n)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ValidateImageEdit = %v, want %v", err, tt.wantErr)
-			}
+			require.ErrorIs(t, err, tt.wantErr, "ValidateImageEdit = %v, want %v", err, tt.wantErr)
 		})
 	}
 }
@@ -81,13 +81,13 @@ func TestValidateVideoGeneration(t *testing.T) {
 		refCount int
 		wantErr  error
 	}{
-		{name: "prompt only", prompt: "海边日落", wantErr: nil},
+		{name: "prompt only", prompt: testSunsetPrompt, wantErr: nil},
 		{name: "image only", hasImage: true, wantErr: nil},
-		{name: "refs with prompt", prompt: "海边日落", refCount: 3, wantErr: nil},
-		{name: "too many refs", prompt: "海边日落", refCount: 8, wantErr: ErrTooManyVideoRefs},
+		{name: "refs with prompt", prompt: testSunsetPrompt, refCount: 3, wantErr: nil},
+		{name: "too many refs", prompt: testSunsetPrompt, refCount: 8, wantErr: ErrTooManyVideoRefs},
 		{name: "nothing provided", wantErr: ErrVideoInputRequired},
 		{name: "refs without prompt", refCount: 2, wantErr: ErrVideoRefPromptRequired},
-		{name: "mixed refs and image", prompt: "海边日落", hasImage: true, refCount: 1, wantErr: ErrVideoRefMixed},
+		{name: "mixed refs and image", prompt: testSunsetPrompt, hasImage: true, refCount: 1, wantErr: ErrVideoRefMixed},
 	}
 
 	for _, tt := range tests {
@@ -95,9 +95,7 @@ func TestValidateVideoGeneration(t *testing.T) {
 			t.Parallel()
 
 			err := ValidateVideoGeneration(tt.prompt, tt.hasImage, tt.refCount)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("ValidateVideoGeneration = %v, want %v", err, tt.wantErr)
-			}
+			require.ErrorIs(t, err, tt.wantErr, "ValidateVideoGeneration = %v, want %v", err, tt.wantErr)
 		})
 	}
 }
@@ -125,15 +123,11 @@ func TestVideoDurationLimitsAndValidation(t *testing.T) {
 			t.Parallel()
 
 			gotMin, gotMax := VideoDurationLimits(tt.model)
-			if gotMin != tt.wantMin || gotMax != tt.wantMax {
-				t.Fatalf("VideoDurationLimits(%q) = (%d, %d), want (%d, %d)",
-					tt.model, gotMin, gotMax, tt.wantMin, tt.wantMax)
-			}
+			require.Equal(t, tt.wantMin, gotMin, "VideoDurationLimits(%q) = (%d, %d), want (%d, %d)", tt.model, gotMin, gotMax, tt.wantMin, tt.wantMax)
+			require.Equal(t, tt.wantMax, gotMax, "VideoDurationLimits(%q) = (%d, %d), want (%d, %d)", tt.model, gotMin, gotMax, tt.wantMin, tt.wantMax)
 
 			err := ValidateVideoDuration(tt.model, tt.duration)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ValidateVideoDuration(%q, %d) = %v, wantErr %v", tt.model, tt.duration, err, tt.wantErr)
-			}
+			require.Equal(t, tt.wantErr, (err != nil), "ValidateVideoDuration(%q, %d) = %v, wantErr %v", tt.model, tt.duration, err, tt.wantErr)
 		})
 	}
 }
@@ -141,36 +135,46 @@ func TestVideoDurationLimitsAndValidation(t *testing.T) {
 func TestResolveDuration(t *testing.T) {
 	t.Parallel()
 
-	if got, ok := ResolveDuration(intPtr(5), intPtr(8)); got != 5 || !ok {
-		t.Fatalf("ResolveDuration prefers duration, got (%d, %v)", got, ok)
+	{
+		got, ok := ResolveDuration(intPtr(5), intPtr(8))
+		require.Equal(t, 5, got, "ResolveDuration prefers duration, got (%d, %v)", got, ok)
+		require.True(t, ok, "ResolveDuration prefers duration, got (%d, %v)", got, ok)
 	}
 
-	if got, ok := ResolveDuration(nil, intPtr(8)); got != 8 || !ok {
-		t.Fatalf("ResolveDuration falls back to seconds, got (%d, %v)", got, ok)
+	{
+		got, ok := ResolveDuration(nil, intPtr(8))
+		require.Equal(t, 8, got, "ResolveDuration falls back to seconds, got (%d, %v)", got, ok)
+		require.True(t, ok, "ResolveDuration falls back to seconds, got (%d, %v)", got, ok)
 	}
 
-	if got, ok := ResolveDuration(nil, nil); got != 0 || ok {
-		t.Fatalf("ResolveDuration with none = (%d, %v)", got, ok)
+	{
+		got, ok := ResolveDuration(nil, nil)
+		require.Equal(t, 0, got, "ResolveDuration with none = (%d, %v)", got, ok)
+		require.False(t, ok, "ResolveDuration with none = (%d, %v)", got, ok)
 	}
 }
 
 func TestNormalizeVideoResolutionAndRatio(t *testing.T) {
 	t.Parallel()
 
-	if got := NormalizeVideoResolution(" 1080P "); got != "1080p" {
-		t.Fatalf("NormalizeVideoResolution = %q", got)
+	{
+		got := NormalizeVideoResolution(" 1080P ")
+		require.Equal(t, "1080p", got, "NormalizeVideoResolution = %q", got)
 	}
 
-	if got := NormalizeVideoResolution("8k"); got != "" {
-		t.Fatalf("NormalizeVideoResolution(8k) = %q, want empty", got)
+	{
+		got := NormalizeVideoResolution("8k")
+		require.Empty(t, got, "NormalizeVideoResolution(8k) = %q, want empty", got)
 	}
 
-	if got := NormalizeVideoRatio(" 16:9 "); got != "16:9" {
-		t.Fatalf("NormalizeVideoRatio = %q", got)
+	{
+		got := NormalizeVideoRatio(" 16:9 ")
+		require.Equal(t, test169, got, "NormalizeVideoRatio = %q", got)
 	}
 
-	if got := NormalizeVideoRatio("5:4"); got != "" {
-		t.Fatalf("NormalizeVideoRatio(5:4) = %q, want empty", got)
+	{
+		got := NormalizeVideoRatio("5:4")
+		require.Empty(t, got, "NormalizeVideoRatio(5:4) = %q, want empty", got)
 	}
 }
 
@@ -194,8 +198,9 @@ func TestIsAllowedAssetHost(t *testing.T) {
 		t.Run(tt.host, func(t *testing.T) {
 			t.Parallel()
 
-			if got := IsAllowedAssetHost(tt.host); got != tt.want {
-				t.Fatalf("IsAllowedAssetHost(%q) = %v, want %v", tt.host, got, tt.want)
+			{
+				got := IsAllowedAssetHost(tt.host)
+				require.Equal(t, tt.want, got, "IsAllowedAssetHost(%q) = %v, want %v", tt.host, got, tt.want)
 			}
 		})
 	}

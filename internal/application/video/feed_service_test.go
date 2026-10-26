@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
@@ -71,11 +73,14 @@ func (feedQueryStub) FetchRankFromDB(context.Context, int, int) ([]FeedItem, err
 }
 
 func TestHomepageFeedLoadsHistoryAndPreferencesConcurrently(t *testing.T) {
+	t.Parallel()
+
 	started := make(chan string, 2)
 	release := make(chan struct{})
 	load := func(name string) func(context.Context, uint) ([]uint, error) {
 		return func(ctx context.Context, _ uint) ([]uint, error) {
 			started <- name
+
 			select {
 			case <-release:
 				return nil, nil
@@ -95,12 +100,14 @@ func TestHomepageFeedLoadsHistoryAndPreferencesConcurrently(t *testing.T) {
 	)
 
 	done := make(chan error, 1)
+
 	go func() {
 		_, _, err := service.HomepageFeed(t.Context(), 1, 0, 1, 20)
 		done <- err
 	}()
 
 	seen := map[string]bool{}
+
 	for range 2 {
 		select {
 		case name := <-started:
@@ -109,18 +116,21 @@ func TestHomepageFeedLoadsHistoryAndPreferencesConcurrently(t *testing.T) {
 			t.Fatal("history and preference queries did not start concurrently")
 		}
 	}
+
 	close(release)
 
-	if err := <-done; err != nil {
-		t.Fatalf("HomepageFeed: %v", err)
+	{
+		err := <-done
+		require.NoError(t, err, "HomepageFeed: %v", err)
 	}
 
-	if !seen["history"] || !seen["preferences"] {
-		t.Fatalf("started queries = %v", seen)
-	}
+	require.True(t, seen["history"], "started queries = %v", seen)
+	require.True(t, seen["preferences"], "started queries = %v", seen)
 }
 
 func TestHomepageFeedPropagatesSourceErrors(t *testing.T) {
+	t.Parallel()
+
 	historyErr := errors.New("history unavailable")
 	service := NewFeedService(
 		feedQueryStub{},
@@ -131,8 +141,9 @@ func TestHomepageFeedPropagatesSourceErrors(t *testing.T) {
 		nil,
 	)
 
-	if _, _, err := service.HomepageFeed(t.Context(), 1, 9, 1, 20); !errors.Is(err, historyErr) {
-		t.Fatalf("history error = %v, want %v", err, historyErr)
+	{
+		_, _, err := service.HomepageFeed(t.Context(), 1, 9, 1, 20)
+		require.ErrorIs(t, err, historyErr, "history error = %v, want %v", err, historyErr)
 	}
 
 	preferenceErr := errors.New("preferences unavailable")
@@ -145,12 +156,15 @@ func TestHomepageFeedPropagatesSourceErrors(t *testing.T) {
 		nil,
 	)
 
-	if _, _, err := service.HomepageFeed(t.Context(), 1, 0, 1, 20); !errors.Is(err, preferenceErr) {
-		t.Fatalf("preference error = %v, want %v", err, preferenceErr)
+	{
+		_, _, err := service.HomepageFeed(t.Context(), 1, 0, 1, 20)
+		require.ErrorIs(t, err, preferenceErr, "preference error = %v, want %v", err, preferenceErr)
 	}
 }
 
 func TestHomepageFeedPropagatesCanceledContext(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -165,7 +179,8 @@ func TestHomepageFeedPropagatesCanceledContext(t *testing.T) {
 		nil,
 	)
 
-	if _, _, err := service.HomepageFeed(ctx, 1, 0, 1, 20); !errors.Is(err, context.Canceled) {
-		t.Fatalf("error = %v, want context.Canceled", err)
+	{
+		_, _, err := service.HomepageFeed(ctx, 1, 0, 1, 20)
+		require.ErrorIs(t, err, context.Canceled, "error = %v, want context.Canceled", err)
 	}
 }

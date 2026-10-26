@@ -3,14 +3,21 @@ package video
 import (
 	"strconv"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestChunkSetIgnoresOutOfRangeExtras(t *testing.T) {
+	t.Parallel()
+
 	valid := func(s string) error { _, err := strconv.Atoi(s); return err }
-	if err := ValidateChunkSet([]string{"0", "1", "900"}, 2, valid); err != nil {
-		t.Fatal(err)
+	{
+		err := ValidateChunkSet([]string{"0", "1", "900"}, 2, valid)
+		require.NoError(t, err)
 	}
-	if err := ValidateChunkSet([]string{"0", "900"}, 2, valid); err == nil {
-		t.Fatal("missing required chunk accepted")
+
+	{
+		err := ValidateChunkSet([]string{"0", "900"}, 2, valid)
+		require.Error(t, err, "missing required chunk accepted")
 	}
 }

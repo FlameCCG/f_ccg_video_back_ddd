@@ -7,9 +7,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDoWithRetryRetriesTimeoutOnce(t *testing.T) {
+	t.Parallel()
+
 	var attempts atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -28,21 +32,18 @@ func TestDoWithRetryRetriesTimeoutOnce(t *testing.T) {
 	resp, err := DoWithRetry(client, func() (*http.Request, error) {
 		return http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
 	})
-	if err != nil {
-		t.Fatalf("expected retry success, got err: %v", err)
-	}
+	require.NoError(t, err, "expected retry success, got err: %v", err)
+
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("unexpected status code: %d", resp.StatusCode)
-	}
+	require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status code: %d", resp.StatusCode)
 
-	if attempts.Load() != 2 {
-		t.Fatalf("expected 2 attempts, got %d", attempts.Load())
-	}
+	require.EqualValues(t, 2, attempts.Load(), "expected 2 attempts, got %d", attempts.Load())
 }
 
 func TestDoWithRetryDoesNotRetryClientError(t *testing.T) {
+	t.Parallel()
+
 	var attempts atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -57,17 +58,16 @@ func TestDoWithRetryDoesNotRetryClientError(t *testing.T) {
 	resp, err := DoWithRetry(client, func() (*http.Request, error) {
 		return http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
 	})
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
+	require.NoError(t, err, "unexpected err: %v", err)
+
 	defer func() { _ = resp.Body.Close() }()
 
-	if attempts.Load() != 1 {
-		t.Fatalf("expected 1 attempt, got %d", attempts.Load())
-	}
+	require.EqualValues(t, 1, attempts.Load(), "expected 1 attempt, got %d", attempts.Load())
 }
 
 func TestDoWithRetryReturnsBuildError(t *testing.T) {
+	t.Parallel()
+
 	expectedErr := errors.New("build failed")
 
 	resp, err := DoWithRetry(&http.Client{Timeout: time.Second}, func() (*http.Request, error) {
@@ -77,7 +77,5 @@ func TestDoWithRetryReturnsBuildError(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf("expected build error, got %v", err)
-	}
+	require.ErrorIs(t, err, expectedErr, "expected build error, got %v", err)
 }

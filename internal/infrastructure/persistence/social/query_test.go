@@ -1,13 +1,17 @@
 package social_test
 
 import (
-	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/social"
+
 	domain "f_ccg_video_back_ddd/internal/domain/social"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/social"
 
 	"github.com/glebarez/sqlite"
@@ -29,12 +33,11 @@ func newFixture(t *testing.T) (*infra.FocusRepository, *infra.RelationQuery, *in
 		TranslateError:         true,
 		SkipDefaultTransaction: true,
 	})
-	if err != nil {
-		t.Fatalf("open sqlite failed: %v", err)
-	}
+	require.NoError(t, err, "open sqlite failed: %v", err)
 
-	if err := db.AutoMigrate(&po.User{}, &po.UserConf{}, &po.UserFocus{}, &po.Dynamic{}); err != nil {
-		t.Fatalf("migrate failed: %v", err)
+	{
+		err := db.AutoMigrate(&po.User{}, &po.UserConf{}, &po.UserFocus{}, &po.Dynamic{})
+		require.NoError(t, err, "migrate failed: %v", err)
 	}
 
 	// 跳过 AfterCreate（会写 user_confs / 默认收藏夹），本测自行控制 user_confs。
@@ -46,27 +49,29 @@ func newFixture(t *testing.T) (*infra.FocusRepository, *infra.RelationQuery, *in
 		{Model: po.Model{ID: 3}, Username: "carol", Email: "c@example.com", Password: "x", Level: 1, Description: "C"},
 	}
 	for i := range users {
-		if err := session.Create(&users[i]).Error; err != nil {
-			t.Fatalf("create user failed: %v", err)
+		{
+			err := session.Create(&users[i]).Error
+			require.NoError(t, err, "create user failed: %v", err)
 		}
 	}
 
-	if err := session.Create(&po.UserConf{UserID: 3}).Error; err != nil {
-		t.Fatalf("create user conf failed: %v", err)
+	{
+		err := session.Create(&po.UserConf{UserID: 3}).Error
+		require.NoError(t, err, "create user conf failed: %v", err)
 	}
 
-	if err := session.Create(&po.UserFocus{UserID: 1, FocusUserID: 2}).Error; err != nil {
-		t.Fatalf("create focus failed: %v", err)
+	{
+		err := session.Create(&po.UserFocus{UserID: 1, FocusUserID: 2}).Error
+		require.NoError(t, err, "create focus failed: %v", err)
 	}
 
-	if err := session.Create(&po.Dynamic{UserID: 1, Content: "hi"}).Error; err != nil {
-		t.Fatalf("create dynamic failed: %v", err)
+	{
+		err := session.Create(&po.Dynamic{UserID: 1, Content: "hi"}).Error
+		require.NoError(t, err, "create dynamic failed: %v", err)
 	}
 
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("db.DB: %v", err)
-	}
+	require.NoError(t, err, "db.DB: %v", err)
 
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
@@ -74,188 +79,159 @@ func newFixture(t *testing.T) (*infra.FocusRepository, *infra.RelationQuery, *in
 }
 
 func TestRelationQueryExistsAndRelation(t *testing.T) {
+	t.Parallel()
+
 	_, query, _, _ := newFixture(t)
 	ctx := t.Context()
 
-	if !query.Exists(ctx, 1, 2) {
-		t.Error("1 应已关注 2")
-	}
+	assert.True(t, query.Exists(ctx, 1, 2), "1 应已关注 2")
 
-	if query.Exists(ctx, 2, 1) {
-		t.Error("2 未关注 1")
-	}
+	assert.False(t, query.Exists(ctx, 2, 1), "2 未关注 1")
 
 	relation := query.Relation(ctx, 1, 2)
-	if !relation.IsFocus || relation.IsFans || relation.IsMutual() {
-		t.Errorf("relation(1,2) = %+v, want focus only", relation)
-	}
+	assert.False(t, !relation.IsFocus || relation.IsFans || relation.IsMutual(), "relation(1,2) = %+v, want focus only", relation)
 
 	relation = query.Relation(ctx, 2, 1)
-	if relation.IsFocus || !relation.IsFans {
-		t.Errorf("relation(2,1) = %+v, want fans only", relation)
-	}
+	assert.False(t, relation.IsFocus || !relation.IsFans, "relation(2,1) = %+v, want fans only", relation)
 
-	if got := query.Relation(ctx, 0, 2); got != (domain.Relation{}) {
-		t.Errorf("relation(0,2) = %+v, want zero", got)
+	{
+		got := query.Relation(ctx, 0, 2)
+		assert.Equal(t, (domain.Relation{}), got, "relation(0,2) = %+v, want zero", got)
 	}
 }
 
 func TestRelationQueryCounts(t *testing.T) {
+	t.Parallel()
+
 	_, query, _, _ := newFixture(t)
 	ctx := t.Context()
 
 	counts := query.Counts(ctx, 1, false)
-	if counts.FocusCount != 1 || counts.FansCount != 0 || counts.DynamicCount != 0 {
-		t.Errorf("counts(1,false) = %+v, want focus=1", counts)
-	}
+	assert.False(t, counts.FocusCount != 1 || counts.FansCount != 0 || counts.DynamicCount != 0, "counts(1,false) = %+v, want focus=1", counts)
 
 	counts = query.Counts(ctx, 1, true)
-	if counts.DynamicCount != 1 {
-		t.Errorf("counts(1,true).DynamicCount = %d, want 1", counts.DynamicCount)
-	}
+	assert.EqualValues(t, 1, counts.DynamicCount, "counts(1,true).DynamicCount = %d, want 1", counts.DynamicCount)
 
 	counts = query.Counts(ctx, 2, false)
-	if counts.FansCount != 1 {
-		t.Errorf("counts(2,false).FansCount = %d, want 1", counts.FansCount)
-	}
+	assert.EqualValues(t, 1, counts.FansCount, "counts(2,false).FansCount = %d, want 1", counts.FansCount)
 
-	if got := query.Counts(ctx, 0, false); got != (domain.RelationCounts{}) {
-		t.Errorf("counts(0) = %+v, want zero", got)
+	{
+		got := query.Counts(ctx, 0, false)
+		assert.Equal(t, (domain.RelationCounts{}), got, "counts(0) = %+v, want zero", got)
 	}
 }
 
 func TestRelationQueryPrivacy(t *testing.T) {
+	t.Parallel()
+
 	_, query, _, db := newFixture(t)
 	ctx := t.Context()
 
 	// 无 user_confs 行：COALESCE 缺省为公开。
 	privacy, err := query.FollowPrivacy(ctx, 1)
-	if err != nil {
-		t.Fatalf("FollowPrivacy: %v", err)
-	}
+	require.NoError(t, err, "FollowPrivacy: %v", err)
 
-	if !privacy.Exists || !privacy.OpenFollow || !privacy.OpenFans {
-		t.Errorf("privacy(1) = %+v, want all open", privacy)
-	}
+	assert.False(t, !privacy.Exists || !privacy.OpenFollow || !privacy.OpenFans, "privacy(1) = %+v, want all open", privacy)
 
-	if err := db.Model(&po.UserConf{}).Where("user_id = ?", 3).
-		Updates(map[string]any{"open_follow": false, "open_fans": false}).Error; err != nil {
-		t.Fatalf("update user conf: %v", err)
+	{
+		err := db.Model(&po.UserConf{}).Where("user_id = ?", 3).
+			Updates(map[string]any{"open_follow": false, "open_fans": false}).Error
+		require.NoError(t, err, "update user conf: %v", err)
 	}
 
 	privacy, err = query.FollowPrivacy(ctx, 3)
-	if err != nil {
-		t.Fatalf("FollowPrivacy: %v", err)
-	}
+	require.NoError(t, err, "FollowPrivacy: %v", err)
 
-	if !privacy.Exists || privacy.OpenFollow || privacy.OpenFans {
-		t.Errorf("privacy(3) = %+v, want closed", privacy)
-	}
+	assert.False(t, !privacy.Exists || privacy.OpenFollow || privacy.OpenFans, "privacy(3) = %+v, want closed", privacy)
 
 	action, err := query.ActionPrivacy(ctx, 1)
-	if err != nil {
-		t.Fatalf("ActionPrivacy: %v", err)
-	}
+	require.NoError(t, err, "ActionPrivacy: %v", err)
 
-	if !action.Exists || !action.OpenLikeVideo || !action.OpenCoinVideo {
-		t.Errorf("action(1) = %+v, want all open", action)
-	}
+	assert.False(t, !action.Exists || !action.OpenLikeVideo || !action.OpenCoinVideo, "action(1) = %+v, want all open", action)
 
-	if _, err := query.FollowPrivacy(ctx, 999); err == nil {
-		t.Error("不存在的用户应返回错误")
+	{
+		_, err := query.FollowPrivacy(ctx, 999)
+		assert.Error(t, err, "不存在的用户应返回错误")
 	}
 }
 
 func TestRelationQueryLists(t *testing.T) {
+	t.Parallel()
+
 	_, query, _, _ := newFixture(t)
 	ctx := t.Context()
 
 	rows, total, err := query.ListFocus(ctx, 1, 1, 10, "")
-	if err != nil {
-		t.Fatalf("ListFocus: %v", err)
-	}
+	require.NoError(t, err, "ListFocus: %v", err)
 
-	if total != 1 || len(rows) != 1 || rows[0].ID != 2 || rows[0].Username != "bob" || rows[0].Level != 2 {
-		t.Fatalf("ListFocus = %+v total=%d", rows, total)
-	}
+	require.EqualValues(t, 1, total, "ListFocus = %+v total=%d", rows, total)
+	require.Len(t, rows, 1, "ListFocus = %+v total=%d", rows, total)
+	require.EqualValues(t, 2, rows[0].ID, "ListFocus = %+v total=%d", rows, total)
+	require.Equal(t, "bob", rows[0].Username, "ListFocus = %+v total=%d", rows, total)
+	require.Equal(t, 2, rows[0].Level, "ListFocus = %+v total=%d", rows, total)
 
 	rows, total, err = query.ListFans(ctx, 2, 1, 10, "")
-	if err != nil {
-		t.Fatalf("ListFans: %v", err)
-	}
+	require.NoError(t, err, "ListFans: %v", err)
 
-	if total != 1 || len(rows) != 1 || rows[0].ID != 1 {
-		t.Fatalf("ListFans = %+v total=%d", rows, total)
-	}
+	require.EqualValues(t, 1, total, "ListFans = %+v total=%d", rows, total)
+	require.Len(t, rows, 1, "ListFans = %+v total=%d", rows, total)
+	require.EqualValues(t, 1, rows[0].ID, "ListFans = %+v total=%d", rows, total)
 
 	rows, total, err = query.ListFocus(ctx, 1, 1, 10, "zzz")
-	if err != nil {
-		t.Fatalf("ListFocus with keyword: %v", err)
-	}
+	require.NoError(t, err, "ListFocus with keyword: %v", err)
 
-	if total != 0 || len(rows) != 0 {
-		t.Fatalf("关键字不匹配时应返回空列表，got %+v total=%d", rows, total)
-	}
+	require.EqualValues(t, 0, total, "关键字不匹配时应返回空列表，got %+v total=%d", rows, total)
+	require.Empty(t, rows, "关键字不匹配时应返回空列表，got %+v total=%d", rows, total)
 
-	if rows == nil {
-		t.Error("空结果应返回非 nil 空切片（响应中渲染为 []）")
-	}
+	assert.NotNil(t, rows, "空结果应返回非 nil 空切片（响应中渲染为 []）")
 }
 
 func TestFocusRepositoryCreateAndDelete(t *testing.T) {
+	t.Parallel()
+
 	repo, _, _, _ := newFixture(t)
 	ctx := t.Context()
 
 	focus, err := domain.NewFocus(2, 3)
-	if err != nil {
-		t.Fatalf("NewFocus: %v", err)
+	require.NoError(t, err, "NewFocus: %v", err)
+
+	{
+		err := repo.Create(ctx, focus)
+		require.NoError(t, err, "Create: %v", err)
 	}
 
-	if err := repo.Create(ctx, focus); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	if focus.ID == 0 {
-		t.Error("Create 应回填自增 ID")
-	}
+	assert.NotEqualValues(t, 0, focus.ID, "Create 应回填自增 ID")
 
 	again, _ := domain.NewFocus(2, 3)
-	if err := repo.Create(ctx, again); !errors.Is(err, domain.ErrAlreadyFocused) {
-		t.Fatalf("重复关注 err = %v, want %v", err, domain.ErrAlreadyFocused)
+	{
+		err := repo.Create(ctx, again)
+		require.ErrorIs(t, err, domain.ErrAlreadyFocused, "重复关注 err = %v, want %v", err, domain.ErrAlreadyFocused)
 	}
 
 	affected, err := repo.Delete(ctx, 2, 3)
-	if err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
+	require.NoError(t, err, "Delete: %v", err)
 
-	if affected != 1 {
-		t.Errorf("Delete affected = %d, want 1", affected)
-	}
+	assert.EqualValues(t, 1, affected, "Delete affected = %d, want 1", affected)
 
 	affected, err = repo.Delete(ctx, 2, 3)
-	if err != nil {
-		t.Fatalf("Delete again: %v", err)
-	}
+	require.NoError(t, err, "Delete again: %v", err)
 
-	if affected != 0 {
-		t.Errorf("重复删除 affected = %d, want 0", affected)
-	}
+	assert.EqualValues(t, 0, affected, "重复删除 affected = %d, want 0", affected)
 }
 
 func TestUserExistsQuery(t *testing.T) {
+	t.Parallel()
+
 	_, _, users, _ := newFixture(t)
 	ctx := t.Context()
 
 	exists, err := users.Exists(ctx, 1)
-	if err != nil || !exists {
-		t.Fatalf("Exists(1) = %v, %v; want true, nil", exists, err)
-	}
+	require.NoError(t, err, "Exists(1) = %v, %v; want true, nil", exists, err)
+	require.True(t, exists, "Exists(1) = %v, %v; want true, nil", exists, err)
 
 	exists, err = users.Exists(ctx, 999)
-	if err != nil || exists {
-		t.Fatalf("Exists(999) = %v, %v; want false, nil", exists, err)
-	}
+	require.NoError(t, err, "Exists(999) = %v, %v; want false, nil", exists, err)
+	require.False(t, exists, "Exists(999) = %v, %v; want false, nil", exists, err)
 }
 
 // 编译期确认查询实现满足应用层端口。

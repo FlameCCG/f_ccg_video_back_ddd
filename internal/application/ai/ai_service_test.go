@@ -3,14 +3,22 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/config"
 	"net/http"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/config"
+	"github.com/stretchr/testify/require"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
+)
+
+const (
+	testHTTPSOldChatExampleV1 = "https://old-chat.example/v1"
+	testOldChatKey            = "old-chat-key"
+	testOldDoubaoKey          = "old-doubao-key"
 )
 
 type snapshotTextGenerator struct {
@@ -126,16 +134,18 @@ func TestPrepareResponsesRequestValidatesThinkingBeforeConversation(t *testing.T
 		Input:          json.RawMessage(`{`),
 		ThinkingEffort: "unsupported",
 	})
-	if err == nil {
-		t.Fatal("prepareResponsesRequest() expected an error")
-	}
-	if got, want := err.Error(), "不支持的思考强度: unsupported"; got != want {
-		t.Fatalf("prepareResponsesRequest() error = %q, want %q", got, want)
+	require.Error(t, err, "prepareResponsesRequest() expected an error")
+
+	{
+		got, want := err.Error(), "不支持的思考强度: unsupported"
+		require.Equal(t, want, got, "prepareResponsesRequest() error = %q, want %q", got, want)
 	}
 }
 
 func TestCreateResponseKeepsRuntimeSnapshotAcrossHotReload(t *testing.T) {
-	oldAI := &config.AI{
+	t.Parallel()
+
+	oldAI := &config.AI{ // #nosec G101 -- Deliberately fake credentials used only by this isolated test fixture.
 		ChatModelBaseURL:  " https://old-chat.example/v1/ ",
 		ChatModelAPIKey:   " old-chat-key ",
 		DoubaoModelAPIKey: " old-doubao-key ",
@@ -145,7 +155,7 @@ func TestCreateResponseKeepsRuntimeSnapshotAcrossHotReload(t *testing.T) {
 	provider := infraconfig.NewProvider(&config.Config{AI: oldAI})
 	text := &snapshotTextGenerator{
 		provider: provider,
-		next: &config.Config{AI: &config.AI{
+		next: &config.Config{AI: &config.AI{ // #nosec G101 -- Deliberately fake credentials used only by this isolated test fixture.
 			ChatModelBaseURL:  "https://new-chat.example/v1",
 			ChatModelAPIKey:   "new-chat-key",
 			DoubaoModelAPIKey: "new-doubao-key",
@@ -158,41 +168,37 @@ func TestCreateResponseKeepsRuntimeSnapshotAcrossHotReload(t *testing.T) {
 	_, err := service.CreateResponse(context.Background(), ResponsesRequest{
 		Input: json.RawMessage(`[{"role":"user","content":"hello"}]`),
 	})
-	if err != nil {
-		t.Fatalf("CreateResponse() error = %v", err)
-	}
-	if len(text.invocations) != 2 {
-		t.Fatalf("invocation count = %d, want 2", len(text.invocations))
-	}
+	require.NoError(t, err, "CreateResponse() error = %v", err)
+
+	require.Len(t, text.invocations, 2, "invocation count = %d, want 2", len(text.invocations))
 
 	wantRuntime := RuntimeConfig{
-		ChatModelBaseURL: "https://old-chat.example/v1",
-		ChatModelAPIKey:  "old-chat-key",
-		DoubaoAPIKey:     "old-doubao-key",
+		ChatModelBaseURL: testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:  testOldChatKey,
+		DoubaoAPIKey:     testOldDoubaoKey,
 		TimeoutSec:       17,
 	}
 	for i, invocation := range text.invocations {
-		if invocation.Runtime != wantRuntime {
-			t.Fatalf("invocation[%d].Runtime = %+v, want %+v", i, invocation.Runtime, wantRuntime)
-		}
-		if invocation.Model != "old-chat-model" {
-			t.Fatalf("invocation[%d].Model = %q, want old-chat-model", i, invocation.Model)
-		}
+		require.Equal(t, wantRuntime, invocation.Runtime, "invocation[%d].Runtime = %+v, want %+v", i, invocation.Runtime, wantRuntime)
+
+		require.Equal(t, "old-chat-model", invocation.Model, "invocation[%d].Model = %q, want old-chat-model", i, invocation.Model)
 	}
 }
 
 func TestGenerateImageKeepsRuntimeSnapshotForSupplementRequests(t *testing.T) {
+	t.Parallel()
+
 	oldAI := &config.AI{
-		ChatModelBaseURL:  "https://old-chat.example/v1",
-		ChatModelAPIKey:   "old-chat-key",
-		DoubaoModelAPIKey: "old-doubao-key",
+		ChatModelBaseURL:  testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:   testOldChatKey,
+		DoubaoModelAPIKey: testOldDoubaoKey,
 		ImageModel:        "old-image-model",
 		TimeoutSec:        23,
 	}
 	provider := infraconfig.NewProvider(&config.Config{AI: oldAI})
 	images := &snapshotImageGenerator{
 		provider: provider,
-		next: &config.Config{AI: &config.AI{
+		next: &config.Config{AI: &config.AI{ // #nosec G101 -- Deliberately fake credentials used only by this isolated test fixture.
 			ChatModelBaseURL:  "https://new-chat.example/v1",
 			ChatModelAPIKey:   "new-chat-key",
 			DoubaoModelAPIKey: "new-doubao-key",
@@ -207,71 +213,72 @@ func TestGenerateImageKeepsRuntimeSnapshotForSupplementRequests(t *testing.T) {
 		Prompt: "draw a cat",
 		N:      &wantImages,
 	})
-	if err != nil {
-		t.Fatalf("GenerateImage() error = %v", err)
-	}
-	if len(images.invocations) != 2 {
-		t.Fatalf("invocation count = %d, want 2", len(images.invocations))
-	}
+	require.NoError(t, err, "GenerateImage() error = %v", err)
+
+	require.Len(t, images.invocations, 2, "invocation count = %d, want 2", len(images.invocations))
 
 	wantRuntime := RuntimeConfig{
-		ChatModelBaseURL: "https://old-chat.example/v1",
-		ChatModelAPIKey:  "old-chat-key",
-		DoubaoAPIKey:     "old-doubao-key",
+		ChatModelBaseURL: testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:  testOldChatKey,
+		DoubaoAPIKey:     testOldDoubaoKey,
 		TimeoutSec:       23,
 	}
 	for i, invocation := range images.invocations {
-		if invocation.Runtime != wantRuntime {
-			t.Fatalf("invocation[%d].Runtime = %+v, want %+v", i, invocation.Runtime, wantRuntime)
-		}
-		if invocation.Model != "old-image-model" {
-			t.Fatalf("invocation[%d].Model = %q, want old-image-model", i, invocation.Model)
-		}
+		require.Equal(t, wantRuntime, invocation.Runtime, "invocation[%d].Runtime = %+v, want %+v", i, invocation.Runtime, wantRuntime)
+
+		require.Equal(t, "old-image-model", invocation.Model, "invocation[%d].Model = %q, want old-image-model", i, invocation.Model)
 	}
+
 	root, ok := result.(map[string]any)
-	if !ok {
-		t.Fatalf("result = %#v, want object", result)
-	}
-	if data, dataOK := root["data"].([]any); !dataOK || len(data) != wantImages {
-		t.Fatalf("result = %#v, want %d images", result, wantImages)
+	require.True(t, ok, "result = %#v, want object", result)
+
+	{
+		data, dataOK := root["data"].([]any)
+		require.True(t, dataOK, "result = %#v, want %d images", result, wantImages)
+		require.Len(t, data, wantImages, "result = %#v, want %d images", result, wantImages)
 	}
 }
 
 func TestGetVideoPassesCapturedRuntimeConfig(t *testing.T) {
+	t.Parallel()
+
 	provider := infraconfig.NewProvider(&config.Config{AI: &config.AI{
-		ChatModelBaseURL:  "https://old-chat.example/v1",
-		ChatModelAPIKey:   "old-chat-key",
-		DoubaoModelAPIKey: "old-doubao-key",
+		ChatModelBaseURL:  testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:   testOldChatKey,
+		DoubaoModelAPIKey: testOldDoubaoKey,
 		TimeoutSec:        31,
 	}})
 	videos := &snapshotVideoClient{
 		provider: provider,
-		next: &config.Config{AI: &config.AI{
+		next: &config.Config{AI: &config.AI{ // #nosec G101 -- Deliberately fake credentials used only by this isolated test fixture.
 			DoubaoModelAPIKey: "new-doubao-key",
 			TimeoutSec:        99,
 		}},
 	}
 	service := NewService(provider, nil, nil, videos, nil, nil, nil, zap.NewNop())
 
-	if _, err := service.GetVideo(context.Background(), "task-old"); err != nil {
-		t.Fatalf("GetVideo() error = %v", err)
+	{
+		_, err := service.GetVideo(context.Background(), "task-old")
+		require.NoError(t, err, "GetVideo() error = %v", err)
 	}
+
 	wantRuntime := RuntimeConfig{
-		ChatModelBaseURL: "https://old-chat.example/v1",
-		ChatModelAPIKey:  "old-chat-key",
-		DoubaoAPIKey:     "old-doubao-key",
+		ChatModelBaseURL: testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:  testOldChatKey,
+		DoubaoAPIKey:     testOldDoubaoKey,
 		TimeoutSec:       31,
 	}
-	if videos.runtime != wantRuntime || videos.requestID != "task-old" {
-		t.Fatalf("Get() runtime=%+v requestID=%q, want %+v/task-old", videos.runtime, videos.requestID, wantRuntime)
-	}
+	require.Equal(t, wantRuntime, videos.runtime, "Get() runtime=%+v requestID=%q, want %+v/task-old", videos.runtime, videos.requestID, wantRuntime)
+	require.Equal(t, "task-old", videos.requestID, "Get() runtime=%+v requestID=%q, want %+v/task-old", videos.runtime, videos.requestID, wantRuntime)
 }
 
 func TestOpenAssetStreamPassesCapturedRuntimeConfig(t *testing.T) {
+	t.Parallel()
+
 	provider := infraconfig.NewProvider(&config.Config{AI: &config.AI{
-		ChatModelBaseURL:  "https://old-chat.example/v1",
-		ChatModelAPIKey:   "old-chat-key",
-		DoubaoModelAPIKey: "old-doubao-key",
+		ChatModelBaseURL:  testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:   testOldChatKey,
+		DoubaoModelAPIKey: testOldDoubaoKey,
 		TimeoutSec:        37,
 	}})
 	assets := &snapshotAssetFetcher{
@@ -287,18 +294,16 @@ func TestOpenAssetStreamPassesCapturedRuntimeConfig(t *testing.T) {
 		"https://ark-content.volces.com/object",
 		http.Header{"Range": []string{"bytes=0-9"}},
 	)
-	if err != nil {
-		t.Fatalf("OpenAssetStream() error = %v", err)
-	}
+	require.NoError(t, err, "OpenAssetStream() error = %v", err)
+
 	_ = response.Body.Close()
 
 	wantRuntime := RuntimeConfig{
-		ChatModelBaseURL: "https://old-chat.example/v1",
-		ChatModelAPIKey:  "old-chat-key",
-		DoubaoAPIKey:     "old-doubao-key",
+		ChatModelBaseURL: testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:  testOldChatKey,
+		DoubaoAPIKey:     testOldDoubaoKey,
 		TimeoutSec:       37,
 	}
-	if assets.runtime != wantRuntime || assets.assetURL != "https://ark-content.volces.com/object" {
-		t.Fatalf("Open() runtime=%+v assetURL=%q, want %+v", assets.runtime, assets.assetURL, wantRuntime)
-	}
+	require.Equal(t, wantRuntime, assets.runtime, "Open() runtime=%+v assetURL=%q, want %+v", assets.runtime, assets.assetURL, wantRuntime)
+	require.Equal(t, "https://ark-content.volces.com/object", assets.assetURL, "Open() runtime=%+v assetURL=%q, want %+v", assets.runtime, assets.assetURL, wantRuntime)
 }

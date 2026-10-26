@@ -2,12 +2,15 @@ package ctxutil
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDetachedTaskGroupWaitsUntilIdle(t *testing.T) {
+	t.Parallel()
+
 	group := NewDetachedTaskGroup()
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -18,6 +21,7 @@ func TestDetachedTaskGroupWaitsUntilIdle(t *testing.T) {
 	}) {
 		t.Fatal("expected task to be accepted")
 	}
+
 	<-started
 
 	waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -35,12 +39,16 @@ func TestDetachedTaskGroupWaitsUntilIdle(t *testing.T) {
 	}
 
 	close(release)
-	if err := <-waited; err != nil {
-		t.Fatalf("wait failed: %v", err)
+
+	{
+		err := <-waited
+		require.NoError(t, err, "wait failed: %v", err)
 	}
 }
 
 func TestDetachedTaskGroupStopCancelsAndRejectsTasks(t *testing.T) {
+	t.Parallel()
+
 	group := NewDetachedTaskGroup()
 	started := make(chan struct{})
 	finished := make(chan struct{})
@@ -52,12 +60,15 @@ func TestDetachedTaskGroupStopCancelsAndRejectsTasks(t *testing.T) {
 	}) {
 		t.Fatal("expected task to be accepted")
 	}
+
 	<-started
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if err := group.Stop(stopCtx); err != nil {
-		t.Fatalf("stop failed: %v", err)
+
+	{
+		err := group.Stop(stopCtx)
+		require.NoError(t, err, "stop failed: %v", err)
 	}
 
 	select {
@@ -72,7 +83,10 @@ func TestDetachedTaskGroupStopCancelsAndRejectsTasks(t *testing.T) {
 }
 
 func TestDetachedTaskGroupWaitHonorsContext(t *testing.T) {
+	t.Parallel()
+
 	group := NewDetachedTaskGroup()
+
 	release := make(chan struct{})
 	defer close(release)
 
@@ -84,7 +98,9 @@ func TestDetachedTaskGroupWaitHonorsContext(t *testing.T) {
 
 	waitCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := group.Wait(waitCtx); !errors.Is(err, context.Canceled) {
-		t.Fatalf("wait error = %v, want context.Canceled", err)
+
+	{
+		err := group.Wait(waitCtx)
+		require.ErrorIs(t, err, context.Canceled, "wait error = %v, want context.Canceled", err)
 	}
 }

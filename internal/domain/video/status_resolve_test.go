@@ -1,10 +1,12 @@
 package video_test
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"testing"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
@@ -13,6 +15,8 @@ import (
 // 原测试通过 global.SetConfig 切换「内容审核开关」；新架构把该开关上提为显式入参，
 // 因此改为直接传参（断言与用例集合逐条保持一致）。
 func TestResolvePublishVideoStatus(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
 	future := now.Add(time.Hour)
 
@@ -62,29 +66,24 @@ func TestResolvePublishVideoStatus(t *testing.T) {
 		},
 	}
 
+	//nolint:paralleltest // Cases share parent fixtures or must finish before their parent resource cleanup.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := domain.ResolvePublishVideoStatus(now, tt.publishAt, tt.isPrivate, tt.reviewOn)
-			if got != tt.wantStatus {
-				t.Fatalf("got status %v, want %v", got, tt.wantStatus)
-			}
+			require.Equal(t, tt.wantStatus, got, "got status %v, want %v", got, tt.wantStatus)
 		})
 	}
 }
 
 // TestShouldScheduleVideoPublish 覆盖是否写入定时发布任务的判定。
 func TestShouldScheduleVideoPublish(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC)
 
-	if domain.ShouldScheduleVideoPublish(now, now.Add(time.Hour), true) {
-		t.Fatal("private should not schedule")
-	}
+	require.False(t, domain.ShouldScheduleVideoPublish(now, now.Add(time.Hour), true), "private should not schedule")
 
-	if !domain.ShouldScheduleVideoPublish(now, now.Add(time.Hour), false) {
-		t.Fatal("future public should schedule")
-	}
+	require.True(t, domain.ShouldScheduleVideoPublish(now, now.Add(time.Hour), false), "future public should schedule")
 
-	if domain.ShouldScheduleVideoPublish(now, now, false) {
-		t.Fatal("immediate public should not schedule")
-	}
+	require.False(t, domain.ShouldScheduleVideoPublish(now, now, false), "immediate public should not schedule")
 }

@@ -8,28 +8,29 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
 func TestInitVideoPartitionsFromSQL(t *testing.T) {
+	t.Parallel()
+
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "partitions.db")), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite failed: %v", err)
-	}
+	require.NoError(t, err, "open sqlite failed: %v", err)
 
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sqlite db failed: %v", err)
-	}
+	require.NoError(t, err, "get sqlite db failed: %v", err)
 
 	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Fatalf("close sqlite db failed: %v", err)
+		{
+			err := sqlDB.Close()
+			require.NoError(t, err, "close sqlite db failed: %v", err)
 		}
 	})
 
-	if err := db.AutoMigrate(&po.VideoPartition{}); err != nil {
-		t.Fatalf("auto migrate failed: %v", err)
+	{
+		err := db.AutoMigrate(&po.VideoPartition{})
+		require.NoError(t, err, "auto migrate failed: %v", err)
 	}
 
 	existing := po.VideoPartition{
@@ -39,8 +40,9 @@ func TestInitVideoPartitionsFromSQL(t *testing.T) {
 		SortOrder: 1,
 		IsActive:  true,
 	}
-	if err := db.Create(&existing).Error; err != nil {
-		t.Fatalf("create existing partition failed: %v", err)
+	{
+		err := db.Create(&existing).Error
+		require.NoError(t, err, "create existing partition failed: %v", err)
 	}
 
 	outdatedSeed := po.VideoPartition{
@@ -50,8 +52,9 @@ func TestInitVideoPartitionsFromSQL(t *testing.T) {
 		SortOrder: 99,
 		IsActive:  false,
 	}
-	if err := db.Create(&outdatedSeed).Error; err != nil {
-		t.Fatalf("create outdated seed partition failed: %v", err)
+	{
+		err := db.Create(&outdatedSeed).Error
+		require.NoError(t, err, "create outdated seed partition failed: %v", err)
 	}
 
 	sqlPath := filepath.Join(t.TempDir(), "video_partitions.sql")
@@ -59,45 +62,39 @@ func TestInitVideoPartitionsFromSQL(t *testing.T) {
 	sqlContent := "" +
 		"INSERT INTO `video_partitions` (`id`, `created_at`, `updated_at`, `name`, `icon`, `sort_order`, `is_active`, `is_submittable`) VALUES (2, '2026-01-14 14:59:06.711', '2026-03-22 03:16:29.494', '动画', '<svg>anim</svg>', 9, 1, 1);\n" +
 		"INSERT INTO `video_partitions` (`id`, `created_at`, `updated_at`, `name`, `icon`, `sort_order`, `is_active`, `is_submittable`) VALUES (3, '2026-01-14 14:59:06.711', '2026-03-22 03:16:29.494', '音乐', '<svg>music</svg>', 9, 0, 1);\n"
-	if err := os.WriteFile(sqlPath, []byte(sqlContent), 0o644); err != nil {
-		t.Fatalf("write sql file failed: %v", err)
+	{
+		err := os.WriteFile(sqlPath, []byte(sqlContent), 0o600)
+		require.NoError(t, err, "write sql file failed: %v", err)
 	}
 
 	imported, normalizedExtras, resolvedPath, err := initVideoPartitionsFromSQL(context.Background(), db, sqlPath)
-	if err != nil {
-		t.Fatalf("init video partitions failed: %v", err)
-	}
+	require.NoError(t, err, "init video partitions failed: %v", err)
 
-	if imported != 2 {
-		t.Fatalf("unexpected imported count: got %d want %d", imported, 2)
-	}
+	require.Equal(t, 2, imported, "unexpected imported count: got %d want %d", imported, 2)
 
-	if normalizedExtras != 1 {
-		t.Fatalf("unexpected normalized extra count: got %d want %d", normalizedExtras, 1)
-	}
+	require.Equal(t, 1, normalizedExtras, "unexpected normalized extra count: got %d want %d", normalizedExtras, 1)
 
-	if resolvedPath != sqlPath {
-		t.Fatalf("unexpected resolved path: got %s want %s", resolvedPath, sqlPath)
-	}
+	require.Equal(t, resolvedPath, sqlPath, "unexpected resolved path: got %s want %s", resolvedPath, sqlPath)
 
 	var partitions []po.VideoPartition
-	if err := db.Order("sort_order ASC, id ASC").Find(&partitions).Error; err != nil {
-		t.Fatalf("query partitions failed: %v", err)
+	{
+		err := db.Order("sort_order ASC, id ASC").Find(&partitions).Error
+		require.NoError(t, err, "query partitions failed: %v", err)
 	}
 
-	if len(partitions) != 3 {
-		t.Fatalf("unexpected partition count: got %d want %d", len(partitions), 3)
-	}
+	require.Len(t, partitions, 3, "unexpected partition count: got %d want %d", len(partitions), 3)
 
-	if partitions[0].ID != 2 || partitions[0].SortOrder != 1 || partitions[0].Name != "动画" || !partitions[0].IsActive {
-		t.Fatalf("unexpected first partition: %+v", partitions[0])
-	}
+	require.EqualValues(t, 2, partitions[0].ID, "unexpected first partition: %+v", partitions[0])
+	require.Equal(t, 1, partitions[0].SortOrder, "unexpected first partition: %+v", partitions[0])
+	require.Equal(t, "动画", partitions[0].Name, "unexpected first partition: %+v", partitions[0])
+	require.True(t, partitions[0].IsActive, "unexpected first partition: %+v", partitions[0])
 
-	if partitions[1].ID != 3 || partitions[1].SortOrder != 2 || partitions[1].Name != "音乐" || partitions[1].IsActive {
-		t.Fatalf("unexpected second partition: %+v", partitions[1])
-	}
+	require.EqualValues(t, 3, partitions[1].ID, "unexpected second partition: %+v", partitions[1])
+	require.Equal(t, 2, partitions[1].SortOrder, "unexpected second partition: %+v", partitions[1])
+	require.Equal(t, "音乐", partitions[1].Name, "unexpected second partition: %+v", partitions[1])
+	require.False(t, partitions[1].IsActive, "unexpected second partition: %+v", partitions[1])
 
-	if partitions[2].ID != 99 || partitions[2].SortOrder != 3 || partitions[2].Name != "额外分区" {
-		t.Fatalf("unexpected third partition: %+v", partitions[2])
-	}
+	require.EqualValues(t, 99, partitions[2].ID, "unexpected third partition: %+v", partitions[2])
+	require.Equal(t, 3, partitions[2].SortOrder, "unexpected third partition: %+v", partitions[2])
+	require.Equal(t, "额外分区", partitions[2].Name, "unexpected third partition: %+v", partitions[2])
 }

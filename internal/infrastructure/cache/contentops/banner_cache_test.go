@@ -1,11 +1,13 @@
 package contentops
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/contentops"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -25,6 +27,8 @@ func newTestRedis(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
 }
 
 func TestVisibleBannerCacheKey(t *testing.T) {
+	t.Parallel()
+
 	partitionID := uint(7)
 
 	cases := map[string]string{
@@ -33,13 +37,13 @@ func TestVisibleBannerCacheKey(t *testing.T) {
 		visibleBannerCacheKey(enum.BannerTypeUser, nil):          "banner:visible:3:nil",
 	}
 	for got, want := range cases {
-		if got != want {
-			t.Fatalf("unexpected cache key: got %s want %s", got, want)
-		}
+		require.Equal(t, want, got, "unexpected cache key: got %s want %s", got, want)
 	}
 }
 
 func TestBannerCacheStoreLoadInvalidate(t *testing.T) {
+	t.Parallel()
+
 	server, client := newTestRedis(t)
 	cache := NewBannerCache(client, zap.NewNop())
 
@@ -52,65 +56,65 @@ func TestBannerCacheStoreLoadInvalidate(t *testing.T) {
 	cache.StoreVisible(enum.BannerTypeHome, &homePartition, items)
 
 	key := "banner:visible:1:0"
-	if !server.Exists(key) {
-		t.Fatalf("cache key %s should exist", key)
-	}
+	require.True(t, server.Exists(key), "cache key %s should exist", key)
 
-	if ttl := server.TTL(key); ttl != 10*time.Minute {
-		t.Fatalf("unexpected cache ttl: %v", ttl)
+	{
+		ttl := server.TTL(key)
+		require.Equal(t, 10*time.Minute, ttl, "unexpected cache ttl: %v", ttl)
 	}
 
 	loaded, ok := cache.LoadVisible(enum.BannerTypeHome, &homePartition)
-	if !ok {
-		t.Fatal("cache should hit")
-	}
+	require.True(t, ok, "cache should hit")
 
-	if len(loaded) != 2 || loaded[0].ID != 2 || loaded[1].Cover != "a" {
-		t.Fatalf("unexpected cached items: %+v", loaded)
-	}
+	require.Len(t, loaded, 2, "unexpected cached items: %+v", loaded)
+	require.EqualValues(t, 2, loaded[0].ID, "unexpected cached items: %+v", loaded)
+	require.Equal(t, "a", loaded[1].Cover, "unexpected cached items: %+v", loaded)
 
 	// 缓存另一个 key，验证按前缀整体失效
 	cache.StoreVisible(enum.BannerTypeTop, nil, items[:1])
 
-	if !server.Exists("banner:visible:2:nil") {
-		t.Fatal("second cache key should exist")
-	}
+	require.True(t, server.Exists("banner:visible:2:nil"), "second cache key should exist")
 
 	cache.InvalidateVisible()
 
-	if server.Exists(key) || server.Exists("banner:visible:2:nil") {
-		t.Fatal("invalidate should drop every banner:visible: key")
-	}
+	require.False(t, server.Exists(key), "invalidate should drop every banner:visible: key")
+	require.False(t, server.Exists("banner:visible:2:nil"), "invalidate should drop every banner:visible: key")
 
-	if _, ok := cache.LoadVisible(enum.BannerTypeHome, &homePartition); ok {
-		t.Fatal("cache should miss after invalidate")
+	{
+		_, ok := cache.LoadVisible(enum.BannerTypeHome, &homePartition)
+		require.False(t, ok, "cache should miss after invalidate")
 	}
 }
 
 func TestBannerCacheDropsCorruptedValue(t *testing.T) {
+	t.Parallel()
+
 	server, client := newTestRedis(t)
 	cache := NewBannerCache(client, zap.NewNop())
 
 	key := "banner:visible:1:nil"
-	if err := server.Set(key, "not-json"); err != nil {
-		t.Fatalf("seed corrupted cache failed: %v", err)
+	{
+		err := server.Set(key, "not-json")
+		require.NoError(t, err, "seed corrupted cache failed: %v", err)
 	}
 
-	if _, ok := cache.LoadVisible(enum.BannerTypeHome, nil); ok {
-		t.Fatal("corrupted cache should miss")
+	{
+		_, ok := cache.LoadVisible(enum.BannerTypeHome, nil)
+		require.False(t, ok, "corrupted cache should miss")
 	}
 
-	if server.Exists(key) {
-		t.Fatal("corrupted cache key should be deleted")
-	}
+	require.False(t, server.Exists(key), "corrupted cache key should be deleted")
 }
 
 // TestBannerCacheWithoutRedis 保证 Redis 缺失时缓存操作静默降级（与原实现一致）。
 func TestBannerCacheWithoutRedis(t *testing.T) {
+	t.Parallel()
+
 	cache := NewBannerCache(nil, zap.NewNop())
 
-	if _, ok := cache.LoadVisible(enum.BannerTypeHome, nil); ok {
-		t.Fatal("nil redis should always miss")
+	{
+		_, ok := cache.LoadVisible(enum.BannerTypeHome, nil)
+		require.False(t, ok, "nil redis should always miss")
 	}
 
 	cache.StoreVisible(enum.BannerTypeHome, nil, nil)

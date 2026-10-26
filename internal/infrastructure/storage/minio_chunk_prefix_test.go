@@ -16,9 +16,11 @@ func TestMinIOChunkPrefixExcludesSiblingHash(t *testing.T) {
 	if !strings.HasSuffix(prefix, "/") {
 		t.Fatalf("prefix = %q, want a directory prefix", prefix)
 	}
+
 	if !strings.HasPrefix(own, prefix) {
 		t.Fatalf("prefix %q does not match %q", prefix, own)
 	}
+
 	if strings.HasPrefix(sibling, prefix) {
 		t.Fatalf("prefix %q also matches %q", prefix, sibling)
 	}
@@ -27,11 +29,13 @@ func TestMinIOChunkPrefixExcludesSiblingHash(t *testing.T) {
 	if !ok || index != "0" {
 		t.Fatalf("partIndexInHashDir(%q) = %q, %t", own, index, ok)
 	}
+
 	if _, ok = partIndexInHashDir(sibling, "abc"); ok {
 		t.Fatalf("sibling key %q was counted for abc", sibling)
 	}
 
 	var total, current int64
+
 	for _, object := range []struct {
 		key  string
 		size int64

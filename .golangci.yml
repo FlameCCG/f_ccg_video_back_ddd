@@ -144,7 +144,9 @@ formatters:
     - swaggo     # swaggo comment formatting — only for swaggo users
   settings:
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
+        clothe-returns: true
   exclusions:
     generated: lax
     paths:

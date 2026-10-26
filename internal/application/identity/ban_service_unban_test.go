@@ -2,16 +2,16 @@ package identity_test
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"path/filepath"
 	"testing"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	identityrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -94,6 +94,7 @@ func newBanFixture(t *testing.T) banFixture {
 	if err != nil {
 		t.Fatalf("get sqlite connection: %v", err)
 	}
+
 	t.Cleanup(func() {
 		if err := sqlDB.Close(); err != nil {
 			t.Errorf("close sqlite connection: %v", err)
@@ -126,6 +127,7 @@ func TestBanServiceApplyUnbanMarksOriginalRecordWithoutCreatingActiveRecord(t *t
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
+
 	if result.ID != record.ID || result.Status != enum.UserStatusActive || !result.IsUnbanned {
 		t.Fatalf("Apply() result = %#v, want original record id %d and active event", result, record.ID)
 	}
@@ -138,6 +140,7 @@ func TestBanServiceApplyUnbanMarksOriginalRecordWithoutCreatingActiveRecord(t *t
 	if err != nil {
 		t.Fatalf("FindLatestByUserID() error = %v", err)
 	}
+
 	if latest != nil {
 		t.Fatalf("FindLatestByUserID() = %+v, want nil after release", latest)
 	}
@@ -157,6 +160,7 @@ func TestBanServiceReleaseExpiredMarksOriginalRecordOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReleaseExpired() error = %v", err)
 	}
+
 	if !unbanned {
 		t.Fatal("ReleaseExpired() unbanned = false, want true")
 	}
@@ -168,6 +172,7 @@ func TestBanServiceReleaseExpiredMarksOriginalRecordOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second ReleaseExpired() error = %v", err)
 	}
+
 	if unbanned {
 		t.Fatal("second ReleaseExpired() unbanned = true, want false")
 	}
@@ -177,6 +182,7 @@ func TestBanServiceReleaseExpiredDoesNotClaimReleaseAfterStatusChanged(t *testin
 	t.Parallel()
 
 	fixture := newBanFixture(t)
+
 	record := seedBannedUser(t, fixture.db, time.Now().Add(-time.Hour))
 	if err := fixture.db.Model(&po.User{}).
 		Where("id = ?", 1).
@@ -188,6 +194,7 @@ func TestBanServiceReleaseExpiredDoesNotClaimReleaseAfterStatusChanged(t *testin
 	if err != nil {
 		t.Fatalf("ReleaseExpired() error = %v", err)
 	}
+
 	if unbanned {
 		t.Fatal("ReleaseExpired() unbanned = true, want false")
 	}
@@ -196,9 +203,11 @@ func TestBanServiceReleaseExpiredDoesNotClaimReleaseAfterStatusChanged(t *testin
 	if err := fixture.db.First(&stored, record.ID).Error; err != nil {
 		t.Fatalf("load ban record: %v", err)
 	}
+
 	if stored.IsUnbanned {
 		t.Fatal("record is_unbanned = true, want false when conditional activation loses")
 	}
+
 	if len(fixture.cache.writes) != 0 {
 		t.Fatalf("unexpected status cache writes: %v", fixture.cache.writes)
 	}
@@ -218,6 +227,7 @@ func TestBanRecordQueryReportsHistoricalActiveRelease(t *testing.T) {
 	}
 
 	createdAt := time.Now().Add(-2 * time.Hour)
+
 	ban := po.UserBanRecord{
 		Model:      po.Model{CreatedAt: createdAt},
 		UserID:     1,
@@ -250,9 +260,11 @@ func TestBanRecordQueryReportsHistoricalActiveRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AdminList() error = %v", err)
 	}
+
 	if total != 1 || len(items) != 1 {
 		t.Fatalf("AdminList() total/items = %d/%d, want 1/1", total, len(items))
 	}
+
 	if items[0].ID != ban.ID || !items[0].IsUnbanned {
 		t.Fatalf("AdminList() item = %+v, want historical ban marked unbanned", items[0])
 	}
@@ -293,6 +305,7 @@ func assertUserAndRecordUnbanned(t *testing.T, db *gorm.DB, recordID uint) {
 	if err := db.Table("users").Select("status").Where("id = ?", 1).Scan(&userStatus).Error; err != nil {
 		t.Fatalf("query user status: %v", err)
 	}
+
 	if userStatus != enum.UserStatusActive {
 		t.Fatalf("user status = %d, want active", userStatus)
 	}
@@ -301,6 +314,7 @@ func assertUserAndRecordUnbanned(t *testing.T, db *gorm.DB, recordID uint) {
 	if err := db.First(&record, recordID).Error; err != nil {
 		t.Fatalf("query ban record: %v", err)
 	}
+
 	if !record.IsUnbanned {
 		t.Fatal("record is_unbanned = false, want true")
 	}
@@ -313,6 +327,7 @@ func assertBanRecordCount(t *testing.T, db *gorm.DB, expected int64) {
 	if err := db.Model(&po.UserBanRecord{}).Where("user_id = ?", 1).Count(&count).Error; err != nil {
 		t.Fatalf("count ban records: %v", err)
 	}
+
 	if count != expected {
 		t.Fatalf("ban record count = %d, want %d", count, expected)
 	}

@@ -2,11 +2,11 @@ package video_test
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"path/filepath"
 	"testing"
 
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
 
 	"github.com/glebarez/sqlite"

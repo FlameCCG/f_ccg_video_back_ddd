@@ -2,41 +2,46 @@ package ark
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
+
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
 )
 
 func TestAssetProxyRejectsRedirectOutsideAllowlist(t *testing.T) {
 	t.Parallel()
+
 	var reached atomic.Bool
+
 	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		reached.Store(true)
 	}))
 	t.Cleanup(target.Close)
+
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, target.URL, http.StatusFound)
 	}))
 	t.Cleanup(source.Close)
+
 	response, err := NewAssetProxy().Open(context.Background(), aiapp.RuntimeConfig{}, source.URL, nil)
 	if response != nil {
-		response.Body.Close()
+		require.NoError(t, response.Body.Close())
 	}
-	if !errors.Is(err, domain.ErrAssetHostNotAllowed) {
-		t.Fatalf("Open() error = %v, want rejected redirect", err)
-	}
-	if reached.Load() {
-		t.Fatal("proxy followed redirect to a disallowed host")
-	}
+
+	require.ErrorIs(t, err, domain.ErrAssetHostNotAllowed, "Open() error = %v, want rejected redirect", err)
+
+	require.False(t, reached.Load(), "proxy followed redirect to a disallowed host")
 }
 
 func TestValidateAssetRedirect(t *testing.T) {
 	t.Parallel()
+
 	for _, tc := range []struct {
 		name      string
 		url       string
@@ -50,14 +55,12 @@ func TestValidateAssetRedirect(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			req, err := http.NewRequest(http.MethodGet, tc.url, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tc.url, nil)
+			require.NoError(t, err)
+
 			err = validateAssetRedirect(req, make([]*http.Request, tc.redirects))
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("error = %v, wantErr %v", err, tc.wantErr)
-			}
+			require.Equal(t, tc.wantErr, (err != nil), "error = %v, wantErr %v", err, tc.wantErr)
 		})
 	}
 }

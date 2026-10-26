@@ -1,9 +1,9 @@
 package video_test
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 )
 

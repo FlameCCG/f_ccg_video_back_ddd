@@ -2,12 +2,13 @@ package identity
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -18,9 +19,7 @@ func openUserProfileTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "user-profile.db")), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	require.NoError(t, err, "open sqlite: %v", err)
 
 	statements := []string{
 		`CREATE TABLE users (
@@ -56,18 +55,19 @@ func openUserProfileTestDB(t *testing.T) *gorm.DB {
 	}
 
 	for _, statement := range statements {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("prepare user profile schema: %v", err)
+		{
+			err := db.Exec(statement).Error
+			require.NoError(t, err, "prepare user profile schema: %v", err)
 		}
 	}
 
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql db: %v", err)
-	}
+	require.NoError(t, err, "get sql db: %v", err)
+
 	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("close sqlite: %v", err)
+		{
+			err := sqlDB.Close()
+			assert.NoError(t, err, "close sqlite: %v", err)
 		}
 	})
 
@@ -75,68 +75,70 @@ func openUserProfileTestDB(t *testing.T) *gorm.DB {
 }
 
 func TestUserRepository_FindWithConfByIDUsesSingleQuery(t *testing.T) {
+	t.Parallel()
+
 	db := openUserProfileTestDB(t)
 	repository := NewUserRepository(db, nil)
 
 	var queryCount atomic.Int32
-	if err := db.Callback().Query().Before("gorm:query").
-		Register("test:count_user_profile_queries", func(*gorm.DB) {
-			queryCount.Add(1)
-		}); err != nil {
-		t.Fatalf("register query callback: %v", err)
+
+	{
+		err := db.Callback().Query().Before("gorm:query").
+			Register("test:count_user_profile_queries", func(*gorm.DB) {
+				queryCount.Add(1)
+			})
+		require.NoError(t, err, "register query callback: %v", err)
 	}
 
 	user, conf, err := repository.FindWithConfByID(t.Context(), 1)
-	if err != nil {
-		t.Fatalf("find user with conf: %v", err)
-	}
-	if user == nil {
-		t.Fatal("user = nil, want joined user")
-	}
-	if conf == nil {
-		t.Fatal("conf = nil, want joined config")
-	}
-	if user.Username != "joined-user" || user.OpenID != "openid" {
-		t.Fatalf("user = %+v, want joined-user with openid", user)
-	}
-	if conf.BannerID != 3 || conf.BannerURL != "banner.png" {
-		t.Fatalf("conf = %+v, want banner ID 3 and URL banner.png", conf)
-	}
-	if len(conf.LikeTags) != 2 || conf.LikeTags[0] != "Go" || conf.LikeTags[1] != "DDD" {
-		t.Fatalf("like tags = %v, want [Go DDD]", conf.LikeTags)
-	}
-	if got := queryCount.Load(); got != 1 {
-		t.Fatalf("query count = %d, want 1", got)
+	require.NoError(t, err, "find user with conf: %v", err)
+
+	require.NotNil(t, user, "user = nil, want joined user")
+
+	require.NotNil(t, conf, "conf = nil, want joined config")
+
+	require.Equal(t, "joined-user", user.Username, "user = %+v, want joined-user with openid", user)
+	require.Equal(t, "openid", user.OpenID, "user = %+v, want joined-user with openid", user)
+
+	require.EqualValues(t, 3, conf.BannerID, "conf = %+v, want banner ID 3 and URL banner.png", conf)
+	require.Equal(t, "banner.png", conf.BannerURL, "conf = %+v, want banner ID 3 and URL banner.png", conf)
+
+	require.Len(t, conf.LikeTags, 2, "like tags = %v, want [Go DDD]", conf.LikeTags)
+	require.Equal(t, "Go", conf.LikeTags[0], "like tags = %v, want [Go DDD]", conf.LikeTags)
+	require.Equal(t, "DDD", conf.LikeTags[1], "like tags = %v, want [Go DDD]", conf.LikeTags)
+
+	{
+		got := queryCount.Load()
+		require.EqualValues(t, 1, got, "query count = %d, want 1", got)
 	}
 }
 
 func TestUserRepository_FindWithConfByIDAllowsMissingConf(t *testing.T) {
+	t.Parallel()
+
 	db := openUserProfileTestDB(t)
 	repository := NewUserRepository(db, nil)
 
 	user, conf, err := repository.FindWithConfByID(t.Context(), 2)
-	if err != nil {
-		t.Fatalf("find user without conf: %v", err)
-	}
-	if user == nil || user.ID != 2 {
-		t.Fatalf("user = %+v, want user 2", user)
-	}
-	if conf != nil {
-		t.Fatalf("conf = %+v, want nil", conf)
-	}
+	require.NoError(t, err, "find user without conf: %v", err)
+
+	require.NotNil(t, user, "user = %+v, want user 2", user)
+	require.EqualValues(t, 2, user.ID, "user = %+v, want user 2", user)
+
+	require.Nil(t, conf, "conf = %+v, want nil", conf)
 }
 
 func TestUserRepository_FindWithConfByIDPropagatesContextError(t *testing.T) {
+	t.Parallel()
+
 	db := openUserProfileTestDB(t)
 	repository := NewUserRepository(db, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	user, conf, err := repository.FindWithConfByID(ctx, 1)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("error = %v, want context.Canceled", err)
-	}
-	if user != nil || conf != nil {
-		t.Fatalf("user = %+v, conf = %+v, want nil results", user, conf)
-	}
+	require.ErrorIs(t, err, context.Canceled, "error = %v, want context.Canceled", err)
+
+	require.Nil(t, user, "user = %+v, conf = %+v, want nil results", user, conf)
+	require.Nil(t, conf, "user = %+v, conf = %+v, want nil results", user, conf)
 }

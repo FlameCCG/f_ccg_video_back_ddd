@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"reflect"
-	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/config"
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
@@ -31,6 +32,7 @@ func (f *promptTextFake) InvokeText(_ context.Context, invocation TextInvocation
 
 func TestBuildResponsesSystemPromptSkipsAnalysisWithoutVideoSource(t *testing.T) {
 	t.Parallel()
+
 	for _, tc := range []struct {
 		name    string
 		prompts PromptVideoQuery
@@ -40,14 +42,16 @@ func TestBuildResponsesSystemPromptSkipsAnalysisWithoutVideoSource(t *testing.T)
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
 			text := &promptTextFake{err: errors.New("model must not be called")}
 			s := &Service{text: text, prompts: tc.prompts, logger: zap.NewNop()}
+
 			prompt, err := s.buildResponsesSystemPrompt(context.Background(), &config.AI{SystemPrompt: "服务端提示"}, RuntimeConfig{}, conversation{
 				Messages: []*schema.Message{schema.UserMessage("你好")},
 			}, "test-model")
-			if err != nil || prompt != "服务端提示" || text.calls != 0 {
-				t.Fatalf("prompt=%q err=%v modelCalls=%d", prompt, err, text.calls)
-			}
+			require.NoError(t, err, "prompt=%q err=%v modelCalls=%d", prompt, err, text.calls)
+			require.Equal(t, "服务端提示", prompt, "prompt=%q err=%v modelCalls=%d", prompt, err, text.calls)
+			require.Equal(t, 0, text.calls, "prompt=%q err=%v modelCalls=%d", prompt, err, text.calls)
 		})
 	}
 }
@@ -120,8 +124,9 @@ func TestExtractJSONObjectStripsModelNoise(t *testing.T) {
 		"分析如下：{\"intent\":\"find_video\",\"keywords\":[\"爬虫\"]} 完毕": `{"intent":"find_video","keywords":["爬虫"]}`,
 	}
 	for input, want := range tests {
-		if got := extractJSONObject(input); got != want {
-			t.Fatalf("extractJSONObject(%q) = %q, want %q", input, got, want)
+		{
+			got := extractJSONObject(input)
+			require.Equal(t, want, got, "extractJSONObject(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
@@ -131,6 +136,7 @@ func TestAnalyzeVideoQueryUsesBoundedTranscriptWithoutBase64(t *testing.T) {
 
 	text := &promptTextFake{text: `{"intent":"find_video","keywords":[" Go ","GO"]}`}
 	service := &Service{text: text, logger: zap.NewNop()}
+
 	conv, err := parseConversation(json.RawMessage(`[
 		{"role":"assistant","content":"上轮回答"},
 		{"role":"user","content":[
@@ -138,16 +144,15 @@ func TestAnalyzeVideoQueryUsesBoundedTranscriptWithoutBase64(t *testing.T) {
 			{"type":"input_image","image_url":"data:image/jpeg;base64,SECRET"}
 		]}
 	]`))
-	if err != nil {
-		t.Fatalf("parseConversation: %v", err)
-	}
+	require.NoError(t, err, "parseConversation: %v", err)
 
 	runtime := RuntimeConfig{
-		ChatModelBaseURL: "https://old-chat.example/v1",
-		ChatModelAPIKey:  "old-chat-key",
-		DoubaoAPIKey:     "old-doubao-key",
+		ChatModelBaseURL: testHTTPSOldChatExampleV1,
+		ChatModelAPIKey:  testOldChatKey,
+		DoubaoAPIKey:     testOldDoubaoKey,
 		TimeoutSec:       11,
 	}
+
 	analysis, err := service.analyzeVideoQuery(
 		context.Background(),
 		&config.AI{},
@@ -155,22 +160,19 @@ func TestAnalyzeVideoQueryUsesBoundedTranscriptWithoutBase64(t *testing.T) {
 		"chat-model",
 		conv,
 	)
-	if err != nil {
-		t.Fatalf("analyzeVideoQuery: %v", err)
-	}
-	if analysis.Intent != "find_video" || !reflect.DeepEqual(analysis.Keywords, []string{"Go"}) {
-		t.Fatalf("analysis = %+v", analysis)
-	}
-	if text.last.MaxTokens != domain.AnalysisMaxOutputTokens || len(text.last.Messages) != 2 {
-		t.Fatalf("invocation = %+v", text.last)
-	}
-	if text.last.Runtime != runtime {
-		t.Fatalf("runtime = %+v, want %+v", text.last.Runtime, runtime)
-	}
+	require.NoError(t, err, "analyzeVideoQuery: %v", err)
+
+	require.Equal(t, "find_video", analysis.Intent, "analysis = %+v", analysis)
+	require.True(t, reflect.DeepEqual(analysis.Keywords, []string{"Go"}), "analysis = %+v", analysis)
+
+	require.Equal(t, domain.AnalysisMaxOutputTokens, text.last.MaxTokens, "invocation = %+v", text.last)
+	require.Len(t, text.last.Messages, 2, "invocation = %+v", text.last)
+
+	require.Equal(t, text.last.Runtime, runtime, "runtime = %+v, want %+v", text.last.Runtime, runtime)
+
 	transcript := text.last.Messages[1].Content
-	if strings.Contains(transcript, "SECRET") || !strings.Contains(transcript, "用户本轮还上传了图片") {
-		t.Fatalf("transcript = %q", transcript)
-	}
+	require.NotContains(t, transcript, "SECRET", "transcript = %q", transcript)
+	require.Contains(t, transcript, "用户本轮还上传了图片", "transcript = %q", transcript)
 }
 
 func TestSearchPromptVideoIDsUsesOriginalTextAndFirstImage(t *testing.T) {
@@ -188,16 +190,15 @@ func TestSearchPromptVideoIDsUsesOriginalTextAndFirstImage(t *testing.T) {
 	}
 
 	ids, mode := service.searchPromptVideoIDs(context.Background(), conv, []string{"跑车"}, 4)
-	if !reflect.DeepEqual(ids, []uint{9}) || mode != domain.RetrievalModeImageVector {
-		t.Fatalf("ids=%v mode=%q", ids, mode)
-	}
+	require.True(t, reflect.DeepEqual(ids, []uint{9}), "ids=%v mode=%q", ids, mode)
+	require.Equal(t, domain.RetrievalModeImageVector, mode, "ids=%v mode=%q", ids, mode)
+
 	want := VideoVectorQuery{
 		Text:     "帮我找一辆红色跑车的视频",
 		ImageURL: "data:image/png;base64,ONE",
 	}
-	if vectors.last != want || vectors.limit != 4 {
-		t.Fatalf("query = %+v, want %+v; limit=%d", vectors.last, want, vectors.limit)
-	}
+	require.Equal(t, want, vectors.last, "query = %+v, want %+v; limit=%d", vectors.last, want, vectors.limit)
+	require.Equal(t, 4, vectors.limit, "query = %+v, want %+v; limit=%d", vectors.last, want, vectors.limit)
 }
 
 func TestLoadPromptVideoCandidatesFallsBackToLatestAfterRecallErrors(t *testing.T) {
@@ -220,13 +221,10 @@ func TestLoadPromptVideoCandidatesFallsBackToLatestAfterRecallErrors(t *testing.
 	conv := conversation{LatestUserText: "找 Go 教程"}
 
 	set, err := service.loadPromptVideoCandidates(context.Background(), conv, []string{"Go"}, 3)
-	if err != nil {
-		t.Fatalf("loadPromptVideoCandidates: %v", err)
-	}
-	if set.RetrievalMode != domain.RetrievalModeLatest || len(set.Candidates) != 1 {
-		t.Fatalf("candidate set = %+v", set)
-	}
-	if !reflect.DeepEqual(prompts.loadedIDs, []uint{7}) {
-		t.Fatalf("loaded IDs = %v", prompts.loadedIDs)
-	}
+	require.NoError(t, err, "loadPromptVideoCandidates: %v", err)
+
+	require.Equal(t, domain.RetrievalModeLatest, set.RetrievalMode, "candidate set = %+v", set)
+	require.Len(t, set.Candidates, 1, "candidate set = %+v", set)
+
+	require.True(t, reflect.DeepEqual(prompts.loadedIDs, []uint{7}), "loaded IDs = %v", prompts.loadedIDs)
 }

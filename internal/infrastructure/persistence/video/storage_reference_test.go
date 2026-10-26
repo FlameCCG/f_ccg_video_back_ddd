@@ -2,25 +2,31 @@ package video_test
 
 import (
 	"context"
-	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/config"
-	"f_ccg_video_back_ddd/internal/config/site"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
 func TestStoragePathStillReferencedRecognizesLegacyURLs(t *testing.T) {
+	t.Parallel()
+
 	const source = "/user_files/hash/_source_hash.mp4"
+
 	cases := []struct {
 		name   string
 		stored string
@@ -38,6 +44,8 @@ func TestStoragePathStillReferencedRecognizesLegacyURLs(t *testing.T) {
 		{"query_is_not_a_reference", "https://old-host/other.mp4?next=" + source, false},
 		{"underscore_is_literal", "/user_files/hash/XsourceXhash.mp4", false},
 	}
+
+	//nolint:paralleltest // Cases share parent fixtures or must finish before their parent resource cleanup.
 	for _, target := range []struct{ table, column string }{
 		{"videos", "cover"},
 		{"video_resources", "file_url"},
@@ -47,13 +55,14 @@ func TestStoragePathStillReferencedRecognizesLegacyURLs(t *testing.T) {
 			for _, tc := range cases {
 				t.Run(tc.name, func(t *testing.T) {
 					db := newStorageReferenceDB(t)
-					if err := db.Table(target.table).Create(map[string]any{target.column: tc.stored}).Error; err != nil {
-						t.Fatal(err)
+					{
+						err := db.Table(target.table).Create(map[string]any{target.column: tc.stored}).Error
+						require.NoError(t, err)
 					}
+
 					got, err := infra.NewVideoRepository(db).StoragePathStillReferenced(t.Context(), source)
-					if err != nil || got != tc.want {
-						t.Fatalf("reference %q: got %v, %v; want %v", tc.stored, got, err, tc.want)
-					}
+					require.NoError(t, err, "reference %q: got %v, %v; want %v", tc.stored, got, err, tc.want)
+					require.Equal(t, tc.want, got, "reference %q: got %v, %v; want %v", tc.stored, got, err, tc.want)
 				})
 			}
 		})
@@ -63,14 +72,13 @@ func TestStoragePathStillReferencedRecognizesLegacyURLs(t *testing.T) {
 func newStorageReferenceDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "references.db") + "?_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)"
+
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	// This query needs only the reference columns, without unrelated model hooks.
 	for _, statement := range []string{
@@ -78,10 +86,12 @@ func newStorageReferenceDB(t *testing.T) *gorm.DB {
 		"CREATE TABLE video_resources (file_url TEXT)",
 		"CREATE TABLE video_part_resources (file_url TEXT)",
 	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatal(err)
+		{
+			err := db.Exec(statement).Error
+			require.NoError(t, err)
 		}
 	}
+
 	return db
 }
 
@@ -96,49 +106,61 @@ func (storageReferenceGuard) TryRun(ctx context.Context, _ string, fn func(conte
 }
 
 func TestUploadCleanupPreservesLegacyReferencesAndDeletesOrphans(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	db := newStorageReferenceDB(t)
 	old := time.Now().Add(-3 * time.Hour)
 	files := make(map[string]string)
+
 	for _, hash := range []string{"video", "part", "orphan"} {
 		file := filepath.Join(root, "videos", hash, "_source_"+hash+".mp4")
-		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-			t.Fatal(err)
+		{
+			err := os.MkdirAll(filepath.Dir(file), 0o750)
+			require.NoError(t, err)
 		}
-		if err := os.WriteFile(file, []byte("source"), 0o600); err != nil {
-			t.Fatal(err)
+
+		{
+			err := os.WriteFile(file, []byte("source"), 0o600)
+			require.NoError(t, err)
 		}
-		if err := os.Chtimes(file, old, old); err != nil {
-			t.Fatal(err)
+
+		{
+			err := os.Chtimes(file, old, old)
+			require.NoError(t, err)
 		}
+
 		files[hash] = file
 	}
+
 	provider := infraconfig.NewProvider(&config.Config{Site: &site.Site{Storage: &site.Storage{
 		Local: &site.Local{Path: root},
 	}}})
 	scanner := storage.NewUploadGarbageScanner(provider, nil, nil)
+
 	items, err := scanner.List(t.Context(), time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour))
-	if err != nil || len(items) != 3 {
-		t.Fatalf("scan: got %d items, %v; want 3", len(items), err)
-	}
+	require.False(t, err != nil || len(items) != 3, "scan: got %d items, %v; want 3", len(items), err)
+
 	for _, item := range items {
 		table := map[string]string{"video": "video_resources", "part": "video_part_resources"}[item.FileHash]
 		if table == "" {
 			continue
 		}
-		if err := db.Table(table).Create(map[string]any{"file_url": "https://legacy.example" + item.SourcePath}).Error; err != nil {
-			t.Fatal(err)
+
+		{
+			err := db.Table(table).Create(map[string]any{"file_url": "https://legacy.example" + item.SourcePath}).Error
+			require.NoError(t, err)
 		}
 	}
+
 	app.NewUploadCleanupService(scanner, infra.NewVideoRepository(db), storageReferenceGuard{}, provider, nil).Run(t.Context())
+
 	for hash, file := range files {
 		_, err := os.Stat(file)
 		if hash == "orphan" {
-			if !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("unreferenced source was not removed: %v", err)
-			}
-		} else if err != nil {
-			t.Fatalf("source with legacy %s reference was removed: %v", hash, err)
+			require.ErrorIs(t, err, os.ErrNotExist, "unreferenced source was not removed: %v", err)
+		} else {
+			require.NoError(t, err, "source with legacy %s reference was removed: %v", hash, err)
 		}
 	}
 }

@@ -649,6 +649,7 @@ func TestTotalUnreadSatisfiesNotificationPort(t *testing.T) {
 	var counter interface {
 		TotalUnread(ctx context.Context, userID uint) (int64, error)
 	} = svc
+
 	_ = counter
 }
 

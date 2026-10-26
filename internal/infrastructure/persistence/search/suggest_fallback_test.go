@@ -2,12 +2,12 @@ package search_test
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"path/filepath"
 	"reflect"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/search"
 
 	"github.com/glebarez/sqlite"
@@ -162,6 +162,7 @@ func TestSuggestFallbackDegradesWithoutDB(t *testing.T) {
 	}
 
 	ctx := context.Background()
+
 	for name, call := range map[string]func() ([]string, error){
 		"titles":    func() ([]string, error) { return offline.VideoTitles(ctx, "w", 10) },
 		"usernames": func() ([]string, error) { return offline.Usernames(ctx, "w", 10) },

@@ -2,9 +2,8 @@ package search
 
 import (
 	"context"
-	"testing"
-
 	"f_ccg_video_back_ddd/pkg/constants"
+	"testing"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"

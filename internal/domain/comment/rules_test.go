@@ -2,12 +2,12 @@ package comment_test
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"slices"
 	"strings"
 	"testing"
 
 	domain "f_ccg_video_back_ddd/internal/domain/comment"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // TestNormalizeDraft 校验发布评论的规则与校验顺序（登录 → 评论对象 → 内容 → 长度）。

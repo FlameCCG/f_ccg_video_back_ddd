@@ -12,6 +12,7 @@ func TestFuseByRRFPrefersAgreementAcrossRecalls(t *testing.T) {
 	keywordHits := []vectorHit{{VideoID: 7, Score: 42}, {VideoID: 9, Score: 31}, {VideoID: 1, Score: 8}}
 
 	got := fuseByRRF(defaultRRFRankConstant, 4, vectorHits, keywordHits)
+
 	want := []uint{7, 1, 9, 3}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("fuseByRRF() = %v, want %v", got, want)
@@ -43,6 +44,7 @@ func TestTopVectorHitIDsDeduplicates(t *testing.T) {
 	t.Parallel()
 
 	hits := []vectorHit{{VideoID: 3}, {VideoID: 3}, {VideoID: 4}}
+
 	got := topVectorHitIDs(hits, 10)
 	if !reflect.DeepEqual(got, []uint{3, 4}) {
 		t.Fatalf("topVectorHitIDs() = %v, want [3 4]", got)
@@ -60,6 +62,7 @@ func TestBuildVideoVectorIndexSpecUsesConfiguredDims(t *testing.T) {
 	if embedding["dims"] != 1024 {
 		t.Fatalf("dims = %v, want 1024", embedding["dims"])
 	}
+
 	if embedding["similarity"] != "cosine" {
 		t.Fatalf("similarity = %v, want cosine", embedding["similarity"])
 	}

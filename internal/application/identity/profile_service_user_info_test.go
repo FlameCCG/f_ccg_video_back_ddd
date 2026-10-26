@@ -3,14 +3,17 @@ package identity
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/constants"
 )
 
 type userInfoAccountRepository struct {
@@ -61,9 +64,11 @@ func (c *concurrentBannerCatalog) FindVisible(
 	bannerID uint,
 ) (*UserBannerItem, error) {
 	c.calls.Add(1)
+
 	if c.started != nil {
 		c.started <- "banner"
 	}
+
 	if c.release != nil {
 		select {
 		case <-c.release:
@@ -94,9 +99,11 @@ func (q *concurrentRelationQuery) RelationCounts(
 	_ bool,
 ) UserRelationCounts {
 	q.calls.Add(1)
+
 	if q.started != nil {
 		q.started <- "relations"
 	}
+
 	if q.release != nil {
 		select {
 		case <-q.release:
@@ -124,10 +131,13 @@ func (*concurrentRelationQuery) ActionPrivacy(
 }
 
 func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testing.T) {
+	t.Parallel()
+
 	started := make(chan string, 2)
 	release := make(chan struct{})
 	birthday := time.Date(2000, time.March, 4, 0, 0, 0, 0, time.UTC)
 	released := false
+
 	t.Cleanup(func() {
 		if !released {
 			close(release)
@@ -146,7 +156,7 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 			Birthday:       &birthday,
 			Level:          4,
 			OpenID:         "oauth-id",
-			RegisterSource: "github",
+			RegisterSource: OAuthProviderGitHub,
 			Exp:            120,
 			CoinCount:      4.5,
 		},
@@ -176,15 +186,19 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 		info *UserInfoResult
 		err  error
 	}
+
 	done := make(chan outcome, 1)
+
 	go func() {
 		info, err := service.UserInfo(t.Context(), 7)
 		done <- outcome{info: info, err: err}
 	}()
 
 	seen := make(map[string]bool, 2)
+
 	timer := time.NewTimer(2 * time.Second)
 	defer timer.Stop()
+
 	for len(seen) < 2 {
 		select {
 		case name := <-started:
@@ -197,6 +211,7 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 	}
 
 	close(release)
+
 	released = true
 
 	var result outcome
@@ -205,53 +220,29 @@ func TestProfileService_UserInfoLoadsJoinedProfileAndExtrasConcurrently(t *testi
 	case <-time.After(2 * time.Second):
 		t.Fatal("UserInfo did not complete after releasing extra queries")
 	}
-	if result.err != nil {
-		t.Fatalf("UserInfo: %v", result.err)
-	}
-	if result.info == nil {
-		t.Fatal("info = nil")
-	}
-	expected := &UserInfoResult{
-		ID:             7,
-		Username:       "joined-user",
-		Email:          "joined@example.com",
-		Avatar:         "avatar.png",
-		BannerURL:      "joined-banner.png",
-		Description:    "profile",
-		Gender:         2,
-		Birthday:       "2000-03-04",
-		Level:          4,
-		Exp:            120,
-		CoinCount:      4.5,
-		FollowCount:    11,
-		FansCount:      12,
-		DynamicCount:   13,
-		RegisterSource: "github",
-		LikeTags:       []string{"Go", "DDD"},
-		HasPassword:    true,
-		IsThirdParty:   true,
-	}
-	if !reflect.DeepEqual(result.info, expected) {
-		t.Fatalf("info = %+v, want %+v", result.info, expected)
-	}
-	if got := accounts.findWithConfCalls.Load(); got != 1 {
-		t.Fatalf("joined profile calls = %d, want 1", got)
-	}
-	if got := accounts.findByIDCalls.Load(); got != 0 {
-		t.Fatalf("separate user calls = %d, want 0", got)
-	}
-	if got := confs.findCalls.Load(); got != 0 {
-		t.Fatalf("separate conf calls = %d, want 0", got)
-	}
-	if got := banners.calls.Load(); got != 1 {
-		t.Fatalf("banner calls = %d, want 1", got)
-	}
-	if got := relations.calls.Load(); got != 1 {
-		t.Fatalf("relation calls = %d, want 1", got)
-	}
+
+	require.NoError(t, result.err, "UserInfo: %v", result.err)
+
+	require.NotNil(t, result.info, "info = nil")
+
+	expected := expectedJoinedUserInfo()
+
+	require.True(t, reflect.DeepEqual(result.info, expected), "info = %+v, want %+v", result.info, expected)
+
+	require.EqualValues(t, 1, accounts.findWithConfCalls.Load())
+
+	require.EqualValues(t, 0, accounts.findByIDCalls.Load())
+
+	require.EqualValues(t, 0, confs.findCalls.Load())
+
+	require.EqualValues(t, 1, banners.calls.Load())
+
+	require.EqualValues(t, 1, relations.calls.Load())
 }
 
 func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
+	t.Parallel()
+
 	accounts := &userInfoAccountRepository{err: errors.New("database unavailable")}
 	confs := &userInfoConfRepository{}
 	banners := &concurrentBannerCatalog{}
@@ -270,21 +261,18 @@ func TestProfileService_UserInfoMapsJoinedQueryErrorsToNotFound(t *testing.T) {
 	)
 
 	info, err := service.UserInfo(t.Context(), 7)
-	if !errors.Is(err, domain.ErrUserNotFound) {
-		t.Fatalf("error = %v, want ErrUserNotFound", err)
-	}
-	if info != nil {
-		t.Fatalf("info = %+v, want nil", info)
-	}
-	if got := banners.calls.Load(); got != 0 {
-		t.Fatalf("banner calls = %d, want 0", got)
-	}
-	if got := relations.calls.Load(); got != 0 {
-		t.Fatalf("relation calls = %d, want 0", got)
-	}
+	require.ErrorIs(t, err, domain.ErrUserNotFound, "error = %v, want ErrUserNotFound", err)
+
+	require.Nil(t, info, "info = %+v, want nil", info)
+
+	require.EqualValues(t, 0, banners.calls.Load())
+
+	require.EqualValues(t, 0, relations.calls.Load())
 }
 
 func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
+	t.Parallel()
+
 	accounts := &userInfoAccountRepository{user: &domain.User{ID: 7, Username: "joined-user"}}
 	confs := &userInfoConfRepository{err: errors.New("database unavailable")}
 	service := NewProfileService(
@@ -301,15 +289,11 @@ func TestProfileService_UserDetailMapsConfQueryErrorsToNotFound(t *testing.T) {
 	)
 
 	detail, err := service.UserDetail(t.Context(), 7)
-	if !errors.Is(err, domain.ErrUserNotFound) {
-		t.Fatalf("error = %v, want ErrUserNotFound", err)
-	}
-	if detail != nil {
-		t.Fatalf("detail = %+v, want nil", detail)
-	}
-	if got := confs.findCalls.Load(); got != 1 {
-		t.Fatalf("conf calls = %d, want 1", got)
-	}
+	require.ErrorIs(t, err, domain.ErrUserNotFound, "error = %v, want ErrUserNotFound", err)
+
+	require.Nil(t, detail, "detail = %+v, want nil", detail)
+
+	require.EqualValues(t, 1, confs.findCalls.Load())
 }
 
 // userInfoRoleQuery 为当前用户资料提供明确的角色读模型。
@@ -324,24 +308,51 @@ func (q *userInfoRoleQuery) LoadRoles(context.Context, uint) ([]UserRoleItem, er
 }
 
 func TestProfileUserInfoAdministratorIdentity(t *testing.T) {
+	t.Parallel()
+
 	for _, admin := range []bool{false, true} {
 		roles := &userInfoRoleQuery{}
 		if admin {
 			roles.items = []UserRoleItem{{Name: constants.AdminUserRole}}
 		}
+
 		service := NewProfileService(infraconfig.NewProvider(nil), nil,
 			&userInfoAccountRepository{user: &domain.User{ID: 7}}, &userInfoConfRepository{},
 			&concurrentBannerCatalog{}, &concurrentRelationQuery{}, roles, nil, nil, nil)
+
 		info, err := service.UserInfo(t.Context(), 7)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.IsAdmin != admin {
-			t.Fatalf("isAdmin=%v, want %v", info.IsAdmin, admin)
-		}
+		require.NoError(t, err)
+
+		require.Equal(t, info.IsAdmin, admin, "isAdmin=%v, want %v", info.IsAdmin, admin)
+
 		roles.err = errors.New("role query unavailable")
-		if info, err := service.UserInfo(t.Context(), 7); err == nil || info != nil {
-			t.Fatal("role lookup error must not grant administrator identity")
+		{
+			info, err := service.UserInfo(t.Context(), 7)
+			require.Error(t, err, "role lookup error must not grant administrator identity")
+			require.Nil(t, info, "role lookup error must not grant administrator identity")
 		}
+	}
+}
+
+func expectedJoinedUserInfo() *UserInfoResult {
+	return &UserInfoResult{
+		ID:             7,
+		Username:       "joined-user",
+		Email:          "joined@example.com",
+		Avatar:         "avatar.png",
+		BannerURL:      "joined-banner.png",
+		Description:    "profile",
+		Gender:         2,
+		Birthday:       "2000-03-04",
+		Level:          4,
+		Exp:            120,
+		CoinCount:      4.5,
+		FollowCount:    11,
+		FansCount:      12,
+		DynamicCount:   13,
+		RegisterSource: OAuthProviderGitHub,
+		LikeTags:       []string{"Go", "DDD"},
+		HasPassword:    true,
+		IsThirdParty:   true,
 	}
 }

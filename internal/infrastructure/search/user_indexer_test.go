@@ -7,15 +7,21 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/search"
 
 	"github.com/olivere/elastic/v7"
 )
 
 func TestUserIndexerBulkIndexUsersDoesNotForceRefresh(t *testing.T) {
+	t.Parallel()
+
 	requests := make(chan *http.Request, 1)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests <- r.Clone(r.Context())
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{
 			"took": 1,
@@ -37,23 +43,22 @@ func TestUserIndexerBulkIndexUsersDoesNotForceRefresh(t *testing.T) {
 		elastic.SetSniff(false),
 		elastic.SetHealthcheck(false),
 	)
-	if err != nil {
-		t.Fatalf("create ES client: %v", err)
-	}
+	require.NoError(t, err, "create ES client: %v", err)
+
 	defer client.Stop()
 
 	indexer := NewUserIndexer(client)
+
 	err = indexer.BulkIndexUsers(context.Background(), []app.UserSearchDocument{
 		{ID: 1, Username: "tester"},
 	})
-	if err != nil {
-		t.Fatalf("BulkIndexUsers failed: %v", err)
-	}
+	require.NoError(t, err, "BulkIndexUsers failed: %v", err)
 
 	select {
 	case req := <-requests:
-		if got := req.URL.Query().Get("refresh"); got != "" {
-			t.Fatalf("refresh query = %q, want empty", got)
+		{
+			got := req.URL.Query().Get("refresh")
+			require.Empty(t, got, "refresh query = %q, want empty", got)
 		}
 	default:
 		t.Fatal("bulk request was not captured")

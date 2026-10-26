@@ -1,8 +1,14 @@
 package search
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestNormalizePaginationBounds(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name         string
 		page         int
@@ -18,103 +24,133 @@ func TestNormalizePaginationBounds(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := NormalizePagination(tt.page, tt.pageSize)
-			if got.Page != tt.wantPage || got.PageSize != tt.wantPageSize {
-				t.Fatalf("NormalizePagination(%d,%d) = %+v", tt.page, tt.pageSize, got)
-			}
+			require.Equal(t, tt.wantPage, got.Page, "NormalizePagination(%d,%d) = %+v", tt.page, tt.pageSize, got)
+			require.Equal(t, tt.wantPageSize, got.PageSize, "NormalizePagination(%d,%d) = %+v", tt.page, tt.pageSize, got)
 		})
 	}
 }
 
 func TestPaginationOffsetNeverNegative(t *testing.T) {
-	if got := (Pagination{Page: 1, PageSize: 20}).Offset(); got != 0 {
-		t.Fatalf("offset = %d, want 0", got)
+	t.Parallel()
+
+	{
+		got := (Pagination{Page: 1, PageSize: 20}).Offset()
+		require.Equal(t, 0, got, "offset = %d, want 0", got)
 	}
 
-	if got := (Pagination{Page: 3, PageSize: 20}).Offset(); got != 40 {
-		t.Fatalf("offset = %d, want 40", got)
+	{
+		got := (Pagination{Page: 3, PageSize: 20}).Offset()
+		require.Equal(t, 40, got, "offset = %d, want 40", got)
 	}
 
-	if got := (Pagination{Page: 0, PageSize: 20}).Offset(); got != 0 {
-		t.Fatalf("offset = %d, want 0", got)
+	{
+		got := (Pagination{Page: 0, PageSize: 20}).Offset()
+		require.Equal(t, 0, got, "offset = %d, want 0", got)
 	}
 }
 
 func TestNormalizeMentionAndHotKeywordPagination(t *testing.T) {
-	if got := NormalizeMentionPagination(0, 0); got.PageSize != defaultMentionPageSize {
-		t.Fatalf("mention default = %+v", got)
+	t.Parallel()
+
+	{
+		got := NormalizeMentionPagination(0, 0)
+		require.Equal(t, defaultMentionPageSize, got.PageSize, "mention default = %+v", got)
 	}
 
-	if got := NormalizeMentionPagination(1, 500); got.PageSize != maxMentionPageSize {
-		t.Fatalf("mention max = %+v", got)
+	{
+		got := NormalizeMentionPagination(1, 500)
+		require.Equal(t, maxMentionPageSize, got.PageSize, "mention max = %+v", got)
 	}
 
-	if got := NormalizeHotKeywordPagination(0, 0); got.PageSize != defaultHotKeywordPageSize {
-		t.Fatalf("hot keyword default = %+v", got)
+	{
+		got := NormalizeHotKeywordPagination(0, 0)
+		require.Equal(t, defaultHotKeywordPageSize, got.PageSize, "hot keyword default = %+v", got)
 	}
 
-	if got := NormalizeHotKeywordPagination(1, 100); got.PageSize != maxHotKeywordPageSize {
-		t.Fatalf("hot keyword max = %+v", got)
+	{
+		got := NormalizeHotKeywordPagination(1, 100)
+		require.Equal(t, maxHotKeywordPageSize, got.PageSize, "hot keyword max = %+v", got)
 	}
 }
 
 func TestNormalizeSuggestSize(t *testing.T) {
-	if got := NormalizeSuggestSize(0); got != defaultSuggestSize {
-		t.Fatalf("size = %d, want %d", got, defaultSuggestSize)
+	t.Parallel()
+
+	{
+		got := NormalizeSuggestSize(0)
+		require.Equal(t, defaultSuggestSize, got, "size = %d, want %d", got, defaultSuggestSize)
 	}
 
-	if got := NormalizeSuggestSize(100); got != maxSuggestSize {
-		t.Fatalf("size = %d, want %d", got, maxSuggestSize)
+	{
+		got := NormalizeSuggestSize(100)
+		require.Equal(t, maxSuggestSize, got, "size = %d, want %d", got, maxSuggestSize)
 	}
 
-	if got := NormalizeSuggestSize(7); got != 7 {
-		t.Fatalf("size = %d, want 7", got)
+	{
+		got := NormalizeSuggestSize(7)
+		require.Equal(t, 7, got, "size = %d, want 7", got)
 	}
 }
 
 func TestNormalizeVideoSortFallsBackToViews(t *testing.T) {
-	if got := NormalizeVideoSort(99, SortOrderAsc); got.Field != VideoSortViews || !got.Ascending() {
-		t.Fatalf("video sort = %+v", got)
+	t.Parallel()
+
+	{
+		got := NormalizeVideoSort(99, SortOrderAsc)
+		require.Equal(t, VideoSortViews, got.Field, "video sort = %+v", got)
+		require.True(t, got.Ascending(), "video sort = %+v", got)
 	}
 
-	if got := NormalizeVideoSort(VideoSortDanmu, 7); got.Field != VideoSortDanmu || got.Ascending() {
-		t.Fatalf("only explicit 1 means ascending, got %+v", got)
+	{
+		got := NormalizeVideoSort(VideoSortDanmu, 7)
+		require.Equal(t, VideoSortDanmu, got.Field, "only explicit 1 means ascending, got %+v", got)
+		require.False(t, got.Ascending(), "only explicit 1 means ascending, got %+v", got)
 	}
 }
 
 func TestNormalizeUserSortFallsBackToFollowers(t *testing.T) {
-	if got := NormalizeUserSort(-1, SortOrderDesc); got.Field != UserSortFollowers {
-		t.Fatalf("user sort = %+v", got)
+	t.Parallel()
+
+	{
+		got := NormalizeUserSort(-1, SortOrderDesc)
+		require.Equal(t, UserSortFollowers, got.Field, "user sort = %+v", got)
 	}
 
-	if got := NormalizeUserSort(UserSortLevel, SortOrderAsc); got.Field != UserSortLevel || !got.Ascending() {
-		t.Fatalf("user sort = %+v", got)
+	{
+		got := NormalizeUserSort(UserSortLevel, SortOrderAsc)
+		require.Equal(t, UserSortLevel, got.Field, "user sort = %+v", got)
+		require.True(t, got.Ascending(), "user sort = %+v", got)
 	}
 }
 
 func TestHotKeywordSampleSize(t *testing.T) {
-	if got := HotKeywordSampleSize(1, 10); got != fallbackHotKeywordSampleMinSize {
-		t.Fatalf("sample size = %d, want %d", got, fallbackHotKeywordSampleMinSize)
+	t.Parallel()
+
+	{
+		got := HotKeywordSampleSize(1, 10)
+		require.Equal(t, fallbackHotKeywordSampleMinSize, got, "sample size = %d, want %d", got, fallbackHotKeywordSampleMinSize)
 	}
 
-	if got := HotKeywordSampleSize(4, 20); got != 4*20*fallbackHotKeywordSampleMultiple {
-		t.Fatalf("sample size = %d", got)
+	{
+		got := HotKeywordSampleSize(4, 20)
+		require.Equal(t, 4*20*fallbackHotKeywordSampleMultiple, got, "sample size = %d", got)
 	}
 }
 
 func TestSliceWindow(t *testing.T) {
+	t.Parallel()
+
 	start, end := SliceWindow(10, Pagination{Page: 2, PageSize: 4})
-	if start != 4 || end != 8 {
-		t.Fatalf("window = (%d,%d), want (4,8)", start, end)
-	}
+	require.Equal(t, 4, start, "window = (%d,%d), want (4,8)", start, end)
+	require.Equal(t, 8, end, "window = (%d,%d), want (4,8)", start, end)
 
 	start, end = SliceWindow(3, Pagination{Page: 2, PageSize: 4})
-	if start != end {
-		t.Fatalf("out-of-range window should be empty, got (%d,%d)", start, end)
-	}
+	require.Equal(t, start, end, "out-of-range window should be empty, got (%d,%d)", start, end)
 
 	start, end = SliceWindow(10, Pagination{Page: 2, PageSize: 8})
-	if start != 8 || end != 10 {
-		t.Fatalf("clamped window = (%d,%d), want (8,10)", start, end)
-	}
+	require.Equal(t, 8, start, "clamped window = (%d,%d), want (8,10)", start, end)
+	require.Equal(t, 10, end, "clamped window = (%d,%d), want (8,10)", start, end)
 }

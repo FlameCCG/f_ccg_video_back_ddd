@@ -2,13 +2,16 @@ package chat
 
 import (
 	"context"
-	"golang.org/x/sync/errgroup"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -18,68 +21,103 @@ import (
 // CHAT_TEST_MONGO_URI points to a disposable transaction-capable Mongo instance.
 // This test creates and drops only its own unique database.
 func TestSendMessageRealMongoTransaction(t *testing.T) {
+	t.Parallel()
+
 	uri := os.Getenv("CHAT_TEST_MONGO_URI")
 	if uri == "" {
 		t.Skip("CHAT_TEST_MONGO_URI not set")
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Disconnect(context.Background())
+	require.NoError(t, err)
+
+	defer func() { require.NoError(t, client.Disconnect(context.Background())) }()
+
 	db := client.Database("codex_chat_audit_" + primitive.NewObjectID().Hex())
-	defer db.Drop(context.Background())
-	if err := db.CreateCollection(ctx, chatMessagesCol); err != nil {
-		t.Fatal(err)
+	defer func() { require.NoError(t, db.Drop(context.Background())) }()
+
+	{
+		err := db.CreateCollection(ctx, chatMessagesCol)
+		require.NoError(t, err)
 	}
-	if err := db.CreateCollection(ctx, chatConversationsCol, options.CreateCollection().SetValidator(bson.M{"requiredNeverPresent": bson.M{"$exists": true}})); err != nil {
-		t.Fatal(err)
+
+	{
+		err := db.CreateCollection(ctx, chatConversationsCol, options.CreateCollection().SetValidator(bson.M{"requiredNeverPresent": bson.M{"$exists": true}}))
+		require.NoError(t, err)
 	}
+
 	store := NewStore(db)
+
 	msg := &domain.Message{ID: primitive.NewObjectID().Hex(), ConversationID: "1_2", SenderID: 1, ReceiverID: 2, Type: domain.MessageTypeText, Text: "transaction", CreatedAt: time.Now().Truncate(time.Millisecond)}
-	if err := store.SendMessage(ctx, msg, "transaction"); err == nil {
-		t.Fatal("summary validation must fail")
+	{
+		err := store.SendMessage(ctx, msg, "transaction")
+		require.Error(t, err, "summary validation must fail")
 	}
-	if count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{}); err != nil || count != 0 {
-		t.Fatalf("failed summary left messages: count=%d error=%v", count, err)
+
+	{
+		count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{})
+		require.NoError(t, err, "failed summary left messages: count=%d error=%v", count, err)
+		require.EqualValues(t, 0, count, "failed summary left messages: count=%d error=%v", count, err)
 	}
-	if err := db.RunCommand(ctx, bson.D{{Key: "collMod", Value: chatConversationsCol}, {Key: "validator", Value: bson.M{}}}).Err(); err != nil {
-		t.Fatal(err)
+
+	{
+		err := db.RunCommand(ctx, bson.D{{Key: "collMod", Value: chatConversationsCol}, {Key: "validator", Value: bson.M{}}}).Err()
+		require.NoError(t, err)
 	}
-	if err := store.SendMessage(ctx, msg, "transaction"); err != nil {
-		t.Fatalf("retry after aborted insert: %v", err)
+
+	{
+		err := store.SendMessage(ctx, msg, "transaction")
+		require.NoError(t, err, "retry after aborted insert: %v", err)
 	}
-	if err := store.SendMessage(ctx, msg, "transaction"); err != nil {
-		t.Fatalf("duplicate message: %v", err)
+
+	{
+		err := store.SendMessage(ctx, msg, "transaction")
+		require.NoError(t, err, "duplicate message: %v", err)
 	}
-	if count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{}); err != nil || count != 1 {
-		t.Fatalf("messages=%d error=%v", count, err)
+
+	{
+		count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{})
+		require.NoError(t, err, "messages=%d error=%v", count, err)
+		require.EqualValues(t, 1, count, "messages=%d error=%v", count, err)
 	}
+
 	var conv mongopo.ChatConversation
-	if err := db.Collection(chatConversationsCol).FindOne(ctx, bson.M{"_id": "1_2"}).Decode(&conv); err != nil {
-		t.Fatal(err)
+	{
+		err := db.Collection(chatConversationsCol).FindOne(ctx, bson.M{fieldID: "1_2"}).Decode(&conv)
+		require.NoError(t, err)
 	}
-	if unread := conv.MemberB.Unread; unread != 1 {
-		t.Fatalf("duplicate send incremented unread: %v", conv)
+
+	{
+		unread := conv.MemberB.Unread
+		require.EqualValues(t, 1, unread, "duplicate send incremented unread: %v", conv)
 	}
+
 	concurrent := *msg
 	concurrent.ID = primitive.NewObjectID().Hex()
+
 	var group errgroup.Group
 	for range 6 {
-		group.Go(func() error { copy := concurrent; return store.SendMessage(ctx, &copy, "transaction") })
+		group.Go(func() error { message := concurrent; return store.SendMessage(ctx, &message, "transaction") })
 	}
-	if err := group.Wait(); err != nil {
-		t.Fatalf("concurrent duplicate: %v", err)
+
+	{
+		err := group.Wait()
+		require.NoError(t, err, "concurrent duplicate: %v", err)
 	}
-	if count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{}); err != nil || count != 2 {
-		t.Fatalf("concurrent messages=%d error=%v", count, err)
+
+	{
+		count, err := db.Collection(chatMessagesCol).CountDocuments(ctx, bson.M{})
+		require.NoError(t, err, "concurrent messages=%d error=%v", count, err)
+		require.EqualValues(t, 2, count, "concurrent messages=%d error=%v", count, err)
 	}
-	if err := db.Collection(chatConversationsCol).FindOne(ctx, bson.M{"_id": "1_2"}).Decode(&conv); err != nil {
-		t.Fatal(err)
+
+	{
+		err := db.Collection(chatConversationsCol).FindOne(ctx, bson.M{fieldID: "1_2"}).Decode(&conv)
+		require.NoError(t, err)
 	}
-	if conv.MemberB.Unread != 2 {
-		t.Fatalf("concurrent duplicate incremented unread: %v", conv)
-	}
+
+	require.EqualValues(t, 2, conv.MemberB.Unread, "concurrent duplicate incremented unread: %v", conv)
 }

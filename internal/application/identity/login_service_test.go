@@ -3,12 +3,19 @@ package identity
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/config"
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 
 	"go.uber.org/zap"
+)
+
+const (
+	testTester           = "tester"
+	testVictimExampleCom = "victim@example.com"
 )
 
 type loginConfigReaderStub struct {
@@ -37,10 +44,9 @@ func TestLoginServiceRefreshTokenDistinguishesQueryFailure(t *testing.T) {
 		RefreshSecret: "test-refresh-secret",
 	}}}
 	tokens := NewTokenService(reader)
-	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: "tester"})
-	if err != nil {
-		t.Fatalf("issue token: %v", err)
-	}
+
+	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: testTester})
+	require.NoError(t, err, "issue token: %v", err)
 
 	dbErr := errors.New("database unavailable")
 	service := NewLoginService(
@@ -54,8 +60,9 @@ func TestLoginServiceRefreshTokenDistinguishesQueryFailure(t *testing.T) {
 		zap.NewNop(),
 	)
 
-	if _, err := service.RefreshToken(context.Background(), pair.RefreshToken); !errors.Is(err, ErrQueryUserFailed) {
-		t.Fatalf("RefreshToken error = %v, want ErrQueryUserFailed", err)
+	{
+		_, err := service.RefreshToken(context.Background(), pair.RefreshToken)
+		require.ErrorIs(t, err, ErrQueryUserFailed, "RefreshToken error = %v, want ErrQueryUserFailed", err)
 	}
 }
 
@@ -69,10 +76,9 @@ func TestLoginServiceRefreshTokenReportsMissingUser(t *testing.T) {
 		RefreshSecret: "test-refresh-secret",
 	}}}
 	tokens := NewTokenService(reader)
-	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: "tester"})
-	if err != nil {
-		t.Fatalf("issue token: %v", err)
-	}
+
+	pair, err := tokens.issueCredentialPair(&domain.User{ID: 7, Username: testTester})
+	require.NoError(t, err, "issue token: %v", err)
 
 	service := NewLoginService(
 		reader,
@@ -85,7 +91,8 @@ func TestLoginServiceRefreshTokenReportsMissingUser(t *testing.T) {
 		zap.NewNop(),
 	)
 
-	if _, err := service.RefreshToken(context.Background(), pair.RefreshToken); !errors.Is(err, domain.ErrUserNotFound) {
-		t.Fatalf("RefreshToken error = %v, want ErrUserNotFound", err)
+	{
+		_, err := service.RefreshToken(context.Background(), pair.RefreshToken)
+		require.ErrorIs(t, err, domain.ErrUserNotFound, "RefreshToken error = %v, want ErrUserNotFound", err)
 	}
 }
