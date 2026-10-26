@@ -76,7 +76,7 @@ func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 
 	middlewares.LimitRequestBody(c, middlewares.DefaultJSONBodyLimit)
 
-	// 绑定停留在 interfaces 层；应用层负责浅拷贝顶层、保留密钥、原子发布并写回文件。
+	// 绑定停留在 interfaces 层；应用层串行保留密钥、校验、写回文件，成功后发布快照。
 	switch name {
 	case configNameSite:
 		var siteCfg *struct {

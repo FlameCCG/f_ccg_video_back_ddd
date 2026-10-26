@@ -37,8 +37,7 @@ const (
 // SiteConfigService 站点配置用例服务（原 api/site_api/admin_config.go 的配置读写逻辑）。
 //
 // 配置快照由注入的 shared.ConfigStore 端口持有（实现为 infraconfig.Provider，替代原 global.Config/SetConfig）：
-// 更新时先浅拷贝顶层、替换目标配置段、再原子发布，避免与热更新/并发读产生 data race；
-// 发布成功后把该配置段写回配置文件，语义与原 viper.WriteConfig 一致。
+// 更新与热更新共用串行化入口；校验并持久化成功后才发布快照。
 type SiteConfigService struct {
 	provider shared.ConfigStore
 	files    ConfigFileWriter
@@ -92,84 +91,100 @@ func (s *SiteConfigService) AdminConfigByName(name string) (any, error) {
 
 // UpdateSite 更新站点配置段（空/脱敏的 MinIO 密钥保留原值）。
 func (s *SiteConfigService) UpdateSite(siteCfg *site.Site, disableUserSubmission *bool) error {
-	next := config.Clone(s.provider.Get())
 	if siteCfg == nil {
 		return fmt.Errorf("站点配置不能为空")
 	}
-	// 旧管理端未提交新字段时保留当前策略，避免意外重新开放投稿。
-	if disableUserSubmission != nil {
-		siteCfg.DisableUserSubmission = *disableUserSubmission
-	} else if next.Site != nil {
-		siteCfg.DisableUserSubmission = next.Site.DisableUserSubmission
-	}
-	preserveSiteSecrets(siteCfg, next.Site)
-	next.Site = siteCfg
+	siteCfg = cloneAdminSiteConfig(siteCfg)
+	return s.update(ConfigNameSite, func(next *config.Config) any {
+		// 旧管理端未提交新字段时保留当前策略，避免意外重新开放投稿。
+		if disableUserSubmission != nil {
+			siteCfg.DisableUserSubmission = *disableUserSubmission
+		} else if next.Site != nil {
+			siteCfg.DisableUserSubmission = next.Site.DisableUserSubmission
+		}
+		preserveSiteSecrets(siteCfg, next.Site)
+		next.Site = siteCfg
 
-	return s.publish(next, ConfigNameSite, next.Site)
+		return next.Site
+	})
 }
 
 // UpdateLogger 更新日志配置段。
 func (s *SiteConfigService) UpdateLogger(logger *config.Logger) error {
-	next := config.Clone(s.provider.Get())
-	next.Logger = logger
-
-	return s.publish(next, ConfigNameLogger, next.Logger)
+	return s.update(ConfigNameLogger, func(next *config.Config) any {
+		if logger != nil {
+			nextLogger := *logger
+			logger = &nextLogger
+		}
+		next.Logger = logger
+		return next.Logger
+	})
 }
 
 // UpdateEmail 更新邮件配置段（空/脱敏的授权码保留原值）。
 func (s *SiteConfigService) UpdateEmail(email *config.Email) error {
-	next := config.Clone(s.provider.Get())
-	preserveEmailSecrets(email, next.Email)
-	next.Email = email
+	email = cloneAdminEmailConfig(email)
+	return s.update(ConfigNameEmail, func(next *config.Config) any {
+		preserveEmailSecrets(email, next.Email)
+		next.Email = email
 
-	return s.publish(next, ConfigNameEmail, next.Email)
+		return next.Email
+	})
 }
 
 // UpdateAI 更新 AI 配置段（空/脱敏的模型密钥保留原值）。
 func (s *SiteConfigService) UpdateAI(ai *config.AI) error {
-	next := config.Clone(s.provider.Get())
-	preserveAISecrets(ai, next.AI)
-	next.AI = ai
+	ai = cloneAdminAIConfig(ai)
+	return s.update(ConfigNameAI, func(next *config.Config) any {
+		preserveAISecrets(ai, next.AI)
+		next.AI = ai
 
-	return s.publish(next, ConfigNameAI, next.AI)
+		return next.AI
+	})
 }
 
 // UpdateTranscode 更新转码配置段；校验失败时不发布也不落盘。
 func (s *SiteConfigService) UpdateTranscode(transcode *config.Transcode, localConsumerDisabled *bool) error {
-	if err := transcode.Validate(); err != nil {
-		return err
-	}
-
-	next := config.Clone(s.provider.Get())
-	// 旧管理端未携带开关时保留本机角色，避免保存其他参数时重新启用本机消费。
 	if transcode != nil {
-		if localConsumerDisabled != nil {
-			transcode.LocalConsumerDisabled = *localConsumerDisabled
-		} else if next.Transcode != nil {
-			transcode.LocalConsumerDisabled = next.Transcode.LocalConsumerDisabled
-		}
+		nextTranscode := *transcode
+		nextTranscode.TranscodeResolutions = append([]uint16(nil), transcode.TranscodeResolutions...)
+		transcode = &nextTranscode
 	}
-	next.Transcode = transcode
+	return s.update(ConfigNameTranscode, func(next *config.Config) any {
+		// 旧管理端未携带开关时保留本机角色，避免保存其他参数时重新启用本机消费。
+		if transcode != nil {
+			if localConsumerDisabled != nil {
+				transcode.LocalConsumerDisabled = *localConsumerDisabled
+			} else if next.Transcode != nil {
+				transcode.LocalConsumerDisabled = next.Transcode.LocalConsumerDisabled
+			}
+		}
+		next.Transcode = transcode
 
-	return s.publish(next, ConfigNameTranscode, next.Transcode)
+		return next.Transcode
+	})
 }
 
 // UpdateThirdLogin 更新三方登录配置段（空/脱敏的 client secret 保留原值）。
 func (s *SiteConfigService) UpdateThirdLogin(thirdLogin *config.ThirdLogin) error {
-	next := config.Clone(s.provider.Get())
-	preserveThirdLoginSecrets(thirdLogin, next.ThirdLogin)
-	next.ThirdLogin = thirdLogin
+	thirdLogin = cloneAdminThirdLoginConfig(thirdLogin)
+	return s.update(ConfigNameThirdLogin, func(next *config.Config) any {
+		preserveThirdLoginSecrets(thirdLogin, next.ThirdLogin)
+		next.ThirdLogin = thirdLogin
 
-	return s.publish(next, ConfigNameThirdLogin, next.ThirdLogin)
+		return next.ThirdLogin
+	})
 }
 
 // UpdateJWT 更新 JWT 配置段（空/脱敏的签名密钥保留原值）。
 func (s *SiteConfigService) UpdateJWT(jwt *config.Jwt) error {
-	next := config.Clone(s.provider.Get())
-	preserveJWTSecrets(jwt, next.Jwt)
-	next.Jwt = jwt
+	jwt = cloneAdminJWTConfig(jwt)
+	return s.update(ConfigNameJWT, func(next *config.Config) any {
+		preserveJWTSecrets(jwt, next.Jwt)
+		next.Jwt = jwt
 
-	return s.publish(next, ConfigNameJWT, next.Jwt)
+		return next.Jwt
+	})
 }
 
 // UpdateServerCORS 仅更新 server 段的 CORS Origin 白名单，保留 name/addr/mode。
@@ -181,27 +196,36 @@ func (s *SiteConfigService) UpdateServerCORS(origins []string) error {
 		return err
 	}
 
-	next := config.Clone(s.provider.Get())
-	if next.Server == nil {
-		next.Server = &config.Server{}
-	}
+	return s.update(ConfigNameServer, func(next *config.Config) any {
+		if next.Server == nil {
+			next.Server = &config.Server{}
+		}
 
-	// 浅拷贝后只改 CorsOrigins，保留 name/addr/mode。
-	srv := *next.Server
-	srv.CorsOrigins = normalized
-	next.Server = &srv
+		// 浅拷贝后只改 CorsOrigins，保留 name/addr/mode。
+		srv := *next.Server
+		srv.CorsOrigins = normalized
+		next.Server = &srv
 
-	return s.publish(next, ConfigNameServer, next.Server)
+		return next.Server
+	})
 }
 
-// publish 原子发布新配置树，随后把对应配置段写回配置文件。
-//
-// 原子性仅针对内存指针替换，文件写入失败时新快照已经对读者可见，当前没有回滚。
-// 调用方看到错误时应区分“未持久化”与“未生效”，不能把它解释成旧配置仍在内存中。
-func (s *SiteConfigService) publish(next *config.Config, name string, item any) error {
-	s.provider.Set(next)
-
-	return s.files.Write(name, item)
+// update 在持锁期间基于最新快照修改；所有校验与文件写入均先于发布。
+func (s *SiteConfigService) update(name string, change func(*config.Config) any) error {
+	return s.provider.Update(func(next *config.Config) error {
+		item := change(next)
+		switch name {
+		case ConfigNameJWT:
+			if err := config.ValidateJWTConfig(next.Jwt); err != nil {
+				return err
+			}
+		case ConfigNameTranscode:
+			if err := next.Transcode.Validate(); err != nil {
+				return err
+			}
+		}
+		return s.files.Write(name, item)
+	})
 }
 
 // normalizeAdminCorsOrigins 校验并归一化 Origin 列表（允许 "*" 或完整 http(s) URL）。

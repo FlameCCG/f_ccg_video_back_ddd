@@ -2,6 +2,9 @@ package contentops
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
 
@@ -10,11 +13,10 @@ import (
 
 // ConfigFileWriter 把单个配置段写回 YAML 配置文件。
 //
-// 原实现内联在 api/site_api/admin_config.go：新建 viper 实例读入 global.ConfigPath 指向的文件，
-// v.Set(name, item) 后 WriteConfig。这里保持完全相同的读—改—写序列与序列化行为，
-// 只是把文件路径改为构造期注入（不再依赖全局变量）。
+// 先写入同目录临时文件并同步，再原子替换，失败时保留旧文件。
 type ConfigFileWriter struct {
 	path string
+	mu   sync.Mutex
 }
 
 var _ app.ConfigFileWriter = (*ConfigFileWriter)(nil)
@@ -29,6 +31,8 @@ func NewConfigFileWriter(path string) *ConfigFileWriter {
 // 读取失败与写入失败分别包装为 app.ErrConfigFileRead / app.ErrConfigFileWrite，
 // 供 interfaces 层回显与原实现一致的错误文案。
 func (w *ConfigFileWriter) Write(name string, item any) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	v := viper.New()
 	v.SetConfigFile(w.path)
 
@@ -39,8 +43,38 @@ func (w *ConfigFileWriter) Write(name string, item any) error {
 	// 将内存中修改后的对应项设置进 viper
 	v.Set(name, item)
 
-	// 写入文件
-	if err := v.WriteConfig(); err != nil {
+	info, err := os.Stat(w.path)
+	if err != nil {
+		return fmt.Errorf("%w: %w", app.ErrConfigFileRead, err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(w.path), ".config-*.yaml")
+	if err != nil {
+		return fmt.Errorf("%w: %w", app.ErrConfigFileWrite, err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("%w: %w", app.ErrConfigFileWrite, err)
+	}
+	if err := v.WriteConfigAs(tmpPath); err != nil {
+		return fmt.Errorf("%w: %w", app.ErrConfigFileWrite, err)
+	}
+	f, err := os.OpenFile(tmpPath, os.O_RDWR, info.Mode().Perm())
+	if err != nil {
+		return fmt.Errorf("%w: %w", app.ErrConfigFileWrite, err)
+	}
+	err = f.Chmod(info.Mode().Perm())
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(tmpPath, w.path)
+	}
+	if err != nil {
 		return fmt.Errorf("%w: %w", app.ErrConfigFileWrite, err)
 	}
 

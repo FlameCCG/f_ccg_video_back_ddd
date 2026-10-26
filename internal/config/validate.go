@@ -14,7 +14,7 @@ func ValidateRequired(c *Config) error {
 	if err := ValidateTranscodeWorker(c); err != nil {
 		return err
 	}
-	return validateJWTConfig(c.Jwt)
+	return ValidateJWTConfig(c.Jwt)
 }
 
 // ValidateMaintenance leaves task-specific connection validation to the
@@ -37,7 +37,8 @@ func ValidateTranscodeWorker(c *Config) error {
 	return nil
 }
 
-func validateJWTConfig(j *Jwt) error {
+// ValidateJWTConfig 统一启动、热更新与管理端写入的 JWT 校验。
+func ValidateJWTConfig(j *Jwt) error {
 	if j == nil {
 		return errors.New("jwt config is required")
 	}

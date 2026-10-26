@@ -9,7 +9,9 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 //	if cfg == nil { ... }
 //	use cfg.Site / cfg.Jwt ...
 type Provider struct {
+	mu     sync.Mutex
 	config atomic.Pointer[config.Config]
 	logger atomic.Pointer[zap.Logger]
 	path   string
@@ -87,7 +90,21 @@ func (p *Provider) Set(c *config.Config) {
 	if p == nil {
 		return
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.config.Store(c)
+}
+
+// Update 将读、改、持久化和发布放在同一临界区，与热更新共用锁。
+func (p *Provider) Update(change func(*config.Config) error) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	next := config.Clone(p.Get())
+	if err := change(next); err != nil {
+		return err
+	}
+	p.config.Store(next)
+	return nil
 }
 
 // Path 返回配置文件路径（管理端写回配置时使用）。
@@ -151,35 +168,95 @@ func load(filePath string, watch bool, validate func(*config.Config) error) (*Pr
 		return provider, nil
 	}
 
-	// 开启热更新监听
-	v.OnConfigChange(func(e fsnotify.Event) {
-		// 稍微等待一下，确保文件写入完成
-		time.Sleep(500 * time.Millisecond)
-
-		provider.log().Info("配置文件热更新", zap.String("filename", e.Name))
-
-		// 显式重新读取配置，防止 viper 内部缓存未更新或读取到空文件
-		if err := v.ReadInConfig(); err != nil {
-			provider.log().Error("配置文件热更新读取失败", zap.Error(err))
-
-			return
-		}
-
-		// 重新读取配置
-		newConf := new(config.Config)
-		if err := v.Unmarshal(newConf); err != nil {
-			provider.log().Error("配置文件热更新失败", zap.Error(err))
-
-			return
-		}
-		if err := validate(newConf); err != nil {
-			provider.log().Error("配置文件热更新校验失败，继续使用上一份有效配置", zap.Error(err))
-
-			return
-		}
-		provider.Set(newConf)
-		provider.log().Info("配置文件热更新成功!")
-	})
-	v.WatchConfig()
+	if err := provider.watchConfig(v, validate); err != nil {
+		return nil, err
+	}
 	return provider, nil
+}
+
+// watchConfig 监听父目录，配置文件被替换或删除时仍继续监听后续重建。
+// Windows 原子替换会先发出 Remove；Viper 的内置监听会在该事件上退出。
+func (p *Provider) watchConfig(v *viper.Viper, validate func(*config.Config) error) error {
+	filename, err := filepath.Abs(p.path)
+	if err != nil {
+		return fmt.Errorf("resolve config path: %w", err)
+	}
+	directory := filepath.Dir(filename)
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("create config watcher: %w", err)
+	}
+	if err := watcher.Add(directory); err != nil {
+		_ = watcher.Close()
+		return fmt.Errorf("watch config directory: %w", err)
+	}
+	realFilename, _ := filepath.EvalSymlinks(filename)
+	go func() {
+		defer watcher.Close()
+		var timer *time.Timer
+		var reload <-chan time.Time
+		defer func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}()
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				path := filepath.Clean(event.Name)
+				if path == directory && event.Has(fsnotify.Remove|fsnotify.Rename) {
+					return
+				}
+				currentFilename, _ := filepath.EvalSymlinks(filename)
+				targetChanged := currentFilename != "" && currentFilename != realFilename
+				if !targetChanged && (path != filename || !event.Has(fsnotify.Write|fsnotify.Create|fsnotify.Remove|fsnotify.Rename)) {
+					continue
+				}
+				if currentFilename != "" {
+					realFilename = currentFilename
+				}
+				// 合并替换产生的一组事件，待文件写完后再读取。
+				if timer == nil {
+					timer = time.NewTimer(500 * time.Millisecond)
+				} else {
+					timer.Reset(500 * time.Millisecond)
+				}
+				reload = timer.C
+			case <-reload:
+				reload = nil
+				p.reloadConfig(v, validate)
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				p.log().Error("配置文件监听失败", zap.Error(err))
+			}
+		}
+	}()
+	return nil
+}
+
+func (p *Provider) reloadConfig(v *viper.Viper, validate func(*config.Config) error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.log().Info("配置文件热更新", zap.String("filename", p.path))
+	if err := v.ReadInConfig(); err != nil {
+		p.log().Error("配置文件热更新读取失败", zap.Error(err))
+		return
+	}
+	newConf := new(config.Config)
+	if err := v.Unmarshal(newConf); err != nil {
+		p.log().Error("配置文件热更新失败", zap.Error(err))
+		return
+	}
+	if err := validate(newConf); err != nil {
+		p.log().Error("配置文件热更新校验失败，继续使用上一份有效配置", zap.Error(err))
+		return
+	}
+	p.config.Store(newConf)
+	p.log().Info("配置文件热更新成功!")
 }

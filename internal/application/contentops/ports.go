@@ -9,7 +9,7 @@ import (
 )
 
 // 端口阅读：运营页面需要的统计、分区事实、缓存、配置写回与登录奖励通过端口提供。
-// ConfigFileWriter 只描述文件持久化，不能把它与 ConfigStore 的内存发布视作原子操作。
+// ConfigFileWriter 负责原子替换文件；用例在 ConfigStore.Update 临界区内先持久化再发布。
 
 // BannerCache 可见轮播图缓存端口（Redis 实现在 infrastructure/cache/contentops）。
 //

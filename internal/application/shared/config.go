@@ -31,6 +31,9 @@ type ConfigReader interface {
 // 热更新或并发读产生 data race；已发布的配置树视为只读。
 type ConfigStore interface {
 	ConfigReader
+	// Update 串行执行快照修改与持久化；回调失败时不发布。
+	// 回调只能修改私有副本，不能修改共享的嵌套对象。
+	Update(func(*config.Config) error) error
 	// Set 原子发布新的配置树。
 	Set(c *config.Config)
 }

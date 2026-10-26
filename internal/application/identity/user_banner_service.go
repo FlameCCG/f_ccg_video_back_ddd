@@ -104,14 +104,12 @@ func (s *UserBannerService) AdminSetDefault(ctx context.Context, bannerID uint) 
 		return domain.ErrUserBannerNotFound
 	}
 
-	s.ensureSiteConfig()
-
-	oldDefaultBannerID := domain.ResolveDefaultUserBannerID(s.configuredDefaultBannerID())
-	if bannerID == oldDefaultBannerID {
-		return domain.ErrBannerAlreadyRegisterDefault
-	}
-
-	s.replaceSiteConfig(func(cfgSite *site.Site) {
+	var oldDefaultBannerID uint
+	if err := s.updateSiteConfig(func(cfgSite *site.Site) error {
+		oldDefaultBannerID = domain.ResolveDefaultUserBannerID(cfgSite.DefaultUserBannerID)
+		if bannerID == oldDefaultBannerID {
+			return domain.ErrBannerAlreadyRegisterDefault
+		}
 		cfgSite.DefaultUserBannerID = bannerID
 
 		if oldDefaultBannerID > 0 && oldDefaultBannerID != bannerID {
@@ -119,10 +117,9 @@ func (s *UserBannerService) AdminSetDefault(ctx context.Context, bannerID uint) 
 				cfgSite.DefaultUserBannerIDs = append(cfgSite.DefaultUserBannerIDs, oldDefaultBannerID)
 			}
 		}
-	})
-
-	if err := s.persistSiteConfig(); err != nil {
-		return ErrPersistSiteConfigFailed
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if err := s.confs.ReassignBanner(ctx, oldDefaultBannerID, bannerID); err != nil {
@@ -138,40 +135,36 @@ func (s *UserBannerService) AdminUpdateDefaults(
 	bannerIDs []uint,
 	action int,
 ) (*AdminUpdateUserBannerListResult, error) {
-	s.ensureSiteConfig()
-
-	// 注意：此处按原实现读取「未经兜底」的配置值，与 AdminSetDefault 的语义不同。
-	if err := domain.EnsureRegisterDefaultBannerNotTouched(bannerIDs, s.configuredDefaultBannerID()); err != nil {
-		return nil, domain.ErrRegisterDefaultBannerLocked
-	}
-
-	current := s.editableBannerIDs()
-
-	switch action {
-	case domain.UserBannerActionAdd:
+	if action == domain.UserBannerActionAdd {
 		if err := s.ensureUserBannersSelectable(ctx, bannerIDs); err != nil {
 			return nil, domain.ErrUserBannerNotFound
 		}
-		// 校验：如果要添加的 bannerID 已经存在于系统默认列表中，则报错。
-		for _, id := range domain.NormalizeBannerIDs(bannerIDs) {
-			if slices.Contains(current, id) {
-				return nil, domain.ErrBannerAlreadyInDefaults
-			}
-		}
-
-		current = domain.MergeBannerIDs(current, bannerIDs)
-	case domain.UserBannerActionDelete:
-		current = domain.RemoveBannerIDs(current, bannerIDs)
-	default:
-		return nil, domain.ErrBannerActionInvalid
 	}
+	var current []uint
+	if err := s.updateSiteConfig(func(cfgSite *site.Site) error {
+		if err := domain.EnsureRegisterDefaultBannerNotTouched(bannerIDs, cfgSite.DefaultUserBannerID); err != nil {
+			return domain.ErrRegisterDefaultBannerLocked
+		}
+		current = domain.NormalizeBannerIDs(cfgSite.DefaultUserBannerIDs)
+		switch action {
+		case domain.UserBannerActionAdd:
+			// 校验：如果要添加的 bannerID 已经存在于系统默认列表中，则报错。
+			for _, id := range domain.NormalizeBannerIDs(bannerIDs) {
+				if slices.Contains(current, id) {
+					return domain.ErrBannerAlreadyInDefaults
+				}
+			}
 
-	s.replaceSiteConfig(func(cfgSite *site.Site) {
+			current = domain.MergeBannerIDs(current, bannerIDs)
+		case domain.UserBannerActionDelete:
+			current = domain.RemoveBannerIDs(current, bannerIDs)
+		default:
+			return domain.ErrBannerActionInvalid
+		}
 		cfgSite.DefaultUserBannerIDs = append([]uint(nil), current...)
-	})
-
-	if err := s.persistSiteConfig(); err != nil {
-		return nil, ErrPersistSiteConfigFailed
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 
 	return &AdminUpdateUserBannerListResult{BannerIDs: current}, nil
@@ -241,45 +234,23 @@ func (s *UserBannerService) ensureUserBannersSelectable(ctx context.Context, ban
 	return nil
 }
 
-// ensureSiteConfig 保证配置树中存在 Site 段（浅拷贝后原子发布）。
-func (s *UserBannerService) ensureSiteConfig() {
-	cfg := s.cfgProvider.Get()
-	if cfg != nil && cfg.Site != nil {
-		return
-	}
-
-	next := config.Clone(cfg)
-	if next.Site == nil {
-		next.Site = &site.Site{}
-	}
-
-	s.cfgProvider.Set(next)
-}
-
-// replaceSiteConfig 浅拷贝 Site 后修改并原子发布，避免原地改写共享配置树。
-func (s *UserBannerService) replaceSiteConfig(fn func(cfgSite *site.Site)) {
-	s.ensureSiteConfig()
-
-	cfg := config.Clone(s.cfgProvider.Get())
-
-	var nextSite site.Site
-	if cfg.Site != nil {
-		nextSite = *cfg.Site
-	}
-
-	fn(&nextSite)
-	cfg.Site = &nextSite
-	s.cfgProvider.Set(cfg)
-}
-
-// persistSiteConfig 把当前 Site 配置段写回配置文件。
-func (s *UserBannerService) persistSiteConfig() error {
-	cfg := s.cfgProvider.Get()
-	if cfg == nil || cfg.Site == nil {
-		return ErrSiteConfigNotInitialized
-	}
-
-	return s.configWriter.Write(siteConfigSection, cfg.Site)
+// updateSiteConfig 与管理端及热更新共用配置锁，持久化失败时不发布。
+func (s *UserBannerService) updateSiteConfig(fn func(*site.Site) error) error {
+	return s.cfgProvider.Update(func(next *config.Config) error {
+		var nextSite site.Site
+		if next.Site != nil {
+			nextSite = *next.Site
+		}
+		nextSite.DefaultUserBannerIDs = append([]uint(nil), nextSite.DefaultUserBannerIDs...)
+		if err := fn(&nextSite); err != nil {
+			return err
+		}
+		next.Site = &nextSite
+		if err := s.configWriter.Write(siteConfigSection, next.Site); err != nil {
+			return ErrPersistSiteConfigFailed
+		}
+		return nil
+	})
 }
 
 // systemDefaultBannerIDs 汇总系统默认横幅集合（配置列表 + 注册默认横幅）。
@@ -290,25 +261,4 @@ func (s *UserBannerService) systemDefaultBannerIDs() []uint {
 	}
 
 	return domain.SystemDefaultUserBannerIDs(cfg.Site.DefaultUserBannerIDs, cfg.Site.DefaultUserBannerID)
-}
-
-// editableBannerIDs 返回可编辑的系统默认横幅列表（不含注册默认横幅）。
-func (s *UserBannerService) editableBannerIDs() []uint {
-	s.ensureSiteConfig()
-
-	cfg := s.cfgProvider.Get()
-	if cfg != nil && cfg.Site != nil && cfg.Site.DefaultUserBannerIDs != nil {
-		return domain.NormalizeBannerIDs(cfg.Site.DefaultUserBannerIDs)
-	}
-
-	return []uint{}
-}
-
-func (s *UserBannerService) configuredDefaultBannerID() uint {
-	cfg := s.cfgProvider.Get()
-	if cfg == nil || cfg.Site == nil {
-		return 0
-	}
-
-	return cfg.Site.DefaultUserBannerID
 }
