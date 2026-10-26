@@ -11,7 +11,6 @@ import (
 
 	"github.com/casbin/casbin/v2"
 	gormadapter "github.com/casbin/gorm-adapter/v3"
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -20,7 +19,7 @@ const casbinModelPath = "conf/rbac_model.conf"
 
 // NewEnforcer 基于 GORM adapter 构建 Casbin SyncedEnforcer 并加载策略。
 // 初始化失败向组合根返回错误，由 CLI/server 入口决定退出策略。
-func NewEnforcer(db *gorm.DB, _ *zap.Logger) (*casbin.SyncedEnforcer, error) {
+func NewEnforcer(db *gorm.DB) (*casbin.SyncedEnforcer, error) {
 	// 使用 GORM adapter
 	adapter, err := gormadapter.NewAdapterByDB(db)
 	if err != nil {
@@ -33,10 +32,6 @@ func NewEnforcer(db *gorm.DB, _ *zap.Logger) (*casbin.SyncedEnforcer, error) {
 		return nil, fmt.Errorf("初始化 Casbin enforcer 失败: %w", err)
 	}
 
-	// 加载策略
-	if err := enforcer.LoadPolicy(); err != nil {
-		return nil, fmt.Errorf("加载 Casbin 策略失败: %w", err)
-	}
-
+	// NewSyncedEnforcer 已通过普通 GORM adapter 加载完整策略。
 	return enforcer, nil
 }

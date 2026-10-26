@@ -43,32 +43,9 @@ func (s *ProgressQueryService) MGetByVideoIDs(ctx context.Context, videoIDs []ui
 	return progressItemsFrom(snapshots), nil
 }
 
-// MGetByPairs 按显式 (videoId, partId) 组合批量读取进度。
-func (s *ProgressQueryService) MGetByPairs(ctx context.Context, pairs [][2]uint) ([]TranscodeProgressItem, error) {
-	snapshots, err := s.reader.ByPairs(ctx, pairs)
-	if err != nil {
-		return nil, err
-	}
-
-	return progressItemsFrom(snapshots), nil
-}
-
 // IsTerminalStatus 判断进度状态是否为终态（succeeded / failed）。
 func (s *ProgressQueryService) IsTerminalStatus(status string) bool {
 	return status == domain.TranscodeStatusSucceeded || status == domain.TranscodeStatusFailed
-}
-
-// Fingerprint 生成进度快照指纹，供 SSE 变化检测使用（原 progressFingerprint）。
-func (s *ProgressQueryService) Fingerprint(item TranscodeProgressItem) string {
-	return domain.ProgressFingerprint(domain.TranscodeProgress{
-		VideoID:      item.VideoID,
-		PartID:       item.PartID,
-		Status:       item.Status,
-		Percent:      item.Percent,
-		Stage:        item.Stage,
-		StagePercent: item.StagePercent,
-		Message:      item.Message,
-	})
 }
 
 // Subscribe 订阅进度变更事件；返回的订阅需由调用方 Close。

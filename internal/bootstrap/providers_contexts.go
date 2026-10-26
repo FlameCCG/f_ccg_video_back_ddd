@@ -73,7 +73,6 @@ var RbacProviderSet = wire.NewSet(
 	// internal/infrastructure/persistence/rbac
 	infrastructurePersistenceRbac.NewApiResourceRepository,
 	infrastructurePersistenceRbac.NewCasbinEnforcer,
-	infrastructurePersistenceRbac.NewGlobPathMatcher,
 	infrastructurePersistenceRbac.NewMenuRepository,
 	infrastructurePersistenceRbac.NewOpenAPIMetaLoader,
 	infrastructurePersistenceRbac.NewPermissionEvaluator,
@@ -252,7 +251,6 @@ var SearchProviderSet = wire.NewSet(
 	wire.Bind(new(applicationSearch.HotKeywordStore), new(*infrastructureCacheSearch.HotKeywordStore)),
 	wire.Bind(new(applicationSearch.SuggestionCache), new(*infrastructureCacheSearch.SuggestionCache)),
 	// internal/infrastructure/river
-	infrastructureRiver.NewRiver,
 	infrastructureRiver.NewRiverComponent,
 )
 
@@ -398,7 +396,6 @@ var PlatformProviderSet = wire.NewSet(
 // 核心账号仓储/服务由 IdentityProviderSet 提供，此处补足面向请求入口的外部依赖。
 var IdentityHTTPProviderSet = wire.NewSet(
 	// internal/infrastructure/external/oauth
-	infrastructureExternalOauth.NewBodyReader,
 	infrastructureExternalOauth.NewGitHubClient,
 	infrastructureExternalOauth.NewGoogleClient,
 	infrastructureExternalOauth.NewLinuxDoClient,

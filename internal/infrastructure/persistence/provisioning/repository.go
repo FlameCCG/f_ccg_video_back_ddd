@@ -1,6 +1,6 @@
 // Package provisioning 实现超级管理员、角色绑定和默认横幅初始化。
 //
-// repository.go 实现 provisioning 用例要求的端口，复用默认用户上下文等已有持久化行为。
+// repository.go 实现 provisioning 用例要求的端口，复用账户默认配置初始化。
 // 只负责一次性任务的存取细节，任务选择、步骤顺序与资源清理由 CLI 和 bootstrap 组织。
 //
 // 仓储遵守消费方端口的不存在、错误和 ID 回填约定，不能只看方法名判断 nil 或错误的含义。
@@ -36,16 +36,15 @@ const (
 
 // SuperUserRepository 超级管理员初始化的 GORM 实现。
 type SuperUserRepository struct {
-	db          *gorm.DB
-	userRepoCtx UserContextDecorator
-	logger      *zap.Logger
+	db       *gorm.DB
+	defaults UserDefaultsInitializer
+	logger   *zap.Logger
 }
 
-// UserContextDecorator 用于给创建用户的 ctx 附加默认横幅 ID
+// UserDefaultsInitializer 在创建用户的事务内初始化默认配置与收藏夹。
 //
 // 由 identity 的用户仓储实现，避免 CLI 建号路径与注册路径行为分叉。
-type UserContextDecorator interface {
-	WithDefaultBanner(ctx context.Context) context.Context
+type UserDefaultsInitializer interface {
 	InitializeDefaults(ctx context.Context, userID uint) error
 }
 
@@ -53,14 +52,14 @@ var _ app.SuperUserRepository = (*SuperUserRepository)(nil)
 
 // NewSuperUserRepository 构造超级管理员初始化仓储。
 //
-// userRepoCtx 传入 identity 的用户仓储，用于复用「默认横幅 ID 注入 ctx」的逻辑，
+// defaults 传入 identity 的用户仓储，用于复用默认配置初始化逻辑，
 // 保证 CLI 创建的用户与注册流程一样会得到默认用户配置与默认收藏夹。
 func NewSuperUserRepository(
 	db *gorm.DB,
-	userRepoCtx UserContextDecorator,
+	defaults UserDefaultsInitializer,
 	logger *zap.Logger,
 ) *SuperUserRepository {
-	return &SuperUserRepository{db: db, userRepoCtx: userRepoCtx, logger: logger}
+	return &SuperUserRepository{db: db, defaults: defaults, logger: logger}
 }
 
 // EnsureAdminRole 读取或创建管理员角色。
@@ -118,12 +117,6 @@ func (r *SuperUserRepository) UpsertSuperUser(
 		return 0, false, fmt.Errorf("查询超级管理员用户失败: %w", err)
 	}
 
-	// Create new user（ctx 附带默认横幅 ID，行为与注册流程一致）
-	createCtx := ctx
-	if r.userRepoCtx != nil {
-		createCtx = r.userRepoCtx.WithDefaultBanner(ctx)
-	}
-
 	user = po.User{
 		Username:           username,
 		Email:              username + superUserEmailSuffix,
@@ -134,12 +127,12 @@ func (r *SuperUserRepository) UpsertSuperUser(
 		CurrentRoleID:      roleID,
 		RegisterSource:     superUserRegisterSource,
 	}
-	if createErr := gormx.DB(createCtx, r.db).Create(&user).Error; createErr != nil {
+	if createErr := db.Create(&user).Error; createErr != nil {
 		return 0, false, fmt.Errorf("创建超级管理员用户失败: %w", createErr)
 	}
 
-	if r.userRepoCtx != nil {
-		if err := r.userRepoCtx.InitializeDefaults(createCtx, user.ID); err != nil {
+	if r.defaults != nil {
+		if err := r.defaults.InitializeDefaults(ctx, user.ID); err != nil {
 			return 0, false, err
 		}
 	}

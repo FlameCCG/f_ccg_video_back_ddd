@@ -18,19 +18,6 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// LogConfig 日志配置结构体，外部配置文件映射到此结构.
-type LogConfig struct {
-	DebugFileName string `json:"debugFileName"` // debug 日志路径
-	InfoFileName  string `json:"infoFileName"`  // info 日志路径
-	WarnFileName  string `json:"warnFileName"`  // warn 日志路径
-	ErrorFileName string `json:"errorFileName"` // error 日志路径
-	MaxSize       int    `json:"maxsize"`       // 单个文件最大尺寸（MB）
-	MaxAge        int    `json:"max_age"`       // 文件最长保留天数
-	MaxBackups    int    `json:"max_backups"`   // 最大备份文件数量
-	EnableConsole bool   `json:"enableConsole"` // 是否启用控制台输出
-	Development   bool   `json:"development"`   // 开发模式，控制台输出更友好
-}
-
 // Logger 包装 zap 日志器并负责其生命周期。
 type Logger struct {
 	lg *zap.Logger
@@ -50,22 +37,10 @@ func (l *Logger) Zap() *zap.Logger {
 func New(cfg *config.Logger) *Logger {
 	// 与原实现一致：logger 配置段缺失属于配置错误，直接以 nil 解引用 panic 暴露，
 	// 不静默降级到默认日志文件（避免日志写到意料之外的位置）。
-	logConf := &LogConfig{
-		DebugFileName: cfg.DebugFileName,
-		InfoFileName:  cfg.InfoFileName,
-		WarnFileName:  cfg.WarnFileName,
-		ErrorFileName: cfg.ErrorFileName,
-		MaxSize:       cfg.MaxSize,
-		MaxAge:        cfg.MaxAge,
-		MaxBackups:    cfg.MaxBackups,
-		EnableConsole: cfg.EnableConsole,
-		Development:   cfg.Development,
-	}
-
-	writeSyncerDebug := getLogWriter(logConf.DebugFileName, logConf.MaxSize, logConf.MaxBackups, logConf.MaxAge)
-	writeSyncerInfo := getLogWriter(logConf.InfoFileName, logConf.MaxSize, logConf.MaxBackups, logConf.MaxAge)
-	writeSyncerWarn := getLogWriter(logConf.WarnFileName, logConf.MaxSize, logConf.MaxBackups, logConf.MaxAge)
-	writeSyncerError := getLogWriter(logConf.ErrorFileName, logConf.MaxSize, logConf.MaxBackups, logConf.MaxAge)
+	writeSyncerDebug := getLogWriter(cfg.DebugFileName, cfg.MaxSize, cfg.MaxBackups, cfg.MaxAge)
+	writeSyncerInfo := getLogWriter(cfg.InfoFileName, cfg.MaxSize, cfg.MaxBackups, cfg.MaxAge)
+	writeSyncerWarn := getLogWriter(cfg.WarnFileName, cfg.MaxSize, cfg.MaxBackups, cfg.MaxAge)
+	writeSyncerError := getLogWriter(cfg.ErrorFileName, cfg.MaxSize, cfg.MaxBackups, cfg.MaxAge)
 
 	encoder := getEncoder()
 
@@ -79,9 +54,9 @@ func New(cfg *config.Logger) *Logger {
 
 	cores = append(cores, debugCore, infoCore, warnCore, errorCore)
 
-	if logConf.EnableConsole {
+	if cfg.EnableConsole {
 		var consoleCore zapcore.Core
-		if logConf.Development {
+		if cfg.Development {
 			consoleCore = zapcore.NewCore(
 				getConsoleEncoder(),
 				zapcore.Lock(os.Stdout),
@@ -181,7 +156,6 @@ func Provide(cfg *config.Logger, provider *infraconfig.Provider) (*Logger, func(
 	if provider != nil {
 		provider.SetLogger(lg.Zap())
 	}
-
 	return lg, lg.Stop
 }
 

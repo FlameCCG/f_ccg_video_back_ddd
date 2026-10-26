@@ -260,7 +260,7 @@ func TestFollowRelationQueryDegradesWithoutDB(t *testing.T) {
 }
 
 // TestIndexInitializerSkipsWhenMongoMissing Mongo 缺失时索引初始化组件静默跳过
-// （原实现此时根本走不到 EnsureIndexes），Start/Stop 均返回 nil。
+// （原实现此时根本走不到 EnsureIndexes），不执行索引创建。
 func TestIndexInitializerSkipsWhenMongoMissing(t *testing.T) {
 	t.Parallel()
 
@@ -270,13 +270,7 @@ func TestIndexInitializerSkipsWhenMongoMissing(t *testing.T) {
 		NewIndexInitializer(nil, zap.NewNop()),
 		NewIndexInitializer(NewStore(nil), zap.NewNop()),
 	} {
-		if err := initializer.Start(ctx); err != nil {
-			t.Fatalf("Start = %v, want nil", err)
-		}
-
-		if err := initializer.Stop(ctx); err != nil {
-			t.Fatalf("Stop = %v, want nil", err)
-		}
+		initializer.Start(ctx)
 	}
 }
 
@@ -285,9 +279,7 @@ func TestIndexInitializerSwallowsEnsureIndexesFailure(t *testing.T) {
 	t.Parallel()
 
 	repo := &failingRepository{}
-	if err := NewIndexInitializer(repo, zap.NewNop()).Start(context.Background()); err != nil {
-		t.Fatalf("Start = %v, want nil (failures are only logged)", err)
-	}
+	NewIndexInitializer(repo, zap.NewNop()).Start(context.Background())
 
 	if !repo.called {
 		t.Fatal("EnsureIndexes must be attempted when the store reports available")

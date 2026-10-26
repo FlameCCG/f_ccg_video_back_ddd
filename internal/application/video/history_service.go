@@ -53,11 +53,6 @@ func (s *HistoryService) GetPlayHistory(ctx context.Context, userID, videoID uin
 	return s.history.Find(ctx, userID, videoID)
 }
 
-// FlushHistory 从 Redis 队列批量落库（原实现为空实现，保持等价）。
-func (s *HistoryService) FlushHistory(_ context.Context, _ int64) error {
-	return nil
-}
-
 // ListUserHistory 获取用户观看历史列表。
 func (s *HistoryService) ListUserHistory(
 	ctx context.Context,

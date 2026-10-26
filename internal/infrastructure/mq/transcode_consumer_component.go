@@ -69,15 +69,15 @@ func NewTranscodeConsumerComponent(
 
 // Start 在应用启动时按需启动转码消费者。
 //
-// 连接类失败会在后台指数退避重试，不阻塞 HTTP 服务启动；因此本方法总是立即返回 nil
+// 连接类失败会在后台指数退避重试，不阻塞 HTTP 服务启动
 // （与原 InitTranscodeConsumer 无返回值的语义一致）。重复调用是幂等的（原为 sync.Once）。
-func (c *TranscodeConsumerComponent) Start(_ context.Context) error {
+func (c *TranscodeConsumerComponent) Start(_ context.Context) {
 	c.mu.Lock()
 
 	if c.started {
 		c.mu.Unlock()
 
-		return nil
+		return
 	}
 
 	c.started = true
@@ -87,14 +87,14 @@ func (c *TranscodeConsumerComponent) Start(_ context.Context) error {
 		c.mu.Unlock()
 		c.logger.Info("local transcode consumer disabled, skip transcode consumer")
 
-		return nil
+		return
 	}
 
 	if c.cfg == nil || !c.cfg.Enable {
 		c.mu.Unlock()
 		c.logger.Info("kafka disabled, skip transcode consumer")
 
-		return nil
+		return
 	}
 
 	// 重试循环独立于 Start 的 ctx：原实现用 context.Background()，由 Stop 显式取消。
@@ -103,12 +103,10 @@ func (c *TranscodeConsumerComponent) Start(_ context.Context) error {
 	c.mu.Unlock()
 
 	go c.startWithRetry(retryCtx)
-
-	return nil
 }
 
 // Stop 取消进行中的初始化重试，并优雅关闭已启动的消费者。
-func (c *TranscodeConsumerComponent) Stop(_ context.Context) error {
+func (c *TranscodeConsumerComponent) Stop(_ context.Context) {
 	c.mu.Lock()
 	cancel := c.retryCancel
 	consumer := c.consumer
@@ -121,14 +119,12 @@ func (c *TranscodeConsumerComponent) Stop(_ context.Context) error {
 	}
 
 	if consumer == nil {
-		return nil
+		return
 	}
 
 	if err := consumer.Stop(); err != nil {
 		c.logger.Error("stop transcode consumer failed", zap.Error(err))
 	}
-
-	return nil
 }
 
 // startWithRetry 反复尝试构造并启动消费者，直到成功、永久失败、超出总窗口或被取消。

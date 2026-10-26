@@ -9,23 +9,59 @@ import (
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/authsession"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type middlewareCredentialUsers struct {
 	domain.UserRepository
-	user *domain.User
+	user    *domain.User
+	queries int
 }
 
 func (r *middlewareCredentialUsers) FindByID(context.Context, uint) (*domain.User, error) {
+	r.queries++
 	u := *r.user
 	return &u, nil
+}
+
+func TestAuthenticationReusesRequestValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	user := &domain.User{ID: 7, Username: "current-name", Password: "hash", Status: enum.UserStatusActive}
+	users := &middlewareCredentialUsers{user: user}
+	provider := infraconfig.NewProvider(&config.Config{Jwt: &config.Jwt{AccessSecret: "key"}})
+	mw := New(provider, nil, identityapp.NewUserStatusService(nil, users), nil, nil, nil, nil, nil, zap.NewNop())
+	pair, err := jwts.CreateJwtTokenWithPassword("7", "old-name", user.Password, false, time.Hour, "key", time.Hour, "refresh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := gin.New()
+	engine.GET("/private", mw.JwtOptional(), mw.JwtAuth(), mw.JwtAuth(), func(c *gin.Context) {
+		if c.GetString("uid") != "7" || c.GetString("username") != user.Username {
+			t.Fatal("validated identity missing")
+		}
+		c.String(200, "allowed")
+	})
+	request := func() string {
+		req := httptest.NewRequest(http.MethodGet, "/private", nil)
+		req.Header.Set("Authorization", "Bearer "+pair.AccessToken)
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+	if body := request(); body != "allowed" || users.queries != 1 {
+		t.Fatalf("body = %q, queries = %d; want allowed and one query", body, users.queries)
+	}
+	user.Password = "changed"
+	if body := request(); body == "allowed" || users.queries != 2 {
+		t.Fatalf("revoked credentials reused across requests: body=%q queries=%d", body, users.queries)
+	}
 }
 func TestInitialPasswordGateAndCredentialRevocation(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -62,8 +62,8 @@ func newBannerFixture(t *testing.T, cfg *config.Config, configPath string) *bann
 	}
 }
 
-// createUser 走仓储创建路径落库用户，触发 po.User 的 AfterCreate 钩子
-// （写 user_confs 与默认收藏夹），用于验证默认横幅 ID 经 ctx 注入。
+// createUser 走仓储创建路径落库用户，显式初始化账户默认配置
+// （写 user_confs 与默认收藏夹），用于验证默认横幅配置初始化。
 func (f *bannerFixture) createUser(t *testing.T, userID uint, username, email string) {
 	t.Helper()
 
@@ -73,9 +73,8 @@ func (f *bannerFixture) createUser(t *testing.T, userID uint, username, email st
 		Email:    email,
 	}
 
-	// 与生产路径一致（gormx.TxManager.Do）：先 WithDefaultBanner 包装 ctx，
-	// 再 WithContext(ctx).Transaction，这样 AfterCreate 钩子能从 tx.Statement.Context 读到横幅 ID。
-	ctx := f.users.WithDefaultBanner(context.Background())
+	// 与生产路径一致，在同一事务内创建用户及默认配置。
+	ctx := context.Background()
 	if err := f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		txCtx := gormx.WithTx(ctx, tx)
 		if err := f.users.Create(txCtx, user, 0); err != nil {
@@ -111,7 +110,7 @@ func writeTempConfig(t *testing.T, content string) string {
 	return configPath
 }
 
-// TestUserCreateSetsDefaultBannerID 验证注册默认横幅 ID 经 ctx 注入到 AfterCreate 钩子
+// TestUserCreateSetsDefaultBannerID 验证账户初始化使用注册默认横幅 ID
 // （原 TestUserAfterCreateSetsDefaultBannerID 依赖 global.Config()，见 decisions.md D-006）。
 func TestUserCreateSetsDefaultBannerID(t *testing.T) {
 	fixture := newBannerFixture(t, &config.Config{

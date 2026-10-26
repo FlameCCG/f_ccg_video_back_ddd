@@ -19,19 +19,13 @@ import (
 	"github.com/google/wire"
 )
 
-// ConfigProviderSet 配置装载与窄化 provider。
+// configValueProviderSet 是配置路径与窄化 provider 的公共声明。
 //
 // 窄化 provider 把根配置拆成各基础组件真正需要的最小配置结构体，
 // 需要读取热更新配置的基础组件直接注入 *infraconfig.Provider；
 // application 层一律经 shared.ConfigReader / shared.ConfigStore 端口注入（D-020）。
-var ConfigProviderSet = wire.NewSet(
+var configValueProviderSet = wire.NewSet(
 	cli.ProvideConfigPath,
-	infraconfig.Load,
-	// 第一个参数用 *接口类型 标出消费方端口，第二个参数用 **具体类型 标出被注入的 *Provider。
-	// new(...) 在这里是类型标记，不是在为每个业务请求分配 Provider；Go 的方法集决定实现关系。
-	wire.Bind(new(shared.ConfigReader), new(*infraconfig.Provider)),
-	wire.Bind(new(shared.ConfigStore), new(*infraconfig.Provider)),
-	infraconfig.ProvideServerConf,
 	infraconfig.ProvideLoggerConf,
 	infraconfig.ProvideMysqlConf,
 	infraconfig.ProvideRedisConf,
@@ -39,8 +33,14 @@ var ConfigProviderSet = wire.NewSet(
 	infraconfig.ProvideESConf,
 	infraconfig.ProvideKafkaConf,
 	infraconfig.ProvideRiverConf,
-	infraconfig.ProvideTranscodeConf,
-	infraconfig.ProvideJwtConf,
+)
+
+// ConfigProviderSet 为 HTTP 服务加载配置并开启热更新。
+var ConfigProviderSet = wire.NewSet(
+	configValueProviderSet,
+	infraconfig.Load,
+	wire.Bind(new(shared.ConfigReader), new(*infraconfig.Provider)),
+	wire.Bind(new(shared.ConfigStore), new(*infraconfig.Provider)),
 )
 
 // InfrastructureProviderSet 基础设施客户端 provider（按技术分组）。
@@ -75,7 +75,6 @@ var InterfacesProviderSet = wire.NewSet(
 // 配置与基础设施经 CrossContextProviderSet 引入，NewApp 是本注入器最终返回对象的构造器。
 // 阅读重复嵌套的集合时沿类型追踪，不要把集合层级误认为另一套运行期业务分层。
 var AppProviderSet = wire.NewSet(
-	ProvisioningProviderSet,
 	CrossContextProviderSet,
 	IdentityHTTPProviderSet,
 	NotificationHTTPProviderSet,

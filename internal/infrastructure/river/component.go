@@ -52,13 +52,13 @@ func NewRiverComponent(
 }
 
 // Start 启动 binlog 同步；重复调用无副作用，启动失败不返回错误（与原 core.InitRiver 一致）。
-func (c *RiverComponent) Start(_ context.Context) error {
+func (c *RiverComponent) Start(_ context.Context) {
 	c.mu.Lock()
 
 	if c.started {
 		c.mu.Unlock()
 
-		return nil
+		return
 	}
 
 	c.started = true
@@ -67,14 +67,14 @@ func (c *RiverComponent) Start(_ context.Context) error {
 	if c.riverCfg == nil || !c.riverCfg.Enable {
 		c.logger.Info("river disabled")
 
-		return nil
+		return
 	}
 
 	r, err := NewRiver(c.riverCfg, c.mysqlCfg, c.esCfg, c.db)
 	if err != nil {
 		c.logger.Error("init river failed", zap.Error(err))
 
-		return nil
+		return
 	}
 
 	c.mu.Lock()
@@ -88,23 +88,19 @@ func (c *RiverComponent) Start(_ context.Context) error {
 	}()
 
 	c.logger.Info("river started")
-
-	return nil
 }
 
 // Stop 优雅关闭同步引擎：取消上下文、关闭 canal、强制刷盘 binlog 位点（幂等）。
-func (c *RiverComponent) Stop(_ context.Context) error {
+func (c *RiverComponent) Stop(_ context.Context) {
 	c.mu.Lock()
 	r := c.river
 	c.river = nil
 	c.mu.Unlock()
 
 	if r == nil {
-		return nil
+		return
 	}
 
 	r.Close()
 	c.logger.Info("river stopped")
-
-	return nil
 }

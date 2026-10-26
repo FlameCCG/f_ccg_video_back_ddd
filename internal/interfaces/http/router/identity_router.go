@@ -22,11 +22,11 @@ func registerIdentityCommonRoutes(
 	userGroup.GET("/detail", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtOptional(), h.UserDetailView) // 获取指定用户的公开信息 ?id=
 
 	userVideoGroup := userGroup.Group("video")
-	userVideoGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtOptional())
+	userVideoGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout))
 	{
-		userVideoGroup.GET("/list", middlewares.BindQueryParams[identityhandler.UserVideosReq], h.UserVideosView)
-		userVideoGroup.GET("/recent/liked", h.RecentLikedView)
-		userVideoGroup.GET("/recent/coined", h.RecentCoinedView)
+		userVideoGroup.GET("/list", mw.JwtOptional(), middlewares.BindQueryParams[identityhandler.UserVideosReq], h.UserVideosView)
+		userVideoGroup.GET("/recent/liked", mw.JwtOptional(), h.RecentLikedView)
+		userVideoGroup.GET("/recent/coined", mw.JwtOptional(), h.RecentCoinedView)
 		userVideoGroup.DELETE("/delete", middlewares.JsonBindParams[identityhandler.DeleteVideoReq], mw.JwtAuth(), h.DeleteVideoView)
 		userVideoGroup.POST("/tag", mw.JwtAuth(), mw.VideoSubmissionCheck(), mw.UserBanCheck(), middlewares.JsonBindParams[identityhandler.CreateTagReq], h.CreateTag)
 	}

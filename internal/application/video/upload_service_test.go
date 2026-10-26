@@ -13,7 +13,6 @@ import (
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
@@ -360,26 +359,6 @@ func TestGetUploadStatusInvalidatesStaleCompletedCache(t *testing.T) {
 
 	if status.Completed {
 		t.Fatal("stale cache must not report completed when object is gone")
-	}
-}
-
-// TestExtractSourceUploadHash 覆盖从源对象路径提取 fileHash（领域纯函数）。
-func TestExtractSourceUploadHash(t *testing.T) {
-	svc := newUploadService(&stubDriver{})
-	validate := svc.ValidateUploadID
-
-	hash := "69af04e1bb64adb459e3e0038bb7b530e3467117ccac259cac2bbf770ecb7446"
-
-	got := domain.ExtractSourceUploadHash(
-		"http://localhost:9000/bucket/user_files/"+hash+"/_source_"+hash+".mp4",
-		validate,
-	)
-	if got != hash {
-		t.Fatalf("got %q want %q", got, hash)
-	}
-
-	if domain.ExtractSourceUploadHash("videos/cover-only/preview.jpg", validate) != "" {
-		t.Fatal("expected empty for non-source path")
 	}
 }
 

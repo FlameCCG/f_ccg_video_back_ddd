@@ -178,21 +178,6 @@ func (s *UploadService) UploadChunk(
 	return driver.SaveChunk(ctx, fileHash, index, size, reader)
 }
 
-// GetUploadedChunks 读取已上传的分片索引列表。
-func (s *UploadService) GetUploadedChunks(ctx context.Context, fileHash string) ([]string, error) {
-	fileHash = trimSpace(fileHash)
-	driver, err := s.resolve()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.validateFileHash(fileHash); err != nil {
-		return nil, err
-	}
-
-	return driver.ListUploadedChunks(ctx, fileHash)
-}
-
 // GetUploadStatus 查询分片上传状态。
 //
 // completed 必须以对象存储为准；内存缓存只做加速，对象被硬删后不得继续秒传。
@@ -349,21 +334,6 @@ func (s *UploadService) CompleteUpload(
 		zap.Duration("cost", time.Since(start)))
 
 	return finalPath, nil
-}
-
-// InvalidateUploadCompletedCache 保留删除用例的兼容端口；完成状态已不再缓存。
-func (s *UploadService) InvalidateUploadCompletedCache(fileHash string) {
-	// Completion is always probed directly from storage.
-}
-
-// InvalidateUploadCompletedCacheByStoredPath 从对象路径中尽力提取 fileHash 后失效缓存。
-func (s *UploadService) InvalidateUploadCompletedCacheByStoredPath(storedPath string) {
-	hash := domain.ExtractSourceUploadHash(storedPath, s.storage.ValidateUploadID)
-	if hash == "" {
-		return
-	}
-
-	s.InvalidateUploadCompletedCache(hash)
 }
 
 // ResolveCompletedUpload 校验并返回已完成上传对象的路径（投稿流程使用）。
@@ -582,20 +552,6 @@ func isTransientUploadStatusError(err error) bool {
 	}
 
 	return false
-}
-
-// buildCoverObjectPath 生成封面对象路径（原 api/video_api/upload_cover.go）。
-func buildCoverObjectPath(fileHash, ext string, uniqueSuffix string) string {
-	ext = strings.TrimSpace(strings.ToLower(ext))
-	if ext == "" {
-		ext = ".jpg"
-	}
-
-	if !strings.HasPrefix(ext, ".") {
-		ext = "." + ext
-	}
-
-	return joinObjectPath("images", strings.TrimSpace(fileHash)+"-"+uniqueSuffix+ext)
 }
 
 // joinObjectPath 以 / 连接对象路径片段（等价 path.Join 对无冗余分隔符输入的行为）。

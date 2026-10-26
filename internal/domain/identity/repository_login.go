@@ -33,12 +33,6 @@ type UserAccountRepository interface {
 	// SetRefreshToken sets the current refresh digest if the password has not changed.
 	SetRefreshToken(ctx context.Context, userID uint, passwordHash, tokenHash string) (bool, error)
 
-	// WithDefaultBanner 在 context 上附加「注册默认横幅 ID」，供用户创建钩子读取。
-	//
-	// 所有创建用户的路径（邮箱注册、5 家 OAuth 首次登录）都必须使用包装后的 ctx，
-	// 否则新用户的 UserConf 会拿到兜底横幅而不是站点配置值。
-	WithDefaultBanner(ctx context.Context) context.Context
-
 	// FindByID 按主键读取用户；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, userID uint) (*User, error)
 	// FindWithConfByID 一次查询读取用户及其一对一配置；用户不存在时返回 (nil, nil, nil)。
@@ -57,7 +51,7 @@ type UserAccountRepository interface {
 	CountByEmailExcluding(ctx context.Context, email string, excludeUserID uint) (int64, error)
 
 	// Create 创建用户并写入 user_roles 关联，回填 user.ID。
-	// 要求在事务内调用；ctx 必须先经 WithDefaultBanner 包装。
+	// 要求在事务内调用，并在同一事务中调用 InitializeDefaults。
 	Create(ctx context.Context, user *User, roleID uint) error
 	// InitializeDefaults creates user configuration and default folder in the caller transaction.
 	InitializeDefaults(ctx context.Context, userID uint) error

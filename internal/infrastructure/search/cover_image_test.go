@@ -1,7 +1,6 @@
 package search
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +45,7 @@ func TestResolveCoverEmbedSourcePassesThroughDataURI(t *testing.T) {
 	t.Parallel()
 
 	const uri = "data:image/png;base64,AAAA"
-	got, err := resolveCoverEmbedSource(context.Background(), http.DefaultClient, uri, "", "")
+	got, err := resolveCoverEmbedSource(uri, "", "")
 	if err != nil {
 		t.Fatalf("resolveCoverEmbedSource() error = %v", err)
 	}
@@ -59,7 +58,7 @@ func TestResolveCoverEmbedSourceKeepsPublicURL(t *testing.T) {
 	t.Parallel()
 
 	const cover = "https://cdn.example.com/covers/1.jpg"
-	got, err := resolveCoverEmbedSource(context.Background(), http.DefaultClient, cover, "", "")
+	got, err := resolveCoverEmbedSource(cover, "", "")
 	if err != nil {
 		t.Fatalf("resolveCoverEmbedSource() error = %v", err)
 	}
@@ -75,20 +74,19 @@ func TestResolveCoverEmbedSourceRejectsPrivateHostWithoutFetching(t *testing.T) 
 		http.Redirect(w, r, "http://127.0.0.1/private", http.StatusFound)
 	}))
 	defer server.Close()
-	_, err := resolveCoverEmbedSource(context.Background(), server.Client(), server.URL+"/cover.png", "", "")
+	_, err := resolveCoverEmbedSource(server.URL+"/cover.png", "", "")
 	if !errors.Is(err, errCoverUnavailable) || calls != 0 {
 		t.Fatalf("private fetch: calls=%d err=%v", calls, err)
 	}
 }
 
 func TestResolveCoverEmbedSourceRejectsNonImage(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("Content-Type", "text/html")
-		_, _ = writer.Write([]byte("<html>not found</html>"))
-	}))
-	t.Cleanup(server.Close)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "cover.html"), []byte("<html>not an image</html>"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
-	_, err := resolveCoverEmbedSource(context.Background(), server.Client(), server.URL, "", "")
+	_, err := resolveCoverEmbedSource("cover.html", "", root)
 	if !errors.Is(err, errCoverUnavailable) {
 		t.Fatalf("error = %v, want errCoverUnavailable", err)
 	}
@@ -98,7 +96,7 @@ func TestResolveCoverEmbedSourceRejectsEmptyCover(t *testing.T) {
 	t.Parallel()
 
 	if _, err := resolveCoverEmbedSource(
-		context.Background(), http.DefaultClient, "   ", "", "",
+		"   ", "", "",
 	); !errors.Is(err, errCoverUnavailable) {
 		t.Fatalf("error = %v, want errCoverUnavailable", err)
 	}

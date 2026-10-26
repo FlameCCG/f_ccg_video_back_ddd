@@ -7,7 +7,6 @@
 package oauth
 
 import (
-	"bytes"
 	"errors"
 	"io"
 	"net"
@@ -49,24 +48,6 @@ func DoWithRetry(
 	}
 
 	return nil, lastErr
-}
-
-// CloneRequestBody 读取并缓存请求体，便于重试时复用。
-func CloneRequestBody(body io.Reader) ([]byte, error) {
-	if body == nil {
-		return nil, nil
-	}
-
-	return io.ReadAll(body)
-}
-
-// NewBodyReader 根据缓存字节构造可重复读取的请求体。
-func NewBodyReader(body []byte) io.Reader {
-	if len(body) == 0 {
-		return nil
-	}
-
-	return bytes.NewReader(body)
 }
 
 func shouldRetryOAuth(attempt int, err error, resp *http.Response) bool {

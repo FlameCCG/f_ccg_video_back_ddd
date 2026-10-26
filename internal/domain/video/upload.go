@@ -142,65 +142,6 @@ func DefaultPartTitleFromFileName(fileName string) string {
 	return name
 }
 
-// ExtractSourceUploadHash 从源对象路径/URL 中尽力提取上传 fileHash。
-//
-// 与原 upload_service.go 的 extractSourceUploadHash 逐行一致；
-// validateHash 用于复核候选值（由存储端口的 ValidateUploadID 注入）。
-func ExtractSourceUploadHash(storedPath string, validateHash func(string) error) string {
-	trimmed := strings.TrimSpace(storedPath)
-	if trimmed == "" {
-		return ""
-	}
-
-	// strip query/fragment if any
-	if i := strings.IndexAny(trimmed, "?#"); i >= 0 {
-		trimmed = trimmed[:i]
-	}
-
-	trimmed = strings.ReplaceAll(trimmed, "\\", "/")
-	trimmed = strings.Trim(trimmed, "/")
-
-	base := trimmed
-	if i := strings.LastIndex(trimmed, "/"); i >= 0 {
-		base = trimmed[i+1:]
-	}
-
-	// _source_<hash>.mp4
-	const prefix = "_source_"
-	if strings.HasPrefix(base, prefix) {
-		name := base[len(prefix):]
-		if dot := strings.LastIndex(name, "."); dot >= 0 {
-			name = name[:dot]
-		}
-
-		if name != "" && (validateHash == nil || validateHash(name) == nil) {
-			return name
-		}
-	}
-
-	// 目录前缀：user_files/<contentHash>/... 仅识别 md5/sha256 十六进制（与内容哈希一致）
-	parts := strings.Split(trimmed, "/")
-	for i, part := range parts {
-		if !IsContentFileHash(part) {
-			continue
-		}
-
-		if i+1 >= len(parts) {
-			return part
-		}
-
-		next := parts[i+1]
-		if next == "" || next == "dash" || strings.HasPrefix(next, "_source_") ||
-			strings.Contains(next, part) ||
-			strings.HasSuffix(strings.ToLower(next), ".mp4") ||
-			strings.HasSuffix(strings.ToLower(next), ".mpd") {
-			return part
-		}
-	}
-
-	return ""
-}
-
 // IsContentFileHash 判断字符串是否为 32/64 位十六进制内容哈希。
 func IsContentFileHash(s string) bool {
 	if n := len(s); n != 32 && n != 64 {

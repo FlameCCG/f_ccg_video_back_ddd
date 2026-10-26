@@ -166,4 +166,4 @@ type TranscodeEncoder interface {
 // 因此 media 上下文**没有**需要绑定到其它上下文能力的出向端口：
 // 既不发通知、不更新搜索索引，也不修改 videos.status（原实现只读 status 判断是否被硬删除）。
 // 反向的入向能力（video 上下文要用的投递/查进度/取消/存储）由本包的
-// TranscodeDispatchService / ProgressQueryService / CancelService / StorageService 导出。
+// TranscodeDispatchService / ProgressQueryService / CancelService 导出。

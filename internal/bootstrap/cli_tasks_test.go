@@ -15,7 +15,7 @@ func TestRouterRouteListerUsesRealRouter(t *testing.T) {
 	provider := infraconfig.NewProvider(&config.Config{
 		Server: &config.Server{Mode: gin.TestMode},
 	})
-	httpRouter := NewCLIRouter(provider, nil, zap.NewNop(), validate.New())
+	httpRouter := NewCLIRouter(provider, zap.NewNop(), validate.New())
 	routes := NewRouterRouteLister(httpRouter).Routes()
 
 	if len(routes) == 0 {

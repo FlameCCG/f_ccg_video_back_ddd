@@ -7,6 +7,7 @@ import (
 	rbacdomain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/internal/infrastructure/auth"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	identityrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
@@ -23,18 +24,15 @@ import (
 	"github.com/google/wire"
 )
 
+// CLIConfigProviderSet 只加载配置快照，一次性任务不创建文件监听。
+var CLIConfigProviderSet = wire.NewSet(configValueProviderSet, infraconfig.LoadOnce)
+
 // CLIDatabaseProviderSet 是 -db/-vp 的最小初始化图：配置 → 日志 → MySQL。
 var CLIDatabaseProviderSet = wire.NewSet(
-	ConfigProviderSet,
-	loggerProviderSet,
+	CLIConfigProviderSet,
+	logger.ProviderSet,
 	mysql.Provide,
 	mysql.ProvideGorm,
-)
-
-// loggerProviderSet 让所有 CLI 图显式获得同一实例的 *zap.Logger。
-var loggerProviderSet = wire.NewSet(
-	logger.Provide,
-	logger.ProvideZap,
 )
 
 // MigrateDBTaskProviderSet 组装 -db 用例。
@@ -74,7 +72,7 @@ var SuperUserTaskProviderSet = wire.NewSet(
 	wire.Bind(new(tx.Manager), new(*gormx.TxManager)),
 	auth.NewEnforcer,
 	identityrepo.NewUserRepository,
-	wire.Bind(new(provisioningrepo.UserContextDecorator), new(*identityrepo.UserRepository)),
+	wire.Bind(new(provisioningrepo.UserDefaultsInitializer), new(*identityrepo.UserRepository)),
 	provisioningrepo.NewSuperUserRepository,
 	wire.Bind(new(provisioningapp.SuperUserRepository), new(*provisioningrepo.SuperUserRepository)),
 	provisioningrepo.NewCasbinRoleBinder,
@@ -84,24 +82,21 @@ var SuperUserTaskProviderSet = wire.NewSet(
 	cli.NewSuperUserExecutor,
 )
 
-// ESIndexTaskProviderSet 组装 -es；NewESCLIExecutor 的 *mysql.DB 参数保证 MySQL 先初始化。
+// ESIndexTaskProviderSet 组装 -es，只连接索引创建所需的 Elasticsearch。
 var ESIndexTaskProviderSet = wire.NewSet(
-	CLIDatabaseProviderSet,
+	CLIConfigProviderSet,
+	logger.ProviderSet,
 	search.Provide,
 	search.ProvideV7,
 	search.NewIndexManager,
-	NewESCLIExecutor,
+	wire.Bind(new(cli.IndexCreator), new(*search.IndexManager)),
+	cli.NewESIndexExecutor,
 )
 
-// CLIFullInfrastructureProviderSet 对应原 InitCore 在 -rs/-rbac 前完成的全部初始化节点。
-var CLIFullInfrastructureProviderSet = wire.NewSet(
-	ConfigProviderSet,
-	InfrastructureProviderSet,
-)
-
-// RBACInitTaskProviderSet 只组装默认 RBAC 初始化用例，同时强制完整前置基础设施就绪。
+// RBACInitTaskProviderSet 组装默认 RBAC 初始化用例，只连接 MySQL 并加载 Casbin。
 var RBACInitTaskProviderSet = wire.NewSet(
-	CLIFullInfrastructureProviderSet,
+	CLIDatabaseProviderSet,
+	auth.NewEnforcer,
 	rbacrepo.NewCasbinEnforcer,
 	wire.Bind(new(rbacapp.Enforcer), new(*rbacrepo.CasbinEnforcer)),
 	rbacrepo.NewRoleRepository,
@@ -111,13 +106,13 @@ var RBACInitTaskProviderSet = wire.NewSet(
 	rbacrepo.NewRoleMenuRepository,
 	wire.Bind(new(rbacdomain.RoleMenuRepository), new(*rbacrepo.RoleMenuRepository)),
 	rbacapp.NewInitService,
-	NewRBACInitCLIExecutor,
+	wire.Bind(new(cli.RBACInitializer), new(*rbacapp.InitService)),
+	cli.NewRBACInitExecutor,
 )
 
-// ResourceSyncTaskProviderSet 使用真实 Router 构建路由清单；只初始化原 -rs 前置基础设施，
-// 不构造完整 App，也不提前连接 Kafka/启动后台组件。
+// ResourceSyncTaskProviderSet 使用真实 Router 构建路由清单，只连接资源持久化所需的 MySQL。
 var ResourceSyncTaskProviderSet = wire.NewSet(
-	CLIFullInfrastructureProviderSet,
+	CLIDatabaseProviderSet,
 	rbacrepo.NewApiResourceRepository,
 	wire.Bind(new(rbacdomain.ApiResourceRepository), new(*rbacrepo.ApiResourceRepository)),
 	rbacrepo.NewOpenAPIMetaLoader,
@@ -127,5 +122,6 @@ var ResourceSyncTaskProviderSet = wire.NewSet(
 	NewRouterRouteLister,
 	wire.Bind(new(rbacapp.RouteLister), new(*RouterRouteLister)),
 	rbacapp.NewResourceSyncService,
-	NewResourceSyncCLIExecutor,
+	wire.Bind(new(cli.ResourceSynchronizer), new(*rbacapp.ResourceSyncService)),
+	cli.NewResourceSyncExecutor,
 )

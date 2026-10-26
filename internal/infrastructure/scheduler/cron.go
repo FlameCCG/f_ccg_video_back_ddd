@@ -85,11 +85,10 @@ func NewCronComponent(
 
 // Start 注册并启动全部定时任务。
 //
-// 单个任务注册失败只记录错误日志、不阻断其余任务，因此始终返回 nil；
-// 返回 error 是为了与 App 的后台组件启动签名保持一致。
+// 单个任务注册失败只记录错误日志、不阻断其余任务。
 // 重复调用在已启动状态下直接返回，避免遗留一个无人持有的调度器。
-func (c *CronComponent) Start(_ context.Context) error {
-	return c.startJobs(c.jobs())
+func (c *CronComponent) Start(_ context.Context) {
+	c.startJobs(c.jobs())
 }
 
 // jobs 保留原 cron_service.Cron 的四个任务顺序，并追加上传清理。
@@ -131,13 +130,13 @@ func (c *CronComponent) jobs() []cronJob {
 }
 
 // startJobs 用给定注册项构建并启动调度器。
-func (c *CronComponent) startJobs(jobs []cronJob) error {
+func (c *CronComponent) startJobs(jobs []cronJob) {
 	c.mu.Lock()
 	if c.crontab != nil {
 		c.mu.Unlock()
 		c.logger.Warn("定时任务已在运行，忽略重复启动")
 
-		return nil
+		return
 	}
 	c.mu.Unlock()
 
@@ -163,17 +162,15 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 	c.mu.Unlock()
 
 	c.logger.Info("定时任务启动成功!")
-
-	return nil
 }
 
 // Stop 停止定时任务调度，并尽量等待在途任务结束（最多 5s）。
 //
 // 等价原 cron_service.Stop：幂等，等待窗口固定为 5s、不受传入 context 影响，
 // 保证与原优雅退出时序完全一致。
-func (c *CronComponent) Stop(_ context.Context) error {
+func (c *CronComponent) Stop(_ context.Context) {
 	if c == nil {
-		return nil
+		return
 	}
 
 	c.mu.Lock()
@@ -182,7 +179,7 @@ func (c *CronComponent) Stop(_ context.Context) error {
 	c.mu.Unlock()
 
 	if crontab == nil {
-		return nil
+		return
 	}
 
 	stopCtx := crontab.Stop()
@@ -192,8 +189,6 @@ func (c *CronComponent) Stop(_ context.Context) error {
 	case <-time.After(cronStopTimeout):
 		c.logger.Warn("定时任务停止超时，继续退出")
 	}
-
-	return nil
 }
 
 // cronLocation 解析调度时区。

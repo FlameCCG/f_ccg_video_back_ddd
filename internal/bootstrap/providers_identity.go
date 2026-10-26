@@ -3,7 +3,6 @@ package bootstrap
 import (
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
 	notificationapp "f_ccg_video_back_ddd/internal/application/notification"
-	provisioningapp "f_ccg_video_back_ddd/internal/application/provisioning"
 	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
@@ -13,9 +12,7 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	identityrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/migration"
 	notificationrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/notification"
-	provisioningrepo "f_ccg_video_back_ddd/internal/infrastructure/persistence/provisioning"
 
 	"github.com/google/wire"
 )
@@ -39,8 +36,6 @@ var IdentityProviderSet = wire.NewSet(
 	identityrepo.NewUserRepository,
 	wire.Bind(new(identitydomain.UserRepository), new(*identityrepo.UserRepository)),
 	wire.Bind(new(identitydomain.UserAccountRepository), new(*identityrepo.UserRepository)),
-	// CLI 建号任务复用同一份「默认横幅 ID 注入 ctx」逻辑
-	wire.Bind(new(provisioningrepo.UserContextDecorator), new(*identityrepo.UserRepository)),
 	identityrepo.NewExpRecordRepository,
 	wire.Bind(new(identitydomain.ExpRecordRepository), new(*identityrepo.ExpRecordRepository)),
 	identityrepo.NewCoinRecordRepository,
@@ -108,16 +103,4 @@ var NotificationProviderSet = wire.NewSet(
 	notificationapp.ProviderSet,
 	// identity 的封禁通知端口由通知应用服务实现（跨上下文协调在应用层完成）
 	wire.Bind(new(identityapp.BanNotifier), new(*notificationapp.Service)),
-)
-
-// ProvisioningProviderSet 运维初始化任务：数据库迁移、超管创建、Banner 初始化。
-var ProvisioningProviderSet = wire.NewSet(
-	migration.NewMigrator,
-	provisioningrepo.NewSuperUserRepository,
-	wire.Bind(new(provisioningapp.SuperUserRepository), new(*provisioningrepo.SuperUserRepository)),
-	provisioningrepo.NewCasbinRoleBinder,
-	wire.Bind(new(provisioningapp.CasbinRoleBinder), new(*provisioningrepo.CasbinRoleBinder)),
-	provisioningrepo.NewBannerRepository,
-	wire.Bind(new(provisioningapp.BannerRepository), new(*provisioningrepo.BannerRepository)),
-	provisioningapp.ProviderSet,
 )

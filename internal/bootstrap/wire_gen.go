@@ -90,7 +90,7 @@ import (
 // 本文件带 wireinject 标签，只供 Wire 分析；这里的 panic(wire.Build(...)) 是生成声明，
 // 不会进入正常服务的运行路径。普通构建使用 wire_gen.go 中同名的普通 Go 函数。
 // 返回的 func() 是清理已成功构造依赖的闭包，error 对应返回错误的 provider；
-// provider 自身发生 panic（如配置加载失败）时，不应假定会走普通 error 回退路径。
+// provider 自身发生 panic 时，不应假定会走普通 error 回退路径。
 //
 // 生成命令（在项目根目录执行；依赖图说明见 docs/architecture.md 第 6 节）：
 //
@@ -101,9 +101,9 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
 	loggerLogger, cleanup := logger.Provide(configLogger, provider)
-	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
 	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
 	es := config.ProvideESConf(provider)
@@ -114,7 +114,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
 	searcher, cleanup6 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
-	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
+	syncedEnforcer, err := auth.NewEnforcer(gormDB)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -124,7 +124,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	infrastructure := NewInfrastructure(loggerLogger, db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
+	infrastructure := NewInfrastructure(db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
 	client := cache.ProvideClient(cacheRedis)
 	userStatusCache := identity.NewUserStatusCache(client, zapLogger)
 	userRepository := identity2.NewUserRepository(gormDB, provider)
@@ -331,7 +331,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	hub := NewDanmuHub(danmuService, danmuEventBus, checker, zapLogger)
 	videoHandler := video5.NewHandler(feedService, detailService, recommendService, interactionService, danmuService, historyService, folderService, partitionService, publishService, updateService, uploadService, reportService, videoSearcher, readService, hub, provider, ipregionResolver, zapLogger, userStatusService)
 	adminVideoQuery := video.NewAdminVideoQuery(gormDB)
-	adminVideoService := video3.NewAdminVideoService(txManager, videoRepository, adminVideoQuery, statsService, authorService, detailMetaCache, hotRankCache, scheduleStore, vectorSyncService, purgeRepository, cancelService, videoStorageResolver, uploadService, zapLogger)
+	adminVideoService := video3.NewAdminVideoService(txManager, videoRepository, adminVideoQuery, statsService, authorService, detailMetaCache, hotRankCache, scheduleStore, vectorSyncService, purgeRepository, cancelService, videoStorageResolver, zapLogger)
 	progressQueryService := media.NewProgressQueryService(progressCache)
 	videoTranscodeProgressReader := adapters.NewVideoTranscodeProgressReader(progressQueryService)
 	videoAdminHandler := video5.NewAdminHandler(adminVideoService, detailService, danmuService, reportService, partitionService, videoTranscodeProgressReader, vectorSyncService, zapLogger)
@@ -371,6 +371,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	inheritService := rbac2.NewInheritService(roleRepository, roleMenuRepository, casbinEnforcer, roleGraph, zapLogger)
 	rbacHandler := rbac3.NewHandler(roleService, menuService, permissionService, inheritService, zapLogger)
 	routerRouter := router.New(provider, middlewaresMiddlewares, translator, handler, adminHandler, captchaHandler, contentopsHandler, aiHandler, socialHandler, videoHandler, videoAdminHandler, commentHandler, chatHandler, notificationHandler, dynamicHandler, rbacHandler)
+	indexInitializer := chat.NewIndexInitializer(store, zapLogger)
 	configRiver := config.ProvideRiverConf(provider)
 	riverComponent := river.NewRiverComponent(configRiver, configMysql, es, gormDB, zapLogger)
 	videoScheduler := video3.NewScheduler(txManager, videoRepository, scheduleStore, vectorSyncService, provider, zapLogger)
@@ -394,7 +395,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	uploadGarbageScanner := storage.NewUploadGarbageScanner(provider, minIOClientPool, zapLogger)
 	uploadCleanupService := video3.NewUploadCleanupService(uploadGarbageScanner, videoRepository, uploadHashGuard, provider, zapLogger)
 	cronComponent := scheduler.NewCronComponent(commentLikeSyncService, videoStatSyncService, hotRankDecayService, autoUnbanService, uploadCleanupService, zapLogger)
-	runtimeComponents := NewRuntimeComponents(riverComponent, videoScheduler, transcodeConsumerComponent, cronComponent, chatHub, hub, zapLogger)
+	runtimeComponents := NewRuntimeComponents(indexInitializer, riverComponent, videoScheduler, transcodeConsumerComponent, cronComponent, chatHub, hub)
 	app := NewApp(infrastructure, provider, loggerLogger, routerRouter, detachedTaskGroup, runtimeComponents, producerPool)
 	return app, func() {
 		cleanup6()
@@ -409,7 +410,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 // InitializeTranscodeWorker 构造独立转码消费者，不装配 HTTP 与其他后台组件。
 func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadTranscodeWorker(string2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -454,7 +455,7 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 // InitializeMigrateDBTask 构造 -db 运维任务（配置 + 日志 + MySQL）。
 func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadOnce(string2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -475,7 +476,7 @@ func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
 // InitializeVideoPartitionsTask 构造 -vp 运维任务（配置 + 日志 + MySQL）。
 func InitializeVideoPartitionsTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadOnce(string2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -496,7 +497,7 @@ func InitializeVideoPartitionsTask(opts *cli.Options) (*cli.Executor, func(), er
 // InitializeBannerTask 构造 -br 运维任务（配置 + 日志 + MySQL + 存储）。
 func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadOnce(string2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -521,7 +522,7 @@ func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 // InitializeSuperUserTask 构造 -su 运维任务（配置 + 日志 + MySQL + Casbin）。
 func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadOnce(string2)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -533,7 +534,7 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	gormDB := mysql.ProvideGorm(db)
 	userRepository := identity2.NewUserRepository(gormDB, provider)
 	superUserRepository := provisioning.NewSuperUserRepository(gormDB, userRepository, zapLogger)
-	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
+	syncedEnforcer, err := auth.NewEnforcer(gormDB)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -549,120 +550,79 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	}, nil
 }
 
-// InitializeESIndexTask 构造 -es 运维任务（配置 + 日志 + MySQL + Elasticsearch）。
+// InitializeESIndexTask 构造 -es 运维任务（配置 + 日志 + Elasticsearch）。
 func InitializeESIndexTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadOnce(string2)
 	if err != nil {
 		return nil, nil, err
 	}
-	configMysql := config.ProvideMysqlConf(provider)
+	es := config.ProvideESConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
 	loggerLogger, cleanup := logger.Provide(configLogger, provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
-	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es, zapLogger)
+	searchES, cleanup2 := search.Provide(es, zapLogger)
 	client := search.ProvideV7(searchES)
 	indexManager := search.NewIndexManager(client, zapLogger)
-	executor := NewESCLIExecutor(db, indexManager, zapLogger)
+	executor := cli.NewESIndexExecutor(indexManager, zapLogger)
 	return executor, func() {
-		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil
 }
 
-// InitializeResourceSyncTask 构造 -rs 运维任务（完整前置基础设施 + 真实 HTTP Router）。
+// InitializeResourceSyncTask 构造 -rs 运维任务（配置 + 日志 + MySQL + 真实 HTTP Router）。
 func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadOnce(string2)
 	if err != nil {
 		return nil, nil, err
 	}
+	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
 	loggerLogger, cleanup := logger.Provide(configLogger, provider)
-	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
 	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
-	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es, zapLogger)
-	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
-	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
-	searcher, cleanup6 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
-	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
-	if err != nil {
-		cleanup6()
-		cleanup5()
-		cleanup4()
-		cleanup3()
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
-	infrastructure := NewInfrastructure(loggerLogger, db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
 	apiResourceRepository := rbac.NewApiResourceRepository(gormDB)
 	translator := validate.New()
-	routerRouter := NewCLIRouter(provider, syncedEnforcer, zapLogger, translator)
+	routerRouter := NewCLIRouter(provider, zapLogger, translator)
 	routerRouteLister := NewRouterRouteLister(routerRouter)
 	openAPIMetaLoader := rbac.NewOpenAPIMetaLoader()
 	resourceSyncService := rbac2.NewResourceSyncService(apiResourceRepository, routerRouteLister, openAPIMetaLoader, zapLogger)
-	executor := NewResourceSyncCLIExecutor(infrastructure, resourceSyncService, zapLogger)
+	executor := cli.NewResourceSyncExecutor(resourceSyncService, zapLogger)
 	return executor, func() {
-		cleanup6()
-		cleanup5()
-		cleanup4()
-		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil
 }
 
-// InitializeRBACInitTask 构造 -rbac 运维任务（完整前置基础设施）。
+// InitializeRBACInitTask 构造 -rbac 运维任务（配置 + 日志 + MySQL + Casbin）。
 func InitializeRBACInitTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, err := config.LoadOnce(string2)
 	if err != nil {
 		return nil, nil, err
 	}
+	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
 	loggerLogger, cleanup := logger.Provide(configLogger, provider)
-	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
 	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
-	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es, zapLogger)
-	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
-	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
-	searcher, cleanup6 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
-	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
+	roleRepository := rbac.NewRoleRepository(gormDB)
+	menuRepository := rbac.NewMenuRepository(gormDB)
+	roleMenuRepository := rbac.NewRoleMenuRepository(gormDB)
+	syncedEnforcer, err := auth.NewEnforcer(gormDB)
 	if err != nil {
-		cleanup6()
-		cleanup5()
-		cleanup4()
-		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	infrastructure := NewInfrastructure(loggerLogger, db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
-	roleRepository := rbac.NewRoleRepository(gormDB)
-	menuRepository := rbac.NewMenuRepository(gormDB)
-	roleMenuRepository := rbac.NewRoleMenuRepository(gormDB)
 	casbinEnforcer := rbac.NewCasbinEnforcer(syncedEnforcer)
 	initService := rbac2.NewInitService(roleRepository, menuRepository, roleMenuRepository, casbinEnforcer, zapLogger)
-	executor := NewRBACInitCLIExecutor(infrastructure, initService, zapLogger)
+	executor := cli.NewRBACInitExecutor(initService, zapLogger)
 	return executor, func() {
-		cleanup6()
-		cleanup5()
-		cleanup4()
-		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil

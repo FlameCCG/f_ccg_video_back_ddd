@@ -51,7 +51,6 @@ type Infrastructure struct {
 // logger → MySQL → ES → Redis → Mongo → IPDB → Casbin。
 // 这样多个中间件同时不可用时，首个失败点与原项目相同。
 func NewInfrastructure(
-	_ *logger.Logger,
 	db *mysql.DB,
 	es *search.ES,
 	redisClient *cache.Redis,
@@ -122,10 +121,8 @@ func NewApp(
 // Start 启动后台组件，语义与原 core.InitCore 尾部的后台启动序列一致。
 // 单个组件启动失败只记录日志、不阻断 HTTP 服务启动（与原实现一致）。
 
-func (a *App) Start(ctx context.Context) error {
+func (a *App) Start(ctx context.Context) {
 	a.runtime.Start(ctx)
-
-	return nil
 }
 
 func (a *App) log() *zap.Logger {
@@ -220,7 +217,7 @@ func (a *App) Serve() error {
 // Stop 在 HTTP 关闭后按序停止后台任务与基础设施。
 // 顺序与原 core.GracefulStop 一致：
 // 转码消费者 → 视频调度 → River → Cron → detached 任务 → Mongo → MySQL → Redis → ES → IPDB → Logger。
-func (a *App) Stop(ctx context.Context) error {
+func (a *App) Stop(ctx context.Context) {
 	a.log().Info("graceful stop starting")
 
 	// 先让会继续访问数据库、缓存和消息客户端的组件退出，再回收基础设施连接。
@@ -241,5 +238,4 @@ func (a *App) Stop(ctx context.Context) error {
 	a.lg.Stop()
 
 	// Logger 已 Sync，后续尽量少打日志；这里用标准库无法再保证刷盘，故不再输出。
-	return nil
 }

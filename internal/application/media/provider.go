@@ -21,7 +21,6 @@ var ProviderSet = wire.NewSet(
 	NewTranscodeDispatchService,
 	NewProgressQueryService,
 	NewCancelService,
-	NewStorageService,
 	ProvideGPUCooldown,
 	ProvideTaskRegistry,
 )

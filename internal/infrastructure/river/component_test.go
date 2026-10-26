@@ -11,7 +11,7 @@ import (
 
 // 对应原 core/init_river.go 的 sync.Once + 幂等 Stop 语义。
 
-// TestRiverComponentStartIsIdempotentWhenDisabled 未启用时 Start 只记日志、返回 nil，
+// TestRiverComponentStartIsIdempotentWhenDisabled 未启用时 Start 只记日志，
 // 且重复调用不再进入构造分支（等价原 sync.Once）。
 func TestRiverComponentStartIsIdempotentWhenDisabled(t *testing.T) {
 	t.Parallel()
@@ -19,9 +19,7 @@ func TestRiverComponentStartIsIdempotentWhenDisabled(t *testing.T) {
 	c := NewRiverComponent(&config.River{Enable: false}, &config.Mysql{}, &config.ES{}, nil, zap.NewNop())
 
 	for range 3 {
-		if err := c.Start(context.Background()); err != nil {
-			t.Fatalf("Start: %v", err)
-		}
+		c.Start(context.Background())
 	}
 
 	if c.river != nil {
@@ -30,7 +28,7 @@ func TestRiverComponentStartIsIdempotentWhenDisabled(t *testing.T) {
 }
 
 // TestRiverComponentStartDoesNotBlockOnConstructionFailure 构造失败（此处 MySQL 不可达）
-// 只记 "init river failed"，Start 仍返回 nil，不阻断进程启动。
+// 只记 "init river failed"，不阻断进程启动。
 func TestRiverComponentStartDoesNotBlockOnConstructionFailure(t *testing.T) {
 	t.Parallel()
 
@@ -43,25 +41,21 @@ func TestRiverComponentStartDoesNotBlockOnConstructionFailure(t *testing.T) {
 		zap.NewNop(),
 	)
 
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("Start must not return an error on construction failure: %v", err)
-	}
+	c.Start(context.Background())
 
 	if c.river != nil {
 		t.Fatal("failed construction must leave the engine nil")
 	}
 }
 
-// TestRiverComponentStopIsIdempotent 未启动或已停止时 Stop 均返回 nil。
+// TestRiverComponentStopIsIdempotent 未启动或已停止时 Stop 均无副作用。
 func TestRiverComponentStopIsIdempotent(t *testing.T) {
 	t.Parallel()
 
 	c := NewRiverComponent(&config.River{Enable: false}, &config.Mysql{}, &config.ES{}, nil, zap.NewNop())
 
 	for range 3 {
-		if err := c.Stop(context.Background()); err != nil {
-			t.Fatalf("Stop: %v", err)
-		}
+		c.Stop(context.Background())
 	}
 }
 
@@ -72,17 +66,11 @@ func TestRiverComponentStartAfterStopStaysStopped(t *testing.T) {
 
 	c := NewRiverComponent(&config.River{Enable: true}, &config.Mysql{}, &config.ES{}, nil, zap.NewNop())
 
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
+	c.Start(context.Background())
 
-	if err := c.Stop(context.Background()); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
+	c.Stop(context.Background())
 
-	if err := c.Start(context.Background()); err != nil {
-		t.Fatalf("second Start: %v", err)
-	}
+	c.Start(context.Background())
 
 	if c.river != nil {
 		t.Fatal("Start after Stop must not restart the engine")

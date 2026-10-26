@@ -96,11 +96,11 @@ func (s *UserStatusService) Invalidate(userID uint) {
 // ValidateAccessToken checks current DB credential state on every authenticated
 // request so password changes revoke tokens across all server instances.
 func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secret string) (*domain.User, error) {
-	uid, _, err := jwts.ParseJwtToken(token, secret)
+	claims, err := jwts.ParseAccessToken(token, secret)
 	if err != nil {
 		return nil, err
 	}
-	id, err := strconv.ParseUint(uid, 10, 64)
+	id, err := strconv.ParseUint(claims.UID, 10, strconv.IntSize)
 	if err != nil || id == 0 {
 		return nil, domain.ErrUserNotLogin
 	}
@@ -111,7 +111,7 @@ func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secr
 	if user == nil {
 		return nil, domain.ErrUserNotFound
 	}
-	if err := jwts.CheckPasswordVersion(token, secret, user.Password, "access"); err != nil {
+	if err := claims.CheckPasswordVersion(secret, user.Password); err != nil {
 		return nil, err
 	}
 	if user.IsBanned() {

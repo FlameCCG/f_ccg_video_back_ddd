@@ -40,8 +40,7 @@ func newExpFixture(t *testing.T) (*app.ExpService, *gorm.DB, uint) {
 		Exp:      0,
 		Level:    1,
 	}
-	// 跳过 AfterCreate（会写 user_confs / 默认收藏夹等），本测只需 exp 表。
-	if err := db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error; err != nil {
+	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user failed: %v", err)
 	}
 
@@ -66,9 +65,12 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 	svc, db, userID := newExpFixture(t)
 	ctx := context.Background()
 
-	// 先加到接近上限：55
-	if _, err := svc.AddExp(ctx, userID, 55, "seed"); err != nil {
-		t.Fatalf("seed exp: %v", err)
+	// 投币 +45、登录 +10，让真实奖励入口累计到 55。
+	if err := svc.CoinExpForVideo(ctx, userID, 1, 3); err != nil {
+		t.Fatalf("seed coin exp: %v", err)
+	}
+	if err := svc.LoginExp(ctx, userID); err != nil {
+		t.Fatalf("seed login exp: %v", err)
 	}
 
 	// 点赞本应 +10，但日上限只剩 5
@@ -98,8 +100,8 @@ func TestDailyExpCapAppliesToAllGains(t *testing.T) {
 		t.Fatalf("LikeExp at cap: %v", err)
 	}
 
-	if err := svc.CoinExp(ctx, userID, 2); err != nil {
-		t.Fatalf("CoinExp: %v", err)
+	if err := svc.CoinExpForVideo(ctx, userID, 2, 2); err != nil {
+		t.Fatalf("CoinExpForVideo: %v", err)
 	}
 
 	if err := db.First(&user, userID).Error; err != nil {

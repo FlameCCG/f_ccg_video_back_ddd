@@ -59,18 +59,18 @@ func NewScheduler(
 // Start 启动调度循环。
 //
 // 调度依赖数据库，不依赖 Redis。重复调用幂等，由 Stop 统一取消。
-func (s *Scheduler) Start(_ context.Context) error {
+func (s *Scheduler) Start(_ context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.running {
-		return nil
+		return
 	}
 
 	if !s.store.Available() {
 		s.logger.Warn("schedule storage not configured, skip video scheduler")
 
-		return nil
+		return
 	}
 
 	loopCtx, cancel := context.WithCancel(context.Background())
@@ -80,18 +80,16 @@ func (s *Scheduler) Start(_ context.Context) error {
 	s.wg.Add(1)
 
 	go s.loop(loopCtx)
-
-	return nil
 }
 
 // Stop 停止调度循环并等待退出。
-func (s *Scheduler) Stop(_ context.Context) error {
+func (s *Scheduler) Stop(_ context.Context) {
 	s.mu.Lock()
 
 	if !s.running {
 		s.mu.Unlock()
 
-		return nil
+		return
 	}
 
 	cancel := s.cancel
@@ -104,8 +102,6 @@ func (s *Scheduler) Stop(_ context.Context) error {
 	}
 
 	s.wg.Wait()
-
-	return nil
 }
 
 // Running 报告调度器当前是否在运行。
@@ -114,22 +110,6 @@ func (s *Scheduler) Running() bool {
 	defer s.mu.Unlock()
 
 	return s.running
-}
-
-// SchedulePublish 添加定时发布任务。
-//
-// 计划持久化后可等待服务启动或重启，不要求调度循环已经运行。
-func (s *Scheduler) SchedulePublish(ctx context.Context, videoID uint, when time.Time) error {
-	return s.txm.Do(ctx, func(txCtx context.Context) error {
-		video, err := s.videos.FindByIDForUpdate(txCtx, videoID)
-		if err != nil {
-			return err
-		}
-		if video == nil {
-			return domain.ErrRecordNotFound
-		}
-		return s.store.Add(txCtx, videoID, when)
-	})
 }
 
 func (s *Scheduler) loop(ctx context.Context) {

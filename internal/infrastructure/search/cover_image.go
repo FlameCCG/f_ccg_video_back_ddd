@@ -1,7 +1,6 @@
 package search
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -18,8 +17,6 @@ const maxCoverImageBytes = 8 << 20
 var errCoverUnavailable = errors.New("cover image unavailable for embedding")
 
 func resolveCoverEmbedSource(
-	ctx context.Context,
-	client *http.Client,
 	cover string,
 	assetBaseURL string,
 	localStorageRoot string,

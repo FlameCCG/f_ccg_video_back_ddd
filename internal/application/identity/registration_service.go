@@ -69,10 +69,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 		Gender:         enum.GenderUnknown,
 	}
 
-	// 用户创建钩子需要读取「注册默认横幅 ID」，必须在开启事务前包装 ctx。
-	createCtx := s.users.WithDefaultBanner(ctx)
-
-	if err = s.txm.Do(createCtx, func(txCtx context.Context) error {
+	if err = s.txm.Do(ctx, func(txCtx context.Context) error {
 		roleID, roleErr := s.roles.RoleIDByName(txCtx, constants.CommonUserRole)
 		if roleErr != nil {
 			s.logger.Error("查找默认角色失败", zap.Error(roleErr))

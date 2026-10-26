@@ -7,7 +7,6 @@
 package migration
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -231,9 +230,4 @@ func isDuplicateIndexError(err error) bool {
 
 	return strings.Contains(msg, "duplicate key name") ||
 		strings.Contains(msg, "already exists")
-}
-
-// MigrateBannerTable 单独迁移 banner 表（Banner 初始化任务在写入前调用）。
-func (m *Migrator) MigrateBannerTable(ctx context.Context) error {
-	return m.db.WithContext(ctx).AutoMigrate(&po.Banner{})
 }

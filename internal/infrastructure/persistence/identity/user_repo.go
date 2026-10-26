@@ -51,18 +51,13 @@ func NewUserRepository(db *gorm.DB, cfgProvider *infraconfig.Provider) *UserRepo
 	return &UserRepository{db: db, cfgProvider: cfgProvider}
 }
 
-// WithDefaultBanner 在 context 上附加默认用户横幅 ID，供用户创建钩子使用。
-func (r *UserRepository) WithDefaultBanner(ctx context.Context) context.Context {
-	return po.WithDefaultUserBannerID(ctx, r.defaultUserBannerID())
-}
-
 func (r *UserRepository) defaultUserBannerID() uint {
 	cfg := r.cfgProvider.Get()
 	if cfg == nil || cfg.Site == nil {
-		return po.FallbackDefaultUserBannerID
+		return domain.FallbackDefaultUserBannerID
 	}
 
-	return po.ResolveDefaultUserBannerID(cfg.Site.DefaultUserBannerID)
+	return domain.ResolveDefaultUserBannerID(cfg.Site.DefaultUserBannerID)
 }
 
 // FindByID 按主键读取用户；不存在时返回 (nil, nil)。

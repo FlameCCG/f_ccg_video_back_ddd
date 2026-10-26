@@ -28,7 +28,6 @@ const (
 	knnMinCandidates       = 100
 	keywordRecallFactor    = 3
 	vectorErrorBodyLimit   = 4096
-	coverFetchTimeout      = 10 * time.Second
 	vectorFieldVideoID     = "video_id"
 	vectorFieldTitle       = "title"
 	vectorFieldDesc        = "description"
@@ -60,9 +59,8 @@ type vectorIndexState struct {
 // VideoVectorIndex 是视频多模态向量索引的 ES8 + 方舟适配器。
 // 客户端、embedding 连接池与索引校验缓存均为实例状态，不依赖包级可变单例。
 type VideoVectorIndex struct {
-	client      *elasticsearch8.Client
-	coverClient *http.Client
-	logger      *zap.Logger
+	client *elasticsearch8.Client
+	logger *zap.Logger
 
 	embedMu   sync.Mutex
 	embedders map[arkEmbedderKey]*arkEmbedder
@@ -77,11 +75,10 @@ var _ app.VideoVectorIndexLifecycle = (*VideoVectorIndex)(nil)
 // NewVideoVectorIndex 构造视频向量索引适配器（client 允许为 nil）。
 func NewVideoVectorIndex(client *elasticsearch8.Client, logger *zap.Logger) *VideoVectorIndex {
 	return &VideoVectorIndex{
-		client:      client,
-		coverClient: &http.Client{Timeout: coverFetchTimeout},
-		logger:      logger,
-		embedders:   make(map[arkEmbedderKey]*arkEmbedder),
-		checked:     make(map[vectorIndexState]struct{}),
+		client:    client,
+		logger:    logger,
+		embedders: make(map[arkEmbedderKey]*arkEmbedder),
+		checked:   make(map[vectorIndexState]struct{}),
 	}
 }
 
@@ -260,7 +257,7 @@ func (v *VideoVectorIndex) Store(
 	}
 
 	document, content := buildVideoVectorDocument(source)
-	imageSource, imageErr := v.resolveVideoCover(ctx, cfg, source.Cover)
+	imageSource, imageErr := v.resolveVideoCover(cfg, source.Cover)
 	if imageErr != nil {
 		if cfg.ImageMode == embeddingImageModeOn {
 			return fmt.Errorf(
@@ -306,7 +303,6 @@ func (v *VideoVectorIndex) Store(
 }
 
 func (v *VideoVectorIndex) resolveVideoCover(
-	ctx context.Context,
 	cfg app.VectorConfig,
 	cover string,
 ) (string, error) {
@@ -314,7 +310,7 @@ func (v *VideoVectorIndex) resolveVideoCover(
 		return "", nil
 	}
 
-	return resolveCoverEmbedSource(ctx, v.coverClient, cover, cfg.AssetBaseURL, cfg.LocalStorageRoot)
+	return resolveCoverEmbedSource(cover, cfg.AssetBaseURL, cfg.LocalStorageRoot)
 }
 
 // Delete 删除一个视频向量文档；索引或文档不存在均视为成功。
