@@ -3,11 +3,13 @@ package mq
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"net"
 	"testing"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/config"
+	"github.com/stretchr/testify/require"
+
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"github.com/IBM/sarama"
@@ -20,52 +22,40 @@ func TestShouldRecreateConsumerGroup(t *testing.T) {
 	t.Run("nil error", func(t *testing.T) {
 		t.Parallel()
 
-		if shouldRecreateConsumerGroup(nil) {
-			t.Fatal("nil error should not recreate consumer group")
-		}
+		require.False(t, shouldRecreateConsumerGroup(nil), "nil error should not recreate consumer group")
 	})
 
 	t.Run("kafka coordinator error", func(t *testing.T) {
 		t.Parallel()
 
-		if !shouldRecreateConsumerGroup(sarama.ErrNotCoordinatorForConsumer) {
-			t.Fatal("ErrNotCoordinatorForConsumer should recreate consumer group")
-		}
+		require.True(t, shouldRecreateConsumerGroup(sarama.ErrNotCoordinatorForConsumer), "ErrNotCoordinatorForConsumer should recreate consumer group")
 	})
 
 	t.Run("wrapped broker exhaustion error", func(t *testing.T) {
 		t.Parallel()
 
 		err := sarama.Wrap(sarama.ErrOutOfBrokers, errors.New("dial tcp timeout"))
-		if !shouldRecreateConsumerGroup(err) {
-			t.Fatal("wrapped ErrOutOfBrokers should recreate consumer group")
-		}
+		require.True(t, shouldRecreateConsumerGroup(err), "wrapped ErrOutOfBrokers should recreate consumer group")
 	})
 
 	t.Run("plain string match", func(t *testing.T) {
 		t.Parallel()
 
 		err := errors.New("kafka server: Request was for a consumer group that is not coordinated by this broker")
-		if !shouldRecreateConsumerGroup(err) {
-			t.Fatal("coordinator string error should recreate consumer group")
-		}
+		require.True(t, shouldRecreateConsumerGroup(err), "coordinator string error should recreate consumer group")
 	})
 
 	t.Run("network timeout", func(t *testing.T) {
 		t.Parallel()
 
 		err := &net.OpError{Op: "read", Net: "tcp", Err: timeoutError{}}
-		if !shouldRecreateConsumerGroup(err) {
-			t.Fatal("network timeout should recreate consumer group")
-		}
+		require.True(t, shouldRecreateConsumerGroup(err), "network timeout should recreate consumer group")
 	})
 
 	t.Run("unrelated error", func(t *testing.T) {
 		t.Parallel()
 
-		if shouldRecreateConsumerGroup(errors.New("boom")) {
-			t.Fatal("unrelated error should not recreate consumer group")
-		}
+		require.False(t, shouldRecreateConsumerGroup(errors.New("boom")), "unrelated error should not recreate consumer group")
 	})
 }
 
@@ -78,21 +68,21 @@ func TestNewConsumerGroupConfigUsesOldestOffset(t *testing.T) {
 	}
 
 	kCfg := newConsumerGroupConfig(cfg, zap.NewNop())
-	if kCfg.Consumer.Offsets.Initial != sarama.OffsetOldest {
-		t.Fatalf("expected initial offset %d, got %d", sarama.OffsetOldest, kCfg.Consumer.Offsets.Initial)
-	}
+	require.Equal(t, sarama.OffsetOldest, kCfg.Consumer.Offsets.Initial, "expected initial offset %d, got %d", sarama.OffsetOldest, kCfg.Consumer.Offsets.Initial)
 }
 
 func TestResolveKafkaRebalanceTimeout(t *testing.T) {
 	t.Parallel()
 
-	if got := resolveKafkaRebalanceTimeout(nil); got != defaultKafkaRebalanceTimeout {
-		t.Fatalf("expected default rebalance timeout %v, got %v", defaultKafkaRebalanceTimeout, got)
+	{
+		got := resolveKafkaRebalanceTimeout(nil)
+		require.Equal(t, defaultKafkaRebalanceTimeout, got, "expected default rebalance timeout %v, got %v", defaultKafkaRebalanceTimeout, got)
 	}
 
 	cfg := &config.Kafka{RebalanceTimeoutSec: 600}
-	if got := resolveKafkaRebalanceTimeout(cfg); got != 600*time.Second {
-		t.Fatalf("expected configured rebalance timeout 600s, got %v", got)
+	{
+		got := resolveKafkaRebalanceTimeout(cfg)
+		require.Equal(t, 600*time.Second, got, "expected configured rebalance timeout 600s, got %v", got)
 	}
 }
 
@@ -113,12 +103,14 @@ func TestStopConsumingDoesNotCancelShutdownContext(t *testing.T) {
 
 	consumer.StopConsuming()
 
-	if err := consumer.consumeCtx.Err(); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected consume ctx canceled, got %v", err)
+	{
+		err := consumer.consumeCtx.Err()
+		require.ErrorIs(t, err, context.Canceled, "expected consume ctx canceled, got %v", err)
 	}
 
-	if err := consumer.ShutdownContext().Err(); err != nil {
-		t.Fatalf("shutdown ctx should remain active after StopConsuming, got %v", err)
+	{
+		err := consumer.ShutdownContext().Err()
+		require.NoError(t, err, "shutdown ctx should remain active after StopConsuming, got %v", err)
 	}
 }
 
@@ -133,13 +125,12 @@ func TestCloseCancelsShutdownContext(t *testing.T) {
 		shutdownCancel: shutdownCancel,
 	}
 
-	if err := consumer.Close(); err != nil {
-		t.Fatalf("close consumer failed: %v", err)
+	{
+		err := consumer.Close()
+		require.NoError(t, err, "close consumer failed: %v", err)
 	}
 
-	if !errors.Is(consumer.ShutdownContext().Err(), context.Canceled) {
-		t.Fatalf("expected shutdown ctx canceled after Close, got %v", consumer.ShutdownContext().Err())
-	}
+	require.ErrorIs(t, consumer.ShutdownContext().Err(), context.Canceled, "expected shutdown ctx canceled after Close, got %v", consumer.ShutdownContext().Err())
 }
 
 func TestConsumeClaimSuppressesContextCanceledErrors(t *testing.T) {
@@ -157,9 +148,7 @@ func TestConsumeClaimSuppressesContextCanceledErrors(t *testing.T) {
 	err := handler.ConsumeClaim(stubConsumerGroupSession{ctx: ctx}, stubConsumerGroupClaim{
 		messages: make(chan *sarama.ConsumerMessage, 1),
 	})
-	if err != nil {
-		t.Fatalf("expected canceled session error to be suppressed, got %v", err)
-	}
+	require.NoError(t, err, "expected canceled session error to be suppressed, got %v", err)
 }
 
 // TestNewKafkaConsumerValidatesInput 构造校验的错误文案属于消费者重试分类的输入，必须逐字保持。
@@ -178,14 +167,14 @@ func TestNewKafkaConsumerValidatesInput(t *testing.T) {
 		{
 			name:    "missing brokers",
 			cfg:     &config.Kafka{},
-			topics:  []string{"transcode"},
+			topics:  []string{TopicTranscode},
 			handler: handler,
 			wantMsg: "kafka brokers not configured",
 		},
 		{
 			name:    "missing group id",
 			cfg:     &config.Kafka{Brokers: []string{"b"}},
-			topics:  []string{"transcode"},
+			topics:  []string{TopicTranscode},
 			handler: handler,
 			wantMsg: "kafka groupID required",
 		},
@@ -198,7 +187,7 @@ func TestNewKafkaConsumerValidatesInput(t *testing.T) {
 		{
 			name:    "missing handler",
 			cfg:     &config.Kafka{Brokers: []string{"b"}, GroupID: "g"},
-			topics:  []string{"transcode"},
+			topics:  []string{TopicTranscode},
 			wantMsg: "message handler required",
 		},
 	}
@@ -208,6 +197,7 @@ func TestNewKafkaConsumerValidatesInput(t *testing.T) {
 			t.Parallel()
 
 			logger := zap.NewNop()
+
 			_, err := NewKafkaConsumer(
 				tt.cfg,
 				tt.topics,
@@ -215,13 +205,10 @@ func TestNewKafkaConsumerValidatesInput(t *testing.T) {
 				NewProducerPool(logger),
 				logger,
 			)
-			if err == nil || err.Error() != tt.wantMsg {
-				t.Fatalf("error = %v, want %q", err, tt.wantMsg)
-			}
+			require.Error(t, err, "error = %v, want %q", err, tt.wantMsg)
+			require.Equal(t, tt.wantMsg, err.Error(), "error = %v, want %q", err, tt.wantMsg)
 
-			if isRetryableTranscodeInitError(err) {
-				t.Fatalf("%q must be classified as permanent", tt.wantMsg)
-			}
+			require.False(t, isRetryableTranscodeInitError(err), "%q must be classified as permanent", tt.wantMsg)
 		})
 	}
 }
@@ -231,21 +218,25 @@ func TestResolveDLQTopic(t *testing.T) {
 	t.Parallel()
 
 	explicit := &config.Kafka{Topics: map[string]string{"dlq": "my-dlq"}}
-	if got := resolveDLQTopic(explicit, []string{"transcode"}); got != "my-dlq" {
-		t.Fatalf("explicit dlq = %q, want my-dlq", got)
+	{
+		got := resolveDLQTopic(explicit, []string{TopicTranscode})
+		require.Equal(t, "my-dlq", got, "explicit dlq = %q, want my-dlq", got)
 	}
 
 	alias := &config.Kafka{Topics: map[string]string{"transcode_dlq": "t-dlq"}}
-	if got := resolveDLQTopic(alias, []string{"transcode"}); got != "t-dlq" {
-		t.Fatalf("alias dlq = %q, want t-dlq", got)
+	{
+		got := resolveDLQTopic(alias, []string{TopicTranscode})
+		require.Equal(t, "t-dlq", got, "alias dlq = %q, want t-dlq", got)
 	}
 
-	if got := resolveDLQTopic(&config.Kafka{}, []string{"transcode"}); got != "transcode.dlq" {
-		t.Fatalf("derived dlq = %q, want transcode.dlq", got)
+	{
+		got := resolveDLQTopic(&config.Kafka{}, []string{TopicTranscode})
+		require.Equal(t, "transcode.dlq", got, "derived dlq = %q, want transcode.dlq", got)
 	}
 
-	if got := resolveDLQTopic(nil, nil); got != "" {
-		t.Fatalf("no source dlq = %q, want empty", got)
+	{
+		got := resolveDLQTopic(nil, nil)
+		require.Empty(t, got, "no source dlq = %q, want empty", got)
 	}
 }
 
@@ -264,15 +255,11 @@ func TestHandleMessageRetriesThenGivesUp(t *testing.T) {
 
 	err := handler.handleMessage(
 		stubConsumerGroupSession{ctx: context.Background()},
-		&sarama.ConsumerMessage{Topic: "transcode"},
+		&sarama.ConsumerMessage{Topic: TopicTranscode},
 	)
-	if err == nil {
-		t.Fatal("exhausted retries must return the last error")
-	}
+	require.Error(t, err, "exhausted retries must return the last error")
 
-	if attempts != maxMessageRetryAttempts+1 {
-		t.Fatalf("attempts = %d, want %d", attempts, maxMessageRetryAttempts+1)
-	}
+	require.Equal(t, maxMessageRetryAttempts+1, attempts, "attempts = %d, want %d", attempts, maxMessageRetryAttempts+1)
 }
 
 // TestHandleMessagePermanentErrorSkipsRetry 永久错误立即返回，不做退避重试。
@@ -290,21 +277,17 @@ func TestHandleMessagePermanentErrorSkipsRetry(t *testing.T) {
 
 	err := handler.handleMessage(
 		stubConsumerGroupSession{ctx: context.Background()},
-		&sarama.ConsumerMessage{Topic: "transcode"},
+		&sarama.ConsumerMessage{Topic: TopicTranscode},
 	)
 
 	var permanentErr *media.PermanentMessageError
-	if !errors.As(err, &permanentErr) {
-		t.Fatalf("error = %v, want PermanentMessageError", err)
-	}
+	require.ErrorAs(t, err, &permanentErr, "error = %v, want PermanentMessageError", err)
 
-	if attempts != 1 {
-		t.Fatalf("attempts = %d, want 1 (no retry for permanent failures)", attempts)
-	}
+	require.Equal(t, 1, attempts, "attempts = %d, want 1 (no retry for permanent failures)", attempts)
 }
 
 type stubConsumerGroupSession struct {
-	ctx context.Context
+	ctx context.Context //nolint:containedctx // Captures the session context to verify consumer lifecycle and correlation behavior.
 }
 
 func (s stubConsumerGroupSession) Claims() map[string][]int32                  { return nil }
@@ -342,7 +325,9 @@ func (p *trackingDLQProducer) SendMessage(m *sarama.ProducerMessage) (int32, int
 	if p.fail {
 		return 0, 0, errors.New("dlq unavailable")
 	}
+
 	p.messages = append(p.messages, m)
+
 	return 0, 0, nil
 }
 
@@ -354,41 +339,56 @@ type trackingGroupSession struct {
 func (s *trackingGroupSession) MarkMessage(m *sarama.ConsumerMessage, _ string) {
 	s.marked = append(s.marked, m)
 }
+
 func TestRetryExhaustionDeadLettersAndContinuesPartition(t *testing.T) {
+	t.Parallel()
+
 	session := &trackingGroupSession{stubConsumerGroupSession: stubConsumerGroupSession{ctx: t.Context()}}
 	producer := &trackingDLQProducer{}
 	messages := make(chan *sarama.ConsumerMessage, 2)
 	poison := &sarama.ConsumerMessage{Topic: "source", Offset: 1}
 	good := &sarama.ConsumerMessage{Topic: "source", Offset: 2}
+
 	messages <- poison
+
 	messages <- good
+
 	close(messages)
+
 	handler := consumerGroupHandler{producer: producer, dlqTopic: "source.dlq", fn: func(s sarama.ConsumerGroupSession, m *sarama.ConsumerMessage) error {
 		if m.Offset == 1 {
 			return context.DeadlineExceeded
 		}
+
 		s.MarkMessage(m, "")
+
 		return nil
 	}}
-	if err := handler.ConsumeClaim(session, stubConsumerGroupClaim{messages: messages}); err != nil {
-		t.Fatal(err)
+	{
+		err := handler.ConsumeClaim(session, stubConsumerGroupClaim{messages: messages})
+		require.NoError(t, err)
 	}
-	if len(producer.messages) != 1 || len(session.marked) != 2 || session.marked[1] != good {
-		t.Fatalf("partition blocked or poison unacknowledged: dlq=%d marked=%d", len(producer.messages), len(session.marked))
-	}
+
+	require.False(t, len(producer.messages) != 1 || len(session.marked) != 2 || session.marked[1] != good, "partition blocked or poison unacknowledged: dlq=%d marked=%d", len(producer.messages), len(session.marked))
 }
+
 func TestDeadLetterFailureDoesNotCommitPoison(t *testing.T) {
+	t.Parallel()
+
 	session := &trackingGroupSession{stubConsumerGroupSession: stubConsumerGroupSession{ctx: t.Context()}}
+
 	messages := make(chan *sarama.ConsumerMessage, 1)
 	messages <- &sarama.ConsumerMessage{Topic: "source"}
+
 	close(messages)
-	handler := consumerGroupHandler{producer: &trackingDLQProducer{fail: true}, dlqTopic: "source.dlq", fn: func(s sarama.ConsumerGroupSession, m *sarama.ConsumerMessage) error {
+
+	handler := consumerGroupHandler{producer: &trackingDLQProducer{fail: true}, dlqTopic: "source.dlq", fn: func(_ sarama.ConsumerGroupSession, _ *sarama.ConsumerMessage) error {
 		return media.PermanentMessage(errors.New("invalid"))
 	}}
-	if err := handler.ConsumeClaim(session, stubConsumerGroupClaim{messages: messages}); err == nil {
-		t.Fatal("expected dlq failure")
+	{
+		err := handler.ConsumeClaim(session, stubConsumerGroupClaim{messages: messages})
+		require.Error(t, err, "expected dlq failure")
 	}
-	if len(session.marked) != 0 {
-		t.Fatal("poison acknowledged without durable dlq copy")
-	}
+
+	require.Empty(t, session.marked, "poison acknowledged without durable dlq copy")
 }

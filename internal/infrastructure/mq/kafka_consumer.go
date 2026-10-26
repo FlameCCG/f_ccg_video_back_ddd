@@ -4,13 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/logmeta"
+	"f_ccg_video_back_ddd/pkg/logsafe"
 	"fmt"
 	"net"
+	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/config"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"github.com/IBM/sarama"
@@ -28,7 +34,11 @@ type KafkaConsumer struct {
 	cfg           *config.Kafka
 	group         sarama.ConsumerGroup
 	groupMu       sync.RWMutex
+	lifecycleMu   sync.Mutex
 	closed        bool
+	listenerStop  func()
+	started       bool
+	failureEvent  string
 	topics        []string
 	fn            MessageHandler
 	producers     *ProducerPool
@@ -36,10 +46,10 @@ type KafkaConsumer struct {
 	ownsProducers bool
 	logger        *zap.Logger
 	// consumeCtx 仅控制拉取循环；与长任务处理解耦，避免 rebalance 取消转码。
-	consumeCtx    context.Context
+	consumeCtx    context.Context //nolint:containedctx // Owns consumer and shutdown lifetimes that outlive individual Consume calls.
 	consumeCancel context.CancelFunc
 	// shutdownCtx 供转码等长任务使用；进程关闭时先停消费、等待在途任务后再取消。
-	shutdownCtx    context.Context
+	shutdownCtx    context.Context //nolint:containedctx // Owns consumer and shutdown lifetimes that outlive individual Consume calls.
 	shutdownCancel context.CancelFunc
 	wg             sync.WaitGroup
 }
@@ -93,19 +103,23 @@ func NewKafkaConsumer(
 	if err := validateConsumerDLQ(cfg, topics, logger); err != nil {
 		return nil, err
 	}
+
 	ownsProducers := producers == nil
 	if ownsProducers {
 		producers = NewProducerPool(logger)
 	}
+
 	dlqProducer, err := producers.Producer(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("initialize dlq producer: %w", err)
 	}
+
 	cg, err := newConsumerGroup(cfg, logger)
 	if err != nil {
 		if ownsProducers {
 			_ = producers.Close()
 		}
+
 		return nil, err
 	}
 
@@ -130,20 +144,24 @@ func NewKafkaConsumer(
 
 // validateConsumerDLQ fails before consuming if deployment omitted the dead-letter topic.
 // Topic creation is explicit in docker-compose; production operators may provision it with their own replication policy.
-func validateConsumerDLQ(cfg *config.Kafka, topics []string, logger *zap.Logger) error {
+func validateConsumerDLQ(cfg *config.Kafka, topics []string, logger *zap.Logger) (resultErr error) {
 	topic := resolveDLQTopic(cfg, topics)
+
 	admin, err := sarama.NewClusterAdmin(cfg.Brokers, newConsumerGroupConfig(cfg, logger))
 	if err != nil {
 		return fmt.Errorf("initialize dlq metadata: %w", err)
 	}
-	defer admin.Close()
+	defer func() { resultErr = errors.Join(resultErr, admin.Close()) }()
+
 	metadata, err := admin.DescribeTopics([]string{topic})
 	if err != nil {
 		return fmt.Errorf("describe dlq topic %q: %w", topic, err)
 	}
+
 	if len(metadata) != 1 || metadata[0].Err != sarama.ErrNoError {
 		return fmt.Errorf("dlq topic %q must be created before starting the consumer", topic)
 	}
+
 	return nil
 }
 
@@ -201,7 +219,7 @@ func newConsumerGroupConfig(cfg *config.Kafka, logger *zap.Logger) *sarama.Confi
 	if v := strings.TrimSpace(cfg.Version); v != "" {
 		version, err := sarama.ParseKafkaVersion(v)
 		if err != nil {
-			logger.Warn("parse kafka version failed", zap.Error(err))
+			logger.Warn("parse kafka version failed", zap.String("event", "mq.kafka_consumer.new_consumer_group_config.degraded"), zap.String("operation", "mq.kafka_consumer.new_consumer_group_config"), zap.Error(err))
 		} else {
 			kCfg.Version = version
 		}
@@ -212,15 +230,28 @@ func newConsumerGroupConfig(cfg *config.Kafka, logger *zap.Logger) *sarama.Confi
 
 // Start 启动消费循环。
 func (c *KafkaConsumer) Start() error {
-	if c.currentGroup() == nil {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
+	c.groupMu.Lock()
+	if c.group == nil || c.closed || (c.consumeCtx != nil && c.consumeCtx.Err() != nil) {
+		c.groupMu.Unlock()
 		return errors.New("consumer group not ready")
 	}
-	// 启动消费循环
+
+	if c.started {
+		c.groupMu.Unlock()
+		return nil
+	}
+
+	c.started = true
+	c.listenerStop = c.listenErrors(c.group)
 	c.wg.Add(1)
 
+	c.groupMu.Unlock()
 	go c.loop()
 
-	c.logger.Info("kafka consumer started", zap.Strings("topics", c.topics), zap.String("group", c.cfg.GroupID))
+	c.logger.Info("kafka consumer started", zap.String("event", "mq.kafka_consumer.start.diagnostic"), zap.String("operation", "mq.kafka_consumer.start"), zap.Strings("topics", c.topics), zap.String("group", c.cfg.GroupID))
 
 	return nil
 }
@@ -244,6 +275,9 @@ func (c *KafkaConsumer) StopConsuming() {
 		c.consumeCancel()
 	}
 
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
 	c.wg.Wait()
 }
 
@@ -260,15 +294,24 @@ func (c *KafkaConsumer) Close() error {
 	c.groupMu.Lock()
 	c.closed = true
 	group := c.group
+	stopListener := c.listenerStop
+	c.listenerStop = nil
 	c.group = nil
 	c.groupMu.Unlock()
+
 	var closeErr error
 	if group != nil {
 		closeErr = group.Close()
 	}
+
+	if stopListener != nil {
+		stopListener()
+	}
+
 	if c.ownsProducers {
 		closeErr = errors.Join(closeErr, c.producers.Close())
 	}
+
 	return closeErr
 }
 
@@ -283,11 +326,12 @@ func (c *KafkaConsumer) loop() {
 	defer c.wg.Done()
 
 	handler := consumerGroupHandler{
-		shutdownCtx: c.shutdownCtx,
-		fn:          c.fn,
-		producer:    c.dlqProducer,
-		dlqTopic:    resolveDLQTopic(c.cfg, c.topics),
-		logger:      c.logger,
+		shutdownCtx:  c.shutdownCtx,
+		fn:           c.fn,
+		producer:     c.dlqProducer,
+		dlqTopic:     resolveDLQTopic(c.cfg, c.topics),
+		logger:       c.logger,
+		failureEvent: c.failureEvent,
 	}
 
 	for {
@@ -299,36 +343,56 @@ func (c *KafkaConsumer) loop() {
 		if group == nil {
 			return
 		}
+
 		if err := group.Consume(c.consumeCtx, c.topics, handler); err != nil {
-			if errors.Is(err, sarama.ErrClosedConsumerGroup) {
-				if c.consumeCtx.Err() != nil {
-					return
-				}
-
-				if recreateErr := c.recreateGroup(); recreateErr != nil {
-					c.logger.Error("recreate kafka consumer group failed", zap.Error(recreateErr))
-					time.Sleep(consumerRetryBackoff)
-				}
-
-				continue
-			}
-
-			if shouldRecreateConsumerGroup(err) {
-				c.logger.Warn("kafka consumer group unhealthy, recreating", zap.Error(err))
-
-				if recreateErr := c.recreateGroup(); recreateErr != nil {
-					c.logger.Error("recreate kafka consumer group failed", zap.Error(recreateErr))
-				}
-			} else {
-				c.logger.Error("kafka consume failed", zap.Error(err))
-			}
-
-			if c.consumeCtx.Err() != nil {
+			if !c.handleConsumeFailure(err) {
 				return
 			}
-
-			time.Sleep(consumerRetryBackoff)
 		}
+	}
+}
+
+func (c *KafkaConsumer) handleConsumeFailure(err error) bool {
+	var recorded *loggedMessageError
+	if errors.As(err, &recorded) {
+		return c.waitForConsumeRetry()
+	}
+
+	if errors.Is(err, sarama.ErrClosedConsumerGroup) {
+		if c.consumeCtx.Err() != nil {
+			return false
+		}
+
+		if recreateErr := c.recreateGroup(); recreateErr != nil {
+			c.logger.Error("recreate kafka consumer group failed", zap.String("event", "mq.kafka_consumer.loop.failed"), zap.String("operation", "mq.kafka_consumer.loop"), zap.Error(recreateErr))
+			return c.waitForConsumeRetry()
+		}
+
+		return true
+	}
+
+	if shouldRecreateConsumerGroup(err) {
+		c.logger.Warn("kafka consumer group unhealthy, recreating", zap.String("event", "mq.kafka_consumer.loop.degraded"), zap.String("operation", "mq.kafka_consumer.loop"), zap.Error(err))
+
+		if recreateErr := c.recreateGroup(); recreateErr != nil {
+			c.logger.Error("recreate kafka consumer group failed", zap.String("event", "mq.kafka_consumer.loop.failed"), zap.String("operation", "mq.kafka_consumer.loop"), zap.Error(recreateErr))
+		}
+	} else {
+		c.logger.Error("kafka consume failed", zap.String("event", "mq.kafka_consumer.loop.failed"), zap.String("operation", "mq.kafka_consumer.loop"), zap.Error(err))
+	}
+
+	return c.waitForConsumeRetry()
+}
+
+func (c *KafkaConsumer) waitForConsumeRetry() bool {
+	timer := time.NewTimer(consumerRetryBackoff)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		return true
+	case <-c.consumeCtx.Done():
+		return false
 	}
 }
 
@@ -343,6 +407,7 @@ func resolveKafkaRebalanceTimeout(cfg *config.Kafka) time.Duration {
 func (c *KafkaConsumer) currentGroup() sarama.ConsumerGroup {
 	c.groupMu.RLock()
 	defer c.groupMu.RUnlock()
+
 	return c.group
 }
 
@@ -355,15 +420,28 @@ func (c *KafkaConsumer) recreateGroup() error {
 	c.groupMu.Lock()
 	if c.closed {
 		c.groupMu.Unlock()
+
 		_ = nextGroup.Close()
+
 		return sarama.ErrClosedConsumerGroup
 	}
+
 	oldGroup := c.group
+
+	oldListenerStop := c.listenerStop
+	if c.started {
+		c.listenerStop = c.listenErrors(nextGroup)
+	}
+
 	c.group = nextGroup
 	c.groupMu.Unlock()
 
 	if oldGroup != nil {
 		_ = oldGroup.Close()
+	}
+
+	if oldListenerStop != nil {
+		oldListenerStop()
 	}
 
 	return nil
@@ -384,15 +462,10 @@ func shouldRecreateConsumerGroup(err error) bool {
 
 	var kafkaErr sarama.KError
 	if errors.As(err, &kafkaErr) {
-		switch kafkaErr {
-		case sarama.ErrConsumerCoordinatorNotAvailable,
-			sarama.ErrNotCoordinatorForConsumer,
-			sarama.ErrIllegalGeneration,
-			sarama.ErrUnknownMemberId,
-			sarama.ErrRebalanceInProgress,
-			sarama.ErrOffsetsLoadInProgress:
-			return true
-		}
+		return slices.Contains([]sarama.KError{
+			sarama.ErrConsumerCoordinatorNotAvailable, sarama.ErrNotCoordinatorForConsumer,
+			sarama.ErrIllegalGeneration, sarama.ErrUnknownMemberId, sarama.ErrRebalanceInProgress, sarama.ErrOffsetsLoadInProgress,
+		}, kafkaErr)
 	}
 
 	message := strings.ToLower(err.Error())
@@ -416,11 +489,12 @@ func isKafkaNetworkTimeout(err error) bool {
 }
 
 type consumerGroupHandler struct {
-	shutdownCtx context.Context
-	fn          MessageHandler
-	producer    sarama.SyncProducer
-	dlqTopic    string
-	logger      *zap.Logger
+	shutdownCtx  context.Context //nolint:containedctx // Owns consumer and shutdown lifetimes that outlive individual Consume calls.
+	fn           MessageHandler
+	producer     sarama.SyncProducer
+	dlqTopic     string
+	logger       *zap.Logger
+	failureEvent string
 }
 
 func (h consumerGroupHandler) log() *zap.Logger {
@@ -433,8 +507,8 @@ func (h consumerGroupHandler) log() *zap.Logger {
 
 // Setup 在每轮 rebalance 分配完成后记录成员与 claim 信息。
 func (h consumerGroupHandler) Setup(session sarama.ConsumerGroupSession) error {
-	h.log().Info("kafka consumer rebalance setup",
-		zap.String("memberId", session.MemberID()),
+	h.log().Info("kafka consumer rebalance setup", zap.String("event", "mq.kafka_consumer.setup.diagnostic"), zap.String("operation", "mq.kafka_consumer.setup"),
+		zap.String("member_id", session.MemberID()),
 		zap.Int32("generation", session.GenerationID()),
 		zap.Any("claims", session.Claims()),
 	)
@@ -444,12 +518,12 @@ func (h consumerGroupHandler) Setup(session sarama.ConsumerGroupSession) error {
 
 // Cleanup 在会话结束时记录退出原因，便于排查 rebalance 与关机导致的重投递。
 func (h consumerGroupHandler) Cleanup(session sarama.ConsumerGroupSession) error {
-	h.log().Info("kafka consumer rebalance cleanup",
-		zap.String("memberId", session.MemberID()),
+	h.log().Info("kafka consumer rebalance cleanup", zap.String("event", "mq.kafka_consumer.cleanup.diagnostic"), zap.String("operation", "mq.kafka_consumer.cleanup"),
+		zap.String("member_id", session.MemberID()),
 		zap.Int32("generation", session.GenerationID()),
 		zap.Any("claims", session.Claims()),
-		zap.NamedError("sessionErr", session.Context().Err()),
-		zap.NamedError("sessionCause", context.Cause(session.Context())),
+		zap.NamedError("session_err", session.Context().Err()),
+		zap.NamedError("session_cause", context.Cause(session.Context())),
 	)
 
 	return nil
@@ -460,11 +534,11 @@ func (h consumerGroupHandler) ConsumeClaim(
 	session sarama.ConsumerGroupSession,
 	claim sarama.ConsumerGroupClaim,
 ) error {
-	h.log().Info("kafka claim started",
+	h.log().Info("kafka claim started", zap.String("event", "mq.kafka_consumer.consume_claim.diagnostic"), zap.String("operation", "mq.kafka_consumer.consume_claim"),
 		zap.String("topic", claim.Topic()),
 		zap.Int32("partition", claim.Partition()),
-		zap.Int64("initialOffset", claim.InitialOffset()),
-		zap.String("memberId", session.MemberID()),
+		zap.Int64("initial_offset", claim.InitialOffset()),
+		zap.String("member_id", session.MemberID()),
 		zap.Int32("generation", session.GenerationID()),
 	)
 
@@ -472,10 +546,10 @@ func (h consumerGroupHandler) ConsumeClaim(
 		select {
 		case msg := <-claim.Messages():
 			if msg == nil {
-				h.log().Info("kafka claim messages channel closed",
+				h.log().Info("kafka claim messages channel closed", zap.String("event", "mq.kafka_consumer.consume_claim.diagnostic"), zap.String("operation", "mq.kafka_consumer.consume_claim"),
 					zap.String("topic", claim.Topic()),
 					zap.Int32("partition", claim.Partition()),
-					zap.String("memberId", session.MemberID()),
+					zap.String("member_id", session.MemberID()),
 					zap.Int32("generation", session.GenerationID()),
 				)
 
@@ -483,58 +557,20 @@ func (h consumerGroupHandler) ConsumeClaim(
 			}
 
 			if err := h.handleMessage(session, msg); err != nil {
-				// 会话/上下文已取消时结束 claim，避免把取消错误当业务失败反复重启
-				if h.isStopping(session) {
-					h.log().Warn("kafka claim ending due to session/context cancel (offset not committed; may redeliver)",
-						zap.String("topic", msg.Topic),
-						zap.Int32("partition", msg.Partition),
-						zap.Int64("offset", msg.Offset),
-						zap.String("memberId", session.MemberID()),
-						zap.Int32("generation", session.GenerationID()),
-						zap.NamedError("handlerErr", err),
-						zap.NamedError("sessionErr", session.Context().Err()),
-						zap.NamedError("sessionCause", context.Cause(session.Context())),
-					)
-
-					return nil //nolint:nilerr // claim ends with session/context cancellation
+				keepGoing, resultErr := h.handleClaimFailure(session, msg, err)
+				if !keepGoing {
+					return resultErr
 				}
-
-				var permanentErr *media.PermanentMessageError
-				if errors.As(err, &permanentErr) {
-					if dlqErr := h.publishDLQ(msg, permanentErr.Unwrap()); dlqErr != nil {
-						return fmt.Errorf("publish dlq message: %w", dlqErr)
-					}
-
-					session.MarkMessage(msg, "permanent failure sent to dlq")
-					h.log().Error("permanent kafka message sent to dlq",
-						zap.Error(permanentErr.Unwrap()),
-						zap.String("topic", msg.Topic),
-						zap.Int32("partition", msg.Partition),
-						zap.Int64("offset", msg.Offset),
-						zap.String("dlqTopic", h.dlqTopic))
-
-					continue
-				}
-
-				h.log().Error("handle kafka message failed",
-					zap.Error(err),
-					zap.String("topic", msg.Topic),
-					zap.Int32("partition", msg.Partition),
-					zap.Int64("offset", msg.Offset),
-					zap.String("memberId", session.MemberID()),
-					zap.Int32("generation", session.GenerationID()),
-				)
-
-				return err
 			}
+
 		case <-session.Context().Done():
-			h.log().Warn("kafka claim session done (rebalance/shutdown; in-flight offset may redeliver)",
+			h.log().Info("kafka claim session done (rebalance/shutdown; in-flight offset may redeliver)", zap.String("event", "mq.kafka_consumer.consume_claim.diagnostic"), zap.String("operation", "mq.kafka_consumer.consume_claim"),
 				zap.String("topic", claim.Topic()),
 				zap.Int32("partition", claim.Partition()),
-				zap.String("memberId", session.MemberID()),
+				zap.String("member_id", session.MemberID()),
 				zap.Int32("generation", session.GenerationID()),
-				zap.NamedError("sessionErr", session.Context().Err()),
-				zap.NamedError("sessionCause", context.Cause(session.Context())),
+				zap.NamedError("session_err", session.Context().Err()),
+				zap.NamedError("session_cause", context.Cause(session.Context())),
 			)
 
 			return nil
@@ -550,34 +586,45 @@ func (h consumerGroupHandler) handleMessage(
 	session sarama.ConsumerGroupSession,
 	msg *sarama.ConsumerMessage,
 ) error {
+	baseSession := session
+	ctx := messageContext(session.Context(), msg)
+
 	var lastErr error
 
 	for attempt := 0; attempt <= maxMessageRetryAttempts; attempt++ {
+		values := logmeta.From(ctx)
+		values.AttemptID = logmeta.NewID()
+		attemptCtx := logmeta.With(ctx, values)
+		session = correlatedSession{ConsumerGroupSession: baseSession, ctx: attemptCtx}
+
+		setCorrelation(msg, values)
+
 		if attempt > 0 {
-			h.log().Warn("kafka message handler retry",
+			logctx.With(session.Context(), h.log()).Warn("kafka.message.retry",
+				zap.String("event", "kafka.message.retry"),
 				zap.Int("attempt", attempt),
-				zap.Int("maxAttempts", maxMessageRetryAttempts),
+				zap.Int("max_attempts", maxMessageRetryAttempts),
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
 				zap.Int64("offset", msg.Offset),
-				zap.NamedError("lastErr", lastErr),
+				zap.NamedError("last_err", lastErr),
 			)
 		}
 
-		err := h.fn(session, msg)
+		err := h.invoke(session, msg)
 		if err == nil {
 			return nil
 		}
 
 		if h.isStopping(session) {
-			h.log().Warn("kafka message handler stopped by session/context cancel",
+			logctx.With(session.Context(), h.log()).Info("kafka message handler stopped by session/context cancel",
 				zap.Int("attempt", attempt),
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
 				zap.Int64("offset", msg.Offset),
-				zap.NamedError("handlerErr", err),
-				zap.NamedError("sessionErr", session.Context().Err()),
-				zap.NamedError("sessionCause", context.Cause(session.Context())),
+				zap.NamedError("handler_err", err),
+				zap.NamedError("session_err", session.Context().Err()),
+				zap.NamedError("session_cause", context.Cause(session.Context())),
 			)
 
 			return err
@@ -591,14 +638,6 @@ func (h consumerGroupHandler) handleMessage(
 		lastErr = err
 
 		if attempt == maxMessageRetryAttempts {
-			h.log().Error("kafka message handler exhausted retries",
-				zap.Int("attempts", attempt+1),
-				zap.String("topic", msg.Topic),
-				zap.Int32("partition", msg.Partition),
-				zap.Int64("offset", msg.Offset),
-				zap.Error(lastErr),
-			)
-
 			break
 		}
 
@@ -613,14 +652,14 @@ func (h consumerGroupHandler) handleMessage(
 				}
 			}
 
-			h.log().Warn("kafka message handler retry aborted by session cancel",
+			logctx.With(session.Context(), h.log()).Info("kafka message handler retry aborted by session cancel",
 				zap.Int("attempt", attempt),
 				zap.String("topic", msg.Topic),
 				zap.Int32("partition", msg.Partition),
 				zap.Int64("offset", msg.Offset),
-				zap.NamedError("lastErr", lastErr),
-				zap.NamedError("sessionErr", session.Context().Err()),
-				zap.NamedError("sessionCause", context.Cause(session.Context())),
+				zap.NamedError("last_err", lastErr),
+				zap.NamedError("session_err", session.Context().Err()),
+				zap.NamedError("session_cause", context.Cause(session.Context())),
 			)
 
 			return session.Context().Err()
@@ -656,7 +695,7 @@ func (h consumerGroupHandler) publishDLQ(msg *sarama.ConsumerMessage, cause erro
 		Offset:    msg.Offset,
 		Key:       string(msg.Key),
 		Value:     string(msg.Value),
-		Error:     cause.Error(),
+		Error:     logsafe.Text(logsafe.Error(cause), logsafe.ErrorLimit),
 		FailedAt:  time.Now().UTC(),
 	}
 
@@ -666,9 +705,10 @@ func (h consumerGroupHandler) publishDLQ(msg *sarama.ConsumerMessage, cause erro
 	}
 
 	producerMsg := &sarama.ProducerMessage{
-		Topic: h.dlqTopic,
-		Key:   sarama.ByteEncoder(msg.Key),
-		Value: sarama.ByteEncoder(raw),
+		Topic:   h.dlqTopic,
+		Headers: deadLetterHeaders(msg),
+		Key:     sarama.ByteEncoder(msg.Key),
+		Value:   sarama.ByteEncoder(raw),
 	}
 	_, _, err = h.producer.SendMessage(producerMsg)
 
@@ -689,4 +729,180 @@ func resolveDLQTopic(cfg *config.Kafka, topics []string) string {
 	}
 
 	return ""
+}
+
+func (h consumerGroupHandler) failedEvent() string {
+	if h.failureEvent != "" {
+		return h.failureEvent
+	}
+
+	return "kafka.message.failed"
+}
+
+// listenErrors stays active until the associated consumer group has actually closed.
+// Recreating the group installs a new listener before retiring the old one.
+func (c *KafkaConsumer) listenErrors(group sarama.ConsumerGroup) func() {
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+
+		for {
+			select {
+			case <-stop:
+				return
+			case err, ok := <-group.Errors():
+				if !ok {
+					return
+				}
+
+				if err == nil {
+					continue
+				}
+
+				var recorded *loggedMessageError
+				if errors.As(err, &recorded) {
+					continue
+				}
+
+				logger := logctx.With(context.Background(), c.logger)
+				c.groupMu.RLock()
+				closing := c.closed
+				c.groupMu.RUnlock()
+
+				if closing || (c.consumeCtx != nil && c.consumeCtx.Err() != nil) || errors.Is(err, context.Canceled) || errors.Is(err, sarama.ErrClosedConsumerGroup) {
+					logger.Info("kafka.consumer.stopped", zap.String("event", "kafka.consumer.stopped"))
+					continue
+				}
+
+				logger.Error("kafka.consumer.failed", zap.String("event", "kafka.consumer.failed"), zap.Error(err))
+			}
+		}
+	}()
+
+	var once sync.Once
+
+	return func() { once.Do(func() { close(stop); <-done }) }
+}
+
+// loggedMessageError keeps handler causes without repeating their exception in the group listener.
+type loggedMessageError struct{ cause error }
+
+func (e *loggedMessageError) Error() string { return e.cause.Error() }
+func (e *loggedMessageError) Unwrap() error { return e.cause }
+
+func deadLetterHeaders(msg *sarama.ConsumerMessage) []sarama.RecordHeader {
+	headers := make([]sarama.RecordHeader, 0, len(msg.Headers))
+	for _, header := range msg.Headers {
+		if header != nil {
+			headers = append(headers, sarama.RecordHeader{Key: append([]byte(nil), header.Key...), Value: append([]byte(nil), header.Value...)})
+		}
+	}
+
+	return headers
+}
+
+func taskErrorClassification(err error) (apperr.Kind, string) {
+	if semantic := apperr.Semantic(err); semantic != nil {
+		code := semantic.Code
+		if code == "" {
+			code = "task." + string(semantic.Kind)
+		}
+
+		return semantic.Kind, code
+	}
+
+	if errors.Is(err, media.ErrTranscodeEncodeTimeout) || errors.Is(err, media.ErrTranscodeProgressStalled) || errors.Is(err, media.ErrTranscodeUploadTimeout) {
+		return apperr.Dependency, "transcode.timeout"
+	}
+
+	return apperr.Internal, "kafka.handler_failed"
+}
+
+// invoke retains panics as terminal task failures; the message boundary owns recording and DLQ disposition.
+func (h consumerGroupHandler) invoke(session sarama.ConsumerGroupSession, msg *sarama.ConsumerMessage) (err error) {
+	defer func() {
+		if value := recover(); value != nil {
+			cause, ok := value.(error)
+			if !ok {
+				cause = fmt.Errorf("%v", value)
+			}
+
+			err = media.PermanentMessage(apperr.Wrap("kafka.handler.panic", nil, &messagePanicError{cause: cause, stack: string(debug.Stack())}, apperr.Internal))
+		}
+	}()
+
+	return h.fn(session, msg)
+}
+
+type messagePanicError struct {
+	cause error
+	stack string
+}
+
+func (e *messagePanicError) Error() string { return "message handler panic: " + e.cause.Error() }
+func (e *messagePanicError) Unwrap() error { return e.cause }
+
+func recordMessageFailure(logger *zap.Logger, event string, err error, fields ...zap.Field) {
+	kind, code := taskErrorClassification(err)
+
+	fields = append(fields, zap.String("event", event), zap.Bool("success", false), zap.String("error_kind", string(kind)), zap.String("error_code", code))
+	switch kind {
+	case apperr.Validation, apperr.Rejected, apperr.NotFound, apperr.Conflict, apperr.RateLimited, apperr.Canceled:
+		logger.Info(event, fields...)
+	case apperr.Degraded, apperr.Security:
+		logger.Warn(event, append(fields, zap.Error(err))...)
+	case apperr.Dependency, apperr.Internal:
+		fallthrough
+	default:
+		fields = append(fields, zap.Error(err))
+
+		var panicErr *messagePanicError
+		if errors.As(err, &panicErr) {
+			fields = append(fields, zap.String("stack", panicErr.stack))
+		}
+
+		logger.Error(event, fields...)
+	}
+}
+
+func (h consumerGroupHandler) handleClaimFailure(session sarama.ConsumerGroupSession, msg *sarama.ConsumerMessage, err error) (bool, error) {
+	messageLogger := logctx.With(messageContext(session.Context(), msg), h.log())
+	if h.failureEvent == "transcode.task.failed" {
+		key := taskIdentityFromMessage(msg.Value)
+		messageLogger = messageLogger.With(zap.Uint("video_id", key.VideoID), zap.Uint("part_id", key.PartID))
+	}
+	// 会话/上下文已取消时结束 claim，避免把取消错误当业务失败反复重启
+	if h.isStopping(session) {
+		messageLogger.Info("kafka claim ending due to session/context cancel (offset not committed; may redeliver)",
+			zap.String("topic", msg.Topic),
+			zap.Int32("partition", msg.Partition),
+			zap.Int64("offset", msg.Offset),
+			zap.String("member_id", session.MemberID()),
+			zap.Int32("generation", session.GenerationID()),
+			zap.NamedError("handler_err", err),
+			zap.NamedError("session_err", session.Context().Err()),
+			zap.NamedError("session_cause", context.Cause(session.Context())),
+		)
+
+		return false, nil
+	}
+
+	var permanentErr *media.PermanentMessageError
+	if errors.As(err, &permanentErr) {
+		recordMessageFailure(messageLogger, h.failedEvent(), permanentErr,
+			zap.String("topic", msg.Topic), zap.Int32("partition", msg.Partition), zap.Int64("offset", msg.Offset), zap.String("dlq_topic", h.dlqTopic))
+
+		if dlqErr := h.publishDLQ(msg, permanentErr.Unwrap()); dlqErr != nil {
+			messageLogger.Error("kafka.message.dead_letter.failed", zap.String("event", "kafka.message.dead_letter.failed"), zap.Error(dlqErr))
+			return false, &loggedMessageError{cause: errors.Join(permanentErr, dlqErr)}
+		}
+
+		session.MarkMessage(msg, "permanent failure sent to dlq")
+
+		messageLogger.Info("kafka.message.dead_lettered", zap.String("event", "kafka.message.dead_lettered"), zap.String("topic", h.dlqTopic))
+
+		return true, nil
+	}
+
+	return false, err
 }

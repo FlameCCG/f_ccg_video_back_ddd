@@ -3,11 +3,12 @@ package mq
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/logmeta"
 	"fmt"
 	"strings"
 	"sync"
-
-	"f_ccg_video_back_ddd/internal/config"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -66,7 +67,7 @@ func (p *ProducerPool) Producer(cfg *config.Kafka) (sarama.SyncProducer, error) 
 	if v := strings.TrimSpace(cfg.Version); v != "" {
 		version, err := sarama.ParseKafkaVersion(v)
 		if err != nil {
-			p.logger.Warn("parse kafka version failed, use default", zap.Error(err))
+			p.logger.Warn("parse kafka version failed, use default", zap.String("event", "mq.kafka_driver.producer.degraded"), zap.String("operation", "mq.kafka_driver.producer"), zap.Error(err))
 		} else {
 			kCfg.Version = version
 		}
@@ -139,7 +140,7 @@ func NewKafkaDriver(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logg
 }
 
 // Publish 同步发送一条消息到指定 topic。
-func (k *kafkaDriver) Publish(_ context.Context, topic string, payload []byte) error {
+func (k *kafkaDriver) Publish(ctx context.Context, topic string, payload []byte) error {
 	if strings.TrimSpace(topic) == "" {
 		return errors.New("topic cannot be empty")
 	}
@@ -152,9 +153,14 @@ func (k *kafkaDriver) Publish(_ context.Context, topic string, payload []byte) e
 		return errors.New("kafka producer not initialized")
 	}
 
+	values := logmeta.From(ctx)
+	values.ParentTaskID = values.TaskID
+	values.TaskID = logmeta.NewID()
+	values.AttemptID = ""
 	msg := &sarama.ProducerMessage{
-		Topic: topic,
-		Value: sarama.ByteEncoder(payload),
+		Headers: correlationHeaders(values),
+		Topic:   topic,
+		Value:   sarama.ByteEncoder(payload),
 	}
 
 	partition, offset, err := k.producer.SendMessage(msg)
@@ -162,7 +168,8 @@ func (k *kafkaDriver) Publish(_ context.Context, topic string, payload []byte) e
 		return fmt.Errorf("send kafka message failed: %w", err)
 	}
 
-	k.logger.Debug("kafka message sent",
+	logctx.With(logmeta.With(ctx, values), k.logger).Debug("kafka.message.published",
+		zap.String("event", "kafka.message.published"),
 		zap.Int32("partition", partition),
 		zap.Int64("offset", offset),
 		zap.String("topic", topic),
