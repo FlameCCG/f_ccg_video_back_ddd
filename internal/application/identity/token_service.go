@@ -74,7 +74,7 @@ func (s *TokenService) issueCredentialPair(user *domain.User) (*jwts.JwtToken, e
 	if conf == nil {
 		return nil, ErrRefreshTokenInvalid
 	}
-	return jwts.CreateJwtTokenWithPassword(strconv.FormatUint(uint64(user.ID), 10), user.Username, user.Password, user.MustChangePassword, conf.AccessExp*24*time.Hour, conf.AccessSecret, conf.RefreshExp*24*time.Hour, conf.RefreshSecret)
+	return jwts.CreateJwtTokenWithPassword(strconv.FormatUint(uint64(user.ID), 10), user.Username, user.Password, user.MustChangePassword, configuredDuration(conf.AccessExp, 24*time.Hour), conf.AccessSecret, configuredDuration(conf.RefreshExp, 24*time.Hour), conf.RefreshSecret)
 }
 func (s *TokenService) Rotate(ctx context.Context, user *domain.User, oldToken string, users domain.UserAccountRepository) (*jwts.JwtToken, error) {
 	conf := s.jwtConf()

@@ -26,7 +26,7 @@ func (s *CaptchaService) EmailCaptchaTTL() time.Duration {
 		return 0
 	}
 
-	return cfg.Email.IsExpire * time.Minute
+	return configuredDuration(cfg.Email.IsExpire, time.Minute)
 }
 
 // StoreEmailCaptcha 写入邮箱验证码。
