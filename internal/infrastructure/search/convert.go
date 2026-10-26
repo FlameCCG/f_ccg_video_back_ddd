@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,21 +84,28 @@ func parseTimeString(raw string) time.Time {
 	return time.Time{}
 }
 
-func toUint(val any) uint {
-	switch v := val.(type) {
+func toUint(value any) uint {
+	switch v := value.(type) {
 	case json.Number:
-		i, _ := v.Int64()
+		n, err := strconv.ParseUint(v.String(), 10, strconv.IntSize)
+		if err != nil || n > math.MaxUint {
+			return 0
+		}
 
-		return uint(i)
-	case float64:
-		return uint(v)
-	case float32:
-		return uint(v)
+		return uint(n)
 	case int64:
-		return uint(v)
+		return nonnegativeUint(v)
 	case int:
-		return uint(v)
+		return nonnegativeUint(int64(v))
+	case float64:
+		return floatUint(v)
+	case float32:
+		return floatUint(float64(v))
 	case uint64:
+		if v > math.MaxUint {
+			return 0
+		}
+
 		return uint(v)
 	case uint:
 		return v
@@ -105,50 +114,63 @@ func toUint(val any) uint {
 	}
 }
 
-func toInt64(val any) int64 {
-	switch v := val.(type) {
+func toInt64(value any) int64 {
+	switch v := value.(type) {
 	case json.Number:
-		i, _ := v.Int64()
+		n, err := v.Int64()
+		if err != nil {
+			return 0
+		}
 
-		return i
+		return n
 	case float64:
-		return int64(v)
+		return floatInt64(v)
 	case float32:
-		return int64(v)
+		return floatInt64(float64(v))
 	case int64:
 		return v
 	case int:
 		return int64(v)
 	case uint64:
+		if v > math.MaxInt64 {
+			return 0
+		}
+
 		return int64(v)
 	case uint:
+		if uint64(v) > math.MaxInt64 {
+			return 0
+		}
+
 		return int64(v)
 	default:
 		return 0
 	}
 }
 
-func toInt(val any) int {
-	switch v := val.(type) {
-	case json.Number:
-		i, _ := v.Int64()
-
-		return int(i)
-	case float64:
-		return int(v)
-	case float32:
-		return int(v)
-	case int64:
-		return int(v)
-	case int:
-		return v
-	case uint64:
-		return int(v)
-	case uint:
-		return int(v)
-	default:
+func toInt(value any) int {
+	n := toInt64(value)
+	if n < math.MinInt || n > math.MaxInt {
 		return 0
 	}
+
+	return int(n)
+}
+
+func floatUint(value float64) uint {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value >= float64(math.MaxUint) {
+		return 0
+	}
+
+	return uint(value)
+}
+
+func floatInt64(value float64) int64 {
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < float64(math.MinInt64) || value >= float64(math.MaxInt64) {
+		return 0
+	}
+
+	return int64(value)
 }
 
 func toStringSlice(val any) []string {
@@ -176,21 +198,11 @@ func toStringSlice(val any) []string {
 	}
 }
 
-func toFloat64(value any) float64 {
-	switch v := value.(type) {
-	case float64:
-		return v
-	case float32:
-		return float64(v)
-	case int:
-		return float64(v)
-	case int64:
-		return float64(v)
-	case json.Number:
-		n, _ := v.Float64()
-
-		return n
-	default:
+// nonnegativeUint rejects negative and architecture-dependent overflow values.
+func nonnegativeUint(value int64) uint {
+	if value < 0 || uint64(value) > uint64(math.MaxUint) {
 		return 0
 	}
+
+	return uint(value)
 }
