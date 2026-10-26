@@ -121,7 +121,7 @@ func (s *Service) List(
 	ctx context.Context,
 	receiverID, page, pageSize int,
 	category string,
-) ([]NotificationItem, int64, error) {
+) ([]Item, int64, error) {
 	page, pageSize = normalizePaging(page, pageSize)
 
 	types := domain.TypesByCategory(category)
@@ -136,11 +136,11 @@ func (s *Service) List(
 		return nil, 0, err
 	}
 
-	items := make([]NotificationItem, 0, len(list))
+	items := make([]Item, 0, len(list))
 
 	for _, n := range list {
 		_, isRead := readSet[n.ID]
-		items = append(items, NotificationItem{
+		items = append(items, Item{
 			ID:               n.ID,
 			Type:             n.Type,
 			ReceiverID:       n.ReceiverID,
@@ -267,7 +267,7 @@ func (s *Service) AdminUpdate(ctx context.Context, notice *domain.Notification) 
 //
 // 计数是展示读模型，允许短时陈旧；通知正文、每用户已读状态与私信未读事实分别来自其查询端口。
 // 缓存的 fresh/stale 状态决定响应等待策略，不能用角标值裁定消息是否存在或能否读取。
-func (s *Service) CountSummary(ctx context.Context, receiverID int) (*NotificationCountSummary, error) {
+func (s *Service) CountSummary(ctx context.Context, receiverID int) (*CountSummary, error) {
 	if cached, fresh, ok := s.cache.Load(receiverID); ok {
 		if fresh {
 			return cached, nil
@@ -331,7 +331,7 @@ func (s *Service) invalidateCountForReceivers(receivers []int) {
 
 // refreshCountSummary 用本 Service 实例内的 singleflight 合并同一接收者的并发重建。
 // 它避免本进程重复查库，不是多实例分布式锁；回调内再次检查 fresh 缓存以复用刚完成的结果。
-func (s *Service) refreshCountSummary(ctx context.Context, receiverID int) (*NotificationCountSummary, error) {
+func (s *Service) refreshCountSummary(ctx context.Context, receiverID int) (*CountSummary, error) {
 	value, err, _ := s.countSFG.Do(countSFKey(receiverID), func() (any, error) {
 		if cached, fresh, ok := s.cache.Load(receiverID); ok && fresh {
 			return *cached, nil
@@ -339,7 +339,7 @@ func (s *Service) refreshCountSummary(ctx context.Context, receiverID int) (*Not
 
 		result, err := s.loadCountSummary(ctx, receiverID)
 		if err != nil {
-			return NotificationCountSummary{}, err
+			return CountSummary{}, err
 		}
 
 		s.cache.Store(receiverID, result)
@@ -350,7 +350,7 @@ func (s *Service) refreshCountSummary(ctx context.Context, receiverID int) (*Not
 		return nil, err
 	}
 
-	result, _ := value.(NotificationCountSummary)
+	result, _ := value.(CountSummary)
 
 	return &result, nil
 }
@@ -363,7 +363,7 @@ func (s *Service) refreshCountSummaryAsync(receiverID int) {
 	})
 }
 
-func (s *Service) loadCountSummary(ctx context.Context, receiverID int) (NotificationCountSummary, error) {
+func (s *Service) loadCountSummary(ctx context.Context, receiverID int) (CountSummary, error) {
 	if ctx == nil {
 		ctx = context.TODO()
 	}
@@ -401,10 +401,10 @@ func (s *Service) loadCountSummary(ctx context.Context, receiverID int) (Notific
 	})
 
 	if err := group.Wait(); err != nil {
-		return NotificationCountSummary{}, err
+		return CountSummary{}, err
 	}
 
-	return NotificationCountSummary{
+	return CountSummary{
 		Reply: groupedCounts[enum.NotificationApplyType],
 		Like: groupedCounts[enum.NotificationVideoLikeType] +
 			groupedCounts[enum.NotificationLikeCommentType] +

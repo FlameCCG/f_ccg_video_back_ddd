@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CommentListReq 描述视频或动态的根评论分页与排序；评论目标合法性由应用/领域规则继续校验。
-type CommentListReq struct {
+// ListReq 描述视频或动态的根评论分页与排序；评论目标合法性由应用/领域规则继续校验。
+type ListReq struct {
 	VideoID   uint   `form:"videoId" binding:"omitempty,gt=0" label:"视频ID"`
 	DynamicID uint   `form:"dynamicId" binding:"omitempty,gt=0" label:"动态ID"`
 	Page      int    `form:"page" label:"页码"`
@@ -20,7 +20,7 @@ type CommentListReq struct {
 
 // ListView 将列表参数交给评论查询用例，按统一分页信封返回。
 func (h *Handler) ListView(c *gin.Context) {
-	req := middlewares.GetBound[CommentListReq](c)
+	req := middlewares.GetBound[ListReq](c)
 	if (req.VideoID > 0 && req.DynamicID > 0) || (req.VideoID == 0 && req.DynamicID == 0) {
 		res.FailWithMsg("请传入 videoId 或 dynamicId", c)
 

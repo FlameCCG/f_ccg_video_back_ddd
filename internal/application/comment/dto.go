@@ -13,8 +13,8 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// CommentItem 评论返回结构（读模型，json tag 与原 comment_service.CommentItem 逐字一致）.
-type CommentItem struct {
+// Item 评论返回结构（读模型，json tag 与原 comment_service.CommentItem 逐字一致）.
+type Item struct {
 	ID            uint       `json:"id"`
 	Content       string     `json:"content"`
 	UserID        uint       `json:"userId"`
@@ -44,10 +44,10 @@ type ReplyInfo struct {
 	Username string `json:"username"`
 }
 
-// CommentRow 评论列表行（读模型：评论标量字段 + 关联用户/视频/父评论投影）。
+// Row 评论列表行（读模型：评论标量字段 + 关联用户/视频/父评论投影）。
 //
 // 由查询端口的 infrastructure 实现直接组装，应用层再叠加点赞/回复数缓存与点赞状态。
-type CommentRow struct {
+type Row struct {
 	ID            uint
 	Content       string
 	UserID        uint
@@ -179,8 +179,8 @@ type VideoAuthorRef struct {
 	AuthorUserID uint
 }
 
-// DynamicBrief 动态投影（id / 发布者 ID）。
-type DynamicBrief struct {
+// Brief 动态投影（id / 发布者 ID）。
+type Brief struct {
 	ID     uint
 	UserID uint
 }

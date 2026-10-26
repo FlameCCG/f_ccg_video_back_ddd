@@ -34,7 +34,7 @@ func (r *AuthorRenameRepository) RenameAuthor(ctx context.Context, oldUsername, 
 		return err
 	}
 
-	if err := db.Model(&po.VideoReport{}).
+	if err := db.Model(&po.Report{}).
 		Where("reporter_username = ?", oldUsername).
 		Update("reporter_username", newUsername).Error; err != nil {
 		return err

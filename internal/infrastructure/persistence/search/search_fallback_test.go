@@ -106,7 +106,7 @@ func TestSearchVideosOnlyReturnsPublishedAndMatchesTitleOrAuthor(t *testing.T) {
 	db := newFallbackDB(t)
 	seedFallbackFixture(t, db)
 
-	items, total, err := infra.NewSearchFallbackQuery(db).SearchVideos(context.Background(), app.SearchOptions{
+	items, total, err := infra.NewSearchFallbackQuery(db).SearchVideos(context.Background(), app.Options{
 		Keyword:   "教程",
 		Page:      1,
 		PageSize:  20,
@@ -173,7 +173,7 @@ func TestSearchVideosAppliesBusinessSortAndPaging(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			items, _, err := query.SearchVideos(context.Background(), app.SearchOptions{
+			items, _, err := query.SearchVideos(context.Background(), app.Options{
 				Keyword:    "教程",
 				Page:       1,
 				PageSize:   20,
@@ -191,7 +191,7 @@ func TestSearchVideosAppliesBusinessSortAndPaging(t *testing.T) {
 	}
 
 	// 第二页只剩一条（总量 3，页大小 2）。
-	items, total, err := query.SearchVideos(context.Background(), app.SearchOptions{
+	items, total, err := query.SearchVideos(context.Background(), app.Options{
 		Keyword:    "教程",
 		Page:       2,
 		PageSize:   2,
@@ -216,7 +216,7 @@ func TestSearchUsersAggregatesFollowerCountAndSorts(t *testing.T) {
 	seedFallbackFixture(t, db)
 	query := infra.NewSearchFallbackQuery(db)
 
-	items, total, err := query.SearchUsers(context.Background(), app.SearchOptions{
+	items, total, err := query.SearchUsers(context.Background(), app.Options{
 		Keyword:   "ali",
 		Page:      1,
 		PageSize:  20,
@@ -241,7 +241,7 @@ func TestSearchUsersAggregatesFollowerCountAndSorts(t *testing.T) {
 
 	// 按等级降序时 alice(level 3) 应排在 alicia(level 1) 之前——
 	// 与按粉丝数排序的结果区分开，证明排序字段确实切换了。
-	items, _, err = query.SearchUsers(context.Background(), app.SearchOptions{
+	items, _, err = query.SearchUsers(context.Background(), app.Options{
 		Keyword:   "ali",
 		Page:      1,
 		PageSize:  20,
@@ -320,7 +320,7 @@ func TestSearchFallbackDegradesWithoutDB(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	opts := app.SearchOptions{Keyword: "x", Page: 1, PageSize: 20}
+	opts := app.Options{Keyword: "x", Page: 1, PageSize: 20}
 
 	if items, total, err := query.SearchVideos(ctx, opts); err != nil || items != nil || total != 0 {
 		t.Fatalf("SearchVideos = %+v, %d, %v", items, total, err)
@@ -348,7 +348,7 @@ func TestSearchFallbackSkipsBlankKeyword(t *testing.T) {
 	query := infra.NewSearchFallbackQuery(db)
 
 	ctx := context.Background()
-	opts := app.SearchOptions{Keyword: "   ", Page: 1, PageSize: 20}
+	opts := app.Options{Keyword: "   ", Page: 1, PageSize: 20}
 
 	if items, total, err := query.SearchVideos(ctx, opts); err != nil || items != nil || total != 0 {
 		t.Fatalf("SearchVideos = %+v, %d, %v", items, total, err)
@@ -499,7 +499,7 @@ func TestVectorSourceLoadReturnsTagsPartitionAndParts(t *testing.T) {
 
 	db := newFallbackDB(t)
 
-	if err := db.AutoMigrate(&po.VideoPartition{}, &po.VideoPart{}); err != nil {
+	if err := db.AutoMigrate(&po.VideoPartition{}, &po.Part{}); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
 
@@ -529,7 +529,7 @@ func TestVectorSourceLoadReturnsTagsPartitionAndParts(t *testing.T) {
 	}
 
 	// 分P 按 sort_order 升序返回。
-	parts := []po.VideoPart{
+	parts := []po.Part{
 		{Model: po.Model{ID: 2}, VideoID: 5, Title: "第二讲", SortOrder: 2},
 		{Model: po.Model{ID: 1}, VideoID: 5, Title: "第一讲", SortOrder: 1},
 	}
@@ -590,7 +590,7 @@ func TestVectorSourceLoadReturnsTagsPartitionAndParts(t *testing.T) {
 	}
 }
 
-func videoIDs(items []app.SearchVideoHit) []uint {
+func videoIDs(items []app.VideoHit) []uint {
 	ids := make([]uint, 0, len(items))
 	for _, item := range items {
 		ids = append(ids, item.ID)

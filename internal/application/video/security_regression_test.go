@@ -13,7 +13,7 @@ import (
 )
 
 type securityVideoRepo struct {
-	domain.VideoRepository
+	domain.Repository
 	author uint
 }
 
@@ -72,7 +72,7 @@ func TestTripleFavoriteCyclesShareLifetimeRewardKeyAndExcludeAuthor(t *testing.T
 }
 
 type failedDeleteRepo struct {
-	domain.VideoRepository
+	domain.Repository
 	db      *gorm.DB
 	failure error
 }

@@ -23,7 +23,7 @@ const defaultSchedulerInterval = 5 * time.Second
 // 新架构改为可注入组件，由 bootstrap 挂到 App 的后台组件序列并控制启停顺序。
 type Scheduler struct {
 	txm         tx.Manager
-	videos      domain.VideoRepository
+	videos      domain.Repository
 	store       ScheduleStore
 	vectors     *VectorSyncService
 	cfgProvider shared.ConfigReader
@@ -39,7 +39,7 @@ type Scheduler struct {
 // NewScheduler 构造视频定时发布调度器。
 func NewScheduler(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	store ScheduleStore,
 	vectors *VectorSyncService,
 	cfgProvider shared.ConfigReader,

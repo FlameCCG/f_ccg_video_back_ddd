@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CommentRepliesReq 以 RootID 查询一条根讨论下的回复分页，不是只查某条中间回复的直接子节点。
-type CommentRepliesReq struct {
+// RepliesReq 以 RootID 查询一条根讨论下的回复分页，不是只查某条中间回复的直接子节点。
+type RepliesReq struct {
 	RootID   uint `form:"rootId" binding:"required" label:"根评论ID"`
 	Page     int  `form:"page" label:"页码"`
 	PageSize int  `form:"pageSize" label:"每页数量"`
@@ -18,7 +18,7 @@ type CommentRepliesReq struct {
 
 // RepliesView 将根评论与分页参数传给应用查询，返回讨论回复列表。
 func (h *Handler) RepliesView(c *gin.Context) {
-	req := middlewares.GetBound[CommentRepliesReq](c)
+	req := middlewares.GetBound[RepliesReq](c)
 
 	var uid uint
 	if v, ok := middlewares.GetUID(c); ok {

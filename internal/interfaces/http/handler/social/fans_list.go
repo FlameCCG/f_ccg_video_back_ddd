@@ -40,7 +40,7 @@ func (h *Handler) FansListView(c *gin.Context) {
 	page, pageSize := utils.GetPageInfo(c)
 	keyword := strings.TrimSpace(c.Query("keyword"))
 
-	listRows, total, err := h.relations.FansList(c.Request.Context(), app.SocialListParams{
+	listRows, total, err := h.relations.FansList(c.Request.Context(), app.ListParams{
 		OwnerID:  uid,
 		ViewerID: viewerID(c),
 		Page:     page,

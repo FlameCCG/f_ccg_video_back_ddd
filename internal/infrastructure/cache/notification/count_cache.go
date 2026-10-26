@@ -31,8 +31,8 @@ const (
 
 // redisValue redis 载荷：用 cachedAt 区分 fresh / stale-while-revalidate。
 type redisValue struct {
-	Data     app.NotificationCountSummary `json:"data"`
-	CachedAt int64                        `json:"cachedAt"` // unix nano
+	Data     app.CountSummary `json:"data"`
+	CachedAt int64            `json:"cachedAt"` // unix nano
 }
 
 // CountCache 角标计数缓存的 Redis 实现（原 service/notification_service/cache.go）。
@@ -60,7 +60,7 @@ func cacheKey(receiverID int) string {
 }
 
 // Load 读取缓存；返回值分别为数据、是否新鲜、是否命中。
-func (c *CountCache) Load(receiverID int) (*app.NotificationCountSummary, bool, bool) {
+func (c *CountCache) Load(receiverID int) (*app.CountSummary, bool, bool) {
 	if c.redis == nil {
 		return nil, false, false
 	}
@@ -101,7 +101,7 @@ func (c *CountCache) Load(receiverID int) (*app.NotificationCountSummary, bool, 
 }
 
 // Store 写入缓存（stale TTL 作为 Redis 过期时间）。
-func (c *CountCache) Store(receiverID int, data app.NotificationCountSummary) {
+func (c *CountCache) Store(receiverID int, data app.CountSummary) {
 	if c.redis == nil {
 		return
 	}

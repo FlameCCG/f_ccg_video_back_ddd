@@ -120,8 +120,8 @@ func toPOLike(like *domain.Like) *po.CommentLike {
 // 字段取值与原 CommentService.buildCommentItems 逐项一致：
 // 未预加载的关联（如列表接口不预加载 Video）取零值，由 json omitempty 省略；
 // ReplyTo 仅在父评论及其用户都已预加载时填充。
-func toCommentRow(row *po.Comment) app.CommentRow {
-	item := app.CommentRow{
+func toCommentRow(row *po.Comment) app.Row {
+	item := app.Row{
 		ID:            row.ID,
 		Content:       row.Content,
 		UserID:        row.UserID,
@@ -154,8 +154,8 @@ func toCommentRow(row *po.Comment) app.CommentRow {
 }
 
 // toCommentRows 批量组装评论读模型。
-func toCommentRows(rows []po.Comment) []app.CommentRow {
-	items := make([]app.CommentRow, len(rows))
+func toCommentRows(rows []po.Comment) []app.Row {
+	items := make([]app.Row, len(rows))
 	for i := range rows {
 		items[i] = toCommentRow(&rows[i])
 	}

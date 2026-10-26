@@ -6,8 +6,8 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// VideoPart 视频分P实体。
-type VideoPart struct {
+// Part 视频分P实体。
+type Part struct {
 	ID          uint
 	VideoID     uint
 	Title       string
@@ -61,7 +61,7 @@ type PublishDraft struct {
 	// TagIDs 标签关联（为空表示不建立关联）。
 	TagIDs []uint
 	// Parts 分P列表；仓储写入后逐项回填自增 ID。
-	Parts []VideoPart
+	Parts []Part
 	// PartResources 与 Parts 同序的初始资源；元素为 nil 表示该分P不写资源行。
 	PartResources []*ResourceDraft
 	// VideoResource 单视频（非分P）作品的初始资源；nil 表示不写。

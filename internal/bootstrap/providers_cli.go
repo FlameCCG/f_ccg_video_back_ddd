@@ -119,7 +119,7 @@ var RBACInitTaskProviderSet = wire.NewSet(
 var ResourceSyncTaskProviderSet = wire.NewSet(
 	CLIFullInfrastructureProviderSet,
 	rbacrepo.NewApiResourceRepository,
-	wire.Bind(new(rbacdomain.ApiResourceRepository), new(*rbacrepo.ApiResourceRepository)),
+	wire.Bind(new(rbacdomain.APIResourceRepository), new(*rbacrepo.APIResourceRepository)),
 	rbacrepo.NewOpenAPIMetaLoader,
 	wire.Bind(new(rbacapp.ResourceMetaLoader), new(*rbacrepo.OpenAPIMetaLoader)),
 	validate.New,

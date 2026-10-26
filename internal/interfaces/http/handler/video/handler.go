@@ -40,7 +40,7 @@ type Handler struct {
 	update      *app.UpdateService
 	uploads     *app.UploadService
 	reports     *app.ReportService
-	search      app.VideoSearcher
+	search      app.Searcher
 	dynamics    app.DynamicReadMarker
 	hub         *wsdanmu.Hub
 	cfgProvider *infraconfig.Provider
@@ -65,7 +65,7 @@ func NewHandler(
 	update *app.UpdateService,
 	uploads *app.UploadService,
 	reports *app.ReportService,
-	search app.VideoSearcher,
+	search app.Searcher,
 	dynamics app.DynamicReadMarker,
 	hub *wsdanmu.Hub,
 	cfgProvider *infraconfig.Provider,

@@ -12,7 +12,7 @@ import (
 
 func TestAdminPublicationFieldsAndExplicitImmediateFilter(t *testing.T) {
 	f := newRevisionFixture(t)
-	if err := f.db.AutoMigrate(&po.User{}, &po.VideoResource{}, &po.VideoPart{}, &po.VideoPartResource{}); err != nil {
+	if err := f.db.AutoMigrate(&po.User{}, &po.VideoResource{}, &po.Part{}, &po.VideoPartResource{}); err != nil {
 		t.Fatal(err)
 	}
 	f.adminVideos = infra.NewAdminVideoQuery(f.db)

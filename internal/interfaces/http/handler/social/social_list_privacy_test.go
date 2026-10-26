@@ -34,12 +34,12 @@ func (socialListQueryStub) ActionPrivacy(context.Context, uint) (domain.ActionPr
 	return domain.ActionPrivacy{}, nil
 }
 
-func (socialListQueryStub) ListFocus(context.Context, uint, int, int, string) ([]app.SocialListUser, int64, error) {
-	return []app.SocialListUser{{ID: 2, Username: "followed"}}, 1, nil
+func (socialListQueryStub) ListFocus(context.Context, uint, int, int, string) ([]app.ListUser, int64, error) {
+	return []app.ListUser{{ID: 2, Username: "followed"}}, 1, nil
 }
 
-func (socialListQueryStub) ListFans(context.Context, uint, int, int, string) ([]app.SocialListUser, int64, error) {
-	return []app.SocialListUser{{ID: 3, Username: "fan"}}, 1, nil
+func (socialListQueryStub) ListFans(context.Context, uint, int, int, string) ([]app.ListUser, int64, error) {
+	return []app.ListUser{{ID: 3, Username: "fan"}}, 1, nil
 }
 
 func performSocialList(

@@ -154,7 +154,7 @@ func TestMQServiceResolveErrorOrder(t *testing.T) {
 	}
 
 	// nil service 也走同一分支。
-	var nilService *MQService
+	var nilService *Service
 	if err := nilService.PublishRaw(t.Context(), []byte("x")); err == nil ||
 		err.Error() != "mq service disabled" {
 		t.Fatalf("nil service error = %v", err)

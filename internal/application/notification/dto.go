@@ -14,8 +14,8 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// NotificationItem 通知列表项（读模型，json tag 与原实现一致）.
-type NotificationItem struct {
+// Item 通知列表项（读模型，json tag 与原实现一致）.
+type Item struct {
 	ID               uint      `json:"id"`
 	Type             enum.Type `json:"type"`
 	ReceiverID       int       `json:"receiverID"`
@@ -33,8 +33,8 @@ type NotificationItem struct {
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
-// NotificationCountSummary 角标计数汇总（读模型）.
-type NotificationCountSummary struct {
+// CountSummary 角标计数汇总（读模型）.
+type CountSummary struct {
 	Reply   int64 `json:"reply"`
 	Like    int64 `json:"like"`
 	At      int64 `json:"at"`
@@ -47,9 +47,9 @@ type CountCache interface {
 	// Available 报告底层缓存是否可用。
 	Available() bool
 	// Load 读取缓存；返回值分别为数据、是否新鲜、是否命中。
-	Load(receiverID int) (*NotificationCountSummary, bool, bool)
+	Load(receiverID int) (*CountSummary, bool, bool)
 	// Store 写入缓存。
-	Store(receiverID int, data NotificationCountSummary)
+	Store(receiverID int, data CountSummary)
 	// Invalidate 删除指定接收者的计数缓存。
 	Invalidate(receiverID int)
 	// InvalidateAll 清除全部计数缓存（全员广播场景）。

@@ -188,12 +188,12 @@ func toPORoleMenus(items []domain.RoleMenu) []po.RoleMenu {
 }
 
 // toDomainApiResource 把接口资源 PO 转为领域实体。
-func toDomainApiResource(row *po.ApiResource) *domain.ApiResource {
+func toDomainApiResource(row *po.APIResource) *domain.APIResource {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.ApiResource{
+	return &domain.APIResource{
 		ID:        row.ID,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -205,8 +205,8 @@ func toDomainApiResource(row *po.ApiResource) *domain.ApiResource {
 }
 
 // toDomainApiResources 批量转换接口资源 PO。
-func toDomainApiResources(rows []po.ApiResource) []*domain.ApiResource {
-	items := make([]*domain.ApiResource, 0, len(rows))
+func toDomainApiResources(rows []po.APIResource) []*domain.APIResource {
+	items := make([]*domain.APIResource, 0, len(rows))
 	for i := range rows {
 		items = append(items, toDomainApiResource(&rows[i]))
 	}
@@ -215,12 +215,12 @@ func toDomainApiResources(rows []po.ApiResource) []*domain.ApiResource {
 }
 
 // toPOApiResource 把接口资源领域实体转为 PO。
-func toPOApiResource(item *domain.ApiResource) po.ApiResource {
+func toPOApiResource(item *domain.APIResource) po.APIResource {
 	if item == nil {
-		return po.ApiResource{}
+		return po.APIResource{}
 	}
 
-	return po.ApiResource{
+	return po.APIResource{
 		Model: po.Model{
 			ID:        item.ID,
 			CreatedAt: item.CreatedAt,

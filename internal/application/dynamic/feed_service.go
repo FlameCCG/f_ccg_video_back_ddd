@@ -401,7 +401,7 @@ func rowToFeedItem(r FeedRow, metrics *feedMetrics) WorkFeedItem {
 		return item
 	}
 
-	item.Dynamic = &DynamicBrief{
+	item.Dynamic = &Brief{
 		ID:           r.WorkID,
 		Content:      r.DynContent,
 		ImageURL:     r.DynImageURL,

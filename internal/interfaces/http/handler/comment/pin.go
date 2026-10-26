@@ -8,15 +8,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CommentPinReq 表达把指定评论设为或取消置顶，Pinned=false 是明确的取消操作。
-type CommentPinReq struct {
+// PinReq 表达把指定评论设为或取消置顶，Pinned=false 是明确的取消操作。
+type PinReq struct {
 	CommentID uint `json:"commentId" binding:"required,gt=0" label:"评论ID"`
 	Pinned    bool `json:"pinned" label:"是否置顶"`
 }
 
 // PinView 作者置顶/取消置顶评论.
 func (h *Handler) PinView(c *gin.Context) {
-	req := middlewares.GetBound[CommentPinReq](c)
+	req := middlewares.GetBound[PinReq](c)
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {

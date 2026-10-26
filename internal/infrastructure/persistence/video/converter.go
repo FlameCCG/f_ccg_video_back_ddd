@@ -271,12 +271,12 @@ func toDomainDanmus(rows []po.Danmu) []domain.Danmu {
 }
 
 // toDomainVideoReport 把视频举报 PO 转为领域实体（图片列表由调用方解析后传入）。
-func toDomainVideoReport(row *po.VideoReport, imageURLs []string) *domain.VideoReport {
+func toDomainVideoReport(row *po.Report, imageURLs []string) *domain.Report {
 	if row == nil {
 		return nil
 	}
 
-	return &domain.VideoReport{
+	return &domain.Report{
 		ID:               row.ID,
 		CreatedAt:        row.CreatedAt,
 		UpdatedAt:        row.UpdatedAt,
@@ -315,8 +315,8 @@ func toDomainDanmuReport(row *po.DanmuReport) *domain.DanmuReport {
 }
 
 // toPOVideoPart 把分P领域实体转为 PO。
-func toPOVideoPart(part domain.VideoPart, videoID uint) po.VideoPart {
-	return po.VideoPart{
+func toPOVideoPart(part domain.Part, videoID uint) po.Part {
+	return po.Part{
 		Model:       po.Model{ID: part.ID},
 		VideoID:     videoID,
 		Title:       part.Title,

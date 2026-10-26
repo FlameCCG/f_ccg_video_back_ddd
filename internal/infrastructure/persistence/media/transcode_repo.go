@@ -65,7 +65,7 @@ func (r *TranscodeResourceRepository) EnsureTaskActive(ctx context.Context, task
 		return nil
 	}
 
-	var part po.VideoPart
+	var part po.Part
 
 	err = gormx.DB(ctx, r.db).
 		Select("id").
@@ -94,7 +94,7 @@ func (r *TranscodeResourceRepository) UpdateDurationFromProbe(
 	if task.VideoPartID > 0 {
 		return r.txm.Do(ctx, func(txCtx context.Context) error {
 			db := gormx.DB(txCtx, r.db)
-			if err := db.Model(&po.VideoPart{}).
+			if err := db.Model(&po.Part{}).
 				Where("id = ?", task.VideoPartID).
 				Update("duration", duration).Error; err != nil {
 				return err
@@ -650,7 +650,7 @@ func lockActiveVideo(ctx context.Context, db *gorm.DB, videoID uint) error {
 
 // lockVideoPart 以行锁读取分P，避免同一分P 重复写入资源（并发/重试任务）。
 func lockVideoPart(ctx context.Context, db *gorm.DB, videoID, partID uint) error {
-	var part po.VideoPart
+	var part po.Part
 
 	err := db.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("id").

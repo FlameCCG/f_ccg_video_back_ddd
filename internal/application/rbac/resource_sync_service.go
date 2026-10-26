@@ -11,7 +11,7 @@ import (
 
 // ResourceSyncService 接口资源同步用例（原 service/rbac_service/resource_sync.go，供 CLI -rs 使用）。
 type ResourceSyncService struct {
-	resources domain.ApiResourceRepository
+	resources domain.APIResourceRepository
 	routes    RouteLister
 	meta      ResourceMetaLoader
 	logger    *zap.Logger
@@ -19,7 +19,7 @@ type ResourceSyncService struct {
 
 // NewResourceSyncService 构造接口资源同步用例。
 func NewResourceSyncService(
-	resources domain.ApiResourceRepository,
+	resources domain.APIResourceRepository,
 	routes RouteLister,
 	meta ResourceMetaLoader,
 	logger *zap.Logger,
@@ -48,7 +48,7 @@ func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyn
 
 	result := ResourceSyncResult{Total: len(items)}
 
-	existingMap := make(map[string]*domain.ApiResource, len(existing))
+	existingMap := make(map[string]*domain.APIResource, len(existing))
 	for _, r := range existing {
 		existingMap[domain.ResourceKey(r.Method, r.Path)] = r
 	}
@@ -100,7 +100,7 @@ func (s *ResourceSyncService) SyncApiResources(ctx context.Context) (ResourceSyn
 // diffResource 比较既有资源与目标资源，返回需要更新的 summary 与 tags（nil 表示无需更新）。
 //
 // summary 比较去首尾空白（与原实现一致），tags 按 JSON 语义比较。
-func diffResource(old, item *domain.ApiResource) (*string, *[]byte) {
+func diffResource(old, item *domain.APIResource) (*string, *[]byte) {
 	var (
 		summary *string
 		tags    *[]byte

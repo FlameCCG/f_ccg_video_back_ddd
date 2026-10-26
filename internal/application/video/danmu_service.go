@@ -14,7 +14,7 @@ import (
 // （原 service/video_service/{danmu_service.go,danmu_like.go,danmu_delete.go,
 // danmu_room_list.go,danmu_admin_service.go,danmu_creator_service.go}）。
 type DanmuService struct {
-	videos      domain.VideoRepository
+	videos      domain.Repository
 	danmus      domain.DanmuRepository
 	query       DanmuQuery
 	recent      DanmuRecentCache
@@ -30,7 +30,7 @@ type DanmuService struct {
 //
 // broadcaster 在 bootstrap 构造 WebSocket Hub 后经 SetBroadcaster 回填。
 func NewDanmuService(
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	danmus domain.DanmuRepository,
 	query DanmuQuery,
 	recent DanmuRecentCache,

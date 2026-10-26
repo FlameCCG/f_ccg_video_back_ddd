@@ -260,7 +260,7 @@ func newSuite(t *testing.T) *suite {
 	}
 
 	if err := db.AutoMigrate(
-		&po.Role{}, &po.Menu{}, &po.RoleMenu{}, &po.UserRole{}, &po.User{}, &po.ApiResource{},
+		&po.Role{}, &po.Menu{}, &po.RoleMenu{}, &po.UserRole{}, &po.User{}, &po.APIResource{},
 	); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestPermissionServiceRolePermissionsSources(t *testing.T) {
 		}
 	}
 
-	if err := s.db.Create(&po.ApiResource{Path: "/v1/admin/banner", Method: "DELETE"}).Error; err != nil {
+	if err := s.db.Create(&po.APIResource{Path: "/v1/admin/banner", Method: "DELETE"}).Error; err != nil {
 		t.Fatalf("seed resource: %v", err)
 	}
 

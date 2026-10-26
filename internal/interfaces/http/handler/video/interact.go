@@ -11,14 +11,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// VideoViewReq 指定需要增加播放计数的作品，当前实现的播放计数不按用户去重。
-type VideoViewReq struct {
+// ViewReq 指定需要增加播放计数的作品，当前实现的播放计数不按用户去重。
+type ViewReq struct {
 	VideoID uint `json:"videoId" binding:"required"`
 }
 
 // ViewView 把作品与可选用户身份传给播放用例，返回更新后的播放计数。
 func (h *Handler) ViewView(c *gin.Context) {
-	req := middlewares.GetBound[VideoViewReq](c)
+	req := middlewares.GetBound[ViewReq](c)
 
 	uid, ok := getUID(c)
 	if !ok {
@@ -42,14 +42,14 @@ func (h *Handler) ViewView(c *gin.Context) {
 	res.OkWithData(map[string]int64{"views": stats.Views}, c)
 }
 
-// VideoLikeReq 指定点赞切换目标，登录用户作为关系写入主体。
-type VideoLikeReq struct {
+// LikeReq 指定点赞切换目标，登录用户作为关系写入主体。
+type LikeReq struct {
 	VideoID uint `json:"videoId" binding:"required"`
 }
 
 // LikeView 调用视频点赞切换用例并返回切换状态，不直接修改 Redis 或关系表。
 func (h *Handler) LikeView(c *gin.Context) {
-	req := middlewares.GetBound[VideoLikeReq](c)
+	req := middlewares.GetBound[LikeReq](c)
 
 	uid, ok := getUID(c)
 	if !ok {
@@ -77,15 +77,15 @@ func (h *Handler) LikeView(c *gin.Context) {
 	}, c)
 }
 
-// VideoCoinReq 指定作品与投币数量，额度、余额、重复投币和作者奖励由应用/领域规则裁定。
-type VideoCoinReq struct {
+// CoinReq 指定作品与投币数量，额度、余额、重复投币和作者奖励由应用/领域规则裁定。
+type CoinReq struct {
 	VideoID uint `json:"videoId" binding:"required"`
 	Coins   int  `json:"coins" binding:"omitempty,min=1,max=2"` // 默认 1，最多 2
 }
 
 // CoinView 把当前用户与投币参数交给事务用例，账本和展示计数分别由应用层协调。
 func (h *Handler) CoinView(c *gin.Context) {
-	req := middlewares.GetBound[VideoCoinReq](c)
+	req := middlewares.GetBound[CoinReq](c)
 	if req.Coins == 0 {
 		res.FailWithMsg("至少投一个币哦", c)
 
@@ -130,15 +130,15 @@ func (h *Handler) CoinView(c *gin.Context) {
 	}, c)
 }
 
-// VideoFavoriteReq 指定收藏切换目标；FolderID=0 使用当前用户默认收藏夹。
-type VideoFavoriteReq struct {
+// FavoriteReq 指定收藏切换目标；FolderID=0 使用当前用户默认收藏夹。
+type FavoriteReq struct {
 	VideoID  uint `json:"videoId" binding:"required"`
 	FolderID uint `json:"folderId" binding:"omitempty"`
 }
 
 // FavoriteView 调用收藏切换用例并返回当前计数，用户多收藏夹去重由用例处理。
 func (h *Handler) FavoriteView(c *gin.Context) {
-	req := middlewares.GetBound[VideoFavoriteReq](c)
+	req := middlewares.GetBound[FavoriteReq](c)
 
 	uid, ok := getUID(c)
 	if !ok {
@@ -166,8 +166,8 @@ func (h *Handler) FavoriteView(c *gin.Context) {
 	}, c)
 }
 
-// VideoTripleReq 组合点赞、投币与收藏的操作意图，不能在 Handler 中拆成三个互不协调的独立写入。
-type VideoTripleReq struct {
+// TripleReq 组合点赞、投币与收藏的操作意图，不能在 Handler 中拆成三个互不协调的独立写入。
+type TripleReq struct {
 	VideoID  uint `json:"videoId" binding:"required"`
 	FolderID uint `json:"folderId" binding:"omitempty"`
 	Coins    int  `json:"coins" binding:"omitempty,min=1,max=2"`
@@ -175,7 +175,7 @@ type VideoTripleReq struct {
 
 // TripleView 一键三连.
 func (h *Handler) TripleView(c *gin.Context) {
-	req := middlewares.GetBound[VideoTripleReq](c)
+	req := middlewares.GetBound[TripleReq](c)
 
 	uid, ok := getUID(c)
 	if !ok {

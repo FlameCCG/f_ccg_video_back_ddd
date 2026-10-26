@@ -179,7 +179,7 @@ func (q *RelationQuery) ListFocus(
 	userID uint,
 	page, pageSize int,
 	keyword string,
-) ([]app.SocialListUser, int64, error) {
+) ([]app.ListUser, int64, error) {
 	return q.listSocialUsers(ctx, userID, page, pageSize, keyword, true)
 }
 
@@ -189,7 +189,7 @@ func (q *RelationQuery) ListFans(
 	userID uint,
 	page, pageSize int,
 	keyword string,
-) ([]app.SocialListUser, int64, error) {
+) ([]app.ListUser, int64, error) {
 	return q.listSocialUsers(ctx, userID, page, pageSize, keyword, false)
 }
 
@@ -209,7 +209,7 @@ func (q *RelationQuery) listSocialUsers(
 	page, pageSize int,
 	keyword string,
 	listFocus bool,
-) ([]app.SocialListUser, int64, error) {
+) ([]app.ListUser, int64, error) {
 	if ctx == nil {
 		ctx = context.TODO()
 	}
@@ -255,12 +255,12 @@ func (q *RelationQuery) listSocialUsers(
 	}
 
 	if total == 0 {
-		return []app.SocialListUser{}, 0, nil
+		return []app.ListUser{}, 0, nil
 	}
 
-	users := make([]app.SocialListUser, 0, len(rows))
+	users := make([]app.ListUser, 0, len(rows))
 	for _, r := range rows {
-		users = append(users, app.SocialListUser{
+		users = append(users, app.ListUser{
 			ID:          r.ID,
 			Username:    r.Username,
 			Avatar:      r.Avatar,

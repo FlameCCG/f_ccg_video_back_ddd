@@ -11,22 +11,22 @@ import (
 	"gorm.io/gorm"
 )
 
-// ApiResourceRepository 接口资源仓储的 GORM 实现。
-type ApiResourceRepository struct {
+// APIResourceRepository 接口资源仓储的 GORM 实现。
+type APIResourceRepository struct {
 	db *gorm.DB
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ domain.ApiResourceRepository = (*ApiResourceRepository)(nil)
+var _ domain.APIResourceRepository = (*APIResourceRepository)(nil)
 
 // NewApiResourceRepository 构造接口资源仓储。
-func NewApiResourceRepository(db *gorm.DB) *ApiResourceRepository {
-	return &ApiResourceRepository{db: db}
+func NewApiResourceRepository(db *gorm.DB) *APIResourceRepository {
+	return &APIResourceRepository{db: db}
 }
 
 // ListOrdered 按 path、method 升序读取全部资源。
-func (r *ApiResourceRepository) ListOrdered(ctx context.Context) ([]*domain.ApiResource, error) {
-	var rows []po.ApiResource
+func (r *APIResourceRepository) ListOrdered(ctx context.Context) ([]*domain.APIResource, error) {
+	var rows []po.APIResource
 	if err := gormx.DB(ctx, r.db).Order("path ASC, method ASC").Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -35,8 +35,8 @@ func (r *ApiResourceRepository) ListOrdered(ctx context.Context) ([]*domain.ApiR
 }
 
 // ListPathMethod 只读 path、method（权限覆盖计算用）。
-func (r *ApiResourceRepository) ListPathMethod(ctx context.Context) ([]*domain.ApiResource, error) {
-	var rows []po.ApiResource
+func (r *APIResourceRepository) ListPathMethod(ctx context.Context) ([]*domain.APIResource, error) {
+	var rows []po.APIResource
 	if err := gormx.DB(ctx, r.db).Select("path", "method").Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -45,8 +45,8 @@ func (r *ApiResourceRepository) ListPathMethod(ctx context.Context) ([]*domain.A
 }
 
 // ListAll 读取全部资源（同步比对用）。
-func (r *ApiResourceRepository) ListAll(ctx context.Context) ([]*domain.ApiResource, error) {
-	var rows []po.ApiResource
+func (r *APIResourceRepository) ListAll(ctx context.Context) ([]*domain.APIResource, error) {
+	var rows []po.APIResource
 	if err := gormx.DB(ctx, r.db).Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func (r *ApiResourceRepository) ListAll(ctx context.Context) ([]*domain.ApiResou
 }
 
 // Create 创建资源并回填自增 ID 与时间戳。
-func (r *ApiResourceRepository) Create(ctx context.Context, resource *domain.ApiResource) error {
+func (r *APIResourceRepository) Create(ctx context.Context, resource *domain.APIResource) error {
 	row := toPOApiResource(resource)
 	if err := gormx.DB(ctx, r.db).Create(&row).Error; err != nil {
 		return err
@@ -69,7 +69,7 @@ func (r *ApiResourceRepository) Create(ctx context.Context, resource *domain.Api
 }
 
 // UpdateSummaryAndTags 更新资源说明与标签；两者均为 nil 时不产生 UPDATE。
-func (r *ApiResourceRepository) UpdateSummaryAndTags(
+func (r *APIResourceRepository) UpdateSummaryAndTags(
 	ctx context.Context,
 	resourceID uint,
 	summary *string,
@@ -89,12 +89,12 @@ func (r *ApiResourceRepository) UpdateSummaryAndTags(
 		return nil
 	}
 
-	return gormx.DB(ctx, r.db).Model(&po.ApiResource{}).
+	return gormx.DB(ctx, r.db).Model(&po.APIResource{}).
 		Where("id = ?", resourceID).
 		Updates(updates).Error
 }
 
 // DeleteByID 删除资源。
-func (r *ApiResourceRepository) DeleteByID(ctx context.Context, resourceID uint) error {
-	return gormx.DB(ctx, r.db).Delete(&po.ApiResource{}, resourceID).Error
+func (r *APIResourceRepository) DeleteByID(ctx context.Context, resourceID uint) error {
+	return gormx.DB(ctx, r.db).Delete(&po.APIResource{}, resourceID).Error
 }

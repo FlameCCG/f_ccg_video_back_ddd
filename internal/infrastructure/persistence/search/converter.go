@@ -22,8 +22,8 @@ type userFallbackRow struct {
 }
 
 // toSearchVideoHit 把视频 PO 转成搜索结果项（回退路径无高亮）。
-func toSearchVideoHit(video po.Video) app.SearchVideoHit {
-	return app.SearchVideoHit{
+func toSearchVideoHit(video po.Video) app.VideoHit {
+	return app.VideoHit{
 		ID:             video.ID,
 		Title:          video.Title,
 		Cover:          video.Cover,
@@ -37,8 +37,8 @@ func toSearchVideoHit(video po.Video) app.SearchVideoHit {
 }
 
 // toSearchUserHit 把用户行转成搜索结果项（回退路径无高亮）。
-func toSearchUserHit(row userFallbackRow) app.SearchUserHit {
-	return app.SearchUserHit{
+func toSearchUserHit(row userFallbackRow) app.UserHit {
+	return app.UserHit{
 		ID:            row.ID,
 		Username:      row.Username,
 		Avatar:        row.Avatar,
@@ -67,7 +67,7 @@ func extractTagNames(tags []po.Tag) []string {
 }
 
 // extractPartTitles 取分P标题列表（用于向量文本构造）。
-func extractPartTitles(parts []po.VideoPart) []string {
+func extractPartTitles(parts []po.Part) []string {
 	if len(parts) == 0 {
 		return nil
 	}

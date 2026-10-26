@@ -14,10 +14,10 @@ import (
 // LikeService 动态点赞用例服务（原 service/dynamic_service/like_service.go）。
 type LikeService struct {
 	txm      tx.Manager
-	dynamics domain.DynamicRepository
+	dynamics domain.Repository
 	likes    domain.LikeRepository
 	users    UserProfileQuery
-	notifier DynamicLikeNotifier
+	notifier LikeNotifier
 	tasks    *ctxutil.DetachedTaskGroup
 	logger   *zap.Logger
 }
@@ -25,10 +25,10 @@ type LikeService struct {
 // NewLikeService 构造动态点赞用例服务。
 func NewLikeService(
 	txm tx.Manager,
-	dynamics domain.DynamicRepository,
+	dynamics domain.Repository,
 	likes domain.LikeRepository,
 	users UserProfileQuery,
-	notifier DynamicLikeNotifier,
+	notifier LikeNotifier,
 	tasks *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,
 ) *LikeService {
@@ -47,7 +47,7 @@ func NewLikeService(
 //
 // 幂等策略与原实现一致：先尝试插入点赞记录，唯一键冲突说明已点赞、转为取消；
 // 计数用 SQL 表达式原子增减（取消时不低于 0），点赞成功后异步发通知。
-func (s *LikeService) ToggleLike(ctx context.Context, userID, dynamicID uint) (*DynamicLikeResult, error) {
+func (s *LikeService) ToggleLike(ctx context.Context, userID, dynamicID uint) (*LikeResult, error) {
 	if userID == 0 {
 		return nil, domain.ErrLoginRequired
 	}
@@ -110,7 +110,7 @@ func (s *LikeService) ToggleLike(ctx context.Context, userID, dynamicID uint) (*
 		})
 	}
 
-	return &DynamicLikeResult{LikeCount: likeCount, IsLiked: liked}, nil
+	return &LikeResult{LikeCount: likeCount, IsLiked: liked}, nil
 }
 
 // sendLikeNotification 向动态作者发送点赞通知（自赞与查库失败静默跳过）。

@@ -128,16 +128,16 @@ type UserRoleRepository interface {
 	ReplaceRoles(ctx context.Context, userID uint, roles []*Role) error
 }
 
-// ApiResourceRepository 接口资源仓储。
-type ApiResourceRepository interface {
+// APIResourceRepository 接口资源仓储。
+type APIResourceRepository interface {
 	// ListOrdered 按 path、method 升序读取全部资源。
-	ListOrdered(ctx context.Context) ([]*ApiResource, error)
+	ListOrdered(ctx context.Context) ([]*APIResource, error)
 	// ListPathMethod 只读 path、method（权限覆盖计算用）。
-	ListPathMethod(ctx context.Context) ([]*ApiResource, error)
+	ListPathMethod(ctx context.Context) ([]*APIResource, error)
 	// ListAll 读取全部资源（同步比对用）。
-	ListAll(ctx context.Context) ([]*ApiResource, error)
+	ListAll(ctx context.Context) ([]*APIResource, error)
 	// Create 创建资源。
-	Create(ctx context.Context, resource *ApiResource) error
+	Create(ctx context.Context, resource *APIResource) error
 	// UpdateSummaryAndTags 更新资源说明与标签；两者均为 nil 时不产生 UPDATE。
 	UpdateSummaryAndTags(ctx context.Context, resourceID uint, summary *string, tags *[]byte) error
 	// DeleteByID 删除资源。

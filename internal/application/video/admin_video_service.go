@@ -16,7 +16,7 @@ import (
 // admin_delete_service.go}）。
 type AdminVideoService struct {
 	txm       tx.Manager
-	videos    domain.VideoRepository
+	videos    domain.Repository
 	query     AdminVideoQuery
 	stats     *StatsService
 	authors   *AuthorService
@@ -34,7 +34,7 @@ type AdminVideoService struct {
 // NewAdminVideoService 构造管理端视频用例服务。
 func NewAdminVideoService(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	query AdminVideoQuery,
 	stats *StatsService,
 	authors *AuthorService,

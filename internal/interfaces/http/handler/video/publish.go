@@ -14,22 +14,22 @@ import (
 
 // PublishVideoReq 是 HTTP 投稿载荷，支持单源文件或 Parts；上传是否完成需由服务端重新核验，不能仅信任 FilePath。
 type PublishVideoReq struct {
-	Title       string                `json:"title" binding:"required,max=200" label:"视频标题"`
-	Description string                `json:"description" binding:"max=5000" label:"视频描述"`
-	PartitionID uint                  `json:"partitionId" binding:"required" label:"分区ID"`
-	TagIDs      []uint                `json:"tags" binding:"max=10" label:"标签列表"`
-	IsOriginal  bool                  `json:"isOriginal" label:"是否原创"`
-	IsPrivate   bool                  `json:"isPrivate" label:"是否私密"`
-	CoverURL    string                `json:"coverUrl" binding:"required" label:"封面图片URL"`
-	FilePath    string                `json:"filePath" label:"文件路径"`
-	FileName    string                `json:"fileName" binding:"omitempty,max=255" label:"源文件名"`
-	FileHash    string                `json:"fileHash" label:"文件hash"`
-	Parts       []VideoPartPublishReq `json:"parts" label:"分P列表"`
-	PublishTime time.Time             `json:"publishTime" label:"定时发布时间"`
+	Title       string           `json:"title" binding:"required,max=200" label:"视频标题"`
+	Description string           `json:"description" binding:"max=5000" label:"视频描述"`
+	PartitionID uint             `json:"partitionId" binding:"required" label:"分区ID"`
+	TagIDs      []uint           `json:"tags" binding:"max=10" label:"标签列表"`
+	IsOriginal  bool             `json:"isOriginal" label:"是否原创"`
+	IsPrivate   bool             `json:"isPrivate" label:"是否私密"`
+	CoverURL    string           `json:"coverUrl" binding:"required" label:"封面图片URL"`
+	FilePath    string           `json:"filePath" label:"文件路径"`
+	FileName    string           `json:"fileName" binding:"omitempty,max=255" label:"源文件名"`
+	FileHash    string           `json:"fileHash" label:"文件hash"`
+	Parts       []PartPublishReq `json:"parts" label:"分P列表"`
+	PublishTime time.Time        `json:"publishTime" label:"定时发布时间"`
 }
 
-// VideoPartPublishReq 描述一次多分P投稿中的源文件与可选标题，数组顺序映射到稿件分P排序。
-type VideoPartPublishReq struct {
+// PartPublishReq 描述一次多分P投稿中的源文件与可选标题，数组顺序映射到稿件分P排序。
+type PartPublishReq struct {
 	Title    string `json:"title" binding:"max=200" label:"分P标题"`
 	FilePath string `json:"filePath" label:"文件路径"`
 	FileName string `json:"fileName" binding:"required,max=255" label:"源文件名"`

@@ -25,25 +25,25 @@ const (
 	relatedTagLimit = 10
 )
 
-// SearchService 站内搜索用例服务（原 service/search_service 的 Search/SearchVideos/SearchUsers）。
+// Service 站内搜索用例服务（原 service/search_service 的 Search/SearchVideos/SearchUsers）。
 //
 // ES 不可用或查询失败时回退到 MySQL 模糊查询，与原实现的降级路径逐条一致。
-type SearchService struct {
+type Service struct {
 	index    KeywordSearch
-	fallback SearchFallbackQuery
+	fallback FallbackQuery
 	logger   *zap.Logger
 }
 
 // NewSearchService 构造站内搜索服务。
-func NewSearchService(index KeywordSearch, fallback SearchFallbackQuery, logger *zap.Logger) *SearchService {
-	return &SearchService{index: index, fallback: fallback, logger: logger}
+func NewSearchService(index KeywordSearch, fallback FallbackQuery, logger *zap.Logger) *Service {
+	return &Service{index: index, fallback: fallback, logger: logger}
 }
 
 // Search 同时查询视频/用户/标签三个维度（标签由视频命中派生）。
 //
 // 标签总量是本次视频命中派生的标签数，不是独立搜索整个标签表的总数。
 // ES 超时后的 SQL 回退使用父 context，既避免复用已过期的子预算，也仍受请求总取消约束。
-func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
+func (s *Service) Search(ctx context.Context, opts Options) (*Result, error) {
 	page := domain.NormalizePagination(opts.Page, opts.PageSize)
 	videoSort := domain.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
 	userSort := domain.NormalizeUserSort(opts.UserSort, opts.UserOrder)
@@ -71,7 +71,7 @@ func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*Search
 		return s.fallbackSearch(parent, opts)
 	}
 
-	result := &SearchResult{}
+	result := &Result{}
 	// 保持原实现的 append 语义：零命中时 Videos/Users 仍为 nil（响应中的 null）。
 	result.VideoTotal = hits.Videos.Total
 	result.Videos = append(result.Videos, hits.Videos.Items...)
@@ -88,7 +88,7 @@ func (s *SearchService) Search(ctx context.Context, opts SearchOptions) (*Search
 }
 
 // SearchVideos 仅返回视频结果，同时返回用户总量（用于前端展示）。
-func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*VideoSearchResult, error) {
+func (s *Service) SearchVideos(ctx context.Context, opts Options) (*VideoSearchResult, error) {
 	page := domain.NormalizePagination(opts.Page, opts.PageSize)
 	videoSort := domain.NormalizeVideoSort(opts.VideoSort, opts.VideoOrder)
 	opts.Page, opts.PageSize = page.Page, page.PageSize
@@ -143,7 +143,7 @@ func (s *SearchService) SearchVideos(ctx context.Context, opts SearchOptions) (*
 }
 
 // SearchUsers 仅返回用户结果。
-func (s *SearchService) SearchUsers(ctx context.Context, opts SearchOptions) (*UserSearchResult, error) {
+func (s *Service) SearchUsers(ctx context.Context, opts Options) (*UserSearchResult, error) {
 	page := domain.NormalizePagination(opts.Page, opts.PageSize)
 	userSort := domain.NormalizeUserSort(opts.UserSort, opts.UserOrder)
 	opts.Page, opts.PageSize = page.Page, page.PageSize
@@ -169,7 +169,7 @@ func (s *SearchService) SearchUsers(ctx context.Context, opts SearchOptions) (*U
 }
 
 // fallbackSearch 组合视频与用户回退结果，并派生相关标签。
-func (s *SearchService) fallbackSearch(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
+func (s *Service) fallbackSearch(ctx context.Context, opts Options) (*Result, error) {
 	videoResult, err := s.fallbackSearchVideos(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -180,7 +180,7 @@ func (s *SearchService) fallbackSearch(ctx context.Context, opts SearchOptions) 
 		return nil, err
 	}
 
-	result := &SearchResult{
+	result := &Result{
 		VideoTotal: videoResult.VideoTotal,
 		UserTotal:  userResult.UserTotal,
 		Videos:     videoResult.Videos,
@@ -193,15 +193,15 @@ func (s *SearchService) fallbackSearch(ctx context.Context, opts SearchOptions) 
 	return result, nil
 }
 
-func (s *SearchService) fallbackSearchVideos(ctx context.Context, opts SearchOptions) (*VideoSearchResult, error) {
+func (s *Service) fallbackSearchVideos(ctx context.Context, opts Options) (*VideoSearchResult, error) {
 	if !s.fallback.Available() {
-		return &VideoSearchResult{Videos: []SearchVideoHit{}}, nil
+		return &VideoSearchResult{Videos: []VideoHit{}}, nil
 	}
 
 	ctx = ensureContext(ctx)
 
 	if domain.NormalizeKeyword(opts.Keyword) == "" {
-		return &VideoSearchResult{Videos: []SearchVideoHit{}}, nil
+		return &VideoSearchResult{Videos: []VideoHit{}}, nil
 	}
 
 	userTotal, err := s.fallback.CountUsers(ctx, opts.Keyword)
@@ -215,7 +215,7 @@ func (s *SearchService) fallbackSearchVideos(ctx context.Context, opts SearchOpt
 	}
 
 	if len(videos) == 0 {
-		videos = []SearchVideoHit{}
+		videos = []VideoHit{}
 	}
 
 	return &VideoSearchResult{
@@ -225,15 +225,15 @@ func (s *SearchService) fallbackSearchVideos(ctx context.Context, opts SearchOpt
 	}, nil
 }
 
-func (s *SearchService) fallbackSearchUsers(ctx context.Context, opts SearchOptions) (*UserSearchResult, error) {
+func (s *Service) fallbackSearchUsers(ctx context.Context, opts Options) (*UserSearchResult, error) {
 	if !s.fallback.Available() {
-		return &UserSearchResult{Users: []SearchUserHit{}}, nil
+		return &UserSearchResult{Users: []UserHit{}}, nil
 	}
 
 	ctx = ensureContext(ctx)
 
 	if domain.NormalizeKeyword(opts.Keyword) == "" {
-		return &UserSearchResult{Users: []SearchUserHit{}}, nil
+		return &UserSearchResult{Users: []UserHit{}}, nil
 	}
 
 	users, total, err := s.fallback.SearchUsers(ctx, opts)
@@ -242,14 +242,14 @@ func (s *SearchService) fallbackSearchUsers(ctx context.Context, opts SearchOpti
 	}
 
 	if len(users) == 0 {
-		users = []SearchUserHit{}
+		users = []UserHit{}
 	}
 
 	return &UserSearchResult{UserTotal: total, Users: users}, nil
 }
 
 // userTotalBestEffort 尽力取用户命中总量：优先 ES，失败退 MySQL COUNT，再失败记 0。
-func (s *SearchService) userTotalBestEffort(ctx context.Context, keyword string) int64 {
+func (s *Service) userTotalBestEffort(ctx context.Context, keyword string) int64 {
 	keyword = domain.NormalizeKeyword(keyword)
 	if keyword == "" {
 		return 0
@@ -285,7 +285,7 @@ func (s *SearchService) userTotalBestEffort(ctx context.Context, keyword string)
 }
 
 // hydrateVideoList 用库内数据回填 ES 文档中缺失的作者名与创建时间。
-func (s *SearchService) hydrateVideoList(ctx context.Context, hits []SearchVideoHit) {
+func (s *Service) hydrateVideoList(ctx context.Context, hits []VideoHit) {
 	if len(hits) == 0 || !s.fallback.Available() {
 		return
 	}
@@ -327,7 +327,7 @@ func (s *SearchService) hydrateVideoList(ctx context.Context, hits []SearchVideo
 }
 
 // applyVideoMeta 就地回填非空的作者名与创建时间。
-func applyVideoMeta(hits []SearchVideoHit, metaByID map[uint]VideoSearchMeta) {
+func applyVideoMeta(hits []VideoHit, metaByID map[uint]VideoSearchMeta) {
 	for i := range hits {
 		meta, ok := metaByID[hits[i].ID]
 		if !ok {
@@ -345,9 +345,9 @@ func applyVideoMeta(hits []SearchVideoHit, metaByID map[uint]VideoSearchMeta) {
 }
 
 // buildRelatedTags 从视频命中的标签中去重派生相关标签（最多 10 个）。
-func buildRelatedTags(videos []SearchVideoHit) []SearchTagHit {
+func buildRelatedTags(videos []VideoHit) []TagHit {
 	seen := make(map[string]struct{})
-	tags := make([]SearchTagHit, 0)
+	tags := make([]TagHit, 0)
 
 	for _, video := range videos {
 		for _, tag := range video.Tags {
@@ -362,7 +362,7 @@ func buildRelatedTags(videos []SearchVideoHit) []SearchTagHit {
 
 			seen[tag] = struct{}{}
 
-			tags = append(tags, SearchTagHit{Name: tag})
+			tags = append(tags, TagHit{Name: tag})
 
 			if len(tags) >= relatedTagLimit {
 				return tags
@@ -374,7 +374,7 @@ func buildRelatedTags(videos []SearchVideoHit) []SearchTagHit {
 }
 
 // applyNormalized 把规范化后的分页与排序写回搜索参数。
-func applyNormalized(opts SearchOptions, page domain.Pagination, videoSort, userSort domain.SortSpec) SearchOptions {
+func applyNormalized(opts Options, page domain.Pagination, videoSort, userSort domain.SortSpec) Options {
 	opts.Page, opts.PageSize = page.Page, page.PageSize
 	opts.VideoSort, opts.VideoOrder = videoSort.Field, videoSort.Order
 	opts.UserSort, opts.UserOrder = userSort.Field, userSort.Order

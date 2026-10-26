@@ -34,15 +34,15 @@ func (h *Handler) HomeFeedView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// VideoHotReq 指定热门流的分页窗口，热度排序策略由应用用例决定。
-type VideoHotReq struct {
+// HotReq 指定热门流的分页窗口，热度排序策略由应用用例决定。
+type HotReq struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
 	PageSize int `form:"pageSize" binding:"omitempty,min=1,max=50"`
 }
 
 // HotView 综合热门视频列表.
 func (h *Handler) HotView(c *gin.Context) {
-	req := middlewares.GetBound[VideoHotReq](c)
+	req := middlewares.GetBound[HotReq](c)
 
 	list, total, err := h.feed.HotFeed(c.Request.Context(), req.Page, req.PageSize)
 	if err != nil {
@@ -54,15 +54,15 @@ func (h *Handler) HotView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// VideoRankReq 指定排行榜分页窗口，排名数据来源由查询用例选择。
-type VideoRankReq struct {
+// RankReq 指定排行榜分页窗口，排名数据来源由查询用例选择。
+type RankReq struct {
 	Page     int `form:"page" binding:"omitempty,min=1"`
 	PageSize int `form:"pageSize" binding:"omitempty,min=1,max=50"`
 }
 
 // RankView 综合排行榜（Top100）.
 func (h *Handler) RankView(c *gin.Context) {
-	req := middlewares.GetBound[VideoRankReq](c)
+	req := middlewares.GetBound[RankReq](c)
 
 	list, total, err := h.feed.RankTop(c.Request.Context(), req.Page, req.PageSize)
 	if err != nil {
@@ -74,15 +74,15 @@ func (h *Handler) RankView(c *gin.Context) {
 	res.OkWithList(list, total, c)
 }
 
-// VideoRecommendReq 以当前作品和期望条数请求关联推荐，用例负责大小边界与候选筛选。
-type VideoRecommendReq struct {
+// RecommendReq 以当前作品和期望条数请求关联推荐，用例负责大小边界与候选筛选。
+type RecommendReq struct {
 	VideoID uint `form:"videoId" binding:"required,gt=0"`
 	Size    int  `form:"size" binding:"omitempty,min=1,max=50"`
 }
 
 // RecommendView 视频详情页周边推荐.
 func (h *Handler) RecommendView(c *gin.Context) {
-	req := middlewares.GetBound[VideoRecommendReq](c)
+	req := middlewares.GetBound[RecommendReq](c)
 
 	list, err := h.recommend.RelatedVideos(c.Request.Context(), req.VideoID, req.Size)
 	if err != nil {

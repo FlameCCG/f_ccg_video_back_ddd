@@ -40,7 +40,7 @@ type RuntimeComponents struct {
 // 构造函数只登记引用，真正开始消费、调度或接收事件要等 Start。
 // 停机时按显式序列调用 Stop，不依赖垃圾回收、构造器的相反顺序或 cleanup 自动推断。
 func NewRuntimeComponents(
-	riverComponent *river.RiverComponent,
+	riverComponent *river.Component,
 	videoScheduler *videoapp.Scheduler,
 	transcodeConsumer *mq.TranscodeConsumerComponent,
 	cronComponent *scheduler.CronComponent,

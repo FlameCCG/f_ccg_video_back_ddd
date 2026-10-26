@@ -20,7 +20,7 @@ import (
 // AdminDynamicQuery 管理端动态列表查询端口（读侧）。
 type AdminDynamicQuery interface {
 	// List 按用户/用户名/关键字分页查询动态，按「置顶优先 + 时间倒序」排序。
-	List(ctx context.Context, params AdminDynamicListParams) ([]DynamicItem, int64, error)
+	List(ctx context.Context, params AdminDynamicListParams) ([]Item, int64, error)
 }
 
 // FeedQuery 作品流查询端口（读侧）。
@@ -111,17 +111,17 @@ type VideoPinWriter interface {
 	ClearPinned(ctx context.Context, videoID uint, authorUsername string) error
 }
 
-// DynamicCommentPurger 动态评论级联清理端口（由 comment 上下文实现）。
+// CommentPurger 动态评论级联清理端口（由 comment 上下文实现）。
 //
 // 删除动态时需要同时删除其评论与评论点赞，评论聚合的写侧归 comment 上下文所有；
 // 实现须复用 context 中的事务句柄，保证与动态删除处于同一事务。
-type DynamicCommentPurger interface {
+type CommentPurger interface {
 	// PurgeByDynamic 删除该动态下的全部评论与评论点赞，返回各自删除行数。
 	PurgeByDynamic(ctx context.Context, dynamicID uint) (comments int64, commentLikes int64, err error)
 }
 
-// DynamicLikeNotifier 动态点赞通知端口（由 notification 上下文实现）。
-type DynamicLikeNotifier interface {
+// LikeNotifier 动态点赞通知端口（由 notification 上下文实现）。
+type LikeNotifier interface {
 	// NotifyDynamicLike 向动态作者发送「有人点赞了你的动态」通知。
 	NotifyDynamicLike(
 		ctx context.Context,

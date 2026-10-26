@@ -11,7 +11,7 @@ import (
 // 读侧走 CQRS：富嵌套读模型由 persistence 从 PO 组装，
 // meta 与 stats 分别落两套 Redis 缓存（meta 有 TTL + generation CAS，stats 为权威计数）。
 type DetailService struct {
-	query VideoDetailQuery
+	query DetailQuery
 	meta  DetailMetaCache
 	stats *StatsService
 	dash  DASHVariantResolver
@@ -19,7 +19,7 @@ type DetailService struct {
 
 // NewDetailService 构造视频详情用例服务。
 func NewDetailService(
-	query VideoDetailQuery,
+	query DetailQuery,
 	meta DetailMetaCache,
 	stats *StatsService,
 	dash DASHVariantResolver,
@@ -31,7 +31,7 @@ func NewDetailService(
 //
 // 仅公开元数据进入共享详情缓存；作者预览从带身份约束的查询端口取得。
 // 用户自己的点赞/收藏/投币标记在 mergeDetail 中按请求补充，不能放入所有用户共享的 meta。
-func (s *DetailService) GetVideoDetail(ctx context.Context, videoID, viewerID uint) (*VideoDetail, error) {
+func (s *DetailService) GetVideoDetail(ctx context.Context, videoID, viewerID uint) (*Detail, error) {
 	if videoID == 0 {
 		return nil, domain.ErrVideoIDRequired
 	}
@@ -71,7 +71,7 @@ func (s *DetailService) GetVideoDetail(ctx context.Context, videoID, viewerID ui
 // GetVideoDetailAdmin 管理员获取视频详情（不过滤视频状态，不使用缓存）。
 //
 // 管理端资源清单会解析 DASH MPD，展开各 Representation（分辨率/码率/文件名）。
-func (s *DetailService) GetVideoDetailAdmin(ctx context.Context, videoID uint) (*VideoDetail, error) {
+func (s *DetailService) GetVideoDetailAdmin(ctx context.Context, videoID uint) (*Detail, error) {
 	if videoID == 0 {
 		return nil, domain.ErrVideoIDRequired
 	}
@@ -117,12 +117,12 @@ func (s *DetailService) mergeDetail(
 	meta *DetailMeta,
 	stats *domain.Stats,
 	userID uint,
-) *VideoDetail {
+) *Detail {
 	if meta == nil {
 		return nil
 	}
 
-	detail := &VideoDetail{
+	detail := &Detail{
 		IsScheduled: meta.IsScheduled,
 		PublishAt:   meta.PublishAt,
 		ApprovedAt:  meta.ApprovedAt,

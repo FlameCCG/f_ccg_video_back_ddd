@@ -7,8 +7,8 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// DynamicRepository 动态聚合的写侧仓储（接口所有权归领域层）。
-type DynamicRepository interface {
+// Repository 动态聚合的写侧仓储（接口所有权归领域层）。
+type Repository interface {
 	// FindByID 按主键读取动态；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, dynamicID uint) (*Dynamic, error)
 	// ExistsByID 探测动态是否存在（原实现以 select id/user_id/like_count 的 Take 判定）。

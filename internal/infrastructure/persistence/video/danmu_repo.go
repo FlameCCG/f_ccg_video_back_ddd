@@ -38,7 +38,7 @@ func (r *DanmuRepository) Create(ctx context.Context, record *domain.Danmu) erro
 		}
 
 		if row.VideoPartID != 0 {
-			if updateErr := tx.Model(&po.VideoPart{}).
+			if updateErr := tx.Model(&po.Part{}).
 				Where("id = ?", row.VideoPartID).
 				UpdateColumn("danmu_count", gorm.Expr("danmu_count + 1")).Error; updateErr != nil {
 				return updateErr
@@ -111,7 +111,7 @@ func (r *DanmuRepository) DecrPartDanmuCount(ctx context.Context, partID uint, d
 	}
 
 	return gormx.DB(ctx, r.db).
-		Model(&po.VideoPart{}).
+		Model(&po.Part{}).
 		Where("id = ?", partID).
 		UpdateColumn("danmu_count", gorm.Expr("GREATEST(danmu_count - ?, 0)", delta)).Error
 }

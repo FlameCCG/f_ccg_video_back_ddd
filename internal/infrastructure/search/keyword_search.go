@@ -41,7 +41,7 @@ func (a *Adapter) Available() bool {
 }
 
 // MultiSearch 一次请求同时检索视频与用户索引。
-func (a *Adapter) MultiSearch(ctx context.Context, opts app.SearchOptions, from int) (app.CombinedHits, error) {
+func (a *Adapter) MultiSearch(ctx context.Context, opts app.Options, from int) (app.CombinedHits, error) {
 	if !a.Available() {
 		return app.CombinedHits{}, app.ErrESUnavailable
 	}
@@ -65,7 +65,7 @@ func (a *Adapter) MultiSearch(ctx context.Context, opts app.SearchOptions, from 
 }
 
 // SearchVideos 检索视频索引（已发布过滤 + 排序 + 高亮）。
-func (a *Adapter) SearchVideos(ctx context.Context, opts app.SearchOptions, from int) (app.VideoHits, error) {
+func (a *Adapter) SearchVideos(ctx context.Context, opts app.Options, from int) (app.VideoHits, error) {
 	if !a.Available() {
 		return app.VideoHits{}, app.ErrESUnavailable
 	}
@@ -85,7 +85,7 @@ func (a *Adapter) SearchVideos(ctx context.Context, opts app.SearchOptions, from
 }
 
 // SearchUsers 检索用户索引（排序 + 高亮）。
-func (a *Adapter) SearchUsers(ctx context.Context, opts app.SearchOptions, from int) (app.UserHits, error) {
+func (a *Adapter) SearchUsers(ctx context.Context, opts app.Options, from int) (app.UserHits, error) {
 	if !a.Available() {
 		return app.UserHits{}, app.ErrESUnavailable
 	}

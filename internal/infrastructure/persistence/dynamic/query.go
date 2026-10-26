@@ -32,7 +32,7 @@ func NewAdminDynamicQuery(db *gorm.DB) *AdminDynamicQuery {
 func (q *AdminDynamicQuery) List(
 	ctx context.Context,
 	params app.AdminDynamicListParams,
-) ([]app.DynamicItem, int64, error) {
+) ([]app.Item, int64, error) {
 	query := gormx.DB(ctx, q.db).Model(&po.Dynamic{})
 	if params.UserID > 0 {
 		query = query.Where("user_id = ?", params.UserID)
@@ -53,7 +53,7 @@ func (q *AdminDynamicQuery) List(
 	}
 
 	if total == 0 {
-		return []app.DynamicItem{}, 0, nil
+		return []app.Item{}, 0, nil
 	}
 
 	var rows []po.Dynamic
@@ -68,9 +68,9 @@ func (q *AdminDynamicQuery) List(
 		return nil, 0, err
 	}
 
-	items := make([]app.DynamicItem, 0, len(rows))
+	items := make([]app.Item, 0, len(rows))
 	for _, d := range rows {
-		items = append(items, app.DynamicItem{
+		items = append(items, app.Item{
 			ID:        d.ID,
 			UserID:    d.UserID,
 			Username:  d.User.Username,

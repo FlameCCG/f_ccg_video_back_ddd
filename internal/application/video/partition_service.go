@@ -11,7 +11,7 @@ import (
 // PartitionService 视频分区用例服务（原 service/video_service/partition_service.go）。
 type PartitionService struct {
 	partitions domain.PartitionRepository
-	videos     domain.VideoRepository
+	videos     domain.Repository
 	cache      PartitionCache
 	authors    *AuthorService
 	logger     *zap.Logger
@@ -20,7 +20,7 @@ type PartitionService struct {
 // NewPartitionService 构造分区用例服务。
 func NewPartitionService(
 	partitions domain.PartitionRepository,
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	cache PartitionCache,
 	authors *AuthorService,
 	logger *zap.Logger,

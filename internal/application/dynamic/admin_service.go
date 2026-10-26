@@ -10,14 +10,14 @@ import (
 
 // AdminService 管理端动态用例服务（原 service/dynamic_service/admin_service.go）。
 type AdminService struct {
-	dynamics domain.DynamicRepository
+	dynamics domain.Repository
 	txm      tx.Manager
-	comments DynamicCommentPurger
+	comments CommentPurger
 	query    AdminDynamicQuery
 }
 
 // NewAdminService 构造管理端动态用例服务。
-func NewAdminService(dynamics domain.DynamicRepository, query AdminDynamicQuery, txm tx.Manager, comments DynamicCommentPurger) *AdminService {
+func NewAdminService(dynamics domain.Repository, query AdminDynamicQuery, txm tx.Manager, comments CommentPurger) *AdminService {
 	return &AdminService{dynamics: dynamics, query: query, txm: txm, comments: comments}
 }
 
@@ -25,7 +25,7 @@ func NewAdminService(dynamics domain.DynamicRepository, query AdminDynamicQuery,
 func (s *AdminService) List(
 	ctx context.Context,
 	params AdminDynamicListParams,
-) ([]DynamicItem, int64, error) {
+) ([]Item, int64, error) {
 	params.Page, params.PageSize = domain.NormalizeAdminPaging(params.Page, params.PageSize)
 	params.Keyword = strings.TrimSpace(params.Keyword)
 	params.Username = strings.TrimSpace(params.Username)

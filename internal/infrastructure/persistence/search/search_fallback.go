@@ -13,30 +13,30 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// SearchFallbackQuery 是 ES 不可用时的搜索回退查询（原 service/search_service/fallback.go）。
+// FallbackQuery 是 ES 不可用时的搜索回退查询（原 service/search_service/fallback.go）。
 //
 // SQL 语句、排序表达式与 LIKE 模式与原实现逐字一致。
-type SearchFallbackQuery struct {
+type FallbackQuery struct {
 	db *gorm.DB
 }
 
-var _ app.SearchFallbackQuery = (*SearchFallbackQuery)(nil)
+var _ app.FallbackQuery = (*FallbackQuery)(nil)
 
 // NewSearchFallbackQuery 构造搜索回退查询（db 允许为 nil）。
-func NewSearchFallbackQuery(db *gorm.DB) *SearchFallbackQuery {
-	return &SearchFallbackQuery{db: db}
+func NewSearchFallbackQuery(db *gorm.DB) *FallbackQuery {
+	return &FallbackQuery{db: db}
 }
 
 // Available 报告数据库句柄是否就绪。
-func (q *SearchFallbackQuery) Available() bool {
+func (q *FallbackQuery) Available() bool {
 	return q != nil && q.db != nil
 }
 
 // SearchVideos 按标题/作者名模糊匹配已发布视频，返回一页命中与总量。
-func (q *SearchFallbackQuery) SearchVideos(
+func (q *FallbackQuery) SearchVideos(
 	ctx context.Context,
-	opts app.SearchOptions,
-) ([]app.SearchVideoHit, int64, error) {
+	opts app.Options,
+) ([]app.VideoHit, int64, error) {
 	if !q.Available() {
 		return nil, 0, nil
 	}
@@ -77,7 +77,7 @@ func (q *SearchFallbackQuery) SearchVideos(
 		return nil, 0, err
 	}
 
-	items := make([]app.SearchVideoHit, 0, len(videos))
+	items := make([]app.VideoHit, 0, len(videos))
 	for _, video := range videos {
 		items = append(items, toSearchVideoHit(video))
 	}
@@ -86,10 +86,10 @@ func (q *SearchFallbackQuery) SearchVideos(
 }
 
 // SearchUsers 按用户名模糊匹配用户，返回一页命中与总量（粉丝数由子查询聚合）。
-func (q *SearchFallbackQuery) SearchUsers(
+func (q *FallbackQuery) SearchUsers(
 	ctx context.Context,
-	opts app.SearchOptions,
-) ([]app.SearchUserHit, int64, error) {
+	opts app.Options,
+) ([]app.UserHit, int64, error) {
 	if !q.Available() {
 		return nil, 0, nil
 	}
@@ -137,7 +137,7 @@ func (q *SearchFallbackQuery) SearchUsers(
 		return nil, 0, err
 	}
 
-	users := make([]app.SearchUserHit, 0, len(rows))
+	users := make([]app.UserHit, 0, len(rows))
 	for _, row := range rows {
 		users = append(users, toSearchUserHit(row))
 	}
@@ -146,7 +146,7 @@ func (q *SearchFallbackQuery) SearchUsers(
 }
 
 // CountUsers 统计用户名模糊命中总量。
-func (q *SearchFallbackQuery) CountUsers(ctx context.Context, keyword string) (int64, error) {
+func (q *FallbackQuery) CountUsers(ctx context.Context, keyword string) (int64, error) {
 	if !q.Available() {
 		return 0, nil
 	}
@@ -167,7 +167,7 @@ func (q *SearchFallbackQuery) CountUsers(ctx context.Context, keyword string) (i
 }
 
 // VideoMetaByIDs 批量读取视频作者名与创建时间，用于回填 ES 文档缺失字段。
-func (q *SearchFallbackQuery) VideoMetaByIDs(ctx context.Context, ids []uint) ([]app.VideoSearchMeta, error) {
+func (q *FallbackQuery) VideoMetaByIDs(ctx context.Context, ids []uint) ([]app.VideoSearchMeta, error) {
 	if !q.Available() || len(ids) == 0 {
 		return nil, nil
 	}
@@ -185,7 +185,7 @@ func (q *SearchFallbackQuery) VideoMetaByIDs(ctx context.Context, ids []uint) ([
 }
 
 // applyVideoFallbackSort 施加视频回退排序：非相关性排序按业务字段，相关性排序按字面命中优先级。
-func applyVideoFallbackSort(query *gorm.DB, opts app.SearchOptions, keyword, prefix string) *gorm.DB {
+func applyVideoFallbackSort(query *gorm.DB, opts app.Options, keyword, prefix string) *gorm.DB {
 	if query == nil {
 		return nil
 	}

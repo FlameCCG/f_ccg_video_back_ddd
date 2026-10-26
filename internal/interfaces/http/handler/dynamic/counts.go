@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DynamicCountsResp 关注未读数响应.
-type DynamicCountsResp struct {
+// CountsResp 关注未读数响应.
+type CountsResp struct {
 	UnreadCount int64 `json:"unreadCount"`
 }
 
@@ -27,5 +27,5 @@ func (h *Handler) CountsView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(DynamicCountsResp{UnreadCount: count}, c)
+	res.OkWithData(CountsResp{UnreadCount: count}, c)
 }

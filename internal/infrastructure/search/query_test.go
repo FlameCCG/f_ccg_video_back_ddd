@@ -35,7 +35,7 @@ func marshalSource(t *testing.T, src *elastic.SearchSource) string {
 func TestBuildVideoSearchSourceFiltersPublished(t *testing.T) {
 	t.Parallel()
 
-	payload := marshalSource(t, buildVideoSearchSource(app.SearchOptions{
+	payload := marshalSource(t, buildVideoSearchSource(app.Options{
 		Keyword:  "教程",
 		Page:     1,
 		PageSize: 20,
@@ -51,7 +51,7 @@ func TestBuildVideoSearchSourceFiltersPublished(t *testing.T) {
 func TestBuildVideoSearchSourceIncludesContractFields(t *testing.T) {
 	t.Parallel()
 
-	payload := marshalSource(t, buildVideoSearchSource(app.SearchOptions{
+	payload := marshalSource(t, buildVideoSearchSource(app.Options{
 		Keyword:  "教程",
 		Page:     3,
 		PageSize: 15,
@@ -98,7 +98,7 @@ func TestBuildVideoSearchSourceIncludesContractFields(t *testing.T) {
 func TestBuildUserSearchSourceIncludesContractFields(t *testing.T) {
 	t.Parallel()
 
-	payload := marshalSource(t, buildUserSearchSource(app.SearchOptions{
+	payload := marshalSource(t, buildUserSearchSource(app.Options{
 		Keyword:  "alice",
 		Page:     1,
 		PageSize: 20,
@@ -319,7 +319,7 @@ func TestBuildSuggestFieldQueryRejectsBlankKeyword(t *testing.T) {
 func TestBuildSearchRequestsCarryIndexAndSort(t *testing.T) {
 	t.Parallel()
 
-	opts := app.SearchOptions{
+	opts := app.Options{
 		Keyword:   "教程",
 		Page:      1,
 		PageSize:  20,

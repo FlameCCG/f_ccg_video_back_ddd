@@ -20,12 +20,12 @@ func registerDynamicCommonRoutes(
 		dynamicGroup.POST("create", middlewares.JsonBindParams[dynamichandler.CreateDynamicReq], h.CreateView)
 		dynamicGroup.DELETE("delete", middlewares.JsonBindParams[dynamichandler.DeleteDynamicReq], h.DeleteView)
 		dynamicGroup.PUT("pin", middlewares.JsonBindParams[dynamichandler.PinDynamicReq], h.PinView)
-		dynamicGroup.POST("like", middlewares.JsonBindParams[dynamichandler.DynamicLikeReq], h.LikeView)
+		dynamicGroup.POST("like", middlewares.JsonBindParams[dynamichandler.LikeReq], h.LikeView)
 
-		dynamicGroup.GET("list", middlewares.BindQueryParams[dynamichandler.DynamicListReq], h.ListView)
-		dynamicGroup.GET("follows", middlewares.BindQueryParams[dynamichandler.DynamicFollowListReq], h.FollowListView)
+		dynamicGroup.GET("list", middlewares.BindQueryParams[dynamichandler.ListReq], h.ListView)
+		dynamicGroup.GET("follows", middlewares.BindQueryParams[dynamichandler.FollowListReq], h.FollowListView)
 		dynamicGroup.GET("counts", h.CountsView)
-		dynamicGroup.POST("read", middlewares.JsonBindParams[dynamichandler.DynamicReadReq], h.ReadView)
+		dynamicGroup.POST("read", middlewares.JsonBindParams[dynamichandler.ReadReq], h.ReadView)
 	}
 }
 

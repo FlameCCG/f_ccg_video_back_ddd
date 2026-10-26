@@ -7,12 +7,12 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// VideoRepository 视频聚合写侧仓储（接口所有权归领域层）。
+// Repository 视频聚合写侧仓储（接口所有权归领域层）。
 //
 // 这里定义业务操作的输入输出与不存在语义，具体 SQL/PO 映射由 persistence/video 实现。
 // 它是当前较宽的写侧契约，也含部分事实读取；页面详情与列表的富投影另由应用查询端口提供。
 // 带 ForUpdate 的方法要在事务 context 中调用，脱离事务读取不能保护后续写入。
-type VideoRepository interface {
+type Repository interface {
 	// FindByID 按主键读取视频；不存在时返回 (nil, nil)。
 	FindByID(ctx context.Context, videoID uint) (*Video, error)
 	// FindByIDForUpdate 在调用方事务中锁定视频，供审核和到期发布协调状态与计划。
@@ -212,7 +212,7 @@ type DanmuRepository interface {
 // ReportRepository 举报写侧仓储。
 type ReportRepository interface {
 	// CreateVideoReport 写入视频举报并回填 ID/时间。
-	CreateVideoReport(ctx context.Context, report *VideoReport) error
+	CreateVideoReport(ctx context.Context, report *Report) error
 	// CreateDanmuReport 写入弹幕举报并回填 ID/时间。
 	CreateDanmuReport(ctx context.Context, report *DanmuReport) error
 	// HandleVideoReports 批量处理待处理的视频举报，返回影响行数。

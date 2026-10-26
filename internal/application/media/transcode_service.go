@@ -27,7 +27,7 @@ type TranscodeService struct {
 	progress    domain.ProgressStore
 	detailCache domain.VideoDetailCacheInvalidator
 
-	prober      MediaProber
+	prober      Prober
 	encoder     TranscodeEncoder
 	checkpoints CheckpointManager
 	stager      SourceStager
@@ -44,7 +44,7 @@ func NewTranscodeService(
 	storage domain.StorageResolver,
 	progress domain.ProgressStore,
 	detailCache domain.VideoDetailCacheInvalidator,
-	prober MediaProber,
+	prober Prober,
 	encoder TranscodeEncoder,
 	checkpoints CheckpointManager,
 	stager SourceStager,

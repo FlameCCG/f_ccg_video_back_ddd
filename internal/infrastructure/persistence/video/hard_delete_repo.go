@@ -20,7 +20,7 @@ const hardDeleteBatchSize = 500
 // 删除顺序、批量大小与 DASH 目录前缀收集逻辑与原 admin_delete_service.go 逐条一致。
 // 评论与评论点赞归 comment 上下文，由应用层经 CommentPurger 端口先行清理，
 // 因此本方法不触碰 comments / comment_likes。
-func (r *VideoRepository) HardDelete(
+func (r *Repository) HardDelete(
 	ctx context.Context,
 	videoIDs []uint,
 ) (*domain.HardDeleteResult, []domain.StorageDeleteTarget, error) {
@@ -47,7 +47,7 @@ func (r *VideoRepository) HardDelete(
 		return nil, nil, err
 	}
 
-	partIDs, err := pluckUintByBatches(db, &po.VideoPart{}, "id", "video_id", videoIDs)
+	partIDs, err := pluckUintByBatches(db, &po.Part{}, "id", "video_id", videoIDs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -60,7 +60,7 @@ func (r *VideoRepository) HardDelete(
 		}
 	}
 
-	if result.VideoParts, err = deleteModelByBatches(db, &po.VideoPart{}, "video_id", videoIDs); err != nil {
+	if result.VideoParts, err = deleteModelByBatches(db, &po.Part{}, "video_id", videoIDs); err != nil {
 		return nil, nil, err
 	}
 
@@ -88,7 +88,7 @@ func (r *VideoRepository) HardDelete(
 		return nil, nil, err
 	}
 
-	if result.Reports, err = deleteModelByBatches(db, &po.VideoReport{}, "video_id", videoIDs); err != nil {
+	if result.Reports, err = deleteModelByBatches(db, &po.Report{}, "video_id", videoIDs); err != nil {
 		return nil, nil, err
 	}
 
@@ -255,11 +255,11 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 		addTarget(videoStorage[resource.VideoID], resource.FileURL)
 	}
 
-	var parts []po.VideoPart
+	var parts []po.Part
 
 	if err := forEachIDBatch(videoIDs, func(batch []uint) error {
-		var batchParts []po.VideoPart
-		if err := db.Model(&po.VideoPart{}).
+		var batchParts []po.Part
+		if err := db.Model(&po.Part{}).
 			Select("id", "video_id", "storage_type").
 			Where("video_id IN ?", batch).
 			Find(&batchParts).Error; err != nil {

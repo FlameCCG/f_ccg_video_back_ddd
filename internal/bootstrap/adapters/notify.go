@@ -43,9 +43,9 @@ type Notifier struct {
 }
 
 var (
-	_ commentapp.Notifier            = (*Notifier)(nil)
-	_ dynamicapp.DynamicLikeNotifier = (*Notifier)(nil)
-	_ videoapp.VideoNotifier         = (*Notifier)(nil)
+	_ commentapp.Notifier     = (*Notifier)(nil)
+	_ dynamicapp.LikeNotifier = (*Notifier)(nil)
+	_ videoapp.Notifier       = (*Notifier)(nil)
 )
 
 // NewNotifier 构造通知适配器。
@@ -105,7 +105,7 @@ func (a *Notifier) NotifyDynamicLike(
 }
 
 // NotifyVideoLike 实现 video.VideoNotifier：视频被点赞通知。
-func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.VideoNotice) {
+func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.Notice) {
 	_ = a.notifications.Create(ctx, &notificationdomain.Notification{
 		Type:             enum.NotificationVideoLikeType,
 		ReceiverID:       int(notice.ReceiverID),

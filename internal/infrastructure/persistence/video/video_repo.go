@@ -15,21 +15,21 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// VideoRepository 视频聚合写侧仓储的 GORM 实现。
-type VideoRepository struct {
+// Repository 视频聚合写侧仓储的 GORM 实现。
+type Repository struct {
 	db *gorm.DB
 }
 
 // 编译期断言：满足领域侧仓储接口。
-var _ domain.VideoRepository = (*VideoRepository)(nil)
+var _ domain.Repository = (*Repository)(nil)
 
 // NewVideoRepository 构造视频仓储。
-func NewVideoRepository(db *gorm.DB) *VideoRepository {
-	return &VideoRepository{db: db}
+func NewVideoRepository(db *gorm.DB) *Repository {
+	return &Repository{db: db}
 }
 
 // FindByID 按主键读取视频；不存在时返回 (nil, nil)。
-func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*domain.Video, error) {
+func (r *Repository) FindByID(ctx context.Context, videoID uint) (*domain.Video, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "author_username", "status", "partition_id", "title", "cover", "duration",
@@ -47,7 +47,7 @@ func (r *VideoRepository) FindByID(ctx context.Context, videoID uint) (*domain.V
 	return toDomainVideo(&row), nil
 }
 
-func (r *VideoRepository) FindByIDForUpdate(ctx context.Context, videoID uint) (*domain.Video, error) {
+func (r *Repository) FindByIDForUpdate(ctx context.Context, videoID uint) (*domain.Video, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
 		Take(&row, "id = ?", videoID).Error; err != nil {
@@ -60,7 +60,7 @@ func (r *VideoRepository) FindByIDForUpdate(ctx context.Context, videoID uint) (
 }
 
 // FindByIDAndAuthorForUpdate 在调用方事务中取得行锁，防止改稿覆盖并发删除或审核。
-func (r *VideoRepository) FindByIDAndAuthorForUpdate(
+func (r *Repository) FindByIDAndAuthorForUpdate(
 	ctx context.Context,
 	videoID uint,
 	authorUsername string,
@@ -76,7 +76,7 @@ func (r *VideoRepository) FindByIDAndAuthorForUpdate(
 }
 
 // EnsurePublished 校验视频存在且处于已发布状态；否则返回 ErrRecordNotFound。
-func (r *VideoRepository) EnsurePublished(ctx context.Context, videoID uint) error {
+func (r *Repository) EnsurePublished(ctx context.Context, videoID uint) error {
 	var row struct {
 		ID uint
 	}
@@ -92,7 +92,7 @@ func (r *VideoRepository) EnsurePublished(ctx context.Context, videoID uint) err
 }
 
 // Exists 判断视频行是否存在（不限状态）。
-func (r *VideoRepository) Exists(ctx context.Context, videoID uint) (bool, error) {
+func (r *Repository) Exists(ctx context.Context, videoID uint) (bool, error) {
 	var count int64
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
@@ -105,7 +105,7 @@ func (r *VideoRepository) Exists(ctx context.Context, videoID uint) (bool, error
 }
 
 // PublishedStats 读取已发布视频的统计行；不存在时返回 ErrRecordNotFound。
-func (r *VideoRepository) PublishedStats(ctx context.Context, videoID uint) (*domain.Stats, error) {
+func (r *Repository) PublishedStats(ctx context.Context, videoID uint) (*domain.Stats, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
@@ -119,7 +119,7 @@ func (r *VideoRepository) PublishedStats(ctx context.Context, videoID uint) (*do
 }
 
 // ApplyStatsDelta 在 MySQL 上以「不小于 0」表达式应用统计增量（仅已发布视频）。
-func (r *VideoRepository) ApplyStatsDelta(ctx context.Context, videoID uint, delta domain.StatsDelta) error {
+func (r *Repository) ApplyStatsDelta(ctx context.Context, videoID uint, delta domain.StatsDelta) error {
 	updates := statsDeltaUpdates(delta)
 	if len(updates) == 0 {
 		return nil
@@ -173,7 +173,7 @@ func nonNegativeDeltaExpr(column string, delta int64) clause.Expr {
 // AuthorIDByVideoID 读取视频作者的用户 ID；作者缺失时返回 ErrVideoAuthorNotFound。
 //
 // 与原 GetVideoAuthorID 的 DB 分支一致：先 JOIN 查，失败再按 author_username 二次查。
-func (r *VideoRepository) AuthorIDByVideoID(ctx context.Context, videoID uint) (uint, error) {
+func (r *Repository) AuthorIDByVideoID(ctx context.Context, videoID uint) (uint, error) {
 	db := gormx.DB(ctx, r.db)
 
 	var authorID uint
@@ -213,7 +213,7 @@ func (r *VideoRepository) AuthorIDByVideoID(ctx context.Context, videoID uint) (
 }
 
 // PublishedAuthorIDByVideoID 读取已发布视频作者的用户 ID（供事务内互动流程使用）。
-func (r *VideoRepository) PublishedAuthorIDByVideoID(ctx context.Context, videoID uint) (uint, error) {
+func (r *Repository) PublishedAuthorIDByVideoID(ctx context.Context, videoID uint) (uint, error) {
 	var authorID uint
 	if err := gormx.DB(ctx, r.db).
 		Table("videos v").
@@ -232,7 +232,7 @@ func (r *VideoRepository) PublishedAuthorIDByVideoID(ctx context.Context, videoI
 }
 
 // AuthorUsernameByVideoID 读取视频的作者用户名；视频不存在时返回 ErrRecordNotFound。
-func (r *VideoRepository) AuthorUsernameByVideoID(ctx context.Context, videoID uint) (string, error) {
+func (r *Repository) AuthorUsernameByVideoID(ctx context.Context, videoID uint) (string, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "author_username").
@@ -245,7 +245,7 @@ func (r *VideoRepository) AuthorUsernameByVideoID(ctx context.Context, videoID u
 }
 
 // UsernameByUserID 读取用户名（读侧投影，允许直读 users 表，见 decisions.md D-011）。
-func (r *VideoRepository) UsernameByUserID(ctx context.Context, userID uint) (string, error) {
+func (r *Repository) UsernameByUserID(ctx context.Context, userID uint) (string, error) {
 	var username string
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.User{}).
@@ -260,7 +260,7 @@ func (r *VideoRepository) UsernameByUserID(ctx context.Context, userID uint) (st
 // UserIDByUsername 读取用户 ID 与规范化后的用户名（读侧投影）。
 //
 // 与原 fetchUserByUsername 一致：查询失败时返回 (0, 入参用户名)。
-func (r *VideoRepository) UserIDByUsername(ctx context.Context, username string) (uint, string, error) {
+func (r *Repository) UserIDByUsername(ctx context.Context, username string) (uint, string, error) {
 	if username == "" {
 		return 0, "", nil
 	}
@@ -277,7 +277,7 @@ func (r *VideoRepository) UserIDByUsername(ctx context.Context, username string)
 }
 
 // UpdateStatus 无条件更新视频状态。
-func (r *VideoRepository) UpdateStatus(ctx context.Context, videoID uint, status enum.VideoStatus) error {
+func (r *Repository) UpdateStatus(ctx context.Context, videoID uint, status enum.VideoStatus) error {
 	return gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
 		Where("id = ?", videoID).
@@ -285,7 +285,7 @@ func (r *VideoRepository) UpdateStatus(ctx context.Context, videoID uint, status
 }
 
 // UpdateStatusFrom 仅当当前状态等于 from 时更新为 to，返回影响行数。
-func (r *VideoRepository) UpdateStatusFrom(
+func (r *Repository) UpdateStatusFrom(
 	ctx context.Context,
 	videoID uint,
 	from, to enum.VideoStatus,
@@ -299,7 +299,7 @@ func (r *VideoRepository) UpdateStatusFrom(
 }
 
 // Approve 在审核事务内同时保存通过状态与通过时间。
-func (r *VideoRepository) Approve(ctx context.Context, videoID uint, status enum.VideoStatus, approvedAt time.Time) (int64, error) {
+func (r *Repository) Approve(ctx context.Context, videoID uint, status enum.VideoStatus, approvedAt time.Time) (int64, error) {
 	result := gormx.DB(ctx, r.db).Model(&po.Video{}).
 		Where("id = ? AND status = ?", videoID, enum.VideoStatusReview).
 		Updates(map[string]any{"status": status, "approved_at": approvedAt})
@@ -307,7 +307,7 @@ func (r *VideoRepository) Approve(ctx context.Context, videoID uint, status enum
 }
 
 // UpdateStatusBatch 批量更新视频状态，返回影响行数。
-func (r *VideoRepository) UpdateStatusBatch(
+func (r *Repository) UpdateStatusBatch(
 	ctx context.Context,
 	videoIDs []uint,
 	status enum.VideoStatus,
@@ -321,7 +321,7 @@ func (r *VideoRepository) UpdateStatusBatch(
 }
 
 // UpdateStatusBatchFrom 批量条件更新视频状态，返回影响行数。
-func (r *VideoRepository) UpdateStatusBatchFrom(
+func (r *Repository) UpdateStatusBatchFrom(
 	ctx context.Context,
 	videoIDs []uint,
 	from, to enum.VideoStatus,
@@ -335,7 +335,7 @@ func (r *VideoRepository) UpdateStatusBatchFrom(
 }
 
 // IDsByStatus 过滤出指定状态的视频 ID。
-func (r *VideoRepository) IDsByStatus(
+func (r *Repository) IDsByStatus(
 	ctx context.Context,
 	videoIDs []uint,
 	status enum.VideoStatus,
@@ -352,7 +352,7 @@ func (r *VideoRepository) IDsByStatus(
 }
 
 // IDsByAuthor 读取该作者名下的全部视频 ID。
-func (r *VideoRepository) IDsByAuthor(ctx context.Context, authorUsername string) ([]uint, error) {
+func (r *Repository) IDsByAuthor(ctx context.Context, authorUsername string) ([]uint, error) {
 	if authorUsername == "" {
 		return nil, nil
 	}
@@ -369,7 +369,7 @@ func (r *VideoRepository) IDsByAuthor(ctx context.Context, authorUsername string
 }
 
 // IDsByPartition 列出某分区下的全部视频 ID。
-func (r *VideoRepository) IDsByPartition(ctx context.Context, partitionID uint) ([]uint, error) {
+func (r *Repository) IDsByPartition(ctx context.Context, partitionID uint) ([]uint, error) {
 	var ids []uint
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
@@ -382,7 +382,7 @@ func (r *VideoRepository) IDsByPartition(ctx context.Context, partitionID uint) 
 }
 
 // CountByPartition 统计某分区下的视频数量。
-func (r *VideoRepository) CountByPartition(ctx context.Context, partitionID uint) (int64, error) {
+func (r *Repository) CountByPartition(ctx context.Context, partitionID uint) (int64, error) {
 	var count int64
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Video{}).
@@ -395,7 +395,7 @@ func (r *VideoRepository) CountByPartition(ctx context.Context, partitionID uint
 }
 
 // SaveRevision 只映射改稿字段；数据库列名留在适配器内，统计等独立写入不受影响。
-func (r *VideoRepository) SaveRevision(ctx context.Context, video *domain.Video) error {
+func (r *Repository) SaveRevision(ctx context.Context, video *domain.Video) error {
 	if video == nil || video.ID == 0 {
 		return domain.ErrRecordNotFound
 	}
@@ -416,7 +416,7 @@ func (r *VideoRepository) SaveRevision(ctx context.Context, video *domain.Video)
 }
 
 // ReplaceTags 覆盖视频的标签关联（tags 为空表示清空关联）。
-func (r *VideoRepository) ReplaceTags(ctx context.Context, videoID uint, tags []domain.Tag) error {
+func (r *Repository) ReplaceTags(ctx context.Context, videoID uint, tags []domain.Tag) error {
 	target := &po.Video{Model: po.Model{ID: videoID}}
 	rows := toPOTags(tags)
 
@@ -434,7 +434,7 @@ func (r *VideoRepository) ReplaceTags(ctx context.Context, videoID uint, tags []
 }
 
 // TagsByVideoID 读取视频当前关联的标签。
-func (r *VideoRepository) TagsByVideoID(ctx context.Context, videoID uint) ([]domain.Tag, error) {
+func (r *Repository) TagsByVideoID(ctx context.Context, videoID uint) ([]domain.Tag, error) {
 	var rows []po.Tag
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Video{Model: po.Model{ID: videoID}}).
@@ -447,7 +447,7 @@ func (r *VideoRepository) TagsByVideoID(ctx context.Context, videoID uint) ([]do
 }
 
 // FindTagsByIDs 按 ID 批量读取标签（无匹配时返回非 nil 空切片，与 GORM Find 语义一致）。
-func (r *VideoRepository) FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]domain.Tag, error) {
+func (r *Repository) FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]domain.Tag, error) {
 	if len(tagIDs) == 0 {
 		return []domain.Tag{}, nil
 	}
@@ -461,7 +461,7 @@ func (r *VideoRepository) FindTagsByIDs(ctx context.Context, tagIDs []uint) ([]d
 }
 
 // CreateOrGetTag 创建标签（若已存在同名标签则返回现有）。
-func (r *VideoRepository) CreateOrGetTag(ctx context.Context, name string) (*domain.Tag, error) {
+func (r *Repository) CreateOrGetTag(ctx context.Context, name string) (*domain.Tag, error) {
 	normalized, err := domain.ValidateTagName(name)
 	if err != nil {
 		return nil, err
@@ -483,7 +483,7 @@ func (r *VideoRepository) CreateOrGetTag(ctx context.Context, name string) (*dom
 }
 
 // StoragePathStillReferenced 判断对象路径是否仍被其它视频/资源引用。
-func (r *VideoRepository) StoragePathStillReferenced(ctx context.Context, storedPath string) (bool, error) {
+func (r *Repository) StoragePathStillReferenced(ctx context.Context, storedPath string) (bool, error) {
 	db := gormx.DB(ctx, r.db)
 
 	var count int64

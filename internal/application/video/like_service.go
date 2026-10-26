@@ -136,7 +136,7 @@ func (s *InteractionService) sendVideoLikeNotification(ctx context.Context, acti
 		return
 	}
 
-	s.notifier.NotifyVideoLike(ctx, VideoNotice{
+	s.notifier.NotifyVideoLike(ctx, Notice{
 		ReceiverID:       authorID,
 		ActionUserID:     actionUser.ID,
 		ActionUserName:   actionUser.Username,

@@ -8,15 +8,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DynamicFollowListReq 关注列表请求.
-type DynamicFollowListReq struct {
+// FollowListReq 关注列表请求.
+type FollowListReq struct {
 	Page     int `form:"page" label:"页码"`
 	PageSize int `form:"pageSize" label:"每页数量"`
 }
 
 // FollowListView 当前用户的关注列表（含最新作品与未读标记）.
 func (h *Handler) FollowListView(c *gin.Context) {
-	req := middlewares.GetBound[DynamicFollowListReq](c)
+	req := middlewares.GetBound[FollowListReq](c)
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {

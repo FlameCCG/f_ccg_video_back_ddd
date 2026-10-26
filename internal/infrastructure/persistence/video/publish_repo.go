@@ -17,7 +17,7 @@ import (
 //
 // 事务内的错误文案与原 api/video_api/publish.go 的 persistVideo 逐字一致；
 // 源文件名超长等 DB 错误经 domain.MapSourceFileNameDBError 转为可读业务文案。
-func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraft) error {
+func (r *Repository) Persist(ctx context.Context, draft *domain.PublishDraft) error {
 	if draft == nil || draft.Video == nil {
 		return domain.ErrParamInvalid
 	}
@@ -47,7 +47,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 		}
 
 		if len(draft.Parts) > 0 {
-			parts := make([]po.VideoPart, 0, len(draft.Parts))
+			parts := make([]po.Part, 0, len(draft.Parts))
 			for _, part := range draft.Parts {
 				parts = append(parts, toPOVideoPart(part, row.ID))
 			}
@@ -99,7 +99,7 @@ func (r *VideoRepository) Persist(ctx context.Context, draft *domain.PublishDraf
 }
 
 // createInitialPartResources 逐个分P写入初始（源片）资源行。
-func createInitialPartResources(tx *gorm.DB, draft *domain.PublishDraft, parts []po.VideoPart) error {
+func createInitialPartResources(tx *gorm.DB, draft *domain.PublishDraft, parts []po.Part) error {
 	for idx := range parts {
 		if idx >= len(draft.PartResources) {
 			continue

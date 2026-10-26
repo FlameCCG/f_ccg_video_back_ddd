@@ -17,8 +17,8 @@ func registerCommentCommonRoutes(
 	commentGroup := g.Group("/comment")
 	{
 		// 公开接口（可选登录获取点赞状态）
-		commentGroup.GET("list", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtOptional(), middlewares.BindQueryParams[commenthandler.CommentListReq], h.ListView)
-		commentGroup.GET("replies", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtOptional(), middlewares.BindQueryParams[commenthandler.CommentRepliesReq], h.RepliesView)
+		commentGroup.GET("list", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtOptional(), middlewares.BindQueryParams[commenthandler.ListReq], h.ListView)
+		commentGroup.GET("replies", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtOptional(), middlewares.BindQueryParams[commenthandler.RepliesReq], h.RepliesView)
 	}
 
 	authGroup := commentGroup.Group("")
@@ -30,8 +30,8 @@ func registerCommentCommonRoutes(
 			h.CreateView,
 		)
 		authGroup.DELETE("delete", middlewares.JsonBindParams[commenthandler.DeleteCommentReq], h.DeleteView)
-		authGroup.PUT("pin", middlewares.JsonBindParams[commenthandler.CommentPinReq], h.PinView)
-		authGroup.POST("like", middlewares.JsonBindParams[commenthandler.CommentLikeReq], h.LikeView)
+		authGroup.PUT("pin", middlewares.JsonBindParams[commenthandler.PinReq], h.PinView)
+		authGroup.POST("like", middlewares.JsonBindParams[commenthandler.LikeReq], h.LikeView)
 		authGroup.GET("creator/list", middlewares.BindQueryParams[commenthandler.CreatorCommentListReq], h.CreatorListView)
 	}
 }

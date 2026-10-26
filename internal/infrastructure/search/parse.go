@@ -48,12 +48,12 @@ func parseUserHits(res *elastic.SearchResult, logger *zap.Logger) app.UserHits {
 }
 
 // parseVideoList 把 ES 命中解码为视频结果项，兼容 snake_case 与 camelCase 字段名。
-func parseVideoList(res *elastic.SearchResult) []app.SearchVideoHit {
+func parseVideoList(res *elastic.SearchResult) []app.VideoHit {
 	if res == nil || res.Error != nil || res.Hits == nil {
 		return nil
 	}
 
-	list := make([]app.SearchVideoHit, 0, len(res.Hits.Hits))
+	list := make([]app.VideoHit, 0, len(res.Hits.Hits))
 
 	for _, hit := range res.Hits.Hits {
 		var data map[string]any
@@ -71,7 +71,7 @@ func parseVideoList(res *elastic.SearchResult) []app.SearchVideoHit {
 			createdAt = toTime(data["createdAt"])
 		}
 
-		list = append(list, app.SearchVideoHit{
+		list = append(list, app.VideoHit{
 			ID:             toUint(data["id"]),
 			Title:          toString(data["title"]),
 			Cover:          toString(data["cover"]),
@@ -89,12 +89,12 @@ func parseVideoList(res *elastic.SearchResult) []app.SearchVideoHit {
 }
 
 // parseUserList 把 ES 命中解码为用户结果项。
-func parseUserList(res *elastic.SearchResult) []app.SearchUserHit {
+func parseUserList(res *elastic.SearchResult) []app.UserHit {
 	if res == nil || res.Error != nil || res.Hits == nil {
 		return nil
 	}
 
-	list := make([]app.SearchUserHit, 0, len(res.Hits.Hits))
+	list := make([]app.UserHit, 0, len(res.Hits.Hits))
 
 	for _, hit := range res.Hits.Hits {
 		var data map[string]any
@@ -102,7 +102,7 @@ func parseUserList(res *elastic.SearchResult) []app.SearchUserHit {
 			continue
 		}
 
-		list = append(list, app.SearchUserHit{
+		list = append(list, app.UserHit{
 			ID:            toUint(data["id"]),
 			Username:      toString(data["username"]),
 			Avatar:        toString(data["avatar"]),

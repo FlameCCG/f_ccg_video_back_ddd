@@ -15,13 +15,13 @@ import (
 // （先 Count 再 Find；管理端与创作中心在 total==0 时不再执行 Find）。
 type Query interface {
 	// ListRoots 一级评论分页列表（含置顶优先排序）。
-	ListRoots(ctx context.Context, params RootListQuery) ([]CommentRow, int64, error)
+	ListRoots(ctx context.Context, params RootListQuery) ([]Row, int64, error)
 	// ListReplies 某根评论下的回复分页列表（按创建时间升序）。
-	ListReplies(ctx context.Context, params ReplyListQuery) ([]CommentRow, int64, error)
+	ListReplies(ctx context.Context, params ReplyListQuery) ([]Row, int64, error)
 	// ListByAuthor 创作中心：本人视频下的评论分页列表。
-	ListByAuthor(ctx context.Context, params CreatorListQuery) ([]CommentRow, int64, error)
+	ListByAuthor(ctx context.Context, params CreatorListQuery) ([]Row, int64, error)
 	// AdminList 管理端评论分页列表。
-	AdminList(ctx context.Context, params AdminListQuery) ([]CommentRow, int64, error)
+	AdminList(ctx context.Context, params AdminListQuery) ([]Row, int64, error)
 	// CountByVideo 统计某视频的评论总数（含回复）。
 	CountByVideo(ctx context.Context, videoID uint) (int64, error)
 	// ParentBrief 读取同一对象下的父评论投影（user_id / root_id / 用户名）；
@@ -48,7 +48,7 @@ type RelatedQuery interface {
 	// VideoAuthorRef 读取视频及其作者用户 ID；视频不存在时返回 (nil, nil)。
 	VideoAuthorRef(ctx context.Context, videoID uint) (*VideoAuthorRef, error)
 	// DynamicBrief 读取动态 id/user_id；不存在时返回 (nil, nil)。
-	DynamicBrief(ctx context.Context, dynamicID uint) (*DynamicBrief, error)
+	DynamicBrief(ctx context.Context, dynamicID uint) (*Brief, error)
 	// AllowedAtUserIDs 过滤出与操作者互相关注（任一方向）的候选 @ 用户；
 	// 查询失败时返回 nil（与原实现忽略错误一致）。
 	AllowedAtUserIDs(ctx context.Context, actorID uint, candidateIDs []uint) []uint

@@ -21,8 +21,8 @@ const (
 	ReportHandleTypeDanmu ReportHandleType = "danmu"
 )
 
-// VideoReport 视频举报实体。
-type VideoReport struct {
+// Report 视频举报实体。
+type Report struct {
 	ID               uint
 	CreatedAt        time.Time
 	UpdatedAt        time.Time

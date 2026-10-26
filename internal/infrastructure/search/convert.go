@@ -16,12 +16,12 @@ import (
 // 本文件是 ES `_source` 的弱类型解码工具：同一字段在 dump / binlog / 手工写入下
 // 可能是 string、json.Number、float64 等不同类型，逐类型兜底转换而不是直接断言。
 
-func toHighlightMap(source map[string][]string) app.SearchHighlight {
+func toHighlightMap(source map[string][]string) app.Highlight {
 	if len(source) == 0 {
 		return nil
 	}
 
-	out := make(app.SearchHighlight, len(source))
+	out := make(app.Highlight, len(source))
 	maps.Copy(out, source)
 
 	return out

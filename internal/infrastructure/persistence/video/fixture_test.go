@@ -18,7 +18,7 @@ const testAuthorAlice = "alice"
 // fixture 一套用 sqlite 临时库装配的真实仓储与查询（测试不走 wire）。
 type fixture struct {
 	db          *gorm.DB
-	videos      *infra.VideoRepository
+	videos      *infra.Repository
 	danmus      *infra.DanmuRepository
 	likes       *infra.LikeRepository
 	coins       *infra.CoinRepository
@@ -57,12 +57,12 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	if err := db.AutoMigrate(
-		&po.User{}, &po.Video{}, &po.VideoPartition{}, &po.VideoPart{},
+		&po.User{}, &po.Video{}, &po.VideoPartition{}, &po.Part{},
 		&po.VideoResource{}, &po.VideoPartResource{}, &po.Tag{},
 		&po.VideoLike{}, &po.VideoCoin{}, &po.VideoPlayHistory{},
 		&po.FavoriteFolder{}, &po.FavoriteFolderVideo{},
 		&po.Danmu{}, &po.DanmuLike{},
-		&po.VideoReport{}, &po.DanmuReport{},
+		&po.Report{}, &po.DanmuReport{},
 		&po.Comment{}, &po.CommentLike{},
 	); err != nil {
 		t.Fatalf("migrate failed: %v", err)

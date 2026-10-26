@@ -8,14 +8,14 @@ import (
 
 type capturingFallback struct {
 	fakeSearchFallback
-	options []SearchOptions
+	options []Options
 }
 
-func (f *capturingFallback) SearchVideos(_ context.Context, opts SearchOptions) ([]SearchVideoHit, int64, error) {
+func (f *capturingFallback) SearchVideos(_ context.Context, opts Options) ([]VideoHit, int64, error) {
 	f.options = append(f.options, opts)
 	return nil, 0, nil
 }
-func (f *capturingFallback) SearchUsers(_ context.Context, opts SearchOptions) ([]SearchUserHit, int64, error) {
+func (f *capturingFallback) SearchUsers(_ context.Context, opts Options) ([]UserHit, int64, error) {
 	f.options = append(f.options, opts)
 	return nil, 0, nil
 }
@@ -23,7 +23,7 @@ func TestUnavailableSearchNormalizesBeforeFallback(t *testing.T) {
 	for _, videoOnly := range []bool{false, true} {
 		fallback := &capturingFallback{fakeSearchFallback: fakeSearchFallback{available: true}}
 		svc := NewSearchService(&fakeKeywordSearch{}, fallback, zap.NewNop())
-		opts := SearchOptions{Keyword: "query", Page: -4, PageSize: -2}
+		opts := Options{Keyword: "query", Page: -4, PageSize: -2}
 		var err error
 		if videoOnly {
 			_, err = svc.SearchVideos(context.Background(), opts)

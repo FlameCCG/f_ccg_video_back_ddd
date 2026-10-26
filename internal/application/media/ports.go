@@ -22,10 +22,10 @@ import (
 // 端口阅读：本文件描述探测、编码、源文件暂存与检查点等应用编排能力；存储、资源和进度的领域端口位于 domain/media/ports.go。
 // 引擎可同时实现多个窄接口，应用只持有自己所需能力，具体选择由组合根完成。
 
-// MediaProber 媒体元信息探测端口（ffprobe + 源文件体积探测）。
+// Prober 媒体元信息探测端口（ffprobe + 源文件体积探测）。
 //
 // 实现：`*mq.TranscodeEngine`（`internal/infrastructure/mq`）。
-type MediaProber interface {
+type Prober interface {
 	// ProbeVideo 探测本地媒体文件的分辨率、码率、编码、容器 brand 与时长。
 	ProbeVideo(ctx context.Context, path string) (domain.VideoMeta, error)
 	// SourceSize 返回任务源文件字节数：本地源用 os.Stat，远程源用 HTTP HEAD。

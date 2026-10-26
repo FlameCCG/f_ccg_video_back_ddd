@@ -14,8 +14,8 @@ import (
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// DynamicItem 动态列表项（读模型，json tag 与原 dynamic_service.DynamicItem 逐字一致）.
-type DynamicItem struct {
+// Item 动态列表项（读模型，json tag 与原 dynamic_service.DynamicItem 逐字一致）.
+type Item struct {
 	ID        uint       `json:"id"`
 	UserID    uint       `json:"userId"`
 	Username  string     `json:"username"`
@@ -50,8 +50,8 @@ type VideoBrief struct {
 	PinnedAt     *time.Time `json:"pinnedAt,omitempty"`
 }
 
-// DynamicBrief 作品流中的动态摘要（读模型）.
-type DynamicBrief struct {
+// Brief 作品流中的动态摘要（读模型）.
+type Brief struct {
 	ID           uint       `json:"id"`
 	Content      string     `json:"content"`
 	ImageURL     string     `json:"imageUrl"`
@@ -68,7 +68,7 @@ type WorkFeedItem struct {
 	CreatedAt time.Time     `json:"createdAt"`
 	Author    AuthorBrief   `json:"author"`
 	Video     *VideoBrief   `json:"video,omitempty"`
-	Dynamic   *DynamicBrief `json:"dynamic,omitempty"`
+	Dynamic   *Brief        `json:"dynamic,omitempty"`
 }
 
 // FollowUserItem 关注列表条目（读模型）.
@@ -82,8 +82,8 @@ type FollowUserItem struct {
 	IsUnread       bool          `json:"isUnread"`
 }
 
-// DynamicLikeResult 动态点赞切换结果（读模型）.
-type DynamicLikeResult struct {
+// LikeResult 动态点赞切换结果（读模型）.
+type LikeResult struct {
 	LikeCount int64 `json:"likeCount"`
 	IsLiked   bool  `json:"isLiked"`
 }

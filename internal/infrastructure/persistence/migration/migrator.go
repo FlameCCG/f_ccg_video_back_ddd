@@ -50,13 +50,13 @@ func (m *Migrator) AutoMigrate() error {
 		po.UserExpRecord{},
 		po.UserCoinRecord{},
 		po.Comment{},
-		po.VideoReport{},
+		po.Report{},
 		po.DanmuReport{},
 		po.Banner{},
 		po.UserGlobalNotification{},
 		po.NotificationUserRead{},
 		po.Video{},
-		po.VideoPart{},
+		po.Part{},
 		po.VideoPartResource{},
 		po.VideoPlayHistory{},
 		po.VideoPartition{},
@@ -77,7 +77,7 @@ func (m *Migrator) AutoMigrate() error {
 		po.UserRole{},
 		po.RoleMenu{},
 		po.CasbinRule{},
-		po.ApiResource{},
+		po.APIResource{},
 	)
 	if err != nil {
 		m.logger.Error("数据库迁移失败!", zap.Error(err))

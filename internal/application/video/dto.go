@@ -38,11 +38,11 @@ type DetailMeta struct {
 	Author      AuthorBrief            `json:"author"`
 	Tags        []TagBrief             `json:"tags"`
 	Resources   []domain.ResourceBrief `json:"resources"`
-	Parts       []VideoPartBrief       `json:"parts,omitempty"`
+	Parts       []PartBrief            `json:"parts,omitempty"`
 }
 
-// VideoDetail 视频详情响应体。
-type VideoDetail struct {
+// Detail 视频详情响应体。
+type Detail struct {
 	IsScheduled   bool                   `json:"isScheduled"`
 	PublishAt     *time.Time             `json:"publishAt"`
 	ApprovedAt    *time.Time             `json:"approvedAt"`
@@ -65,7 +65,7 @@ type VideoDetail struct {
 	Author        AuthorBrief            `json:"author"`
 	Tags          []TagBrief             `json:"tags"`
 	Resources     []domain.ResourceBrief `json:"resources"`
-	Parts         []VideoPartBrief       `json:"parts,omitempty"`
+	Parts         []PartBrief            `json:"parts,omitempty"`
 	IsLiked       bool                   `json:"isLiked"`
 	IsFavorited   bool                   `json:"isFavorited"`
 	IsCoined      bool                   `json:"isCoined"`
@@ -95,8 +95,8 @@ type TagBrief struct {
 	Name string `json:"name"`
 }
 
-// VideoPartBrief 分P摘要。
-type VideoPartBrief struct {
+// PartBrief 分P摘要。
+type PartBrief struct {
 	ID         uint                   `json:"id"`
 	Title      string                 `json:"title"`
 	SortOrder  int                    `json:"sortOrder"`
@@ -584,8 +584,8 @@ type FolderDTO struct {
 	IsDefault bool   `json:"isDefault"`
 }
 
-// VideoReportDTO 视频举报响应体（形态等同 po.VideoReport 序列化结果）。
-type VideoReportDTO struct {
+// ReportDTO 视频举报响应体（形态等同 po.VideoReport 序列化结果）。
+type ReportDTO struct {
 	ID               uint              `json:"id"`
 	ReporterUsername string            `json:"reporterUsername"`
 	VideoID          uint              `json:"videoId"`

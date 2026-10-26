@@ -19,7 +19,7 @@ import (
 // MySQL 账本原子；展示计数在事务提交后更新，Redis 失败则 DB 兜底并失效缓存以重建。
 type InteractionService struct {
 	txm      tx.Manager
-	videos   domain.VideoRepository
+	videos   domain.Repository
 	likes    domain.LikeRepository
 	coins    domain.CoinRepository
 	folders  domain.FolderRepository
@@ -30,7 +30,7 @@ type InteractionService struct {
 	creators CreatorAnalytics
 	exp      ExpAwarder
 	ledger   CoinLedger
-	notifier VideoNotifier
+	notifier Notifier
 	notify   NotifySourceQuery
 	tasks    *ctxutil.DetachedTaskGroup
 	logger   *zap.Logger
@@ -39,7 +39,7 @@ type InteractionService struct {
 // NewInteractionService 构造视频互动用例服务。
 func NewInteractionService(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	likes domain.LikeRepository,
 	coins domain.CoinRepository,
 	folders domain.FolderRepository,
@@ -50,7 +50,7 @@ func NewInteractionService(
 	creators CreatorAnalytics,
 	exp ExpAwarder,
 	ledger CoinLedger,
-	notifier VideoNotifier,
+	notifier Notifier,
 	notify NotifySourceQuery,
 	tasks *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,

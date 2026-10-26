@@ -33,7 +33,7 @@ type TranscodeEngine struct {
 
 // 编译期断言：满足应用层声明的四个执行侧端口。
 var (
-	_ mediaapp.MediaProber          = (*TranscodeEngine)(nil)
+	_ mediaapp.Prober               = (*TranscodeEngine)(nil)
 	_ mediaapp.CheckpointManager    = (*TranscodeEngine)(nil)
 	_ mediaapp.SourceStager         = (*TranscodeEngine)(nil)
 	_ mediaapp.ArtifactStateChecker = (*TranscodeEngine)(nil)

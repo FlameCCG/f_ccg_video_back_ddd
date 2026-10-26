@@ -8,20 +8,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CommentLikeReq 指定点赞切换的评论 ID，点赞人取自认证上下文。
-type CommentLikeReq struct {
+// LikeReq 指定点赞切换的评论 ID，点赞人取自认证上下文。
+type LikeReq struct {
 	CommentID uint `json:"commentId" binding:"required" label:"评论ID"`
 }
 
-// CommentLikeResp 返回切换后的点赞数与当前用户是否已点赞，两者用于页面同步状态。
-type CommentLikeResp struct {
+// LikeResp 返回切换后的点赞数与当前用户是否已点赞，两者用于页面同步状态。
+type LikeResp struct {
 	LikeCount int64 `json:"likeCount"`
 	IsLiked   bool  `json:"isLiked"`
 }
 
 // LikeView 调用评论点赞切换用例，返回当前计数和用户标记。
 func (h *Handler) LikeView(c *gin.Context) {
-	req := middlewares.GetBound[CommentLikeReq](c)
+	req := middlewares.GetBound[LikeReq](c)
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {
@@ -37,7 +37,7 @@ func (h *Handler) LikeView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(CommentLikeResp{
+	res.OkWithData(LikeResp{
 		LikeCount: likeCount,
 		IsLiked:   isLiked,
 	}, c)

@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DynamicReadReq 标记已读并拉取作品流请求.
-type DynamicReadReq struct {
+// ReadReq 标记已读并拉取作品流请求.
+type ReadReq struct {
 	AuthorID uint `json:"authorId" binding:"required,gt=0" label:"作者ID"`
 	Page     int  `json:"page" label:"页码"`
 	PageSize int  `json:"pageSize" label:"每页数量"`
@@ -17,7 +17,7 @@ type DynamicReadReq struct {
 
 // ReadView 把作者最新作品标记为已读，并返回该作者的作品流.
 func (h *Handler) ReadView(c *gin.Context) {
-	req := middlewares.GetBound[DynamicReadReq](c)
+	req := middlewares.GetBound[ReadReq](c)
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {

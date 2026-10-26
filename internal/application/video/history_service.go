@@ -8,14 +8,14 @@ import (
 
 // HistoryService 播放历史用例服务（原 service/video_service/history_service.go）。
 type HistoryService struct {
-	videos  domain.VideoRepository
+	videos  domain.Repository
 	history domain.HistoryRepository
 	query   HistoryQuery
 }
 
 // NewHistoryService 构造播放历史用例服务。
 func NewHistoryService(
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	history domain.HistoryRepository,
 	query HistoryQuery,
 ) *HistoryService {

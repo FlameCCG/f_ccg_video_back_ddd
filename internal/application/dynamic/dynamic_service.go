@@ -13,22 +13,22 @@ import (
 // Service 动态命令用例服务（原 service/dynamic_service/dynamic_service.go）。
 type Service struct {
 	txm       tx.Manager
-	dynamics  domain.DynamicRepository
+	dynamics  domain.Repository
 	users     UserProfileQuery
 	videos    VideoOwnershipQuery
 	videoPins VideoPinWriter
-	comments  DynamicCommentPurger
+	comments  CommentPurger
 	logger    *zap.Logger
 }
 
 // NewService 构造动态命令用例服务。
 func NewService(
 	txm tx.Manager,
-	dynamics domain.DynamicRepository,
+	dynamics domain.Repository,
 	users UserProfileQuery,
 	videos VideoOwnershipQuery,
 	videoPins VideoPinWriter,
-	comments DynamicCommentPurger,
+	comments CommentPurger,
 	logger *zap.Logger,
 ) *Service {
 	return &Service{
@@ -43,7 +43,7 @@ func NewService(
 }
 
 // Create 发布一条动态，并返回含作者资料的列表项。
-func (s *Service) Create(ctx context.Context, userID uint, content, imageURL string) (*DynamicItem, error) {
+func (s *Service) Create(ctx context.Context, userID uint, content, imageURL string) (*Item, error) {
 	d, err := domain.NewDynamic(userID, content, imageURL)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (s *Service) Create(ctx context.Context, userID uint, content, imageURL str
 		return nil, err
 	}
 
-	return &DynamicItem{
+	return &Item{
 		ID:        d.ID,
 		UserID:    userID,
 		Username:  profile.Username,

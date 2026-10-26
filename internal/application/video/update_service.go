@@ -14,7 +14,7 @@ import (
 // UpdateService 改稿用例服务（原 service/video_service/update_service.go）。
 type UpdateService struct {
 	txm         tx.Manager
-	videos      domain.VideoRepository
+	videos      domain.Repository
 	partitions  domain.PartitionRepository
 	schedule    ScheduleStore
 	authors     *AuthorService
@@ -25,7 +25,7 @@ type UpdateService struct {
 // NewUpdateService 构造改稿用例服务。
 func NewUpdateService(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	partitions domain.PartitionRepository,
 	schedule ScheduleStore,
 	authors *AuthorService,

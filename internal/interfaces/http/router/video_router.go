@@ -21,14 +21,14 @@ func registerVideoCommonRoutes(
 	{
 		videoGroup.GET("home", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.HomeFeedReq], h.HomeFeedView)
 		videoGroup.GET("home/search/top", middlewares.RequestTimeout(ctxutil.RequestFastTimeout), h.HomeSearchTopView)
-		videoGroup.GET("hot", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.VideoHotReq], h.HotView)
-		videoGroup.GET("rank", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.VideoRankReq], h.RankView)
-		videoGroup.GET("search", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), middlewares.BindQueryParams[videohandler.VideoSearchReq], h.VideoSearchView)
-		videoGroup.GET("search/suggest", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.VideoSuggestReq], h.SuggestView)
-		videoGroup.GET("detail", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), middlewares.BindQueryParams[videohandler.VideoDetailReq], h.DetailView)
-		videoGroup.GET("recommend", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.VideoRecommendReq], h.RecommendView)
+		videoGroup.GET("hot", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.HotReq], h.HotView)
+		videoGroup.GET("rank", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.RankReq], h.RankView)
+		videoGroup.GET("search", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), middlewares.BindQueryParams[videohandler.SearchReq], h.VideoSearchView)
+		videoGroup.GET("search/suggest", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.SuggestReq], h.SuggestView)
+		videoGroup.GET("detail", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), middlewares.BindQueryParams[videohandler.DetailReq], h.DetailView)
+		videoGroup.GET("recommend", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.RecommendReq], h.RecommendView)
 		videoGroup.GET("partitions", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.ListSubmittablePartitionsView)
-		videoGroup.POST("view", middlewares.RequestTimeout(ctxutil.RequestFastTimeout), mw.JwtOptional(), middlewares.JsonBindParams[videohandler.VideoViewReq], h.ViewView)
+		videoGroup.POST("view", middlewares.RequestTimeout(ctxutil.RequestFastTimeout), mw.JwtOptional(), middlewares.JsonBindParams[videohandler.ViewReq], h.ViewView)
 		videoGroup.GET("danmu/history",
 			middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			mw.JwtOptional(),
@@ -50,11 +50,11 @@ func registerVideoCommonRoutes(
 	authGroup := videoGroup.Group("")
 	{
 		// 互动操作 (点赞、投币、收藏)
-		authGroup.POST("like", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.VideoLikeReq], h.LikeView)
-		authGroup.POST("coin", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.VideoCoinReq], h.CoinView)
-		authGroup.POST("favorite", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.VideoFavoriteReq], h.FavoriteView)
-		authGroup.POST("triple", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.VideoTripleReq], h.TripleView)
-		authGroup.POST("report", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindParams[videohandler.VideoReportReq], h.ReportVideoView)
+		authGroup.POST("like", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.LikeReq], h.LikeView)
+		authGroup.POST("coin", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.CoinReq], h.CoinView)
+		authGroup.POST("favorite", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.FavoriteReq], h.FavoriteView)
+		authGroup.POST("triple", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.TripleReq], h.TripleView)
+		authGroup.POST("report", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindParams[videohandler.ReportReq], h.ReportVideoView)
 		authGroup.POST("danmu/send",
 			middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			mw.JwtAuth(),

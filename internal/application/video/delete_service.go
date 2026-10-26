@@ -13,7 +13,7 @@ import (
 // DeleteService 作者删稿用例服务（原 service/video_service/delete_service.go）。
 type DeleteService struct {
 	txm       tx.Manager
-	videos    domain.VideoRepository
+	videos    domain.Repository
 	comments  CommentPurger
 	canceller TranscodeCanceller
 	schedule  ScheduleStore
@@ -24,7 +24,7 @@ type DeleteService struct {
 // NewDeleteService 构造作者删稿用例服务。
 func NewDeleteService(
 	txm tx.Manager,
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	comments CommentPurger,
 	canceller TranscodeCanceller,
 	schedule ScheduleStore,

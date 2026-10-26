@@ -30,26 +30,26 @@ type Driver interface {
 	Publish(ctx context.Context, topic string, payload []byte) error
 }
 
-// MQService 对外暴露统一的 MQ 能力。
+// Service 对外暴露统一的 MQ 能力。
 //
 // 原实现由 NewMQService() 在每个投递点重新构造（Kafka 未启用时构造即失败），
 // 新架构改为单实例注入 + 投递时惰性解析驱动，错误文案与时机与原实现一致。
-type MQService struct {
+type Service struct {
 	cfg       *config.Kafka
 	producers *ProducerPool
 	logger    *zap.Logger
 }
 
 // 编译期断言：满足领域侧任务投递端口。
-var _ media.TaskPublisher = (*MQService)(nil)
+var _ media.TaskPublisher = (*Service)(nil)
 
 // NewMQService 构造 MQ 服务。
-func NewMQService(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logger) *MQService {
-	return &MQService{cfg: cfg, producers: producers, logger: logger}
+func NewMQService(cfg *config.Kafka, producers *ProducerPool, logger *zap.Logger) *Service {
+	return &Service{cfg: cfg, producers: producers, logger: logger}
 }
 
 // resolve 解析驱动与业务主题表，错误顺序与原 NewMQService 完全一致。
-func (s *MQService) resolve() (Driver, map[string]string, error) {
+func (s *Service) resolve() (Driver, map[string]string, error) {
 	if s == nil {
 		return nil, nil, errors.New("mq service disabled")
 	}
@@ -73,7 +73,7 @@ func (s *MQService) resolve() (Driver, map[string]string, error) {
 }
 
 // Publish 发布到指定业务主题。
-func (s *MQService) Publish(ctx context.Context, topicAlias string, payload []byte) error {
+func (s *Service) Publish(ctx context.Context, topicAlias string, payload []byte) error {
 	driver, topics, err := s.resolve()
 	if err != nil {
 		return err
@@ -92,7 +92,7 @@ func (s *MQService) Publish(ctx context.Context, topicAlias string, payload []by
 }
 
 // PublishTranscodeTask 把任务序列化为 Kafka 消息并发送到异步转码队列。
-func (s *MQService) PublishTranscodeTask(ctx context.Context, task media.TranscodeTask) error {
+func (s *Service) PublishTranscodeTask(ctx context.Context, task media.TranscodeTask) error {
 	payload, err := json.Marshal(PayloadFromTask(task))
 	if err != nil {
 		return fmt.Errorf("marshal transcode payload: %w", err)
@@ -102,7 +102,7 @@ func (s *MQService) PublishTranscodeTask(ctx context.Context, task media.Transco
 }
 
 // PublishRaw 直接投递已序列化的转码消息（保留原 PublishTranscodeTask([]byte) 能力）。
-func (s *MQService) PublishRaw(ctx context.Context, payload []byte) error {
+func (s *Service) PublishRaw(ctx context.Context, payload []byte) error {
 	return s.Publish(ctx, TopicTranscode, payload)
 }
 

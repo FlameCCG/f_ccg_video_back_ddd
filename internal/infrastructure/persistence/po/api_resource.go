@@ -2,8 +2,8 @@ package po
 
 import "gorm.io/datatypes"
 
-// ApiResource 接口资源.
-type ApiResource struct {
+// APIResource 接口资源.
+type APIResource struct {
 	Model
 	Path    string         `gorm:"size:200;not null;uniqueIndex:idx_api_resource;comment:接口路径" json:"path"`
 	Method  string         `gorm:"size:10;not null;uniqueIndex:idx_api_resource;comment:请求方法" json:"method"`
@@ -12,6 +12,6 @@ type ApiResource struct {
 }
 
 // TableName 显式绑定表名 api_resources，保持迁移与仓储 SQL 使用同一张表。
-func (ApiResource) TableName() string {
+func (APIResource) TableName() string {
 	return "api_resources"
 }

@@ -22,7 +22,7 @@ const (
 // 权威计数在 Redis（Lua 原子增量 + dirty 集合 + version），Redis 不可用时退回 MySQL。
 // 该服务同时是 video 上下文对外暴露的计数入口（评论数由 comment 上下文调用）。
 type StatsService struct {
-	videos   domain.VideoRepository
+	videos   domain.Repository
 	cache    StatsCache
 	hotRank  HotRankCache
 	authors  *AuthorService
@@ -32,7 +32,7 @@ type StatsService struct {
 
 // NewStatsService 构造视频统计用例服务。
 func NewStatsService(
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	cache StatsCache,
 	hotRank HotRankCache,
 	authors *AuthorService,

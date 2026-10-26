@@ -57,8 +57,8 @@ var CrossContextProviderSet = wire.NewSet(
 	wire.Bind(new(chatapp.NotificationBadgeInvalidator), new(*adapters.BadgeInvalidator)),
 	adapters.NewNotifier,
 	wire.Bind(new(commentapp.Notifier), new(*adapters.Notifier)),
-	wire.Bind(new(dynamicapp.DynamicLikeNotifier), new(*adapters.Notifier)),
-	wire.Bind(new(videoapp.VideoNotifier), new(*adapters.Notifier)),
+	wire.Bind(new(dynamicapp.LikeNotifier), new(*adapters.Notifier)),
+	wire.Bind(new(videoapp.Notifier), new(*adapters.Notifier)),
 
 	adapters.NewIdentityVideoQuery,
 	wire.Bind(new(identityapp.UserVideoQuery), new(*adapters.IdentityVideoQuery)),
@@ -108,8 +108,8 @@ var CrossContextProviderSet = wire.NewSet(
 	adapters.NewVideoTranscodeProgressReader,
 	wire.Bind(new(videoapp.TranscodeProgressReader), new(*adapters.VideoTranscodeProgressReader)),
 	adapters.NewVideoSearcher,
-	wire.Bind(new(videoapp.VideoSearcher), new(*adapters.VideoSearcher)),
-	wire.Bind(new(videoapp.VideoVectorIndexer), new(*searchapp.VideoVectorService)),
+	wire.Bind(new(videoapp.Searcher), new(*adapters.Searcher)),
+	wire.Bind(new(videoapp.VectorIndexer), new(*searchapp.VideoVectorService)),
 	adapters.NewVideoVectorRebuilder,
 	wire.Bind(new(videoapp.VectorIndexRebuilder), new(*adapters.VideoVectorRebuilder)),
 	wire.Bind(new(videoapp.DynamicReadMarker), new(*dynamicapp.ReadService)),
@@ -120,5 +120,5 @@ var CrossContextProviderSet = wire.NewSet(
 	wire.Bind(new(commentapp.VideoHotScoreRecorder), new(*videoapp.StatsService)),
 
 	wire.Bind(new(dynamicapp.VideoPinWriter), new(*videorepo.PinRepository)),
-	wire.Bind(new(dynamicapp.DynamicCommentPurger), new(*commentrepo.PurgeRepository)),
+	wire.Bind(new(dynamicapp.CommentPurger), new(*commentrepo.PurgeRepository)),
 )

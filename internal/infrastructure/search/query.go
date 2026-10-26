@@ -126,7 +126,7 @@ func applyUserSortToSource(source *elastic.SearchSource, sortField, sortOrder in
 	source.Sort("_score", false)
 }
 
-func buildVideoSearchSource(opts app.SearchOptions, from int) *elastic.SearchSource {
+func buildVideoSearchSource(opts app.Options, from int) *elastic.SearchSource {
 	return elastic.NewSearchSource().
 		Query(buildPublishedVideoQuery(opts.Keyword)).
 		Highlight(buildHighlight(videoHighlightFields)).
@@ -136,7 +136,7 @@ func buildVideoSearchSource(opts app.SearchOptions, from int) *elastic.SearchSou
 		TrackTotalHits(true)
 }
 
-func buildUserSearchSource(opts app.SearchOptions, from int) *elastic.SearchSource {
+func buildUserSearchSource(opts app.Options, from int) *elastic.SearchSource {
 	return elastic.NewSearchSource().
 		Query(buildUserQuery(opts.Keyword)).
 		Highlight(buildHighlight(userHighlightFields)).
@@ -146,7 +146,7 @@ func buildUserSearchSource(opts app.SearchOptions, from int) *elastic.SearchSour
 		TrackTotalHits(true)
 }
 
-func buildVideoSearchRequest(opts app.SearchOptions, from int) *elastic.SearchRequest {
+func buildVideoSearchRequest(opts app.Options, from int) *elastic.SearchRequest {
 	source := buildVideoSearchSource(opts, from)
 	applyVideoSortToSource(source, opts.VideoSort, opts.VideoOrder)
 
@@ -155,7 +155,7 @@ func buildVideoSearchRequest(opts app.SearchOptions, from int) *elastic.SearchRe
 		SearchSource(source)
 }
 
-func buildUserSearchRequest(opts app.SearchOptions, from int) *elastic.SearchRequest {
+func buildUserSearchRequest(opts app.Options, from int) *elastic.SearchRequest {
 	source := buildUserSearchSource(opts, from)
 	applyUserSortToSource(source, opts.UserSort, opts.UserOrder)
 

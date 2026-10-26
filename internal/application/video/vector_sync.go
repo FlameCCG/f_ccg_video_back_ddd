@@ -9,14 +9,14 @@ import (
 
 // VectorSyncService 视频向量索引同步用例服务（原 service/video_service/vector_sync.go）。
 type VectorSyncService struct {
-	indexer   VideoVectorIndexer
+	indexer   VectorIndexer
 	rebuilder VectorIndexRebuilder
 	tasks     *ctxutil.DetachedTaskGroup
 }
 
 // NewVectorSyncService 构造向量索引同步用例服务。
 func NewVectorSyncService(
-	indexer VideoVectorIndexer,
+	indexer VectorIndexer,
 	rebuilder VectorIndexRebuilder,
 	tasks *ctxutil.DetachedTaskGroup,
 ) *VectorSyncService {

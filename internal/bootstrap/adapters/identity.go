@@ -154,13 +154,13 @@ func (a *IdentityPublishedVideoStats) AggregateByAuthor(
 
 // IdentityVideoTagWriter 把视频聚合的标签写入能力适配为 identity 的弱类型响应端口。
 type IdentityVideoTagWriter struct {
-	videos videodomain.VideoRepository
+	videos videodomain.Repository
 }
 
 var _ identityapp.VideoTagWriter = (*IdentityVideoTagWriter)(nil)
 
 // NewIdentityVideoTagWriter 构造标签写入适配器。
-func NewIdentityVideoTagWriter(videos videodomain.VideoRepository) *IdentityVideoTagWriter {
+func NewIdentityVideoTagWriter(videos videodomain.Repository) *IdentityVideoTagWriter {
 	return &IdentityVideoTagWriter{videos: videos}
 }
 
@@ -171,7 +171,7 @@ func (a *IdentityVideoTagWriter) CreateOrGetTag(ctx context.Context, name string
 
 // IdentitySearchQuery 把 search 上下文的强类型读模型适配为 identity 的接口响应端口。
 type IdentitySearchQuery struct {
-	search   *searchapp.SearchService
+	search   *searchapp.Service
 	mentions *searchapp.MentionService
 }
 
@@ -182,7 +182,7 @@ var (
 
 // NewIdentitySearchQuery 构造身份侧搜索适配器。
 func NewIdentitySearchQuery(
-	search *searchapp.SearchService,
+	search *searchapp.Service,
 	mentions *searchapp.MentionService,
 ) *IdentitySearchQuery {
 	return &IdentitySearchQuery{search: search, mentions: mentions}
@@ -193,7 +193,7 @@ func (a *IdentitySearchQuery) SearchUsers(
 	ctx context.Context,
 	params identityapp.UserSearchParams,
 ) (any, error) {
-	return a.search.SearchUsers(ctx, searchapp.SearchOptions{
+	return a.search.SearchUsers(ctx, searchapp.Options{
 		Keyword:   params.Keyword,
 		Page:      params.Page,
 		PageSize:  params.PageSize,

@@ -313,7 +313,7 @@ func TestImmediatePublishHasNoScheduledTime(t *testing.T) {
 	requirePublishTime(t, infra.NewScheduleStore(f.db), draft.Video.ID, nil)
 }
 
-type deletingVideoRepository struct{ domain.VideoRepository }
+type deletingVideoRepository struct{ domain.Repository }
 
 func (deletingVideoRepository) UsernameByUserID(context.Context, uint) (string, error) {
 	return "alice", nil

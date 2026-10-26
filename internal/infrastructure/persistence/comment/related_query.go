@@ -150,7 +150,7 @@ func (q *RelatedQuery) VideoAuthorRef(ctx context.Context, videoID uint) (*app.V
 }
 
 // DynamicBrief 读取动态 id/user_id；不存在时返回 (nil, nil)。
-func (q *RelatedQuery) DynamicBrief(ctx context.Context, dynamicID uint) (*app.DynamicBrief, error) {
+func (q *RelatedQuery) DynamicBrief(ctx context.Context, dynamicID uint) (*app.Brief, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, q.db).
 		Model(&po.Dynamic{}).
@@ -164,7 +164,7 @@ func (q *RelatedQuery) DynamicBrief(ctx context.Context, dynamicID uint) (*app.D
 		return nil, err
 	}
 
-	return &app.DynamicBrief{ID: row.ID, UserID: row.UserID}, nil
+	return &app.Brief{ID: row.ID, UserID: row.UserID}, nil
 }
 
 // AllowedAtUserIDs 过滤出与操作者互相关注（任一方向）的候选 @ 用户；

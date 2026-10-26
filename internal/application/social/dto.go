@@ -8,11 +8,11 @@
 // provider.go 只汇总本上下文构造器；具体实现和跨上下文端口在 bootstrap 绑定。
 package social
 
-// SocialListUser 关注/粉丝列表条目（读模型）。
+// ListUser 关注/粉丝列表条目（读模型）。
 //
 // 对外 JSON 由 interfaces 层的响应结构体（FocusUserInfo / FansUserInfo）承担，
 // 本类型只承载查询结果字段，与原 user_service.SocialListUser 一一对应。
-type SocialListUser struct {
+type ListUser struct {
 	ID          uint
 	Username    string
 	Avatar      string
@@ -20,11 +20,11 @@ type SocialListUser struct {
 	Level       int
 }
 
-// SocialListParams 关注/粉丝列表查询参数。
+// ListParams 关注/粉丝列表查询参数。
 //
 // OwnerID / ViewerID 用 int：原实现由 strconv.Atoi 解析 query 与 uid，
 // 可能得到负数或 0，隐私判定与「是否本人」比较都在 int 域内完成，此处保持一致。
-type SocialListParams struct {
+type ListParams struct {
 	// OwnerID 被查看的用户（?id=）。
 	OwnerID int
 	// ViewerID 当前登录用户；未登录/解析失败为 0。

@@ -17,20 +17,20 @@ import (
 // mysqlDuplicateEntryErrNo MySQL 唯一键冲突错误码。
 const mysqlDuplicateEntryErrNo = 1062
 
-// DynamicRepository 动态聚合仓储的 GORM 实现。
-type DynamicRepository struct {
+// Repository 动态聚合仓储的 GORM 实现。
+type Repository struct {
 	db *gorm.DB
 }
 
-var _ domain.DynamicRepository = (*DynamicRepository)(nil)
+var _ domain.Repository = (*Repository)(nil)
 
 // NewDynamicRepository 构造动态仓储。
-func NewDynamicRepository(db *gorm.DB) *DynamicRepository {
-	return &DynamicRepository{db: db}
+func NewDynamicRepository(db *gorm.DB) *Repository {
+	return &Repository{db: db}
 }
 
 // FindByID 按主键读取动态；不存在时返回 (nil, nil)。
-func (r *DynamicRepository) FindByID(ctx context.Context, dynamicID uint) (*domain.Dynamic, error) {
+func (r *Repository) FindByID(ctx context.Context, dynamicID uint) (*domain.Dynamic, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, r.db).Where("id = ?", dynamicID).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -44,7 +44,7 @@ func (r *DynamicRepository) FindByID(ctx context.Context, dynamicID uint) (*doma
 }
 
 // ExistsByID 探测动态是否存在（列选择与原 ToggleLike 的 Take 一致）。
-func (r *DynamicRepository) ExistsByID(ctx context.Context, dynamicID uint) (bool, error) {
+func (r *Repository) ExistsByID(ctx context.Context, dynamicID uint) (bool, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "user_id", "like_count").
@@ -60,7 +60,7 @@ func (r *DynamicRepository) ExistsByID(ctx context.Context, dynamicID uint) (boo
 }
 
 // FindNoticeTargetByID 只读 id/user_id/content，供点赞通知渲染；不存在时返回 (nil, nil)。
-func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID uint) (*domain.Dynamic, error) {
+func (r *Repository) FindNoticeTargetByID(ctx context.Context, dynamicID uint) (*domain.Dynamic, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, r.db).
 		Select("id", "user_id", "content").
@@ -77,7 +77,7 @@ func (r *DynamicRepository) FindNoticeTargetByID(ctx context.Context, dynamicID 
 }
 
 // Create 写入动态，并把自增 ID 与时间戳回填到领域实体。
-func (r *DynamicRepository) Create(ctx context.Context, d *domain.Dynamic) error {
+func (r *Repository) Create(ctx context.Context, d *domain.Dynamic) error {
 	if d == nil {
 		return nil
 	}
@@ -98,12 +98,12 @@ func (r *DynamicRepository) Create(ctx context.Context, d *domain.Dynamic) error
 }
 
 // DeleteByID 删除单条动态。
-func (r *DynamicRepository) DeleteByID(ctx context.Context, dynamicID uint) error {
+func (r *Repository) DeleteByID(ctx context.Context, dynamicID uint) error {
 	return gormx.DB(ctx, r.db).Where("id = ?", dynamicID).Delete(&po.Dynamic{}).Error
 }
 
 // DeleteByIDs 批量删除动态，返回受影响行数。
-func (r *DynamicRepository) DeleteByIDs(ctx context.Context, dynamicIDs []uint) (int64, error) {
+func (r *Repository) DeleteByIDs(ctx context.Context, dynamicIDs []uint) (int64, error) {
 	res := gormx.DB(ctx, r.db).
 		Where("id IN ?", dynamicIDs).
 		Delete(&po.Dynamic{})
@@ -115,42 +115,42 @@ func (r *DynamicRepository) DeleteByIDs(ctx context.Context, dynamicIDs []uint) 
 }
 
 // ClearPinnedByUser 清除该用户当前已置顶的动态。
-func (r *DynamicRepository) ClearPinnedByUser(ctx context.Context, userID uint) error {
+func (r *Repository) ClearPinnedByUser(ctx context.Context, userID uint) error {
 	return gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
 		Where("user_id = ? AND is_pinned = ?", userID, true).
 		Updates(map[string]any{"is_pinned": false, "pinned_at": nil}).Error
 }
 
 // SetPinned 把指定动态标记为置顶，并写入置顶时间。
-func (r *DynamicRepository) SetPinned(ctx context.Context, dynamicID uint, pinnedAt *time.Time) error {
+func (r *Repository) SetPinned(ctx context.Context, dynamicID uint, pinnedAt *time.Time) error {
 	return gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
 		Where("id = ?", dynamicID).
 		Updates(map[string]any{"is_pinned": true, "pinned_at": pinnedAt}).Error
 }
 
 // ClearPinned 取消指定动态的置顶状态。
-func (r *DynamicRepository) ClearPinned(ctx context.Context, dynamicID uint) error {
+func (r *Repository) ClearPinned(ctx context.Context, dynamicID uint) error {
 	return gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
 		Where("id = ?", dynamicID).
 		Updates(map[string]any{"is_pinned": false, "pinned_at": nil}).Error
 }
 
 // IncrLikeCount 动态点赞数 +1。
-func (r *DynamicRepository) IncrLikeCount(ctx context.Context, dynamicID uint) error {
+func (r *Repository) IncrLikeCount(ctx context.Context, dynamicID uint) error {
 	return gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
 		Where("id = ?", dynamicID).
 		UpdateColumn("like_count", gorm.Expr("like_count + 1")).Error
 }
 
 // DecrLikeCount 动态点赞数 -1（用 GREATEST 兜底不低于 0）。
-func (r *DynamicRepository) DecrLikeCount(ctx context.Context, dynamicID uint) error {
+func (r *Repository) DecrLikeCount(ctx context.Context, dynamicID uint) error {
 	return gormx.DB(ctx, r.db).Model(&po.Dynamic{}).
 		Where("id = ?", dynamicID).
 		UpdateColumn("like_count", gorm.Expr("GREATEST(like_count - 1, 0)")).Error
 }
 
 // LikeCount 读取动态当前点赞数。
-func (r *DynamicRepository) LikeCount(ctx context.Context, dynamicID uint) (int64, error) {
+func (r *Repository) LikeCount(ctx context.Context, dynamicID uint) (int64, error) {
 	var likeCount int64
 	if err := gormx.DB(ctx, r.db).
 		Model(&po.Dynamic{}).

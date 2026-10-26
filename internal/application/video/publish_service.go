@@ -19,7 +19,7 @@ import (
 // 直接 new MQService）；新架构把编排上移到应用层，落库交给仓储，
 // 转码投递与向量索引经端口，异步任务经注入的 DetachedTaskGroup。
 type PublishService struct {
-	videos      domain.VideoRepository
+	videos      domain.Repository
 	partitions  domain.PartitionRepository
 	uploads     *UploadService
 	transcode   TranscodeDispatcher
@@ -31,7 +31,7 @@ type PublishService struct {
 
 // NewPublishService 构造投稿用例服务。
 func NewPublishService(
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	partitions domain.PartitionRepository,
 	uploads *UploadService,
 	transcode TranscodeDispatcher,
@@ -94,7 +94,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	} else if trimSpace(cmd.FileName) == "" || trimSpace(cmd.FileHash) == "" {
 		return nil, errUploadVideoFirst
 	}
-	var parts []domain.VideoPart
+	var parts []domain.Part
 	var video *domain.Video
 	hashes := []string{cmd.FileHash}
 	if isMultiPart {
@@ -110,13 +110,13 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 		func(guardCtx context.Context) error { return s.preparePublishUploads(guardCtx, &cmd) },
 		func(guardCtx context.Context) error {
 			if isMultiPart {
-				parts = make([]domain.VideoPart, 0, len(cmd.Parts))
+				parts = make([]domain.Part, 0, len(cmd.Parts))
 				for i, p := range cmd.Parts {
 					title := trimSpace(p.Title)
 					if title == "" {
 						title = domain.DefaultPartTitleFromFileName(p.FileName)
 					}
-					parts = append(parts, domain.VideoPart{
+					parts = append(parts, domain.Part{
 						Title: title, SortOrder: i, Duration: 0, StorageType: storageType,
 					})
 				}
@@ -222,7 +222,7 @@ func (s *PublishService) persistVideo(
 	ctx context.Context,
 	video *domain.Video,
 	cmd PublishVideoCommand,
-	parts []domain.VideoPart,
+	parts []domain.Part,
 	scheduledAt *time.Time,
 ) error {
 	var tags []domain.Tag

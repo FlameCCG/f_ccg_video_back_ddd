@@ -36,7 +36,7 @@ type Video struct {
 	Author         User                  `gorm:"foreignKey:AuthorUsername;references:Username" json:"author,omitempty"`
 	VideoPartition VideoPartition        `gorm:"foreignKey:PartitionID" json:"category,omitempty"`
 	VideoResources []VideoResource       `gorm:"foreignKey:VideoID" json:"videoResources,omitempty"`
-	VideoParts     []VideoPart           `gorm:"foreignKey:VideoID" json:"videoParts,omitempty"`
+	VideoParts     []Part                `gorm:"foreignKey:VideoID" json:"videoParts,omitempty"`
 	VideoComments  []Comment             `gorm:"foreignKey:VideoID" json:"videoComments,omitempty"`
 	Danmu          []Danmu               `gorm:"foreignKey:VideoID" json:"danmu,omitempty"`
 	FavoriteFolder []FavoriteFolder      `gorm:"many2many:favorite_folder_videos" json:"favoriteFolders,omitempty"`

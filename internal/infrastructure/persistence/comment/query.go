@@ -41,7 +41,7 @@ func selectUserName(db *gorm.DB) *gorm.DB {
 func (q *Query) ListRoots(
 	ctx context.Context,
 	params app.RootListQuery,
-) ([]app.CommentRow, int64, error) {
+) ([]app.Row, int64, error) {
 	var total int64
 	if err := gormx.DB(ctx, q.db).Model(&po.Comment{}).
 		Where(rootCommentWhere, params.VideoID, params.DynamicID).
@@ -76,7 +76,7 @@ func (q *Query) ListRoots(
 func (q *Query) ListReplies(
 	ctx context.Context,
 	params app.ReplyListQuery,
-) ([]app.CommentRow, int64, error) {
+) ([]app.Row, int64, error) {
 	var total int64
 	if err := gormx.DB(ctx, q.db).Model(&po.Comment{}).
 		Where("root_id = ?", params.RootID).
@@ -103,7 +103,7 @@ func (q *Query) ListReplies(
 func (q *Query) ListByAuthor(
 	ctx context.Context,
 	params app.CreatorListQuery,
-) ([]app.CommentRow, int64, error) {
+) ([]app.Row, int64, error) {
 	db := gormx.DB(ctx, q.db).
 		Model(&po.Comment{}).
 		Joins("JOIN videos ON videos.id = comments.video_id").
@@ -158,7 +158,7 @@ func (q *Query) ListByAuthor(
 func (q *Query) AdminList(
 	ctx context.Context,
 	params app.AdminListQuery,
-) ([]app.CommentRow, int64, error) {
+) ([]app.Row, int64, error) {
 	query := gormx.DB(ctx, q.db).Model(&po.Comment{})
 	if params.UserID > 0 {
 		query = query.Where("user_id = ?", params.UserID)

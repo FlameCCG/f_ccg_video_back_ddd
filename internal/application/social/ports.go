@@ -28,9 +28,9 @@ type RelationQuery interface {
 	// ActionPrivacy 读取最近点赞/投币公开性；缺省视为公开。
 	ActionPrivacy(ctx context.Context, userID uint) (domain.ActionPrivacy, error)
 	// ListFocus 分页列出 userID 关注的用户。
-	ListFocus(ctx context.Context, userID uint, page, pageSize int, keyword string) ([]SocialListUser, int64, error)
+	ListFocus(ctx context.Context, userID uint, page, pageSize int, keyword string) ([]ListUser, int64, error)
 	// ListFans 分页列出关注了 userID 的用户。
-	ListFans(ctx context.Context, userID uint, page, pageSize int, keyword string) ([]SocialListUser, int64, error)
+	ListFans(ctx context.Context, userID uint, page, pageSize int, keyword string) ([]ListUser, int64, error)
 }
 
 // UserExistsQuery 目标用户存在性读侧端口（直读 users 表）。

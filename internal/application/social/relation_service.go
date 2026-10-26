@@ -80,8 +80,8 @@ func (s *RelationService) FocusStatus(ctx context.Context, viewerID uint, target
 // FocusList 关注列表用例：隐私与翻页校验 + 分页查询（原 ListFocusUsers 的调用流程）。
 func (s *RelationService) FocusList(
 	ctx context.Context,
-	params SocialListParams,
-) ([]SocialListUser, int64, error) {
+	params ListParams,
+) ([]ListUser, int64, error) {
 	privacy, err := s.FollowPrivacy(ctx, uint(params.OwnerID))
 	if err != nil {
 		// 与原实现一致：读取隐私配置失败一律按「用户不存在」对外呈现。
@@ -103,8 +103,8 @@ func (s *RelationService) FocusList(
 // FansList 粉丝列表用例：隐私与翻页校验 + 分页查询（原 ListFansUsers 的调用流程）。
 func (s *RelationService) FansList(
 	ctx context.Context,
-	params SocialListParams,
-) ([]SocialListUser, int64, error) {
+	params ListParams,
+) ([]ListUser, int64, error) {
 	privacy, err := s.FollowPrivacy(ctx, uint(params.OwnerID))
 	if err != nil {
 		return nil, 0, domain.ErrUserNotFound

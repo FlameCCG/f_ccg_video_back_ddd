@@ -20,7 +20,7 @@ import (
 // fixture 一套用 sqlite 临时库装配的真实仓储与查询（测试不走 wire）。
 type fixture struct {
 	db        *gorm.DB
-	dynamics  *infra.DynamicRepository
+	dynamics  *infra.Repository
 	likes     *infra.LikeRepository
 	reads     *infra.ReadRepository
 	activity  *infra.ActivityQuery

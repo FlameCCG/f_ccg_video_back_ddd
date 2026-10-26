@@ -84,7 +84,7 @@ func NewService(
 // 流程与原 CommentService.Create 一致：并发预取（评论者 / 评论对象 / @ 名单）→
 // 回复时校验父评论并推导 rootID → 落库（回复与根评论回复数同事务）→
 // 同步更新视频评论数 → 异步热度打点与通知。
-func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, error) {
+func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*Item, error) {
 	draft, commentType, err := domain.NormalizeDraft(domain.Draft{
 		UserID:        cmd.UserID,
 		VideoID:       cmd.VideoID,
@@ -102,7 +102,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, 
 
 	var (
 		video      *VideoBrief
-		dynamic    *DynamicBrief
+		dynamic    *Brief
 		actor      = UserProfile{ID: draft.UserID}
 		filteredAt []uint
 	)
@@ -258,7 +258,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*CommentItem, 
 		}
 	}
 
-	return &CommentItem{
+	return &Item{
 		ID:            entity.ID,
 		Content:       entity.Content,
 		UserID:        entity.UserID,
@@ -438,7 +438,7 @@ func (s *Service) Pin(ctx context.Context, userID, commentID uint, pinned bool) 
 }
 
 // List 获取作品的根评论列表（分页）。
-func (s *Service) List(ctx context.Context, params ListParams) ([]CommentItem, int64, error) {
+func (s *Service) List(ctx context.Context, params ListParams) ([]Item, int64, error) {
 	if _, err := domain.ResolveTargetType(params.VideoID, params.DynamicID); err != nil {
 		return nil, 0, err
 	}
@@ -460,7 +460,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]CommentItem, i
 }
 
 // Replies 获取某条评论的回复列表（分页）。
-func (s *Service) Replies(ctx context.Context, params RepliesParams) ([]CommentItem, int64, error) {
+func (s *Service) Replies(ctx context.Context, params RepliesParams) ([]Item, int64, error) {
 	page, pageSize := domain.NormalizePaging(params.Page, params.PageSize)
 
 	rows, total, err := s.query.ListReplies(ctx, ReplyListQuery{
@@ -476,7 +476,7 @@ func (s *Service) Replies(ctx context.Context, params RepliesParams) ([]CommentI
 }
 
 // ListByAuthor 创作中心查看本人视频的评论。
-func (s *Service) ListByAuthor(ctx context.Context, params CreatorListParams) ([]CommentItem, int64, error) {
+func (s *Service) ListByAuthor(ctx context.Context, params CreatorListParams) ([]Item, int64, error) {
 	if params.AuthorID == 0 {
 		return nil, 0, domain.ErrAuthorIDRequired
 	}
@@ -677,9 +677,9 @@ func (s *Service) scheduleLikeCacheRebuild(parent context.Context, commentIDs ..
 }
 
 // buildCommentItems 构建评论返回结构：叠加点赞数/回复数缓存与当前用户点赞状态。
-func (s *Service) buildCommentItems(ctx context.Context, rows []CommentRow, userID uint) []CommentItem {
+func (s *Service) buildCommentItems(ctx context.Context, rows []Row, userID uint) []Item {
 	if len(rows) == 0 {
-		return []CommentItem{}
+		return []Item{}
 	}
 
 	commentIDs := make([]uint, len(rows))
@@ -754,7 +754,7 @@ func (s *Service) buildCommentItems(ctx context.Context, rows []CommentRow, user
 		replyCountMap = map[uint]int64{}
 	}
 
-	items := make([]CommentItem, len(rows))
+	items := make([]Item, len(rows))
 
 	for i, r := range rows {
 		likeCount := r.LikeCount
@@ -767,7 +767,7 @@ func (s *Service) buildCommentItems(ctx context.Context, rows []CommentRow, user
 			replyCount = v
 		}
 
-		items[i] = CommentItem{
+		items[i] = Item{
 			ID:            r.ID,
 			Content:       r.Content,
 			UserID:        r.UserID,
@@ -884,7 +884,7 @@ func (s *Service) sendCommentCreateNotifications(
 func (s *Service) sendDynamicCommentCreateNotifications(
 	ctx context.Context,
 	actionUser *UserProfile,
-	dynamic *DynamicBrief,
+	dynamic *Brief,
 	c *domain.Comment,
 	replyTo *ReplyInfo,
 ) {

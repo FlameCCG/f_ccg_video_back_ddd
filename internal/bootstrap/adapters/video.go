@@ -226,30 +226,30 @@ func videoProgressItem(item mediaapp.TranscodeProgressItem) videoapp.TranscodePr
 	}
 }
 
-// VideoSearcher 组合 search 上下文的搜索、联想和热搜服务。
-type VideoSearcher struct {
-	search      *searchapp.SearchService
+// Searcher 组合 search 上下文的搜索、联想和热搜服务。
+type Searcher struct {
+	search      *searchapp.Service
 	suggestions *searchapp.SuggestService
 	hot         *searchapp.HotKeywordService
 }
 
-var _ videoapp.VideoSearcher = (*VideoSearcher)(nil)
+var _ videoapp.Searcher = (*Searcher)(nil)
 
 // NewVideoSearcher 构造视频侧搜索适配器。
 func NewVideoSearcher(
-	search *searchapp.SearchService,
+	search *searchapp.Service,
 	suggestions *searchapp.SuggestService,
 	hot *searchapp.HotKeywordService,
-) *VideoSearcher {
-	return &VideoSearcher{search: search, suggestions: suggestions, hot: hot}
+) *Searcher {
+	return &Searcher{search: search, suggestions: suggestions, hot: hot}
 }
 
 // SearchVideos 搜索视频。
-func (a *VideoSearcher) SearchVideos(
+func (a *Searcher) SearchVideos(
 	ctx context.Context,
-	options videoapp.VideoSearchOptions,
+	options videoapp.SearchOptions,
 ) (any, error) {
-	return a.search.SearchVideos(ctx, searchapp.SearchOptions{
+	return a.search.SearchVideos(ctx, searchapp.Options{
 		Keyword:    options.Keyword,
 		Page:       options.Page,
 		PageSize:   options.PageSize,
@@ -259,12 +259,12 @@ func (a *VideoSearcher) SearchVideos(
 }
 
 // Suggest 返回搜索联想。
-func (a *VideoSearcher) Suggest(ctx context.Context, prefix string, size int) (any, error) {
+func (a *Searcher) Suggest(ctx context.Context, prefix string, size int) (any, error) {
 	return a.suggestions.Suggest(ctx, prefix, size)
 }
 
 // HotKeywords 返回热搜词。
-func (a *VideoSearcher) HotKeywords(
+func (a *Searcher) HotKeywords(
 	ctx context.Context,
 	page, pageSize int,
 ) (any, int64, error) {
@@ -272,6 +272,6 @@ func (a *VideoSearcher) HotKeywords(
 }
 
 // RecordHotKeyword 记录热搜词分值。
-func (a *VideoSearcher) RecordHotKeyword(ctx context.Context, keyword string) {
+func (a *Searcher) RecordHotKeyword(ctx context.Context, keyword string) {
 	a.hot.RecordHotKeyword(ctx, keyword)
 }

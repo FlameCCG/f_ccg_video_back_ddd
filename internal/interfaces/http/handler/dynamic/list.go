@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DynamicListReq 作品流列表请求.
-type DynamicListReq struct {
+// ListReq 作品流列表请求.
+type ListReq struct {
 	UserID   uint `form:"userId" binding:"omitempty,gt=0" label:"指定用户ID"`
 	Type     int  `form:"type" binding:"omitempty,oneof=0 1 2" label:"类型"`
 	Page     int  `form:"page" label:"页码"`
@@ -18,7 +18,7 @@ type DynamicListReq struct {
 
 // ListView 指定作者的作品流（视频 + 动态）.
 func (h *Handler) ListView(c *gin.Context) {
-	req := middlewares.GetBound[DynamicListReq](c)
+	req := middlewares.GetBound[ListReq](c)
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {

@@ -43,8 +43,8 @@ func (h *Handler) HomeSearchTopView(c *gin.Context) {
 	res.OkWithData(list, c)
 }
 
-// VideoSearchReq 描述关键词、分页和排序选项，应用/领域层将外部排序值归一化。
-type VideoSearchReq struct {
+// SearchReq 描述关键词、分页和排序选项，应用/领域层将外部排序值归一化。
+type SearchReq struct {
 	Keyword    string `form:"keyword" binding:"required"`
 	Page       int    `form:"page" binding:"omitempty,min=1"`
 	PageSize   int    `form:"pageSize" binding:"omitempty,min=1,max=100"`
@@ -54,7 +54,7 @@ type VideoSearchReq struct {
 
 // VideoSearchView 把视频搜索条件交给应用搜索能力，并将结果转换为当前视频接口响应。
 func (h *Handler) VideoSearchView(c *gin.Context) {
-	req := middlewares.GetBound[VideoSearchReq](c)
+	req := middlewares.GetBound[SearchReq](c)
 
 	page := req.Page
 	if page <= 0 {
@@ -72,7 +72,7 @@ func (h *Handler) VideoSearchView(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	data, err := h.search.SearchVideos(ctx, app.VideoSearchOptions{
+	data, err := h.search.SearchVideos(ctx, app.SearchOptions{
 		Keyword:    req.Keyword,
 		Page:       page,
 		PageSize:   pageSize,
@@ -90,15 +90,15 @@ func (h *Handler) VideoSearchView(c *gin.Context) {
 	res.OkWithData(data, c)
 }
 
-// VideoSuggestReq 以 Prefix 和期望条数请求搜索联想，具体缓存与回退策略留在搜索用例。
-type VideoSuggestReq struct {
+// SuggestReq 以 Prefix 和期望条数请求搜索联想，具体缓存与回退策略留在搜索用例。
+type SuggestReq struct {
 	Prefix string `form:"prefix" binding:"required"`
 	Size   int    `form:"size" binding:"omitempty,min=1,max=20"`
 }
 
 // SuggestView 将前缀与条数交给搜索联想用例，不在 Handler 构造 Elasticsearch DSL。
 func (h *Handler) SuggestView(c *gin.Context) {
-	req := middlewares.GetBound[VideoSuggestReq](c)
+	req := middlewares.GetBound[SuggestReq](c)
 
 	size := req.Size
 	if size <= 0 {

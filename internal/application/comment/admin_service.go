@@ -13,7 +13,7 @@ import (
 // AdminList 管理端评论列表（原 service/comment_service/admin_service.go AdminList）。
 //
 // 管理端不需要 isLiked（视作未登录），但点赞数仍以 Redis 缓存为主。
-func (s *Service) AdminList(ctx context.Context, params AdminListParams) ([]CommentItem, int64, error) {
+func (s *Service) AdminList(ctx context.Context, params AdminListParams) ([]Item, int64, error) {
 	page, pageSize := domain.NormalizeAdminPaging(params.Page, params.PageSize)
 
 	rows, total, err := s.query.AdminList(ctx, AdminListQuery{

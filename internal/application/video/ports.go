@@ -16,11 +16,11 @@ import (
 // 端口阅读：视频页面查询、计数/元数据缓存、定时计划与跨上下文能力在这里分别建模。
 // 写侧领域仓储在 domain/video；多个端口由同一适配器实现，也不表示这些操作自动共享事务或失败边界。
 
-// VideoDetailQuery 视频详情读模型查询端口。
+// DetailQuery 视频详情读模型查询端口。
 //
 // 富嵌套读模型（作者/分区/标签/资源/分P）由 persistence 直接从 PO 组装，
 // 不进入领域层（见 architecture.md 第 4 节）。
-type VideoDetailQuery interface {
+type DetailQuery interface {
 	// LoadPublished 读取已发布视频的详情 meta 与统计；不存在时返回 domain.ErrRecordNotFound。
 	LoadPublished(ctx context.Context, videoID uint) (*DetailMeta, *domain.Stats, error)
 	// LoadOwnerPreview 读取作者本人的非公开（私密/待审/定时）视频详情；
@@ -342,19 +342,19 @@ type StorageResolver interface {
 	ValidateChunkIndex(index string) error
 }
 
-// VideoSearcher 视频搜索端口。
+// Searcher 视频搜索端口。
 //
 // 绑定目标：search 上下文（原 service/search_service.SearchService）。
 // 返回值使用 any，以保证响应 JSON 完全等于搜索上下文产出的结构。
-type VideoSearcher interface {
-	SearchVideos(ctx context.Context, opts VideoSearchOptions) (any, error)
+type Searcher interface {
+	SearchVideos(ctx context.Context, opts SearchOptions) (any, error)
 	Suggest(ctx context.Context, prefix string, size int) (any, error)
 	HotKeywords(ctx context.Context, page, pageSize int) (any, int64, error)
 	RecordHotKeyword(ctx context.Context, keyword string)
 }
 
-// VideoSearchOptions 视频搜索参数（字段与原 search_service.SearchOptions 的视频侧子集一致）。
-type VideoSearchOptions struct {
+// SearchOptions 视频搜索参数（字段与原 search_service.SearchOptions 的视频侧子集一致）。
+type SearchOptions struct {
 	Keyword    string
 	Page       int
 	PageSize   int
@@ -362,11 +362,11 @@ type VideoSearchOptions struct {
 	VideoOrder int
 }
 
-// VideoVectorIndexer 视频向量索引端口（最佳努力，失败仅记录日志）。
+// VectorIndexer 视频向量索引端口（最佳努力，失败仅记录日志）。
 //
 // 绑定目标：search 上下文（原 search_service.IndexVideoVectorBestEffort /
 // DeleteVideoVectorBestEffort）。
-type VideoVectorIndexer interface {
+type VectorIndexer interface {
 	IndexVideoVectorBestEffort(ctx context.Context, videoID uint)
 	DeleteVideoVectorBestEffort(ctx context.Context, videoID uint)
 }
@@ -430,13 +430,13 @@ type CreatorAnalytics interface {
 	IncrFavorites(ctx context.Context, creatorID uint, delta int64) error
 }
 
-// VideoNotifier 通知端口。
+// Notifier 通知端口。
 //
 // 绑定目标：notification 上下文的 *notification.Service（需补两个方法或加薄适配器）。
 // 与原实现一致：写入通知行后失效对应接收者的角标缓存；失败仅记录日志。
-type VideoNotifier interface {
+type Notifier interface {
 	// NotifyVideoLike 视频被点赞通知（类型固定为 enum.NotificationVideoLikeType）。
-	NotifyVideoLike(ctx context.Context, notice VideoNotice)
+	NotifyVideoLike(ctx context.Context, notice Notice)
 	// NotifySystemBatch 批量系统通知（类型固定为 enum.NotificationSystemType，举报处理结果）。
 	NotifySystemBatch(ctx context.Context, notices []SystemNotice)
 }
@@ -448,8 +448,8 @@ type ActionUser struct {
 	Avatar   string
 }
 
-// VideoNotice 一条视频相关通知（点赞）。
-type VideoNotice struct {
+// Notice 一条视频相关通知（点赞）。
+type Notice struct {
 	ReceiverID       uint
 	ActionUserID     uint
 	ActionUserName   string

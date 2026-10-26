@@ -26,8 +26,8 @@ var (
 	errUploadImageFailed = errors.New("上传图片失败")
 )
 
-// VideoReportReq 携带作品举报目标、原因与补充说明，举报人从认证上下文取得。
-type VideoReportReq struct {
+// ReportReq 携带作品举报目标、原因与补充说明，举报人从认证上下文取得。
+type ReportReq struct {
 	VideoID uint   `form:"videoId" json:"videoId" binding:"required,gt=0"`
 	Reason  string `form:"reason" json:"reason" binding:"required,max=200"`
 	Detail  string `form:"detail" json:"detail" binding:"omitempty,max=1000"`
@@ -35,7 +35,7 @@ type VideoReportReq struct {
 
 // ReportVideoView 举报视频.
 func (h *Handler) ReportVideoView(c *gin.Context) {
-	req := middlewares.GetBound[VideoReportReq](c)
+	req := middlewares.GetBound[ReportReq](c)
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {

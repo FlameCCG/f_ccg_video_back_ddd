@@ -78,7 +78,7 @@ func (revisionAuthorIDs) Invalidate(context.Context, uint) {}
 
 // 除失败注入外，使用真实仓储；锁定读取和保存必须拿到同一个事务句柄。
 type revisionRepository struct {
-	domain.VideoRepository
+	domain.Repository
 	readCtx  context.Context
 	failTags error
 }
@@ -88,22 +88,22 @@ func (r *revisionRepository) FindByIDAndAuthorForUpdate(ctx context.Context, id 
 		return nil, errors.New("revision read outside transaction")
 	}
 	r.readCtx = ctx
-	return r.VideoRepository.FindByIDAndAuthorForUpdate(ctx, id, author)
+	return r.Repository.FindByIDAndAuthorForUpdate(ctx, id, author)
 }
 func (r *revisionRepository) SaveRevision(ctx context.Context, v *domain.Video) error {
 	if r.readCtx != ctx || gormx.TxFrom(ctx) == nil {
 		return errors.New("revision write outside read transaction")
 	}
-	return r.VideoRepository.SaveRevision(ctx, v)
+	return r.Repository.SaveRevision(ctx, v)
 }
 func (r *revisionRepository) ReplaceTags(ctx context.Context, id uint, tags []domain.Tag) error {
 	if r.failTags != nil {
 		return r.failTags
 	}
-	return r.VideoRepository.ReplaceTags(ctx, id, tags)
+	return r.Repository.ReplaceTags(ctx, id, tags)
 }
 
-func (f *fixture) revisionService(repo domain.VideoRepository, effects *revisionEffects) *app.UpdateService {
+func (f *fixture) revisionService(repo domain.Repository, effects *revisionEffects) *app.UpdateService {
 	effects.ScheduleStore = infra.NewScheduleStore(f.db)
 	authors := app.NewAuthorService(repo, revisionAuthorIDs{}, revisionMeta{effects: effects}, nil, zap.NewNop())
 	return app.NewUpdateService(gormx.NewTxManager(f.db), repo, f.partitions, effects, authors,
@@ -124,7 +124,7 @@ func TestUpdateRevisionPersistsZeroValuesAndClearsTags(t *testing.T) {
 		t.Fatal(err)
 	}
 	effects := &revisionEffects{}
-	repo := &revisionRepository{VideoRepository: f.videos}
+	repo := &revisionRepository{Repository: f.videos}
 	blank, original := "", false
 	out, err := f.revisionService(repo, effects).UpdateVideo(t.Context(), "alice", app.UpdateVideoOpts{
 		VideoID: row.ID, Description: &blank, IsOriginal: &original, TagIDs: []uint{},
@@ -155,7 +155,7 @@ func TestUpdateRevisionRollsBackBeforeSideEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	failure := errors.New("tag save failed")
-	repo := &revisionRepository{VideoRepository: f.videos, failTags: failure}
+	repo := &revisionRepository{Repository: f.videos, failTags: failure}
 	effects := &revisionEffects{}
 	title, private := "new", true
 	_, err := f.revisionService(repo, effects).UpdateVideo(t.Context(), "alice", app.UpdateVideoOpts{
@@ -202,7 +202,7 @@ func TestUpdateRevisionVisibilityAndOwnership(t *testing.T) {
 			}
 			effects := &revisionEffects{}
 			future := time.Now().Add(time.Hour)
-			_, err := f.revisionService(&revisionRepository{VideoRepository: f.videos}, effects).UpdateVideo(t.Context(), tt.author,
+			_, err := f.revisionService(&revisionRepository{Repository: f.videos}, effects).UpdateVideo(t.Context(), tt.author,
 				app.UpdateVideoOpts{VideoID: row.ID, PublishTime: &future})
 			if tt.wantErr && !errors.Is(err, domain.ErrRecordNotFound) {
 				t.Fatalf("error=%v", err)

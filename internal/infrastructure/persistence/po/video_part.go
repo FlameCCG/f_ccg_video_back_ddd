@@ -2,8 +2,8 @@ package po
 
 import "f_ccg_video_back_ddd/internal/domain/shared/enum"
 
-// VideoPart 视频分P（同一个作品可以包含多个分P）.
-type VideoPart struct {
+// Part 视频分P（同一个作品可以包含多个分P）.
+type Part struct {
 	Model
 	VideoID     uint                  `gorm:"not null;index;comment:作品ID" json:"videoId"`
 	Title       string                `gorm:"size:200;not null;comment:分P标题" json:"title"`
@@ -16,6 +16,6 @@ type VideoPart struct {
 }
 
 // TableName 显式绑定表名 video_parts，保持迁移与仓储 SQL 使用同一张表。
-func (VideoPart) TableName() string {
+func (Part) TableName() string {
 	return "video_parts"
 }

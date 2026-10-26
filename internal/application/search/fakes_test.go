@@ -19,15 +19,15 @@ type fakeKeywordSearch struct {
 
 func (f *fakeKeywordSearch) Available() bool { return f.available }
 
-func (f *fakeKeywordSearch) MultiSearch(_ context.Context, _ SearchOptions, _ int) (CombinedHits, error) {
+func (f *fakeKeywordSearch) MultiSearch(_ context.Context, _ Options, _ int) (CombinedHits, error) {
 	return f.multi, f.multiErr
 }
 
-func (f *fakeKeywordSearch) SearchVideos(_ context.Context, _ SearchOptions, _ int) (VideoHits, error) {
+func (f *fakeKeywordSearch) SearchVideos(_ context.Context, _ Options, _ int) (VideoHits, error) {
 	return f.videos, f.videoErr
 }
 
-func (f *fakeKeywordSearch) SearchUsers(_ context.Context, _ SearchOptions, _ int) (UserHits, error) {
+func (f *fakeKeywordSearch) SearchUsers(_ context.Context, _ Options, _ int) (UserHits, error) {
 	return f.users, f.userErr
 }
 
@@ -39,9 +39,9 @@ func (f *fakeKeywordSearch) CountUsers(_ context.Context, _ string) (int64, erro
 
 type fakeSearchFallback struct {
 	available  bool
-	videos     []SearchVideoHit
+	videos     []VideoHit
 	videoTotal int64
-	users      []SearchUserHit
+	users      []UserHit
 	userTotal  int64
 	countUsers int64
 	meta       []VideoSearchMeta
@@ -51,11 +51,11 @@ type fakeSearchFallback struct {
 
 func (f *fakeSearchFallback) Available() bool { return f.available }
 
-func (f *fakeSearchFallback) SearchVideos(_ context.Context, _ SearchOptions) ([]SearchVideoHit, int64, error) {
+func (f *fakeSearchFallback) SearchVideos(_ context.Context, _ Options) ([]VideoHit, int64, error) {
 	return f.videos, f.videoTotal, f.err
 }
 
-func (f *fakeSearchFallback) SearchUsers(_ context.Context, _ SearchOptions) ([]SearchUserHit, int64, error) {
+func (f *fakeSearchFallback) SearchUsers(_ context.Context, _ Options) ([]UserHit, int64, error) {
 	return f.users, f.userTotal, f.err
 }
 

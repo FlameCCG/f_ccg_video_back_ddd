@@ -20,7 +20,7 @@ type VideoPartResource struct {
 	IsVip          bool                 `gorm:"not null;default:false;comment:是否是Vip资源" json:"isVip"`
 	IsSouceVideo   bool                 `gorm:"not null;default:false;uniqueIndex:uk_video_part_resources_variant,priority:3;comment:是否是源视频" json:"isSouceVideo"`
 
-	VideoPart VideoPart `gorm:"foreignKey:VideoPartID" json:"videoPart,omitempty"`
+	VideoPart Part `gorm:"foreignKey:VideoPartID" json:"videoPart,omitempty"`
 }
 
 // TableName 显式绑定表名 video_part_resources，保持迁移与仓储 SQL 使用同一张表。

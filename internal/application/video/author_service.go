@@ -14,7 +14,7 @@ import (
 // 该服务同时是 video 上下文对外暴露的缓存失效入口
 // （identity 更新用户资料后需要失效视频详情 meta 与作者 ID 缓存）。
 type AuthorService struct {
-	videos    domain.VideoRepository
+	videos    domain.Repository
 	authorIDs AuthorIDCache
 	meta      DetailMetaCache
 	usernames UsernameCache
@@ -23,7 +23,7 @@ type AuthorService struct {
 
 // NewAuthorService 构造作者解析与缓存失效服务。
 func NewAuthorService(
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	authorIDs AuthorIDCache,
 	meta DetailMetaCache,
 	usernames UsernameCache,

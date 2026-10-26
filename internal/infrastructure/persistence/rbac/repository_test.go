@@ -24,7 +24,7 @@ type fixture struct {
 	menus     *infra.MenuRepository
 	roleMenus *infra.RoleMenuRepository
 	userRoles *infra.UserRoleRepository
-	resources *infra.ApiResourceRepository
+	resources *infra.APIResourceRepository
 }
 
 // newFixture 建库并迁移 rbac 相关表。
@@ -39,7 +39,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	if err := db.AutoMigrate(
-		&po.Role{}, &po.Menu{}, &po.RoleMenu{}, &po.UserRole{}, &po.User{}, &po.ApiResource{},
+		&po.Role{}, &po.Menu{}, &po.RoleMenu{}, &po.UserRole{}, &po.User{}, &po.APIResource{},
 	); err != nil {
 		t.Fatalf("migrate failed: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestApiResourceRepository(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 
-	item := &domain.ApiResource{Path: "/v1/admin/rbac/roles", Method: "GET", Summary: "GET /v1/admin/rbac/roles"}
+	item := &domain.APIResource{Path: "/v1/admin/rbac/roles", Method: "GET", Summary: "GET /v1/admin/rbac/roles"}
 	if err := f.resources.Create(ctx, item); err != nil {
 		t.Fatalf("create resource: %v", err)
 	}

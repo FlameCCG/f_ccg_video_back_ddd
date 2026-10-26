@@ -21,7 +21,7 @@ type DetailQuery struct {
 	db *gorm.DB
 }
 
-var _ app.VideoDetailQuery = (*DetailQuery)(nil)
+var _ app.DetailQuery = (*DetailQuery)(nil)
 
 // NewDetailQuery 构造视频详情查询。
 func NewDetailQuery(db *gorm.DB) *DetailQuery {
@@ -198,10 +198,10 @@ func buildMetaAndStats(row *po.Video) (*app.DetailMeta, *domain.Stats) {
 	}
 
 	if len(row.VideoParts) > 0 {
-		meta.Parts = make([]app.VideoPartBrief, 0, len(row.VideoParts))
+		meta.Parts = make([]app.PartBrief, 0, len(row.VideoParts))
 
 		for _, part := range row.VideoParts {
-			partBrief := app.VideoPartBrief{
+			partBrief := app.PartBrief{
 				ID:         part.ID,
 				Title:      part.Title,
 				SortOrder:  part.SortOrder,

@@ -8,20 +8,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DynamicLikeReq 动态点赞请求.
-type DynamicLikeReq struct {
+// LikeReq 动态点赞请求.
+type LikeReq struct {
 	DynamicID uint `json:"dynamicId" binding:"required,gt=0" label:"动态ID"`
 }
 
-// DynamicLikeResp 动态点赞响应.
-type DynamicLikeResp struct {
+// LikeResp 动态点赞响应.
+type LikeResp struct {
 	LikeCount int64 `json:"likeCount"`
 	IsLiked   bool  `json:"isLiked"`
 }
 
 // LikeView 切换动态点赞状态.
 func (h *Handler) LikeView(c *gin.Context) {
-	req := middlewares.GetBound[DynamicLikeReq](c)
+	req := middlewares.GetBound[LikeReq](c)
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {
@@ -37,7 +37,7 @@ func (h *Handler) LikeView(c *gin.Context) {
 		return
 	}
 
-	res.OkWithData(DynamicLikeResp{
+	res.OkWithData(LikeResp{
 		LikeCount: result.LikeCount,
 		IsLiked:   result.IsLiked,
 	}, c)

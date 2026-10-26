@@ -15,7 +15,7 @@ import (
 type PermissionService struct {
 	roles     domain.RoleRepository
 	roleMenus domain.RoleMenuRepository
-	resources domain.ApiResourceRepository
+	resources domain.APIResourceRepository
 	enforcer  Enforcer
 	graph     *RoleGraph
 	evaluator *domain.PermissionEvaluator
@@ -26,7 +26,7 @@ type PermissionService struct {
 func NewPermissionService(
 	roles domain.RoleRepository,
 	roleMenus domain.RoleMenuRepository,
-	resources domain.ApiResourceRepository,
+	resources domain.APIResourceRepository,
 	enforcer Enforcer,
 	graph *RoleGraph,
 	evaluator *domain.PermissionEvaluator,

@@ -7,8 +7,8 @@ import (
 	"gorm.io/datatypes"
 )
 
-// VideoReport 视频举报记录.
-type VideoReport struct {
+// Report 视频举报记录.
+type Report struct {
 	Model
 	ReporterUsername string            `gorm:"size:50;not null;index;comment:举报人用户名" json:"reporterUsername"`
 	VideoID          uint              `gorm:"not null;index;comment:视频ID" json:"videoId"`
@@ -22,6 +22,6 @@ type VideoReport struct {
 }
 
 // TableName 显式绑定表名 video_reports，保持迁移与仓储 SQL 使用同一张表。
-func (VideoReport) TableName() string {
+func (Report) TableName() string {
 	return "video_reports"
 }

@@ -12,11 +12,11 @@ import (
 // uploadsPathPrefix 静态上传目录前缀，同步资源表时整体跳过。
 const uploadsPathPrefix = "/uploads"
 
-// ApiResource 接口资源实体（可用于权限配置的 method+path 清单）。
+// APIResource 接口资源实体（可用于权限配置的 method+path 清单）。
 //
 // Tags 保存原始 JSON 字节（与 PO 的 datatypes.JSON 等价），
 // 使「标签是否变化」的比较逻辑与原实现逐字节一致，同时让领域层不依赖 gorm.io/datatypes。
-type ApiResource struct {
+type APIResource struct {
 	ID        uint
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -53,8 +53,8 @@ func IsResourceMethod(method string) bool {
 // 语义与原 service/rbac_service/resource_sync.go 一致：
 // 过滤非资源方法与 /uploads 静态目录、按 method+path 去重、
 // summary 缺省为「METHOD path」、tags 序列化失败时留空，最后按 path→method 排序。
-func BuildApiResources(routes []RouteInfo, meta map[string]ResourceMeta) []*ApiResource {
-	items := make([]*ApiResource, 0, len(routes))
+func BuildApiResources(routes []RouteInfo, meta map[string]ResourceMeta) []*APIResource {
+	items := make([]*APIResource, 0, len(routes))
 	seen := make(map[string]struct{})
 
 	for _, r := range routes {
@@ -88,7 +88,7 @@ func BuildApiResources(routes []RouteInfo, meta map[string]ResourceMeta) []*ApiR
 			}
 		}
 
-		items = append(items, &ApiResource{
+		items = append(items, &APIResource{
 			Path:    r.Path,
 			Method:  r.Method,
 			Summary: summary,

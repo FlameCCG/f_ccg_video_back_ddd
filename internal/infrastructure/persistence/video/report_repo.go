@@ -27,12 +27,12 @@ func NewReportRepository(db *gorm.DB) *ReportRepository {
 }
 
 // CreateVideoReport 写入视频举报并回填 ID/时间。
-func (r *ReportRepository) CreateVideoReport(ctx context.Context, report *domain.VideoReport) error {
+func (r *ReportRepository) CreateVideoReport(ctx context.Context, report *domain.Report) error {
 	if report == nil {
 		return domain.ErrParamInvalid
 	}
 
-	row := po.VideoReport{
+	row := po.Report{
 		ReporterUsername: report.ReporterUsername,
 		VideoID:          report.VideoID,
 		Reason:           report.Reason,
@@ -94,7 +94,7 @@ func (r *ReportRepository) HandleVideoReports(
 	handledAt time.Time,
 ) (int64, error) {
 	result := gormx.DB(ctx, r.db).
-		Model(&po.VideoReport{}).
+		Model(&po.Report{}).
 		Where("id IN ? AND status = ?", reportIDs, enum.ReportStatusPending).
 		Updates(reportHandleUpdates(status, note, handlerID, handledAt))
 

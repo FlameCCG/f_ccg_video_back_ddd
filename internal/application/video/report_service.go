@@ -15,24 +15,24 @@ import (
 // （原 service/video_service/{report_service.go,report_admin_service.go,
 // report_handle_service.go}）。
 type ReportService struct {
-	videos   domain.VideoRepository
+	videos   domain.Repository
 	danmus   domain.DanmuRepository
 	reports  domain.ReportRepository
 	query    ReportQuery
 	notify   NotifySourceQuery
-	notifier VideoNotifier
+	notifier Notifier
 	tasks    *ctxutil.DetachedTaskGroup
 	logger   *zap.Logger
 }
 
 // NewReportService 构造举报用例服务。
 func NewReportService(
-	videos domain.VideoRepository,
+	videos domain.Repository,
 	danmus domain.DanmuRepository,
 	reports domain.ReportRepository,
 	query ReportQuery,
 	notify NotifySourceQuery,
-	notifier VideoNotifier,
+	notifier Notifier,
 	tasks *ctxutil.DetachedTaskGroup,
 	logger *zap.Logger,
 ) *ReportService {
@@ -54,7 +54,7 @@ func (s *ReportService) CreateVideoReport(
 	userID, videoID uint,
 	reason, detail string,
 	images []string,
-) (*VideoReportDTO, error) {
+) (*ReportDTO, error) {
 	if userID == 0 {
 		return nil, domain.ErrUserNotLogin
 	}
@@ -81,7 +81,7 @@ func (s *ReportService) CreateVideoReport(
 		return nil, domain.ErrUserNotFound
 	}
 
-	report := &domain.VideoReport{
+	report := &domain.Report{
 		ReporterUsername: reporter.Username,
 		VideoID:          videoID,
 		Reason:           reason,
@@ -93,7 +93,7 @@ func (s *ReportService) CreateVideoReport(
 		return nil, err
 	}
 
-	return &VideoReportDTO{
+	return &ReportDTO{
 		ID:               report.ID,
 		ReporterUsername: report.ReporterUsername,
 		VideoID:          report.VideoID,
