@@ -1,0 +1,28 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify deployment files
+        run: |
+          git ls-files --error-unmatch deploy/mongodb/start-replica.sh deploy/mongodb/init-replica.sh
+          bash -n deploy/mongodb/start-replica.sh deploy/mongodb/init-replica.sh
+          docker compose config --quiet
+      - run: go test ./...
+      - name: Scan both entry points
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./cmd/server ./cmd/transcode-consumer
