@@ -8,12 +8,16 @@
 package config
 
 import (
+	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logsafe"
 	"fmt"
+	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/config"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
@@ -30,14 +34,28 @@ import (
 //	if cfg == nil { ... }
 //	use cfg.Site / cfg.Jwt ...
 type Provider struct {
-	config atomic.Pointer[config.Config]
-	logger atomic.Pointer[zap.Logger]
-	path   string
+	config        atomic.Pointer[config.Config]
+	logger        atomic.Pointer[zap.Logger]
+	path          string
+	initialLogger *config.Logger
+	mu            sync.Mutex
+	subscribers   map[uint64]func(*config.Config)
+	nextID        uint64
+	watcher       *fsnotify.Watcher
+	done          chan struct{}
+	stopOnce      sync.Once
+	watchWG       sync.WaitGroup
 }
 
 // NewProvider 用给定配置快照构造 Provider（测试与 CLI 可直接使用）。
 func NewProvider(c *config.Config) *Provider {
 	p := new(Provider)
+
+	if c != nil && c.Logger != nil {
+		copyCfg := *c.Logger
+		p.initialLogger = &copyCfg
+	}
+
 	p.SetLogger(nil)
 	p.Set(c)
 
@@ -89,7 +107,11 @@ func (p *Provider) Set(c *config.Config) {
 	if p == nil {
 		return
 	}
-	p.config.Store(c)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.publishLocked(c)
 }
 
 // Path 返回配置文件路径（管理端写回配置时使用）。
@@ -101,75 +123,246 @@ func (p *Provider) Path() string {
 	return p.path
 }
 
-// Load 读取配置文件、校验必填项并开启热更新监听，返回可注入的 Provider。
-//
-// 语义与原 core.InitConf 完全一致：读取失败/映射失败/校验失败均 panic；
-// 热更新读取或校验失败时保留上一份有效配置并打日志。
-func Load(filePath string) (*Provider, error) {
+// Subscribe shares one notification path for file reloads and management updates.
+// Unsubscribe waits for an in-flight callback before it returns.
+func (p *Provider) Subscribe(fn func(*config.Config)) func() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.subscribers == nil {
+		p.subscribers = make(map[uint64]func(*config.Config))
+	}
+
+	p.nextID++
+	id := p.nextID
+	p.subscribers[id] = fn
+	fn(p.Get())
+
+	return func() { p.mu.Lock(); defer p.mu.Unlock(); delete(p.subscribers, id) }
+}
+
+// Close stops the file watcher before the logger is closed.
+func (p *Provider) Close() {
+	if p == nil {
+		return
+	}
+
+	p.stopOnce.Do(func() {
+		if p.done != nil {
+			close(p.done)
+		}
+
+		if p.watcher != nil {
+			_ = p.watcher.Close()
+		}
+
+		p.watchWG.Wait()
+	})
+}
+
+func readConfig(filePath string) (*config.Config, error) {
 	v := viper.New()
-	// 缺少新增字段时使用独立默认值；显式配置的 0 边距仍会保留。
 	for _, scene := range []string{"login", "register"} {
 		v.SetDefault("site."+scene+".slideCaptchaTTL", 300)
 		v.SetDefault("site."+scene+".slideCaptchaPadding", 10)
 		v.SetDefault("site."+scene+".textClickCaptchaTTL", 300)
 		v.SetDefault("site."+scene+".textClickCaptchaPadding", 20)
 	}
+
 	v.SetConfigFile(filePath)
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// 读取配置文件
 	if err := v.ReadInConfig(); err != nil {
-		panic(fmt.Errorf("fatal error config file: %w", err))
+		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	// 映射到结构体
 	c := new(config.Config)
 	if err := v.Unmarshal(c); err != nil {
-		panic(fmt.Errorf("config unmarshal error: %w", err))
+		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
 	c.Normalize()
 
 	if err := config.ValidateRequired(c); err != nil {
-		panic(fmt.Errorf("config validation error: %w", err))
+		return nil, fmt.Errorf("validate config: %w", err)
 	}
 
-	provider := NewProvider(c)
-	provider.path = filePath
+	return c, nil
+}
 
-	// 开启热更新监听
-	v.WatchConfig()
-	v.OnConfigChange(func(e fsnotify.Event) {
-		// 稍微等待一下，确保文件写入完成
-		time.Sleep(500 * time.Millisecond)
+// Load validates before publication; predictable startup failures return to the entrypoint.
+func Load(filePath string) (*Provider, error) {
+	abs, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, err
+	}
 
-		provider.log().Info("配置文件热更新", zap.String("filename", e.Name))
+	c, err := readConfig(abs)
+	if err != nil {
+		return nil, err
+	}
 
-		// 显式重新读取配置，防止 viper 内部缓存未更新或读取到空文件
-		if err := v.ReadInConfig(); err != nil {
-			provider.log().Error("配置文件热更新读取失败", zap.Error(err))
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("create config watcher: %w", err)
+	}
 
+	if err = watcher.Add(filepath.Dir(abs)); err != nil {
+		_ = watcher.Close()
+		return nil, fmt.Errorf("watch config: %w", err)
+	}
+
+	p := NewProvider(c)
+	p.path, p.watcher, p.done = abs, watcher, make(chan struct{})
+
+	p.watchWG.Add(1)
+	go p.watch()
+
+	return p, nil
+}
+
+func (p *Provider) watch() {
+	defer p.watchWG.Done()
+
+	var (
+		timer *time.Timer
+		tick  <-chan time.Time
+	)
+
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
+
+	for {
+		select {
+		case <-p.done:
 			return
+		case event, ok := <-p.watcher.Events:
+			if !ok {
+				return
+			}
+
+			if filepath.Clean(event.Name) != p.path || event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
+				continue
+			}
+
+			timer = resetConfigDebounce(timer)
+
+			tick = timer.C
+		case err, ok := <-p.watcher.Errors:
+			if !ok {
+				return
+			}
+
+			p.log().Error("config.watch.failed", zap.String("event", "config.provider.watch.failed"), zap.String("operation", "config.provider.watch"), zap.String("error", logsafe.Text(err.Error(), logsafe.ErrorLimit)))
+		case <-tick:
+			tick = nil
+
+			p.mu.Lock()
+
+			next, err := readConfig(p.path)
+			if err != nil {
+				p.mu.Unlock()
+				p.log().Error("config.reload.failed", zap.String("event", "config.provider.watch.failed"), zap.String("operation", "config.provider.watch"), zap.String("error", logsafe.Text(err.Error(), logsafe.ErrorLimit)))
+
+				continue
+			}
+
+			p.publishLocked(next)
+			p.mu.Unlock()
+			p.log().Info("config.reload.completed", zap.String("event", "config.reload.completed"))
+		}
+	}
+}
+
+func (p *Provider) publishLocked(c *config.Config) {
+	p.config.Store(c)
+
+	for _, notify := range p.subscribers {
+		notify(c)
+	}
+}
+
+// PublishSection serializes persistence, file reloads and snapshot publication.
+// It merges the requested section into the latest snapshot, avoiding lost concurrent updates.
+func (p *Provider) PublishSection(name string, item any, persist func() error) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	next := config.Clone(p.Get())
+	tree := reflect.ValueOf(next).Elem()
+	found := false
+
+	for i := range tree.NumField() {
+		if !strings.EqualFold(tree.Type().Field(i).Tag.Get("mapstructure"), name) {
+			continue
 		}
 
-		// 重新读取配置
-		newConf := new(config.Config)
-		if err := v.Unmarshal(newConf); err != nil {
-			provider.log().Error("配置文件热更新失败", zap.Error(err))
-
-			return
+		value := reflect.ValueOf(item)
+		switch {
+		case !value.IsValid():
+			tree.Field(i).SetZero()
+		case value.Type().AssignableTo(tree.Field(i).Type()):
+			tree.Field(i).Set(value)
+		default:
+			return errors.New("invalid config section type")
 		}
 
-		newConf.Normalize()
+		found = true
 
-		if err := config.ValidateRequired(newConf); err != nil {
-			provider.log().Error("配置文件热更新校验失败，继续使用上一份有效配置", zap.Error(err))
+		break
+	}
 
-			return
+	if !found {
+		return errors.New("unsupported config section")
+	}
+
+	if name == "logger" {
+		if err := next.Logger.Validate(); err != nil {
+			return err
 		}
-		provider.Set(newConf)
-		provider.log().Info("配置文件热更新成功!")
-	})
-	return provider, nil
+	}
+
+	if err := persist(); err != nil {
+		return err
+	}
+
+	p.publishLocked(next)
+
+	return nil
+}
+
+// Provide gives every Wire graph a watcher cleanup, including failed construction and CLI tasks.
+func Provide(path string) (*Provider, func(), error) {
+	p, err := Load(path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return p, p.Close, nil
+}
+
+// LoggerRestartRequired compares desired output settings with the startup snapshot.
+func (p *Provider) LoggerRestartRequired(next *config.Logger) bool {
+	return config.LoggerRestartRequired(p.initialLogger, next)
+}
+
+func resetConfigDebounce(timer *time.Timer) *time.Timer {
+	if timer == nil {
+		return time.NewTimer(100 * time.Millisecond)
+	}
+
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+
+	timer.Reset(100 * time.Millisecond)
+
+	return timer
 }

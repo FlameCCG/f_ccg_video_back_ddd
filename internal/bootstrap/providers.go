@@ -26,7 +26,7 @@ import (
 // application 层一律经 shared.ConfigReader / shared.ConfigStore 端口注入（D-020）。
 var ConfigProviderSet = wire.NewSet(
 	cli.ProvideConfigPath,
-	infraconfig.Load,
+	infraconfig.Provide,
 	// 第一个参数用 *接口类型 标出消费方端口，第二个参数用 **具体类型 标出被注入的 *Provider。
 	// new(...) 在这里是类型标记，不是在为每个业务请求分配 Provider；Go 的方法集决定实现关系。
 	wire.Bind(new(shared.ConfigReader), new(*infraconfig.Provider)),

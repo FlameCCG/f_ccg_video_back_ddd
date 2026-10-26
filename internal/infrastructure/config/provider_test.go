@@ -1,10 +1,9 @@
 package config
 
 import (
+	"f_ccg_video_back_ddd/internal/config"
 	"sync"
 	"testing"
-
-	"f_ccg_video_back_ddd/internal/config"
 )
 
 // TestProviderAtomicLoadStore 对应原 global.TestConfigAtomicLoadStore。

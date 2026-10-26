@@ -23,6 +23,10 @@ func ValidateRequired(c *Config) error {
 		return err
 	}
 
+	if c.Logger != nil {
+		return c.Logger.Validate()
+	}
+
 	return nil
 }
 

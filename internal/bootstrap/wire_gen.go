@@ -97,25 +97,30 @@ import (
 //	go run -mod=mod github.com/google/wire/cmd/wire ./internal/bootstrap
 func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es, zapLogger)
+	searchES, cleanup4 := search.Provide(es, zapLogger)
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup5 := cache.Provide(redis, zapLogger)
 	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
-	searcher, cleanup6 := ipregion.Provide(zapLogger)
+	mongodbMongo, cleanup6 := mongodb.Provide(mongo, zapLogger)
+	searcher, cleanup7 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
 	if err != nil {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -397,6 +402,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	runtimeComponents := NewRuntimeComponents(riverComponent, videoScheduler, transcodeConsumerComponent, cronComponent, chatHub, hub, zapLogger)
 	app := NewApp(infrastructure, provider, loggerLogger, routerRouter, detachedTaskGroup, runtimeComponents, producerPool)
 	return app, func() {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -409,16 +415,20 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 // InitializeTranscodeWorker 构造独立转码消费者，不装配 HTTP 与其他后台组件。
 func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	kafka := config.ProvideKafkaConf(provider)
 	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	txManager := gormx.NewTxManager(gormDB)
 	transcodeResourceRepository := media3.NewTranscodeResourceRepository(gormDB, txManager)
@@ -426,7 +436,7 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
 	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup3 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
 	client := cache.ProvideClient(cacheRedis)
 	progressCache := media2.NewProgressCache(client, zapLogger)
 	videoDetailCache := media2.NewVideoDetailCache(client, zapLogger)
@@ -438,6 +448,7 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 	producerPool := mq.NewProducerPool(zapLogger)
 	mqTranscodeConsumer, err := mq.NewTranscodeConsumer(kafka, transcodeService, taskRegistry, cancelSubscriber, producerPool, zapLogger)
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -445,6 +456,7 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 	}
 	transcodeWorker := NewTranscodeWorker(mqTranscodeConsumer, producerPool, detachedTaskGroup, zapLogger)
 	return transcodeWorker, func() {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -454,19 +466,24 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 // InitializeMigrateDBTask 构造 -db 运维任务（配置 + 日志 + MySQL）。
 func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	migrator := migration.NewMigrator(gormDB, zapLogger)
 	executor := cli.NewMigrateDBExecutor(migrator)
 	return executor, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil
@@ -475,19 +492,24 @@ func InitializeMigrateDBTask(opts *cli.Options) (*cli.Executor, func(), error) {
 // InitializeVideoPartitionsTask 构造 -vp 运维任务（配置 + 日志 + MySQL）。
 func InitializeVideoPartitionsTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	migrator := migration.NewMigrator(gormDB, zapLogger)
 	executor := cli.NewVideoPartitionsExecutor(migrator, zapLogger)
 	return executor, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil
@@ -496,23 +518,28 @@ func InitializeVideoPartitionsTask(opts *cli.Options) (*cli.Executor, func(), er
 // InitializeBannerTask 构造 -br 运维任务（配置 + 日志 + MySQL + 存储）。
 func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	zapLogger := logger.ProvideZap(loggerLogger)
 	minIOClientPool := storage.NewMinIOClientPool(zapLogger)
 	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
 	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
 	bannerStorageResolverAdapter := NewBannerStorageResolverAdapter(resolver)
 	configMysql := config.ProvideMysqlConf(provider)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	bannerRepository := provisioning.NewBannerRepository(gormDB)
 	executor := cli.NewBannerExecutor(bannerStorageResolverAdapter, bannerRepository, zapLogger)
 	return executor, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil
@@ -521,20 +548,25 @@ func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 // InitializeSuperUserTask 构造 -su 运维任务（配置 + 日志 + MySQL + Casbin）。
 func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	userRepository := identity2.NewUserRepository(gormDB, provider)
 	superUserRepository := provisioning.NewSuperUserRepository(gormDB, userRepository, zapLogger)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -544,6 +576,7 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	superUserService := provisioning2.NewSuperUserService(superUserRepository, casbinRoleBinder, txManager)
 	executor := cli.NewSuperUserExecutor(superUserService, zapLogger)
 	return executor, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil
@@ -552,21 +585,26 @@ func InitializeSuperUserTask(opts *cli.Options) (*cli.Executor, func(), error) {
 // InitializeESIndexTask 构造 -es 运维任务（配置 + 日志 + MySQL + Elasticsearch）。
 func InitializeESIndexTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configMysql := config.ProvideMysqlConf(provider)
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es, zapLogger)
+	searchES, cleanup4 := search.Provide(es, zapLogger)
 	client := search.ProvideV7(searchES)
 	indexManager := search.NewIndexManager(client, zapLogger)
 	executor := NewESCLIExecutor(db, indexManager, zapLogger)
 	return executor, func() {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -576,25 +614,30 @@ func InitializeESIndexTask(opts *cli.Options) (*cli.Executor, func(), error) {
 // InitializeResourceSyncTask 构造 -rs 运维任务（完整前置基础设施 + 真实 HTTP Router）。
 func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es, zapLogger)
+	searchES, cleanup4 := search.Provide(es, zapLogger)
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup5 := cache.Provide(redis, zapLogger)
 	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
-	searcher, cleanup6 := ipregion.Provide(zapLogger)
+	mongodbMongo, cleanup6 := mongodb.Provide(mongo, zapLogger)
+	searcher, cleanup7 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
 	if err != nil {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -612,6 +655,7 @@ func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error
 	resourceSyncService := rbac2.NewResourceSyncService(apiResourceRepository, routerRouteLister, openAPIMetaLoader, zapLogger)
 	executor := NewResourceSyncCLIExecutor(infrastructure, resourceSyncService, zapLogger)
 	return executor, func() {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -624,25 +668,30 @@ func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error
 // InitializeRBACInitTask 构造 -rbac 运维任务（完整前置基础设施）。
 func InitializeRBACInitTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	string2 := cli.ProvideConfigPath(opts)
-	provider, err := config.Load(string2)
+	provider, cleanup, err := config.Provide(string2)
 	if err != nil {
 		return nil, nil, err
 	}
 	configLogger := config.ProvideLoggerConf(provider)
-	loggerLogger, cleanup := logger.Provide(configLogger, provider)
+	loggerLogger, cleanup2, err := logger.Provide(configLogger, provider)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
 	configMysql := config.ProvideMysqlConf(provider)
 	zapLogger := logger.ProvideZap(loggerLogger)
-	db, cleanup2 := mysql.Provide(configMysql, zapLogger)
+	db, cleanup3 := mysql.Provide(configMysql, zapLogger)
 	es := config.ProvideESConf(provider)
-	searchES, cleanup3 := search.Provide(es, zapLogger)
+	searchES, cleanup4 := search.Provide(es, zapLogger)
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup5 := cache.Provide(redis, zapLogger)
 	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup5 := mongodb.Provide(mongo, zapLogger)
-	searcher, cleanup6 := ipregion.Provide(zapLogger)
+	mongodbMongo, cleanup6 := mongodb.Provide(mongo, zapLogger)
+	searcher, cleanup7 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
 	if err != nil {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -659,6 +708,7 @@ func InitializeRBACInitTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	initService := rbac2.NewInitService(roleRepository, menuRepository, roleMenuRepository, casbinEnforcer, zapLogger)
 	executor := NewRBACInitCLIExecutor(infrastructure, initService, zapLogger)
 	return executor, func() {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
