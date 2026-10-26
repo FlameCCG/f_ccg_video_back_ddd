@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
+//nolint:gosec // These constants are public OAuth endpoint URLs, not credentials.
 const (
 	linuxDoTokenURL    = "https://connect.linux.do/oauth2/token"
 	linuxDoUserInfoURL = "https://connect.linux.do/api/user"
@@ -111,7 +113,7 @@ func (c *LinuxDoClient) GetUserInfo(ctx context.Context, code string) (*UserLinu
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("linuxdo userinfo request failed, status=%d body=%s", resp.StatusCode, string(body))
+		return nil, apperr.Private("oauth.provider", fmt.Errorf("linuxdo userinfo request failed, status=%d body=%s", resp.StatusCode, string(body)))
 	}
 
 	var raw rawUserLinuxDoInfo
@@ -167,7 +169,7 @@ func (c *LinuxDoClient) accessToken(ctx context.Context, code string) (*linuxDoA
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("linuxdo token request failed, status=%d body=%s", resp.StatusCode, string(body))
+		return nil, apperr.Private("oauth.provider", fmt.Errorf("linuxdo token request failed, status=%d body=%s", resp.StatusCode, string(body)))
 	}
 
 	var token linuxDoAccessToken

@@ -15,7 +15,7 @@ func (h *Handler) AdminStatsView(c *gin.Context) {
 
 	stats, err := h.stats.AdminStats(ctx)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -32,7 +32,7 @@ func (h *Handler) StatTouchView(c *gin.Context) {
 
 	result, err := h.stats.Touch(ctx, uid, ip)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -49,7 +49,7 @@ func (h *Handler) StatHeartbeatView(c *gin.Context) {
 
 	result, err := h.stats.Heartbeat(ctx, uid, ip)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

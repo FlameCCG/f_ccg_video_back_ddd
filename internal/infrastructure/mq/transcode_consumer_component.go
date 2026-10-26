@@ -2,13 +2,15 @@ package mq
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strings"
 	"sync"
 	"time"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
-	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/config"
+
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
@@ -71,7 +73,7 @@ func NewTranscodeConsumerComponent(
 //
 // 连接类失败会在后台指数退避重试，不阻塞 HTTP 服务启动；因此本方法总是立即返回 nil
 // （与原 InitTranscodeConsumer 无返回值的语义一致）。重复调用是幂等的（原为 sync.Once）。
-func (c *TranscodeConsumerComponent) Start(_ context.Context) error {
+func (c *TranscodeConsumerComponent) Start(ctx context.Context) error {
 	c.mu.Lock()
 
 	if c.started {
@@ -85,14 +87,14 @@ func (c *TranscodeConsumerComponent) Start(_ context.Context) error {
 	// 本机角色只在启动时读取；关闭消费仍保留 Kafka 生产者供投稿投递任务。
 	if cfg := c.configs.Get(); cfg != nil && cfg.Transcode != nil && cfg.Transcode.LocalConsumerDisabled {
 		c.mu.Unlock()
-		c.logger.Info("local transcode consumer disabled, skip transcode consumer")
+		logctx.With(ctx, c.logger).Info("local transcode consumer disabled, skip transcode consumer", zap.String("event", "mq.transcode_consumer_component.start.diagnostic"), zap.String("operation", "mq.transcode_consumer_component.start"))
 
 		return nil
 	}
 
 	if c.cfg == nil || !c.cfg.Enable {
 		c.mu.Unlock()
-		c.logger.Info("kafka disabled, skip transcode consumer")
+		logctx.With(ctx, c.logger).Info("kafka disabled, skip transcode consumer", zap.String("event", "mq.transcode_consumer_component.start.diagnostic"), zap.String("operation", "mq.transcode_consumer_component.start"))
 
 		return nil
 	}
@@ -108,7 +110,7 @@ func (c *TranscodeConsumerComponent) Start(_ context.Context) error {
 }
 
 // Stop 取消进行中的初始化重试，并优雅关闭已启动的消费者。
-func (c *TranscodeConsumerComponent) Stop(_ context.Context) error {
+func (c *TranscodeConsumerComponent) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cancel := c.retryCancel
 	consumer := c.consumer
@@ -125,7 +127,7 @@ func (c *TranscodeConsumerComponent) Stop(_ context.Context) error {
 	}
 
 	if err := consumer.Stop(); err != nil {
-		c.logger.Error("stop transcode consumer failed", zap.Error(err))
+		logctx.With(ctx, c.logger).Error("stop transcode consumer failed", zap.String("event", "mq.transcode_consumer_component.stop.failed"), zap.String("operation", "mq.transcode_consumer_component.stop"), zap.Error(err))
 	}
 
 	return nil
@@ -138,7 +140,7 @@ func (c *TranscodeConsumerComponent) startWithRetry(ctx context.Context) {
 
 	for attempt := 1; ; attempt++ {
 		if ctx.Err() != nil {
-			c.logger.Info("transcode consumer init canceled")
+			logctx.With(ctx, c.logger).Info("transcode consumer init canceled", zap.String("event", "mq.transcode_consumer_component.start_with_retry.diagnostic"), zap.String("operation", "mq.transcode_consumer_component.start_with_retry"))
 
 			return
 		}
@@ -161,9 +163,9 @@ func (c *TranscodeConsumerComponent) startWithRetry(ctx context.Context) {
 					return
 				}
 
-				c.logger.Info("transcode consumer ready",
+				logctx.With(ctx, c.logger).Info("transcode consumer ready", zap.String("event", "mq.transcode_consumer_component.start_with_retry.diagnostic"), zap.String("operation", "mq.transcode_consumer_component.start_with_retry"),
 					zap.Int("attempts", attempt),
-					zap.Duration("cost", time.Since(startedAt)),
+					zap.Duration("duration_ms", time.Since(startedAt)),
 				)
 
 				return
@@ -171,7 +173,7 @@ func (c *TranscodeConsumerComponent) startWithRetry(ctx context.Context) {
 		}
 
 		if !isRetryableTranscodeInitError(err) {
-			c.logger.Error("init transcode consumer failed permanently",
+			logctx.With(ctx, c.logger).Error("init transcode consumer failed permanently", zap.String("event", "mq.transcode_consumer_component.start_with_retry.failed"), zap.String("operation", "mq.transcode_consumer_component.start_with_retry"),
 				zap.Error(err),
 				zap.Int("attempt", attempt),
 			)
@@ -181,11 +183,11 @@ func (c *TranscodeConsumerComponent) startWithRetry(ctx context.Context) {
 
 		elapsed := time.Since(startedAt)
 		if elapsed >= transcodeConsumerMaxWait {
-			c.logger.Error("init transcode consumer gave up after max wait",
+			logctx.With(ctx, c.logger).Error("init transcode consumer gave up after max wait", zap.String("event", "mq.transcode_consumer_component.start_with_retry.failed"), zap.String("operation", "mq.transcode_consumer_component.start_with_retry"),
 				zap.Error(err),
 				zap.Int("attempts", attempt),
-				zap.Duration("elapsed", elapsed),
-				zap.Duration("maxWait", transcodeConsumerMaxWait),
+				zap.Duration("duration_ms", elapsed),
+				zap.Duration("max_wait_ms", transcodeConsumerMaxWait),
 			)
 
 			return
@@ -196,11 +198,11 @@ func (c *TranscodeConsumerComponent) startWithRetry(ctx context.Context) {
 			sleep = remaining
 		}
 
-		c.logger.Warn("init transcode consumer failed, will retry",
+		logctx.With(ctx, c.logger).Warn("init transcode consumer failed, will retry", zap.String("event", "mq.transcode_consumer_component.start_with_retry.degraded"), zap.String("operation", "mq.transcode_consumer_component.start_with_retry"),
 			zap.Error(err),
 			zap.Int("attempt", attempt),
-			zap.Duration("nextRetryIn", sleep),
-			zap.Duration("elapsed", elapsed),
+			zap.Duration("next_retry_in_ms", sleep),
+			zap.Duration("duration_ms", elapsed),
 		)
 
 		timer := time.NewTimer(sleep)
@@ -213,7 +215,7 @@ func (c *TranscodeConsumerComponent) startWithRetry(ctx context.Context) {
 				}
 			}
 
-			c.logger.Info("transcode consumer init canceled")
+			logctx.With(ctx, c.logger).Info("transcode consumer init canceled", zap.String("event", "mq.transcode_consumer_component.start_with_retry.diagnostic"), zap.String("operation", "mq.transcode_consumer_component.start_with_retry"))
 
 			return
 		case <-timer.C:
@@ -230,7 +232,8 @@ func (c *TranscodeConsumerComponent) install(ctx context.Context, consumer *Tran
 
 	if ctx.Err() != nil {
 		_ = consumer.Stop()
-		c.logger.Info("transcode consumer init canceled after start")
+
+		logctx.With(ctx, c.logger).Info("transcode consumer init canceled after start", zap.String("event", "mq.transcode_consumer_component.install.diagnostic"), zap.String("operation", "mq.transcode_consumer_component.install"))
 
 		return false
 	}

@@ -38,6 +38,7 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 	if strings.TrimSpace(secret) == "" {
 		return nil, errors.New("jwt access secret is required")
 	}
+
 	if strings.TrimSpace(refreshSecret) == "" {
 		return nil, errors.New("jwt refresh secret is required")
 	}
@@ -46,6 +47,7 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 	if _, err := rand.Read(entropy[:]); err != nil {
 		return nil, err
 	}
+
 	sessionID := hex.EncodeToString(entropy[:])
 	aExp := time.Now().Add(exp).Unix()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
@@ -57,6 +59,7 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 		"jti":                sessionID,
 		"exp":                aExp,
 	})
+
 	aToken, err := token.SignedString([]byte(secret))
 	if err != nil {
 		return nil, fmt.Errorf("sign access token: %w", err)
@@ -70,6 +73,7 @@ func CreateJwtTokenWithPassword(uid, username, passwordHash string, mustChange b
 		"jti":      sessionID,
 		"exp":      rExp,
 	})
+
 	rToken, err := refreshToken.SignedString([]byte(refreshSecret))
 	if err != nil {
 		return nil, fmt.Errorf("sign refresh token: %w", err)
@@ -213,6 +217,7 @@ func claimUnix(claims jwt.MapClaims, key string) (int64, error) {
 func PasswordVersion(passwordHash, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte("jwt-credential-version:" + passwordHash))
+
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
@@ -222,29 +227,37 @@ func CheckPasswordVersion(tokenString, secret, passwordHash string, expectedUse 
 		if token.Method != jwt.SigningMethodHS256 {
 			return nil, errors.New("unexpected signing method")
 		}
+
 		return []byte(secret), nil
 	})
 	if err != nil || !token.Valid {
 		return errors.New("invalid token")
 	}
+
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return errors.New("invalid token")
 	}
+
 	if len(expectedUse) > 0 {
 		if use, ok := claims["tokenUse"].(string); !ok || use != expectedUse[0] {
 			return errors.New("incorrect token use")
 		}
 	}
+
 	version, ok := claims["pwdVer"].(string)
 	if !ok || !hmac.Equal([]byte(version), []byte(PasswordVersion(passwordHash, secret))) {
 		return errors.New("credentials changed")
 	}
+
 	if jti, ok := claims["jti"].(string); !ok || jti == "" {
 		return errors.New("invalid token")
 	}
+
 	return nil
 }
+
+// TokenDigest returns the SHA256 digest used to persist refresh credentials.
 func TokenDigest(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])

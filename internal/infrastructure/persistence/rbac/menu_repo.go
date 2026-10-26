@@ -3,10 +3,10 @@ package rbac
 import (
 	"context"
 	"errors"
-
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -186,6 +186,7 @@ func (r *MenuRepository) CountChildren(ctx context.Context, parentID uint) (int6
 // CountByTitleExcluding 统计同标题且排除指定主键的菜单数量。
 func (r *MenuRepository) CountByTitleExcluding(ctx context.Context, title string, excludeID uint) (int64, error) {
 	var count int64
+
 	query := gormx.DB(ctx, r.db).Model(&po.Menu{}).Where("title = ?", title)
 	if excludeID > 0 {
 		query = query.Where("id != ?", excludeID)

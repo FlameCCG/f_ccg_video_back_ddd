@@ -60,10 +60,7 @@ func HasLocalIP(ip net.IP) bool {
 		return false
 	}
 
-	return ip4[0] == 10 || // 10.0.0.0/8
-		(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) || // 172.16.0.0/12
-		(ip4[0] == 169 && ip4[1] == 254) || // 169.254.0.0/16
-		(ip4[0] == 192 && ip4[1] == 168) // 192.168.0.0/16
+	return hasLocalIPCondition(ip4) // 192.168.0.0/16
 }
 
 // GetPublicIP 向外部 IP 服务查询本机出网地址，使用独立短超时；它不是当前请求客户端的 IP。
@@ -136,24 +133,6 @@ func ResolveClientIP(c *gin.Context) string {
 	return normalizeIPString(c.ClientIP())
 }
 
-// firstValidIPFromHeader 从单个 header 中解析第一个合法 IP。
-// X-Forwarded-For 形如 "client, proxy1, proxy2"，取最左侧客户端。
-func firstValidIPFromHeader(header string) string {
-	header = strings.TrimSpace(header)
-	if header == "" {
-		return ""
-	}
-
-	parts := strings.Split(header, ",")
-	for _, part := range parts {
-		if ip := normalizeIPString(part); ip != "" {
-			return ip
-		}
-	}
-
-	return ""
-}
-
 // normalizeIPString 清洗 IP 字符串：去空白、去端口、IPv6 括号、IPv4-mapped IPv6。
 func normalizeIPString(raw string) string {
 	raw = strings.TrimSpace(raw)
@@ -167,6 +146,7 @@ func normalizeIPString(raw string) string {
 	}
 
 	raw = strings.Trim(raw, "[]")
+
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
@@ -183,4 +163,11 @@ func normalizeIPString(raw string) string {
 	}
 
 	return ip.String()
+}
+
+func hasLocalIPCondition(ip4 net.IP) bool {
+	return ip4[0] == 10 || // 10.0.0.0/8
+		(ip4[0] == 172 && ip4[1] >= 16 && ip4[1] <= 31) || // 172.16.0.0/12
+		(ip4[0] == 169 && ip4[1] == 254) || // 169.254.0.0/16
+		(ip4[0] == 192 && ip4[1] == 168)
 }

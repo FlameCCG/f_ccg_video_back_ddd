@@ -1,20 +1,19 @@
 package identity
 
 import (
-	"net/http"
-	"testing"
-
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/res"
+	"net/http"
+	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpdateUserConfView(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	fixture := newBannerFixture(t, &config.Config{
 		Site: &site.Site{
@@ -51,6 +50,7 @@ func TestUpdateUserConfView(t *testing.T) {
 		Type:  enum.BannerTypeUser,
 	})
 
+	//nolint:paralleltest // Subtests exercise a shared parent fixture in sequence.
 	t.Run("set system banner clears custom url", func(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/common/user/info/conf")
 		ctx.Set("uid", "1")
@@ -61,25 +61,18 @@ func TestUpdateUserConfView(t *testing.T) {
 
 		fixture.handler.UpdateUserConfView(ctx)
 
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
+		require.Equal(t, http.StatusOK, recorder.Code, "unexpected status code: %d", recorder.Code)
 
 		response := decodeResponse(t, recorder)
-		if response.Code != res.SuccessCode {
-			t.Fatalf("unexpected response code: %d (%s)", response.Code, response.Msg)
-		}
+		require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d (%s)", response.Code, response.Msg)
 
 		conf := fixture.userConf(t, 1)
-		if conf.BannerID != allowedBannerID {
-			t.Fatalf("expected banner id %d, got %d", allowedBannerID, conf.BannerID)
-		}
+		require.Equal(t, conf.BannerID, allowedBannerID, "expected banner id %d, got %d", allowedBannerID, conf.BannerID)
 
-		if conf.BannerURL != "" {
-			t.Fatalf("expected banner url cleared, got %q", conf.BannerURL)
-		}
+		require.Empty(t, conf.BannerURL, "expected banner url cleared, got %q", conf.BannerURL)
 	})
 
+	//nolint:paralleltest // Subtests exercise a shared parent fixture in sequence.
 	t.Run("allow register default banner", func(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/common/user/info/conf")
 		ctx.Set("uid", "1")
@@ -87,25 +80,18 @@ func TestUpdateUserConfView(t *testing.T) {
 
 		fixture.handler.UpdateUserConfView(ctx)
 
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
+		require.Equal(t, http.StatusOK, recorder.Code, "unexpected status code: %d", recorder.Code)
 
 		response := decodeResponse(t, recorder)
-		if response.Code != res.SuccessCode {
-			t.Fatalf("unexpected response code: %d (%s)", response.Code, response.Msg)
-		}
+		require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d (%s)", response.Code, response.Msg)
 
 		conf := fixture.userConf(t, 1)
-		if conf.BannerID != registerDefaultBannerID {
-			t.Fatalf("expected banner id %d, got %d", registerDefaultBannerID, conf.BannerID)
-		}
+		require.Equal(t, conf.BannerID, registerDefaultBannerID, "expected banner id %d, got %d", registerDefaultBannerID, conf.BannerID)
 
-		if conf.BannerURL != "" {
-			t.Fatalf("expected banner url cleared, got %q", conf.BannerURL)
-		}
+		require.Empty(t, conf.BannerURL, "expected banner url cleared, got %q", conf.BannerURL)
 	})
 
+	//nolint:paralleltest // Subtests exercise a shared parent fixture in sequence.
 	t.Run("reject non-system banner", func(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/common/user/info/conf")
 		ctx.Set("uid", "1")
@@ -114,15 +100,12 @@ func TestUpdateUserConfView(t *testing.T) {
 		fixture.handler.UpdateUserConfView(ctx)
 
 		response := decodeResponse(t, recorder)
-		if response.Code != res.FailServiceCode {
-			t.Fatalf("expected fail response code, got %d", response.Code)
-		}
+		require.EqualValues(t, res.FailServiceCode, response.Code, "expected fail response code, got %d", response.Code)
 
-		if response.Msg != "系统默认横幅不存在" {
-			t.Fatalf("unexpected response msg: %s", response.Msg)
-		}
+		require.Equal(t, "系统默认横幅不存在", response.Msg, "unexpected response msg: %s", response.Msg)
 	})
 
+	//nolint:paralleltest // Subtests exercise a shared parent fixture in sequence.
 	t.Run("allow clearing like tags", func(t *testing.T) {
 		recorder, ctx := newTestContext(http.MethodPut, "/v1/common/user/info/conf")
 		ctx.Set("uid", "1")
@@ -132,12 +115,11 @@ func TestUpdateUserConfView(t *testing.T) {
 
 		fixture.handler.UpdateUserConfView(ctx)
 
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
+		require.Equal(t, http.StatusOK, recorder.Code, "unexpected status code: %d", recorder.Code)
 
-		if got := string(fixture.userConf(t, 1).LikeTags); got != "[]" {
-			t.Fatalf("expected like tags to be cleared, got %q", got)
+		{
+			got := string(fixture.userConf(t, 1).LikeTags)
+			require.Equal(t, "[]", got, "expected like tags to be cleared, got %q", got)
 		}
 	})
 }
@@ -145,7 +127,7 @@ func TestUpdateUserConfView(t *testing.T) {
 // TestGetUserConfViewKeepsRawLikeTagsJSON 守住 GET /user/info/conf 的 likeTags 逐字契约：
 // 数据库中的原始 JSON 必须原样输出，而不是被编码成 base64（[]byte 的默认 JSON 行为）。
 func TestGetUserConfViewKeepsRawLikeTagsJSON(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	fixture := newBannerFixture(t, &config.Config{Site: &site.Site{}}, writeTempConfig(t, "site:\n"))
 
@@ -162,9 +144,7 @@ func TestGetUserConfViewKeepsRawLikeTagsJSON(t *testing.T) {
 	fixture.handler.GetUserConfView(ctx)
 
 	response := decodeResponse(t, recorder)
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d (%s)", response.Code, response.Msg)
-	}
+	require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d (%s)", response.Code, response.Msg)
 
 	var conf struct {
 		LikeTags  []string `json:"likeTags"`
@@ -173,11 +153,9 @@ func TestGetUserConfViewKeepsRawLikeTagsJSON(t *testing.T) {
 	}
 	decodeResponseData(t, response, &conf)
 
-	if len(conf.LikeTags) != 2 || conf.LikeTags[0] != "golang" || conf.LikeTags[1] != "music" {
-		t.Fatalf("expected raw like tags array, got %+v", conf.LikeTags)
-	}
+	require.Len(t, conf.LikeTags, 2, "expected raw like tags array, got %+v", conf.LikeTags)
+	require.Equal(t, "golang", conf.LikeTags[0], "expected raw like tags array, got %+v", conf.LikeTags)
+	require.Equal(t, "music", conf.LikeTags[1], "expected raw like tags array, got %+v", conf.LikeTags)
 
-	if conf.BannerID != 19 {
-		t.Fatalf("expected banner id 19, got %d", conf.BannerID)
-	}
+	require.EqualValues(t, 19, conf.BannerID, "expected banner id 19, got %d", conf.BannerID)
 }

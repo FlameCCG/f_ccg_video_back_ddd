@@ -2,8 +2,10 @@ package search
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 type capturingFallback struct {
@@ -15,31 +17,34 @@ func (f *capturingFallback) SearchVideos(_ context.Context, opts Options) ([]Vid
 	f.options = append(f.options, opts)
 	return nil, 0, nil
 }
+
 func (f *capturingFallback) SearchUsers(_ context.Context, opts Options) ([]UserHit, int64, error) {
 	f.options = append(f.options, opts)
 	return nil, 0, nil
 }
+
 func TestUnavailableSearchNormalizesBeforeFallback(t *testing.T) {
+	t.Parallel()
+
 	for _, videoOnly := range []bool{false, true} {
 		fallback := &capturingFallback{fakeSearchFallback: fakeSearchFallback{available: true}}
 		svc := NewSearchService(&fakeKeywordSearch{}, fallback, zap.NewNop())
 		opts := Options{Keyword: "query", Page: -4, PageSize: -2}
+
 		var err error
 		if videoOnly {
 			_, err = svc.SearchVideos(context.Background(), opts)
 		} else {
 			_, err = svc.Search(context.Background(), opts)
 		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(fallback.options) == 0 {
-			t.Fatal("fallback not reached")
-		}
+
+		require.NoError(t, err)
+
+		require.NotEmpty(t, fallback.options, "fallback not reached")
+
 		for _, opts := range fallback.options {
-			if opts.Page != 1 || opts.PageSize != 20 {
-				t.Fatalf("unnormalized fallback options: %+v", opts)
-			}
+			require.Equal(t, 1, opts.Page, "unnormalized fallback options: %+v", opts)
+			require.Equal(t, 20, opts.PageSize, "unnormalized fallback options: %+v", opts)
 		}
 	}
 }

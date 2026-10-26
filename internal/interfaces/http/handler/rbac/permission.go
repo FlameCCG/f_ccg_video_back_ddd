@@ -2,11 +2,11 @@ package rbac
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/res"
 	"strings"
 
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,7 +35,7 @@ func (h *Handler) AssignPermissionView(c *gin.Context) {
 		RoleName:    req.RoleName,
 		Permissions: toDomainPermissions(req.Permissions),
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *Handler) RemovePermissionView(c *gin.Context) {
 		RoleName:    req.RoleName,
 		Permissions: toDomainPermissions(req.Permissions),
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (h *Handler) UpdateRolePermissionsView(c *gin.Context) {
 		Permissions:      toDomainPermissions(req.Permissions),
 		BreakInheritance: req.BreakInheritance,
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *Handler) UpdateRolePermissionsView(c *gin.Context) {
 }
 
 // GetRolePermissionsView 获取角色权限（直接权限 + 有效权限 + 覆盖的具体 API）.
-// Query: name
+// Query: name.
 func (h *Handler) GetRolePermissionsView(c *gin.Context) {
 	roleName := c.Query("name")
 	if strings.TrimSpace(roleName) == "" {
@@ -84,7 +84,7 @@ func (h *Handler) GetRolePermissionsView(c *gin.Context) {
 
 	resp, err := h.permissions.RolePermissions(c.Request.Context(), roleName)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -96,7 +96,7 @@ func (h *Handler) GetRolePermissionsView(c *gin.Context) {
 func (h *Handler) WildcardListView(c *gin.Context) {
 	items, err := h.permissions.WildcardList()
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (h *Handler) WildcardListView(c *gin.Context) {
 func (h *Handler) ResourceListView(c *gin.Context) {
 	items, err := h.permissions.ResourceList(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

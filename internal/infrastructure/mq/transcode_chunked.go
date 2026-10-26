@@ -3,14 +3,18 @@ package mq
 import (
 	"bytes"
 	"context"
+	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
+
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
@@ -55,7 +59,7 @@ func (e *TranscodeEngine) encodeChunkedTargets(
 	req chunkedEncodeRequest,
 ) ([]map[string]string, error) {
 	if len(req.targets) == 0 || len(req.plan) == 0 {
-		return nil, fmt.Errorf("chunked encode requires targets and plan")
+		return nil, errors.New("chunked encode requires targets and plan")
 	}
 
 	names := make([]string, len(req.targets))
@@ -96,9 +100,9 @@ func (e *TranscodeEngine) encodeChunkedTargets(
 	}
 
 	if reused > 0 {
-		e.logger.Info("transcode chunks reused from checkpoint",
-			zap.Uint("videoId", req.task.VideoID),
-			zap.Uint("partId", req.task.VideoPartID),
+		logctx.With(ctx, e.logger).Info("transcode chunks reused from checkpoint", zap.String("event", "mq.transcode_chunked.encode_chunked_targets.diagnostic"), zap.String("operation", "mq.transcode_chunked.encode_chunked_targets"),
+			zap.Uint("video_id", req.task.VideoID),
+			zap.Uint("part_id", req.task.VideoPartID),
 			zap.String("pipeline", req.pipelineName),
 			zap.Int("reused", reused),
 			zap.Int("total", len(req.plan)),
@@ -163,10 +167,10 @@ func (e *TranscodeEngine) runOneChunk(
 	encodeCtx, cancelEncode := context.WithTimeout(ctx, encodeTimeout)
 	defer cancelEncode()
 
-	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
+	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, nil)
 	defer cancelRun()
 
-	cmd := exec.CommandContext(runCtx, "ffmpeg", args...)
+	cmd := exec.CommandContext(runCtx, "ffmpeg", args...) // #nosec G204 -- Executes a fixed ffmpeg/ffprobe binary directly, with generated argv and no shell expansion.
 	cmd.Stdout = io.Discard
 
 	// 块内 out_time 从 0 起算，叠加块起点还原全片时间轴。
@@ -175,60 +179,8 @@ func (e *TranscodeEngine) runOneChunk(
 			baseCb(float64(chunk.StartSec) + outTimeSec)
 		}
 	})
-	stderrBuf, startProgressRead, waitProgress := attachFFmpegProgress(cmd, progressCb)
 
-	e.logger.Info("transcode chunk encode start",
-		zap.Uint("videoId", req.task.VideoID),
-		zap.Uint("partId", req.task.VideoPartID),
-		zap.String("pipeline", req.pipelineName),
-		zap.Int("chunk", chunk.Index),
-		zap.Int("startSec", chunk.StartSec),
-		zap.Int("lenSec", chunk.LenSec),
-		zap.Int("targets", len(req.targets)),
-		zap.Bool("useGPU", req.useGPU),
-		zap.Duration("encodeTimeout", encodeTimeout),
-		zap.Duration("progressStallLimit", stallLimit),
-	)
-
-	if err := cmd.Start(); err != nil {
-		waitProgress()
-
-		return nil, fmt.Errorf("start ffmpeg chunk %d failed: %w", chunk.Index, err)
-	}
-
-	startProgressRead()
-	waitErr := cmd.Wait()
-	waitProgress()
-
-	if waitErr != nil {
-		return nil, fmt.Errorf("chunk %d [%ds,+%ds): %w",
-			chunk.Index, chunk.StartSec, chunk.LenSec,
-			media.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String()),
-		)
-	}
-
-	for i, out := range outputs {
-		meta, err := ProbeVideo(ctx, out, e.logger)
-		if err != nil {
-			return nil, fmt.Errorf("probe chunk %d output %s: %w", chunk.Index, req.targets[i].ID, err)
-		}
-
-		if err := media.ValidateTranscodedDuration(chunk.LenSec, meta.Duration); err != nil {
-			return nil, fmt.Errorf("validate chunk %d output %s: %w", chunk.Index, req.targets[i].ID, err)
-		}
-	}
-
-	committedDir, err := ckpt.CommitDir(attemptDir, dirName)
-	if err != nil {
-		return nil, err
-	}
-
-	files := make(map[string]string, len(names))
-	for _, name := range names {
-		files[name] = filepath.Join(committedDir, name)
-	}
-
-	return files, nil
+	return finishTranscodeEngineRunOneChunk(ctx, runCtx, e, req, chunk, dirName, names, ckpt, attemptDir, outputs, encodeTimeout, stallLimit, cmd, progressCb)
 }
 
 // -----------------------------------------------------------------------------
@@ -252,7 +204,7 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 			return p, nil
 		}
 
-		e.logger.Warn("committed shared audio track invalid, re-encode",
+		logctx.With(ctx, e.logger).Warn("committed shared audio track invalid, re-encode", zap.String("event", "mq.transcode_chunked.ensure_checkpoint_audio_track.degraded"), zap.String("operation", "mq.transcode_chunked.ensure_checkpoint_audio_track"),
 			zap.String("path", p),
 			zap.Error(err),
 		)
@@ -273,7 +225,7 @@ func (e *TranscodeEngine) ensureCheckpointAudioTrack(
 
 	var stderr bytes.Buffer
 
-	cmd := exec.CommandContext(encodeCtx, "ffmpeg", buildAudioTrackEncodeArgs(srcPath, outPath)...)
+	cmd := exec.CommandContext(encodeCtx, "ffmpeg", buildAudioTrackEncodeArgs(srcPath, outPath)...) // #nosec G204 -- Executes a fixed ffmpeg/ffprobe binary directly, with generated argv and no shell expansion.
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 
@@ -336,6 +288,121 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 		return nil, fmt.Errorf("create mp4 assemble dir: %w", err)
 	}
 
+	return finishTranscodeEngineRunChunkedMP4Targets(ctx, e, req, ckpt, targets, perChunk, audioPath, asmDir)
+}
+
+// muxChunkedDASH 把块产物按 representation 拼装并 copy 进 dash muxer，
+// 产物落入 tmpDir（后续走既有校验 + 提交 + 上传）。
+func (e *TranscodeEngine) muxChunkedDASH(
+	ctx context.Context,
+	ckpt *transcodeCheckpoint,
+	targets []media.TranscodeTarget,
+	perChunk []map[string]string,
+	audioPath, tmpDir, mpdPath, fileHash string,
+	segDur int,
+) error {
+	// 清单放独立目录：不能落 tmpDir，否则会被当成 DASH 产物一起提交上传。
+	listDir, err := ckpt.AttemptDir("dash-lists")
+	if err != nil {
+		return fmt.Errorf("create dash list dir: %w", err)
+	}
+
+	defer func() { _ = os.RemoveAll(listDir) }()
+
+	listPaths := make([]string, len(targets))
+
+	var allChunkFiles []string
+
+	for i := range targets {
+		name := filepath.Base(targets[i].FileName)
+
+		chunkPaths := make([]string, 0, len(perChunk))
+
+		for ci := range perChunk {
+			p, ok := perChunk[ci][name]
+			if !ok {
+				return fmt.Errorf("chunk %d missing output for dash rep %s", ci, targets[i].ID)
+			}
+
+			chunkPaths = append(chunkPaths, p)
+		}
+
+		allChunkFiles = append(allChunkFiles, chunkPaths...)
+
+		listPaths[i], err = writeChunkConcatList(listDir, fmt.Sprintf("rep%d.txt", i), chunkPaths)
+		if err != nil {
+			return err
+		}
+	}
+
+	timeout := media.CalcAssembleTimeout(sumFileSizes(append(allChunkFiles, audioPath)...))
+	args := buildChunkedDASHMuxArgs(listPaths, audioPath, mpdPath, fileHash, segDur)
+
+	return runFFmpegCopyMux(ctx, args, tmpDir, timeout, "dash")
+}
+
+func finishTranscodeEngineRunOneChunk(ctx, runCtx context.Context, e *TranscodeEngine, req chunkedEncodeRequest, chunk media.TranscodeChunk, dirName string, names []string, ckpt *transcodeCheckpoint, attemptDir string, outputs []string, encodeTimeout, stallLimit time.Duration, cmd *exec.Cmd, progressCb media.ProgressCallback) (map[string]string, error) {
+	var err error
+
+	stderrBuf, startProgressRead, waitProgress := attachFFmpegProgress(cmd, progressCb)
+
+	logctx.With(ctx, e.logger).Info("transcode chunk encode start", zap.String("event", "mq.transcode_chunked.run_one_chunk.diagnostic"), zap.String("operation", "mq.transcode_chunked.run_one_chunk"),
+		zap.Uint("video_id", req.task.VideoID),
+		zap.Uint("part_id", req.task.VideoPartID),
+		zap.String("pipeline", req.pipelineName),
+		zap.Int("chunk", chunk.Index),
+		zap.Int("start_sec", chunk.StartSec),
+		zap.Int("len_sec", chunk.LenSec),
+		zap.Int("targets", len(req.targets)),
+		zap.Bool("use_gpu", req.useGPU),
+		zap.Duration("encode_timeout_ms", encodeTimeout),
+		zap.Duration("progress_stall_limit_ms", stallLimit),
+	)
+
+	if errLocal := cmd.Start(); errLocal != nil {
+		waitProgress()
+
+		return nil, fmt.Errorf("start ffmpeg chunk %d failed: %w", chunk.Index, errLocal)
+	}
+
+	startProgressRead()
+
+	waitErr := cmd.Wait()
+
+	waitProgress()
+
+	if waitErr != nil {
+		return nil, fmt.Errorf("chunk %d [%ds,+%ds): %w",
+			chunk.Index, chunk.StartSec, chunk.LenSec,
+			media.ClassifyFFmpegCtxError(runCtx, waitErr, encodeTimeout, stderrBuf.String()),
+		)
+	}
+
+	for i, out := range outputs {
+		meta, errLocal := ProbeVideo(ctx, out, e.logger)
+		if errLocal != nil {
+			return nil, fmt.Errorf("probe chunk %d output %s: %w", chunk.Index, req.targets[i].ID, errLocal)
+		}
+
+		if errLocal := media.ValidateTranscodedDuration(chunk.LenSec, meta.Duration); errLocal != nil {
+			return nil, fmt.Errorf("validate chunk %d output %s: %w", chunk.Index, req.targets[i].ID, errLocal)
+		}
+	}
+
+	committedDir, err := ckpt.CommitDir(attemptDir, dirName)
+	if err != nil {
+		return nil, err
+	}
+
+	files := make(map[string]string, len(names))
+	for _, name := range names {
+		files[name] = filepath.Join(committedDir, name)
+	}
+
+	return files, nil
+}
+
+func finishTranscodeEngineRunChunkedMP4Targets(ctx context.Context, e *TranscodeEngine, req mediaapp.MP4EncodeRequest, ckpt *transcodeCheckpoint, targets []media.TranscodeTarget, perChunk []map[string]string, audioPath, asmDir string) (map[string]string, error) {
 	defer func() { _ = os.RemoveAll(asmDir) }()
 
 	listNameSanitizer := strings.NewReplacer(":", "-", "/", "-", "\\", "-")
@@ -398,54 +465,4 @@ func (e *TranscodeEngine) runChunkedMP4Targets(
 	discardTranscodeChunks(ckpt, media.TranscodePipelineMP4)
 
 	return results, nil
-}
-
-// muxChunkedDASH 把块产物按 representation 拼装并 copy 进 dash muxer，
-// 产物落入 tmpDir（后续走既有校验 + 提交 + 上传）。
-func (e *TranscodeEngine) muxChunkedDASH(
-	ctx context.Context,
-	ckpt *transcodeCheckpoint,
-	targets []media.TranscodeTarget,
-	perChunk []map[string]string,
-	audioPath, tmpDir, mpdPath, fileHash string,
-	segDur int,
-) error {
-	// 清单放独立目录：不能落 tmpDir，否则会被当成 DASH 产物一起提交上传。
-	listDir, err := ckpt.AttemptDir("dash-lists")
-	if err != nil {
-		return fmt.Errorf("create dash list dir: %w", err)
-	}
-
-	defer func() { _ = os.RemoveAll(listDir) }()
-
-	listPaths := make([]string, len(targets))
-
-	var allChunkFiles []string
-
-	for i := range targets {
-		name := filepath.Base(targets[i].FileName)
-
-		chunkPaths := make([]string, 0, len(perChunk))
-
-		for ci := range perChunk {
-			p, ok := perChunk[ci][name]
-			if !ok {
-				return fmt.Errorf("chunk %d missing output for dash rep %s", ci, targets[i].ID)
-			}
-
-			chunkPaths = append(chunkPaths, p)
-		}
-
-		allChunkFiles = append(allChunkFiles, chunkPaths...)
-
-		listPaths[i], err = writeChunkConcatList(listDir, fmt.Sprintf("rep%d.txt", i), chunkPaths)
-		if err != nil {
-			return err
-		}
-	}
-
-	timeout := media.CalcAssembleTimeout(sumFileSizes(append(allChunkFiles, audioPath)...))
-	args := buildChunkedDASHMuxArgs(listPaths, audioPath, mpdPath, fileHash, segDur)
-
-	return runFFmpegCopyMux(ctx, args, tmpDir, timeout, "dash")
 }

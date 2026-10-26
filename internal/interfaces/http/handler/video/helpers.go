@@ -2,9 +2,9 @@ package video
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 
 	"github.com/gin-gonic/gin"
 )

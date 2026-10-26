@@ -8,9 +8,8 @@
 package contentops
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // Banner 轮播图实体（原 models/mysqlEntity.Banner 的领域侧对应物）。

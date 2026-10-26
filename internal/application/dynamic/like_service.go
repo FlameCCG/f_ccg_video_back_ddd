@@ -3,10 +3,11 @@ package dynamic
 import (
 	"context"
 	"errors"
-
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
+
+	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
 
 	"go.uber.org/zap"
 )
@@ -143,7 +144,7 @@ func (s *LikeService) sendLikeNotification(ctx context.Context, actionUserID, dy
 		domain.LikeNoticeTitle,
 		domain.LikeNoticeContent(target.Content),
 	); err != nil {
-		s.logger.Warn("create dynamic like notification failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("create dynamic like notification failed", zap.String("event", "dynamic.like_service.send_like_notification.degraded"), zap.String("operation", "dynamic.like_service.send_like_notification"), zap.Error(err))
 
 		return
 	}

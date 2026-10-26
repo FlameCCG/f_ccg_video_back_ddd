@@ -3,11 +3,11 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
 	domain "f_ccg_video_back_ddd/internal/domain/search"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/olivere/elastic/v7"
 )
@@ -77,7 +77,7 @@ func (i *UserIndexer) BulkIndexUsers(ctx context.Context, docs []app.UserSearchD
 func buildUserSearchPayload(doc app.UserSearchDocument) map[string]any {
 	payload := map[string]any{
 		"id":               doc.ID,
-		"username":         doc.Username,
+		fieldUsername:      doc.Username,
 		"description":      doc.Description,
 		"avatar":           doc.Avatar,
 		"level":            doc.Level,

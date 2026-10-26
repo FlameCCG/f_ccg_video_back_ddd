@@ -17,15 +17,15 @@ func registerDynamicCommonRoutes(
 	dynamicGroup := g.Group("/dynamic")
 	dynamicGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtAuth())
 	{
-		dynamicGroup.POST("create", middlewares.JsonBindParams[dynamichandler.CreateDynamicReq], h.CreateView)
-		dynamicGroup.DELETE("delete", middlewares.JsonBindParams[dynamichandler.DeleteDynamicReq], h.DeleteView)
-		dynamicGroup.PUT("pin", middlewares.JsonBindParams[dynamichandler.PinDynamicReq], h.PinView)
-		dynamicGroup.POST("like", middlewares.JsonBindParams[dynamichandler.LikeReq], h.LikeView)
+		dynamicGroup.POST("create", middlewares.JSONBindParams[dynamichandler.CreateDynamicReq], h.CreateView)
+		dynamicGroup.DELETE("delete", middlewares.JSONBindParams[dynamichandler.DeleteDynamicReq], h.DeleteView)
+		dynamicGroup.PUT("pin", middlewares.JSONBindParams[dynamichandler.PinDynamicReq], h.PinView)
+		dynamicGroup.POST("like", middlewares.JSONBindParams[dynamichandler.LikeReq], h.LikeView)
 
 		dynamicGroup.GET("list", middlewares.BindQueryParams[dynamichandler.ListReq], h.ListView)
 		dynamicGroup.GET("follows", middlewares.BindQueryParams[dynamichandler.FollowListReq], h.FollowListView)
 		dynamicGroup.GET("counts", h.CountsView)
-		dynamicGroup.POST("read", middlewares.JsonBindParams[dynamichandler.ReadReq], h.ReadView)
+		dynamicGroup.POST("read", middlewares.JSONBindParams[dynamichandler.ReadReq], h.ReadView)
 	}
 }
 
@@ -39,6 +39,6 @@ func registerDynamicAdminRoutes(
 	dynamicGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.AuthAll())
 	{
 		dynamicGroup.GET("list", middlewares.BindQueryParams[dynamichandler.AdminDynamicListReq], h.AdminListView)
-		dynamicGroup.DELETE("", middlewares.JsonBindParams[dynamichandler.AdminDeleteDynamicReq], h.AdminDeleteView)
+		dynamicGroup.DELETE("", middlewares.JSONBindParams[dynamichandler.AdminDeleteDynamicReq], h.AdminDeleteView)
 	}
 }

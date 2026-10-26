@@ -32,7 +32,7 @@ func (h *Handler) BindEmailView(c *gin.Context) {
 		Email:  req.Email,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

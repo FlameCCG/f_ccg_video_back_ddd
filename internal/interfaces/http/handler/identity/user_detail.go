@@ -1,10 +1,9 @@
 package identity
 
 import (
+	"f_ccg_video_back_ddd/pkg/res"
 	"strconv"
 	"strings"
-
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,7 +27,7 @@ type UserDetailRes struct {
 }
 
 // UserDetailView 根据用户ID获取用户详情（公开信息）.
-// Query: id
+// Query: id.
 func (h *Handler) UserDetailView(c *gin.Context) {
 	userID := strings.TrimSpace(c.Query("id"))
 	if userID == "" {
@@ -39,14 +38,14 @@ func (h *Handler) UserDetailView(c *gin.Context) {
 
 	uid, err := strconv.Atoi(userID)
 	if err != nil {
-		res.FailWithMsg("用户ID格式错误", c)
+		res.FailWithCause(err, "用户ID格式错误", c)
 
 		return
 	}
 
 	detail, err := h.profiles.UserDetail(c.Request.Context(), uint(uid))
 	if err != nil {
-		res.FailWithMsg("用户不存在", c)
+		res.FailWithCause(err, "用户不存在", c)
 
 		return
 	}

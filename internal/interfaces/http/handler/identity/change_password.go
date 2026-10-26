@@ -31,7 +31,7 @@ func (h *Handler) ChangePasswordView(c *gin.Context) {
 		OldPassword: req.OldPassword,
 		NewPassword: req.NewPassword,
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

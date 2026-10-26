@@ -9,9 +9,8 @@ package notification
 
 import (
 	"errors"
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // BroadcastReceiverID 全员广播通知的接收者标识（-1）。

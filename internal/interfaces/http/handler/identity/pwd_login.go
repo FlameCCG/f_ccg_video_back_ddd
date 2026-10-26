@@ -1,9 +1,11 @@
 package identity
 
 import (
+	"context"
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	jwts "f_ccg_video_back_ddd/pkg/jwt"
 	"f_ccg_video_back_ddd/pkg/res"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 
@@ -18,22 +20,17 @@ type PwdLoginReq struct {
 
 // PwdLoginView 处理对应 HTTP 请求.
 func (h *Handler) PwdLoginView(c *gin.Context) {
-	cr := middlewares.GetBound[PwdLoginReq](c)
+	passwordLogin(c, middlewares.GetBound[PwdLoginReq](c), h.resolver, h.logins.PwdLogin)
+}
 
-	ip, addr := ipUtils.GetClientIPAndAddr(c, h.resolver)
+func passwordLogin(c *gin.Context, cr PwdLoginReq, resolver ipUtils.RegionResolver, authenticate func(context.Context, app.PwdLoginInput) (*jwts.JwtToken, error)) {
+	ip, addr := ipUtils.GetClientIPAndAddr(c, resolver)
 
-	jwtToken, err := h.logins.PwdLogin(c.Request.Context(), app.PwdLoginInput{
-		Identifier: cr.UserName,
-		Password:   cr.Password,
-		IP:         ip,
-		Addr:       addr,
-		UserAgent:  c.GetHeader("User-Agent"),
-	})
+	token, err := authenticate(c.Request.Context(), app.PwdLoginInput{Identifier: cr.UserName, Password: cr.Password, IP: ip, Addr: addr, UserAgent: c.GetHeader("User-Agent")})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
-
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
-	res.OkWithData(jwtToken, c)
+	res.OkWithData(token, c)
 }

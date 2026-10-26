@@ -39,6 +39,7 @@ type AutoUnbanJob interface {
 	Run(ctx context.Context)
 }
 
+// UploadCleanupJob runs periodic cleanup of abandoned upload artifacts.
 type UploadCleanupJob interface {
 	Run(ctx context.Context)
 }

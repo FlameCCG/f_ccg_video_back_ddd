@@ -32,7 +32,7 @@ func (h *Handler) LikeView(c *gin.Context) {
 
 	likeCount, isLiked, err := h.svc.ToggleLike(c.Request.Context(), uid, req.CommentID)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

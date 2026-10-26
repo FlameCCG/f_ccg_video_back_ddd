@@ -187,8 +187,8 @@ func toPORoleMenus(items []domain.RoleMenu) []po.RoleMenu {
 	return rows
 }
 
-// toDomainApiResource 把接口资源 PO 转为领域实体。
-func toDomainApiResource(row *po.APIResource) *domain.APIResource {
+// toDomainAPIResource 把接口资源 PO 转为领域实体。
+func toDomainAPIResource(row *po.APIResource) *domain.APIResource {
 	if row == nil {
 		return nil
 	}
@@ -204,11 +204,11 @@ func toDomainApiResource(row *po.APIResource) *domain.APIResource {
 	}
 }
 
-// toDomainApiResources 批量转换接口资源 PO。
-func toDomainApiResources(rows []po.APIResource) []*domain.APIResource {
+// toDomainAPIResources 批量转换接口资源 PO。
+func toDomainAPIResources(rows []po.APIResource) []*domain.APIResource {
 	items := make([]*domain.APIResource, 0, len(rows))
 	for i := range rows {
-		items = append(items, toDomainApiResource(&rows[i]))
+		items = append(items, toDomainAPIResource(&rows[i]))
 	}
 
 	return items

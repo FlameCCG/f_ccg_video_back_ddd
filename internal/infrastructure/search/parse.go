@@ -2,49 +2,53 @@ package search
 
 import (
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"slices"
 	"strconv"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
 	domain "f_ccg_video_back_ddd/internal/domain/search"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
 )
 
 // parseVideoHits 解析视频索引的一页响应；分片级错误只告警并返回零值（与原实现一致）。
-func parseVideoHits(res *elastic.SearchResult, logger *zap.Logger) app.VideoHits {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-
-	if res == nil || res.Error != nil {
-		if res != nil && res.Error != nil {
-			logger.Warn("video search error", zap.Any("error", res.Error))
-		}
-
+func parseVideoHits(response *elastic.SearchResult, logger *zap.Logger) app.VideoHits {
+	if !usableSearchResponse(response, logger, "video") {
 		return app.VideoHits{}
 	}
 
-	return app.VideoHits{Total: res.TotalHits(), Items: parseVideoList(res)}
+	return app.VideoHits{Total: response.TotalHits(), Items: parseVideoList(response)}
 }
 
 // parseUserHits 解析用户索引的一页响应；分片级错误只告警并返回零值（与原实现一致）。
-func parseUserHits(res *elastic.SearchResult, logger *zap.Logger) app.UserHits {
+func parseUserHits(response *elastic.SearchResult, logger *zap.Logger) app.UserHits {
+	if !usableSearchResponse(response, logger, "user") {
+		return app.UserHits{}
+	}
+
+	return app.UserHits{Total: response.TotalHits(), Items: parseUserList(response)}
+}
+
+func usableSearchResponse(response *elastic.SearchResult, logger *zap.Logger, kind string) bool {
+	if response == nil {
+		return false
+	}
+
+	if response.Error == nil {
+		return true
+	}
+
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 
-	if res == nil || res.Error != nil {
-		if res != nil && res.Error != nil {
-			logger.Warn("user search error", zap.Any("error", res.Error))
-		}
+	operation := "search.parse.parse_" + kind + "_hits"
+	logger.Warn(kind+" search error", zap.String("event", operation+".degraded"), zap.String("operation", operation), zap.Any("error", response.Error))
 
-		return app.UserHits{}
-	}
-
-	return app.UserHits{Total: res.TotalHits(), Items: parseUserList(res)}
+	return false
 }
 
 // parseVideoList 把 ES 命中解码为视频结果项，兼容 snake_case 与 camelCase 字段名。
@@ -104,7 +108,7 @@ func parseUserList(res *elastic.SearchResult) []app.UserHit {
 
 		list = append(list, app.UserHit{
 			ID:            toUint(data["id"]),
-			Username:      toString(data["username"]),
+			Username:      toString(data[fieldUsername]),
 			Avatar:        toString(data["avatar"]),
 			Highlight:     toHighlightMap(hit.Highlight),
 			Level:         toInt(data["level"]),
@@ -119,7 +123,7 @@ func parseUserList(res *elastic.SearchResult) []app.UserHit {
 //
 // ES 拼音命中时原文可能不含查询词，此处仍然保留，由 _score 保证相关性。
 func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size int) []app.SuggestionItem {
-	if resp == nil || resp.Hits == nil || len(resp.Hits.Hits) == 0 {
+	if parseSuggestHitsCondition(resp) {
 		return []app.SuggestionItem{}
 	}
 
@@ -138,6 +142,7 @@ func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size i
 		}
 
 		seen[key] = struct{}{}
+
 		items = append(items, app.SuggestionItem{
 			Value:     value,
 			Highlight: domain.HighlightSuggestion(value, prefix),
@@ -159,14 +164,12 @@ func parseSuggestHits(resp *elastic.SearchResult, docType, prefix string, size i
 
 		switch docType {
 		case domain.DocTypeUser:
-			if appendValue(toString(data["username"])) {
+			if appendValue(toString(data[fieldUsername])) {
 				return items
 			}
 		case domain.DocTypeTag:
-			for _, tag := range domain.SelectMatchingTags(toStringSlice(data["tags"]), prefix) {
-				if appendValue(tag) {
-					return items
-				}
+			if slices.ContainsFunc(domain.SelectMatchingTags(toStringSlice(data["tags"]), prefix), appendValue) {
+				return items
 			}
 		default:
 			if appendValue(toString(data["title"])) {
@@ -223,4 +226,8 @@ func suggestionSourceStatus(source json.RawMessage) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func parseSuggestHitsCondition(resp *elastic.SearchResult) bool {
+	return resp == nil || resp.Hits == nil || len(resp.Hits.Hits) == 0
 }

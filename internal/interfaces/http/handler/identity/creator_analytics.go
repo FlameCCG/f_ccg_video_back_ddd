@@ -27,7 +27,7 @@ func (h *Handler) CreatorAnalyticsView(c *gin.Context) {
 
 	data, err := h.creators.Analytics(c.Request.Context(), uid, req.Range, req.Type)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -46,7 +46,7 @@ func (h *Handler) CreatorOverviewView(c *gin.Context) {
 
 	data, err := h.creators.Overview(c.Request.Context(), uid)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

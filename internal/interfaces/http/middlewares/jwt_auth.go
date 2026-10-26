@@ -1,18 +1,19 @@
 package middlewares
 
 import (
+	"context"
+	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/authsession"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logmeta"
+	"f_ccg_video_back_ddd/pkg/res"
 	"strings"
 	"time"
 
-	"context"
-	"errors"
-	"f_ccg_video_back_ddd/pkg/authsession"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // JwtAuth JWT认证中间件.
@@ -52,7 +53,7 @@ func (m *Middlewares) JwtAuthWithQueryTokenPreflight(queryKey string, timeout ti
 
 		cancel()
 
-		c.Request = c.Request.WithContext(authsession.Copy(originalCtx, c.Request.Context()))
+		c.Request = c.Request.WithContext(logmeta.Copy(authsession.Copy(originalCtx, c.Request.Context()), c.Request.Context()))
 		if !ok || shouldSkipNext(c) {
 			return
 		}
@@ -85,39 +86,47 @@ func (m *Middlewares) authenticateTokenOnly(c *gin.Context, token string) bool {
 
 	uid, username, err := jwts.ParseJwtTokenWithRole(token, m.accessSecret())
 	if err != nil {
-		m.log().Error("JwtAuth ParseJwtToken failed", zap.Error(err))
-		res.FailWithMsg("token无效或已过期", c)
+		res.FailWithCause(apperr.Wrap("auth.token", nil, err, apperr.Rejected), "token无效或已过期", c)
 		c.Abort()
 
 		return false
 	}
 
 	if m.userStatus == nil {
+		res.RecordFailure(apperr.Wrap("auth.user_status", nil, errors.New("user status unavailable"), apperr.Internal), c)
 		c.Abort()
+
 		return false
 	}
+
 	user, validationErr := m.userStatus.ValidateAccessToken(c.Request.Context(), token, m.accessSecret())
 	if validationErr != nil {
-		m.log().Warn("JWT credential validation failed", zap.Error(validationErr))
-		res.FailWithMsg("token invalid or account unavailable", c)
+		res.FailWithCause(validationErr, "token invalid or account unavailable", c)
 		c.Abort()
+
 		return false
 	}
+
 	if user.MustChangePassword && c.FullPath() != "/v1/common/user/password/change" {
 		res.FailWithMsg("please change your initial password", c)
 		c.Abort()
+
 		return false
 	}
+
 	c.Request = c.Request.WithContext(authsession.WithValidator(c.Request.Context(), func(ctx context.Context) error {
 		current, err := m.userStatus.ValidateAccessToken(ctx, token, m.accessSecret())
 		if err != nil {
 			return err
 		}
+
 		if current.MustChangePassword {
 			return errors.New("initial password change required")
 		}
+
 		return nil
 	}))
+
 	return m.authenticateResolvedUser(c, uid, username)
 }
 
@@ -130,6 +139,9 @@ func (m *Middlewares) authenticateResolvedUser(c *gin.Context, uid, username str
 	}
 
 	c.Set("uid", uid)
+	values := logmeta.From(c.Request.Context())
+	values.UserID = uid
+	c.Request = c.Request.WithContext(logmeta.With(c.Request.Context(), values))
 	c.Set("username", username)
 
 	return true

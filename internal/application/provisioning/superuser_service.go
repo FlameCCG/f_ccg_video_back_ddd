@@ -3,11 +3,10 @@ package provisioning
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/encrypt"
+	"fmt"
+	"strings"
 )
 
 // ErrSuperUserArgsRequired 缺少用户名/密码位置参数（文案与原实现的日志一致）。
@@ -54,19 +53,26 @@ func (s *SuperUserService) Provision(ctx context.Context, args []string) (*Super
 	if err != nil {
 		return nil, fmt.Errorf("generate password hash: %w", err)
 	}
-	var roleID, userID uint
-	var roleName string
-	var roleCreated, userCreated bool
+
+	var (
+		roleID, userID           uint
+		roleName                 string
+		roleCreated, userCreated bool
+	)
+
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		var err error
+
 		roleID, roleName, roleCreated, err = s.repo.EnsureAdminRole(txCtx)
 		if err != nil {
 			return err
 		}
+
 		userID, userCreated, err = s.repo.UpsertSuperUser(txCtx, username, string(hashedPassword), roleID)
 		if err != nil {
 			return err
 		}
+
 		return s.repo.ReplaceUserRoles(txCtx, userID, roleID)
 	}); err != nil {
 		return nil, err

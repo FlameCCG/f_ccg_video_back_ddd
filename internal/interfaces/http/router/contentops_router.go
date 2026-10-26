@@ -21,11 +21,11 @@ func registerContentOpsCommonRoutes(
 	siteRouter := g.Group("site")
 	{
 		siteRouter.GET("qq-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.QQUrlView)
-		siteRouter.GET("google-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.GoogleUrlView)
+		siteRouter.GET("google-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.GoogleURLView)
 		siteRouter.GET("github-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
-			middlewares.BindQueryParams[contentopshandler.GitHubURLReq], h.GitHubUrlView)
+			middlewares.BindQueryParams[contentopshandler.GitHubURLReq], h.GitHubURLView)
 		siteRouter.GET("linuxdo-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
-			middlewares.BindQueryParams[contentopshandler.LinuxDoURLReq], h.LinuxDoUrlView)
+			middlewares.BindQueryParams[contentopshandler.LinuxDoURLReq], h.LinuxDoURLView)
 		siteRouter.GET("x-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			middlewares.BindQueryParams[contentopshandler.XURLReq], h.XUrlView)
 		siteRouter.GET("config", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.CommonConfigView)
@@ -59,9 +59,9 @@ func registerContentOpsAdminRoutes(
 	bannerGroup := g.Group("/banner")
 	bannerGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.AuthAll())
 	{
-		bannerGroup.POST("", middlewares.JsonBindParams[contentopshandler.AdminCreateBannerReq], h.AdminCreateView)
-		bannerGroup.PUT("", middlewares.JsonBindParams[contentopshandler.AdminUpdateBannerReq], h.AdminUpdateView)
-		bannerGroup.DELETE("", middlewares.JsonBindParams[contentopshandler.AdminDeleteBannerReq], h.AdminDeleteView)
+		bannerGroup.POST("", middlewares.JSONBindParams[contentopshandler.AdminCreateBannerReq], h.AdminCreateView)
+		bannerGroup.PUT("", middlewares.JSONBindParams[contentopshandler.AdminUpdateBannerReq], h.AdminUpdateView)
+		bannerGroup.DELETE("", middlewares.JSONBindParams[contentopshandler.AdminDeleteBannerReq], h.AdminDeleteView)
 	}
 
 	listGroup := g.Group("/banners")

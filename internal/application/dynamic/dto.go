@@ -8,13 +8,13 @@
 package dynamic
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
-// Item 动态列表项（读模型，json tag 与原 dynamic_service.DynamicItem 逐字一致）.
+// Item 动态列表项（读模型，json tag 与原 dynamic_service.Item 逐字一致）.
 type Item struct {
 	ID        uint       `json:"id"`
 	UserID    uint       `json:"userId"`

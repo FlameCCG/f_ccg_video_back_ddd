@@ -63,6 +63,7 @@ func (s *FeedService) HomepageFeed(
 
 	if partitionID > 0 {
 		var err error
+
 		historyVideoIDs, err = s.history.RecentVideoIDs(ctx, userID, maxHistoryCount)
 		if err != nil {
 			return nil, 0, err
@@ -71,12 +72,14 @@ func (s *FeedService) HomepageFeed(
 		group, groupCtx := errgroup.WithContext(ctx)
 		group.Go(func() error {
 			var err error
+
 			historyVideoIDs, err = s.history.RecentVideoIDs(groupCtx, userID, maxHistoryCount)
 
 			return err
 		})
 		group.Go(func() error {
 			var err error
+
 			preferredPartitions, err = s.query.PreferredPartitionIDs(groupCtx, userID)
 
 			return err
@@ -87,49 +90,7 @@ func (s *FeedService) HomepageFeed(
 		}
 	}
 
-	var (
-		items []FeedItem
-		total int64
-		err   error
-	)
-
-	if partitionID > 0 {
-		filtered := []uint{partitionID}
-
-		items, total, err = s.query.FetchFeed(ctx, filtered, historyVideoIDs, page, pageSize)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		if total == 0 && len(historyVideoIDs) > 0 {
-			items, total, err = s.query.FetchFeed(ctx, filtered, nil, page, pageSize)
-			if err != nil {
-				return nil, 0, err
-			}
-		}
-	} else {
-		items, total, err = s.query.FetchFeed(ctx, preferredPartitions, historyVideoIDs, page, pageSize)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		// 若根据偏好分区无结果，则退化为全局热门；若历史过少导致空集，进一步放开去重
-		if total == 0 {
-			items, total, err = s.query.FetchFeed(ctx, nil, historyVideoIDs, page, pageSize)
-			if err != nil {
-				return nil, 0, err
-			}
-		}
-
-		if total == 0 && len(historyVideoIDs) > 0 {
-			items, total, err = s.query.FetchFeed(ctx, nil, nil, page, pageSize)
-			if err != nil {
-				return nil, 0, err
-			}
-		}
-	}
-
-	return s.applyCachedStats(ctx, items), total, nil
+	return finishFeedServiceHomepageFeed(ctx, s, partitionID, page, pageSize, &historyVideoIDs, &preferredPartitions)
 }
 
 // applyCachedStats 用 Redis 权威计数覆盖列表项的播放量与弹幕数。
@@ -153,4 +114,58 @@ func (s *FeedService) applyCachedStats(ctx context.Context, items []FeedItem) []
 	}
 
 	return out
+}
+
+func finishFeedServiceHomepageFeed(ctx context.Context, s *FeedService, partitionID uint, page, pageSize int, historyVideoIDs, preferredPartitions *[]uint) ([]FeedItem, int64, error) {
+	var (
+		items []FeedItem
+		total int64
+		err   error
+	)
+	if partitionID > 0 {
+		items, total, err = s.partitionHomepageFeed(ctx, partitionID, *historyVideoIDs, page, pageSize)
+	} else {
+		items, total, err = s.preferredHomepageFeed(ctx, *preferredPartitions, *historyVideoIDs, page, pageSize)
+	}
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return s.applyCachedStats(ctx, items), total, nil
+}
+
+func (s *FeedService) partitionHomepageFeed(ctx context.Context, partitionID uint, history []uint, page, pageSize int) ([]FeedItem, int64, error) {
+	partitions := []uint{partitionID}
+
+	items, total, err := s.query.FetchFeed(ctx, partitions, history, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if total == 0 && len(history) > 0 {
+		return s.query.FetchFeed(ctx, partitions, nil, page, pageSize)
+	}
+
+	return items, total, nil
+}
+
+func (s *FeedService) preferredHomepageFeed(ctx context.Context, partitions, history []uint, page, pageSize int) ([]FeedItem, int64, error) {
+	items, total, err := s.query.FetchFeed(ctx, partitions, history, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if total == 0 {
+		items, total, err = s.query.FetchFeed(ctx, nil, history, page, pageSize)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	if total == 0 && len(history) > 0 {
+		return s.query.FetchFeed(ctx, nil, nil, page, pageSize)
+	}
+
+	return items, total, nil
 }

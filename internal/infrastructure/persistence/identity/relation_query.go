@@ -2,11 +2,11 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )

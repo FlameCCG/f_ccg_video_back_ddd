@@ -2,13 +2,13 @@ package scheduler
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
 	domain "f_ccg_video_back_ddd/internal/domain/platform"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )

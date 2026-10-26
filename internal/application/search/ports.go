@@ -3,10 +3,9 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"strings"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // 端口阅读：关键词索引、SQL 回退、联想缓存、热词、向量源数据与嵌入能力使用不同端口。

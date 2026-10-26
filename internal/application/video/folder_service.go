@@ -3,8 +3,8 @@ package video
 import (
 	"context"
 	"errors"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 )
 

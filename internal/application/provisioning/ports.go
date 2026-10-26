@@ -9,9 +9,8 @@ package provisioning
 
 import (
 	"context"
-	"io"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"io"
 )
 
 // 端口阅读：一次性建号和横幅初始化经最小存取能力执行，CLI 任务本身不直接依赖数据库句柄。

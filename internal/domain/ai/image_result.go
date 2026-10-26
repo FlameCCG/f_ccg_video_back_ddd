@@ -59,44 +59,7 @@ func MergeImageGenerationResponses(base, extra any, limit int) (any, bool) {
 		}
 	}
 
-	if len(extraItems) == 0 {
-		return base, false
-	}
-
-	if limit <= 0 {
-		limit = len(baseItems) + len(extraItems)
-	}
-
-	if len(baseItems) >= limit {
-		return base, false
-	}
-
-	mergedItems := make([]any, 0, len(baseItems)+len(extraItems))
-
-	mergedItems = append(mergedItems, baseItems...)
-
-	for _, item := range extraItems {
-		if len(mergedItems) >= limit {
-			break
-		}
-
-		mergedItems = append(mergedItems, item)
-	}
-
-	if len(mergedItems) == len(baseItems) {
-		return base, false
-	}
-
-	if root, ok := base.(map[string]any); ok {
-		merged := make(map[string]any, len(root)+1)
-		maps.Copy(merged, root)
-
-		merged["data"] = mergedItems
-
-		return merged, true
-	}
-
-	return map[string]any{"data": mergedItems}, true
+	return finishMergeImageGenerationResponses(base, &limit, baseItems, extraItems)
 }
 
 func hasDirectImageResult(node map[string]any) bool {
@@ -136,4 +99,45 @@ func countImageResultValues(node any, depth int) int {
 	default:
 		return 0
 	}
+}
+
+func finishMergeImageGenerationResponses(base any, limit *int, baseItems, extraItems []any) (any, bool) {
+	if len(extraItems) == 0 {
+		return base, false
+	}
+
+	if (*limit) <= 0 {
+		(*limit) = len(baseItems) + len(extraItems)
+	}
+
+	if len(baseItems) >= (*limit) {
+		return base, false
+	}
+
+	mergedItems := make([]any, 0, len(baseItems)+len(extraItems))
+
+	mergedItems = append(mergedItems, baseItems...)
+
+	for _, item := range extraItems {
+		if len(mergedItems) >= (*limit) {
+			break
+		}
+
+		mergedItems = append(mergedItems, item)
+	}
+
+	if len(mergedItems) == len(baseItems) {
+		return base, false
+	}
+
+	if root, ok := base.(map[string]any); ok {
+		merged := make(map[string]any, len(root)+1)
+		maps.Copy(merged, root)
+
+		merged["data"] = mergedItems
+
+		return merged, true
+	}
+
+	return map[string]any{"data": mergedItems}, true
 }

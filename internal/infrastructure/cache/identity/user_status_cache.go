@@ -9,12 +9,13 @@ package identity
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strconv"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -89,7 +90,7 @@ func (c *UserStatusCache) Load(ctx context.Context, userID uint) (enum.UserStatu
 	raw, err := c.redis.Get(cacheCtx, userStatusRedisKey(userID)).Result()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+			logctx.With(ctx, c.logger).Warn("get user status cache failed", zap.String("event", "cache.user_status_cache.load.degraded"), zap.String("operation", "cache.user_status_cache.load"), zap.Uint("user_id", userID), zap.Error(err))
 		}
 
 		return 0, false
@@ -122,7 +123,7 @@ func (c *UserStatusCache) Generation(ctx context.Context, userID uint) int64 {
 	val, err := c.redis.Get(cacheCtx, userStatusGenRedisKey(userID)).Int64()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get user status generation failed", zap.Uint("userId", userID), zap.Error(err))
+			logctx.With(ctx, c.logger).Warn("get user status generation failed", zap.String("event", "cache.user_status_cache.generation.degraded"), zap.String("operation", "cache.user_status_cache.generation"), zap.Uint("user_id", userID), zap.Error(err))
 		}
 
 		return 0
@@ -156,14 +157,14 @@ func (c *UserStatusCache) StoreIfGenerationMatch(
 		userStatusRedisKey(userID),
 	}, strconv.FormatInt(expectedGen, 10), strconv.Itoa(int(status)), strconv.Itoa(ttlSeconds)).Int()
 	if err != nil {
-		c.logger.Warn("set user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+		logctx.With(ctx, c.logger).Warn("set user status cache failed", zap.String("event", "cache.user_status_cache.store_if_generation_match.degraded"), zap.String("operation", "cache.user_status_cache.store_if_generation_match"), zap.Uint("user_id", userID), zap.Error(err))
 
 		return
 	}
 
 	if ok == 0 {
-		c.logger.Debug("skip user status cache write: generation changed",
-			zap.Uint("userId", userID), zap.Int64("gen", expectedGen))
+		logctx.With(ctx, c.logger).Debug("skip user status cache write: generation changed", zap.String("event", "cache.user_status_cache.store_if_generation_match.diagnostic"), zap.String("operation", "cache.user_status_cache.store_if_generation_match"),
+			zap.Uint("user_id", userID), zap.Int64("gen", expectedGen))
 	}
 }
 
@@ -185,7 +186,7 @@ func (c *UserStatusCache) Write(userID uint, status enum.UserStatus) {
 	pipe.Set(cacheCtx, statusKey, strconv.Itoa(int(status)), userStatusCacheTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		c.logger.Warn("write user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("write user status cache failed", zap.String("event", "cache.user_status_cache.write.degraded"), zap.String("operation", "cache.user_status_cache.write"), zap.Uint("user_id", userID), zap.Error(err))
 	}
 }
 
@@ -207,6 +208,6 @@ func (c *UserStatusCache) Invalidate(userID uint) {
 	pipe.Expire(cacheCtx, genKey, userStatusGenTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		c.logger.Warn("invalidate user status cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("invalidate user status cache failed", zap.String("event", "cache.user_status_cache.invalidate.degraded"), zap.String("operation", "cache.user_status_cache.invalidate"), zap.Uint("user_id", userID), zap.Error(err))
 	}
 }

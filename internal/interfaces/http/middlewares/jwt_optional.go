@@ -1,9 +1,9 @@
 package middlewares
 
 import (
-	"strings"
-
+	"f_ccg_video_back_ddd/pkg/logmeta"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -25,6 +25,9 @@ func (m *Middlewares) JwtOptional() gin.HandlerFunc {
 			if user, err := m.userStatus.ValidateAccessToken(c.Request.Context(), token, m.accessSecret()); err == nil && !user.MustChangePassword {
 				c.Set("uid", strconv.FormatUint(uint64(user.ID), 10))
 				c.Set("username", user.Username)
+				values := logmeta.From(c.Request.Context())
+				values.UserID = strconv.FormatUint(uint64(user.ID), 10)
+				c.Request = c.Request.WithContext(logmeta.With(c.Request.Context(), values))
 			}
 		}
 

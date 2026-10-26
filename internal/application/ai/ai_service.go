@@ -2,13 +2,14 @@ package ai
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
@@ -234,6 +235,7 @@ func (s *Service) PublicOptions() (PublicOptions, error) {
 	if err != nil {
 		return PublicOptions{}, err
 	}
+
 	cfg := &snapshot.settings
 
 	return PublicOptions{
@@ -267,6 +269,7 @@ func (s *Service) prepareResponsesRequest(
 	}
 
 	var err error
+
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ChatModel, toOptions(cfg.ChatModels), "聊天")
 	if err != nil {
 		return req, conv, err
@@ -281,6 +284,7 @@ func (s *Service) prepareResponsesRequest(
 	if err != nil {
 		return req, conv, err
 	}
+
 	conv = conv.trimHistory(cfg)
 	if !conv.HasMessages() {
 		return req, conv, domain.ErrNoUserMessage
@@ -288,7 +292,7 @@ func (s *Service) prepareResponsesRequest(
 
 	prompt, promptErr := s.buildResponsesSystemPrompt(ctx, cfg, runtime, conv, req.Model)
 	if promptErr != nil {
-		s.logger.Warn("build AI responses system prompt failed", zap.Error(promptErr))
+		logctx.With(ctx, s.logger).Warn("build AI responses system prompt failed", zap.String("event", "ai.ai_service.prepare_responses_request.degraded"), zap.String("operation", "ai.ai_service.prepare_responses_request"), zap.Error(promptErr))
 	}
 
 	conv = conv.prependSystem(domain.FirstNonEmpty(prompt, cfg.SystemPrompt))
@@ -309,6 +313,7 @@ func prepareImageGenerationRequest(
 	}
 
 	var err error
+
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
 	if err != nil {
 		return req, err
@@ -328,6 +333,7 @@ func prepareImageEditRequest(cfg *config.AI, req ImageEditRequest) (ImageEditReq
 	}
 
 	var err error
+
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.ImageModel, toOptions(cfg.ImageModels), "图片")
 	if err != nil {
 		return req, err
@@ -352,6 +358,7 @@ func prepareVideoGenerationRequest(
 	}
 
 	var err error
+
 	req.Model, err = domain.NormalizeConfiguredModel(req.Model, cfg.VideoModel, toOptions(cfg.VideoModels), "视频")
 	if err != nil {
 		return req, err

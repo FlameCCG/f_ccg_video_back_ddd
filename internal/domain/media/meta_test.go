@@ -1,9 +1,8 @@
 package media
 
 import (
-	"testing"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"testing"
 )
 
 func TestValidateTranscodedDuration(t *testing.T) {

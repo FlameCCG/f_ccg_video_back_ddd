@@ -26,7 +26,7 @@ func (h *Handler) CreateView(c *gin.Context) {
 
 	item, err := h.dynamics.Create(c.Request.Context(), uid, req.Content, req.ImageURL)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

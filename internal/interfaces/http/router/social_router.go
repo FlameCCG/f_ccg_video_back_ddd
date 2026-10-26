@@ -18,8 +18,8 @@ func registerSocialRoutes(
 	socialGroup := socialRouter.Group("")
 	socialGroup.Use(middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth())
 	{
-		socialGroup.POST("/focus", middlewares.JsonBindParams[socialhandler.FocusUserReq], h.FocusUserView)       // 关注用户
-		socialGroup.DELETE("/focus", middlewares.JsonBindParams[socialhandler.UnfocusUserReq], h.UnfocusUserView) // 取消关注
+		socialGroup.POST("/focus", middlewares.JSONBindParams[socialhandler.FocusUserReq], h.FocusUserView)       // 关注用户
+		socialGroup.DELETE("/focus", middlewares.JSONBindParams[socialhandler.UnfocusUserReq], h.UnfocusUserView) // 取消关注
 		socialGroup.GET("/focus", h.FocusListView)                                                                // 获取用户关注列表 ?id=
 		socialGroup.GET("/fans", h.FansListView)                                                                  // 获取用户粉丝列表 ?id=
 		socialGroup.GET("/relation", h.FocusStatusView)                                                           // 查询与指定用户的关注关系 ?id=

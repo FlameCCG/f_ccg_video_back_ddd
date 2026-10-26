@@ -3,6 +3,11 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/uploadscope"
 	"fmt"
 	"io"
 	"net"
@@ -11,10 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-	"f_ccg_video_back_ddd/pkg/uploadscope"
 
 	"go.uber.org/zap"
 )
@@ -60,15 +62,19 @@ func (s *UploadService) UploadChunkForUser(ctx context.Context, userID uint, fil
 	ctx = uploadscope.WithOwner(ctx, userID)
 	fileHash = trimSpace(fileHash)
 	index = trimSpace(index)
+
 	if err := s.validateFileHash(fileHash); err != nil {
 		return err
 	}
+
 	if err := s.storage.ValidateChunkIndex(index); err != nil {
 		return err
 	}
+
 	if err := s.claimQuota(ctx, userID, fileHash); err != nil {
 		return err
 	}
+
 	return s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
 		return s.UploadChunk(guardCtx, fileHash, index, size, reader)
 	})
@@ -77,38 +83,51 @@ func (s *UploadService) UploadChunkForUser(ctx context.Context, userID uint, fil
 // GetUploadStatusForUser 仅在确认完整对象存在后为秒传占额，才返回 completed=true。
 func (s *UploadService) GetUploadStatusForUser(ctx context.Context, userID uint, fileHash string) (*UploadStatus, error) {
 	ctx = uploadscope.WithOwner(ctx, userID)
+
 	fileHash = trimSpace(fileHash)
 	if err := s.validateFileHash(fileHash); err != nil {
 		return nil, err
 	}
+
 	var status *UploadStatus
+
 	err := s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
 		var err error
+
 		status, err = s.GetUploadStatus(guardCtx, fileHash)
 		if err != nil || !status.Completed {
 			return err
 		}
+
 		return s.claimQuota(guardCtx, userID, fileHash)
 	})
+
 	return status, err
 }
 
 // CompleteUploadForUser 在复用已完成对象或合并分片前做服务端额度兜底。
 func (s *UploadService) CompleteUploadForUser(ctx context.Context, userID uint, fileHash, fileName string, totalChunks int) (string, error) {
 	ctx = uploadscope.WithOwner(ctx, userID)
+
 	fileHash = trimSpace(fileHash)
 	if err := s.validateFileHash(fileHash); err != nil {
 		return "", err
 	}
+
 	if err := s.claimQuota(ctx, userID, fileHash); err != nil {
 		return "", err
 	}
+
 	var path string
+
 	err := s.withHashes(ctx, []string{fileHash, uploadscope.ChunkNamespace(ctx, fileHash)}, func(guardCtx context.Context) error {
 		var err error
+
 		path, err = s.CompleteUpload(guardCtx, fileHash, fileName, totalChunks)
+
 		return err
 	})
+
 	return path, err
 }
 
@@ -120,17 +139,21 @@ func (s *UploadService) WithPublishUploads(ctx context.Context, userID uint, has
 		if err := s.validateFileHash(hash); err != nil {
 			return err
 		}
+
 		normalized[i] = hash
 	}
+
 	return s.withHashes(ctx, normalized, func(guardCtx context.Context) error {
 		if err := validate(guardCtx); err != nil {
 			return err
 		}
+
 		for _, hash := range uniqueUploadHashes(normalized) {
 			if err := s.claimQuota(guardCtx, userID, hash); err != nil {
 				return err
 			}
 		}
+
 		return persist(guardCtx)
 	})
 }
@@ -139,6 +162,7 @@ func (s *UploadService) claimQuota(ctx context.Context, userID uint, fileHash st
 	if s.quota == nil { // 仅供不装配 Redis 的单元测试使用；正式 Wire 图始终注入 quota。
 		return nil
 	}
+
 	return s.quota.Claim(ctx, userID, fileHash)
 }
 
@@ -146,6 +170,7 @@ func (s *UploadService) withHashes(ctx context.Context, hashes []string, fn func
 	if s.guard == nil { // 仅供不装配 Redis 的单元测试使用。
 		return fn(ctx)
 	}
+
 	return s.guard.Run(ctx, hashes, fn)
 }
 
@@ -158,6 +183,7 @@ func (s *UploadService) UploadChunk(
 ) error {
 	fileHash = trimSpace(fileHash)
 	index = trimSpace(index)
+
 	driver, err := s.resolve()
 	if err != nil {
 		return err
@@ -181,6 +207,7 @@ func (s *UploadService) UploadChunk(
 // GetUploadedChunks 读取已上传的分片索引列表。
 func (s *UploadService) GetUploadedChunks(ctx context.Context, fileHash string) ([]string, error) {
 	fileHash = trimSpace(fileHash)
+
 	driver, err := s.resolve()
 	if err != nil {
 		return nil, err
@@ -198,6 +225,7 @@ func (s *UploadService) GetUploadedChunks(ctx context.Context, fileHash string) 
 // completed 必须以对象存储为准；内存缓存只做加速，对象被硬删后不得继续秒传。
 func (s *UploadService) GetUploadStatus(ctx context.Context, fileHash string) (*UploadStatus, error) {
 	fileHash = trimSpace(fileHash)
+
 	driver, err := s.resolve()
 	if err != nil {
 		return nil, err
@@ -263,10 +291,10 @@ func (s *UploadService) GetUploadStatus(ctx context.Context, fileHash string) (*
 	}
 
 	if isTransientUploadStatusError(completedRes.err) || isTransientUploadStatusError(chunksRes.err) {
-		s.logger.Warn("upload status degraded due to transient storage error",
-			zap.String("fileHash", fileHash),
-			zap.Error(completedRes.err),
-			zap.Error(chunksRes.err))
+		logctx.With(ctx, s.logger).Warn("upload status degraded due to transient storage error", zap.String("event", "video.upload_service.get_upload_status.degraded"), zap.String("operation", "video.upload_service.get_upload_status"),
+			zap.String("file_hash", fileHash),
+			zap.NamedError("completed_error", completedRes.err),
+			zap.NamedError("chunks_error", chunksRes.err))
 
 		return &UploadStatus{
 			FileHash:       fileHash,
@@ -300,6 +328,7 @@ func (s *UploadService) CompleteUpload(
 	fileHash = trimSpace(fileHash)
 
 	fileName = trimSpace(fileName)
+
 	if err := s.validateFileHash(fileHash); err != nil {
 		return "", err
 	}
@@ -313,9 +342,9 @@ func (s *UploadService) CompleteUpload(
 
 	// 最终对象已在存储中：直接复用（分片可能已在上次 complete 后清理）
 	if existing, ok, probeErr := driver.GetCompletedFile(ctx, fileHash); probeErr == nil && ok && trimSpace(existing) != "" {
-		s.logger.Info("complete upload reused existing object",
-			zap.String("fileHash", fileHash),
-			zap.String("filePath", existing))
+		logctx.With(ctx, s.logger).Info("complete upload reused existing object", zap.String("event", "video.upload_service.complete_upload.diagnostic"), zap.String("operation", "video.upload_service.complete_upload"),
+			zap.String("file_hash", fileHash),
+			zap.String("file_path", existing))
 
 		return existing, nil
 	}
@@ -332,27 +361,20 @@ func (s *UploadService) CompleteUpload(
 
 	finalPath, err := driver.MergeChunks(ctx, fileHash, fileName, totalChunks)
 	if err != nil {
-		s.logger.Warn("complete upload failed",
-			zap.String("fileHash", fileHash),
-			zap.String("fileName", fileName),
-			zap.Int("totalChunks", totalChunks),
-			zap.Duration("cost", time.Since(start)),
-			zap.Error(err))
-
 		return "", err
 	}
 
-	s.logger.Info("complete upload succeeded",
-		zap.String("fileHash", fileHash),
-		zap.String("fileName", fileName),
-		zap.Int("totalChunks", totalChunks),
-		zap.Duration("cost", time.Since(start)))
+	logctx.With(ctx, s.logger).Info("complete upload succeeded", zap.String("event", "video.upload_service.complete_upload.diagnostic"), zap.String("operation", "video.upload_service.complete_upload"),
+		zap.String("file_hash", fileHash),
+		zap.String("file_name", fileName),
+		zap.Int("total_chunks", totalChunks),
+		zap.Duration("duration_ms", time.Since(start)))
 
 	return finalPath, nil
 }
 
 // InvalidateUploadCompletedCache 保留删除用例的兼容端口；完成状态已不再缓存。
-func (s *UploadService) InvalidateUploadCompletedCache(fileHash string) {
+func (s *UploadService) InvalidateUploadCompletedCache(_ string) {
 	// Completion is always probed directly from storage.
 }
 
@@ -382,14 +404,12 @@ func (s *UploadService) ResolveCompletedUpload(ctx context.Context, fileHash str
 
 	filePath, completed, err := driver.GetCompletedFile(probeCtx, trimSpace(fileHash))
 	if err != nil {
-		s.logger.Warn("resolve completed upload failed", zap.String("fileHash", fileHash), zap.Error(err))
-
-		return "", errCheckUploadFailed
+		return "", apperr.Wrap("video.upload.check", errCheckUploadFailed, err)
 	}
 
 	if !completed || trimSpace(filePath) == "" {
-		s.logger.Warn("publish blocked: completed upload object missing",
-			zap.String("fileHash", trimSpace(fileHash)))
+		logctx.With(ctx, s.logger).Warn("publish blocked: completed upload object missing", zap.String("event", "video.upload_service.resolve_completed_upload.degraded"), zap.String("operation", "video.upload_service.resolve_completed_upload"),
+			zap.String("file_hash", trimSpace(fileHash)))
 
 		return "", errUploadIncomplete
 	}
@@ -431,7 +451,7 @@ func (s *UploadService) EnsureStorageReady() error {
 func (s *UploadService) resolve() (StorageDriver, error) {
 	driver, err := s.storage.Resolve()
 	if err != nil {
-		return nil, ErrUploadStorageUnavailable
+		return nil, apperr.Wrap("application/video/upload_service", ErrUploadStorageUnavailable, err)
 	}
 
 	return driver, nil
@@ -452,6 +472,7 @@ func (s *UploadService) uploadSizeLimits() (chunkMB, fileMB int64) {
 	}
 
 	storage := cfg.Site.Storage
+
 	chunkMB = storage.MaxChunkSize
 	if chunkMB <= 0 {
 		chunkMB = storage.ChunkSize
@@ -582,20 +603,6 @@ func isTransientUploadStatusError(err error) bool {
 	}
 
 	return false
-}
-
-// buildCoverObjectPath 生成封面对象路径（原 api/video_api/upload_cover.go）。
-func buildCoverObjectPath(fileHash, ext string, uniqueSuffix string) string {
-	ext = strings.TrimSpace(strings.ToLower(ext))
-	if ext == "" {
-		ext = ".jpg"
-	}
-
-	if !strings.HasPrefix(ext, ".") {
-		ext = "." + ext
-	}
-
-	return joinObjectPath("images", strings.TrimSpace(fileHash)+"-"+uniqueSuffix+ext)
 }
 
 // joinObjectPath 以 / 连接对象路径片段（等价 path.Join 对无冗余分隔符输入的行为）。

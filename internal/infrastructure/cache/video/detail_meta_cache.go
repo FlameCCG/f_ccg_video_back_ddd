@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strconv"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
+
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/video"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -83,7 +86,7 @@ func (c *DetailMetaCache) Load(ctx context.Context, videoID uint) (*app.DetailMe
 	data, err := c.redis.Get(cacheCtx, metaKey(videoID)).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get video detail meta cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+			logctx.With(ctx, c.logger).Warn("get video detail meta cache failed", zap.String("event", "cache.detail_meta_cache.load.degraded"), zap.String("operation", "cache.detail_meta_cache.load"), zap.Error(err), zap.Uint("video_id", videoID))
 		}
 
 		return nil, false
@@ -91,7 +94,7 @@ func (c *DetailMetaCache) Load(ctx context.Context, videoID uint) (*app.DetailMe
 
 	var meta app.DetailMeta
 	if err := json.Unmarshal(data, &meta); err != nil {
-		c.logger.Warn("unmarshal video detail meta cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, c.logger).Warn("unmarshal video detail meta cache failed", zap.String("event", "cache.detail_meta_cache.load.degraded"), zap.String("operation", "cache.detail_meta_cache.load"), zap.Error(err), zap.Uint("video_id", videoID))
 
 		return nil, false
 	}
@@ -103,8 +106,7 @@ func (c *DetailMetaCache) Load(ctx context.Context, videoID uint) (*app.DetailMe
 
 		for i := range meta.Parts {
 			for j := range meta.Parts[i].Resources {
-				meta.Parts[i].Resources[j].FileURL =
-					domain.EnsurePlayableContentTypeURL(meta.Parts[i].Resources[j].FileURL)
+				meta.Parts[i].Resources[j].FileURL = domain.EnsurePlayableContentTypeURL(meta.Parts[i].Resources[j].FileURL)
 			}
 		}
 	}
@@ -140,8 +142,8 @@ func (c *DetailMetaCache) Generation(ctx context.Context, videoID uint) int64 {
 	val, err := c.redis.Get(cacheCtx, metaGenKey(videoID)).Int64()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get video detail meta generation failed",
-				zap.Error(err), zap.Uint("videoId", videoID))
+			logctx.With(ctx, c.logger).Warn("get video detail meta generation failed", zap.String("event", "cache.detail_meta_cache.generation.degraded"), zap.String("operation", "cache.detail_meta_cache.generation"),
+				zap.Error(err), zap.Uint("video_id", videoID))
 		}
 
 		return 0
@@ -166,7 +168,7 @@ func (c *DetailMetaCache) StoreIfGenerationMatch(
 
 	data, err := json.Marshal(meta)
 	if err != nil {
-		c.logger.Warn("marshal video detail meta cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, c.logger).Warn("marshal video detail meta cache failed", zap.String("event", "cache.detail_meta_cache.store_if_generation_match.degraded"), zap.String("operation", "cache.detail_meta_cache.store_if_generation_match"), zap.Error(err), zap.Uint("video_id", videoID))
 
 		return
 	}
@@ -178,14 +180,14 @@ func (c *DetailMetaCache) StoreIfGenerationMatch(
 		metaKey(videoID),
 	}, strconv.FormatInt(expectedGen, 10), string(data), strconv.Itoa(ttlSeconds)).Int()
 	if err != nil {
-		c.logger.Warn("set video detail meta cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, c.logger).Warn("set video detail meta cache failed", zap.String("event", "cache.detail_meta_cache.store_if_generation_match.degraded"), zap.String("operation", "cache.detail_meta_cache.store_if_generation_match"), zap.Error(err), zap.Uint("video_id", videoID))
 
 		return
 	}
 
 	if ok == 0 {
-		c.logger.Debug("skip video detail meta cache write: generation changed",
-			zap.Uint("videoId", videoID), zap.Int64("gen", expectedGen))
+		logctx.With(ctx, c.logger).Debug("skip video detail meta cache write: generation changed", zap.String("event", "cache.detail_meta_cache.store_if_generation_match.diagnostic"), zap.String("operation", "cache.detail_meta_cache.store_if_generation_match"),
+			zap.Uint("video_id", videoID), zap.Int64("gen", expectedGen))
 	}
 }
 
@@ -223,8 +225,8 @@ func (c *DetailMetaCache) bumpGeneration(ctx context.Context, videoID uint) {
 	pipe.Expire(cacheCtx, key, videoDetailMetaGenTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		c.logger.Warn("bump video detail meta generation failed",
-			zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, c.logger).Warn("bump video detail meta generation failed", zap.String("event", "cache.detail_meta_cache.bump_generation.degraded"), zap.String("operation", "cache.detail_meta_cache.bump_generation"),
+			zap.Error(err), zap.Uint("video_id", videoID))
 	}
 }
 

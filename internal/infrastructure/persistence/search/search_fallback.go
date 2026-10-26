@@ -2,12 +2,12 @@ package search
 
 import (
 	"context"
-
-	app "f_ccg_video_back_ddd/internal/application/search"
-	domain "f_ccg_video_back_ddd/internal/domain/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/search"
+	domain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

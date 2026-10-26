@@ -37,22 +37,28 @@ func (m Mongo) GetURI() string {
 		Scheme: "mongodb",
 		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
 	}
+
 	query := u.Query()
 	if m.ReplicaSet != "" {
 		query.Set("replicaSet", m.ReplicaSet)
 	}
+
 	if m.DirectConnection {
 		query.Set("directConnection", "true")
 	}
+
 	if m.Username != "" {
 		authSource := m.AuthSource
 		if authSource == "" {
-			authSource = "admin"
+			authSource = testAdmin
 		}
+
 		u.User = url.UserPassword(m.Username, m.Password)
 		u.Path = "/"
+
 		query.Set("authSource", authSource)
 	}
+
 	u.RawQuery = query.Encode()
 
 	return u.String()

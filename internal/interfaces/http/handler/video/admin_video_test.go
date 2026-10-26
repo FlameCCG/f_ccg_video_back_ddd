@@ -1,19 +1,26 @@
 package video
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin/binding"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAdminListBindsScheduledStateAndExplicitImmediateFilter(t *testing.T) {
-	req := httptest.NewRequest("GET", "/admin/video/list?status=5&isScheduled=false", nil)
+	t.Parallel()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/admin/video/list?status=5&isScheduled=false", nil)
+
 	var input AdminVideoListReq
-	if err := binding.Query.Bind(req, &input); err != nil {
-		t.Fatal(err)
+	{
+		err := binding.Query.Bind(req, &input)
+		require.NoError(t, err)
 	}
-	if input.Status != 5 || input.IsScheduled == nil || *input.IsScheduled {
-		t.Fatalf("scheduled state or explicit false filter lost: %+v", input)
-	}
+
+	require.Equal(t, 5, input.Status, "scheduled state or explicit false filter lost: %+v", input)
+	require.NotNil(t, input.IsScheduled, "scheduled state or explicit false filter lost: %+v", input)
+	require.False(t, *input.IsScheduled, "scheduled state or explicit false filter lost: %+v", input)
 }

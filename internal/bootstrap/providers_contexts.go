@@ -71,7 +71,7 @@ var RbacProviderSet = wire.NewSet(
 	// internal/application/rbac
 	applicationRbac.ProviderSet,
 	// internal/infrastructure/persistence/rbac
-	infrastructurePersistenceRbac.NewApiResourceRepository,
+	infrastructurePersistenceRbac.NewAPIResourceRepository,
 	infrastructurePersistenceRbac.NewCasbinEnforcer,
 	infrastructurePersistenceRbac.NewGlobPathMatcher,
 	infrastructurePersistenceRbac.NewMenuRepository,

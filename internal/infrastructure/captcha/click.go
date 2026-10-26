@@ -3,24 +3,39 @@ package captcha
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"sort"
 	"sync"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/config/site"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/constants"
 
-	"github.com/golang/freetype/truetype"                              // 加载嵌入式中文字体，避免依赖宿主环境
-	"github.com/google/uuid"                                           // 生成高随机性的 token，防止被预测
-	"github.com/redis/go-redis/v9"                                     // Redis 客户端
-	"github.com/wenlng/go-captcha-assets/bindata/chars"                // 提供预置汉字字符集，提升安全性
-	"github.com/wenlng/go-captcha-assets/resources/fonts/fzshengsksjw" // 嵌入式中文字体资源
-	"github.com/wenlng/go-captcha-assets/resources/imagesv2"           // 背景图素材库，增加干扰项
-	"github.com/wenlng/go-captcha/v2/click"                            // go-captcha 点击验证码核心库
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+
+	"github.com/golang/freetype/truetype"
+	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
+	"github.com/wenlng/go-captcha-assets/bindata/chars"
+	"github.com/wenlng/go-captcha-assets/resources/fonts/fzshengsksjw"
+	"github.com/wenlng/go-captcha-assets/resources/imagesv2"
+	"github.com/wenlng/go-captcha/v2/click"
 	"go.uber.org/zap"
 )
+
+const (
+	captchaLogin    = "login"
+	captchaRegister = "register"
+)
+
+// 加载嵌入式中文字体，避免依赖宿主环境
+// 生成高随机性的 token，防止被预测
+// Redis 客户端
+// 提供预置汉字字符集，提升安全性
+// 嵌入式中文字体资源
+// 背景图素材库，增加干扰项
+// go-captcha 点击验证码核心库
 
 const (
 	defaultClickCaptchaTTL     = 2 * time.Minute // 配置缺失时的默认有效期
@@ -71,7 +86,7 @@ func NewClickCaptcha(
 
 // Generate 生成点击验证码，并把答案写入 Redis。
 func (c *ClickCaptcha) Generate(ctx context.Context, scenes ...string) (*app.ClickCaptchaResult, error) {
-	scene := "login"
+	scene := captchaLogin
 	if len(scenes) > 0 {
 		scene = site.ResolveCaptchaScene(scenes[0], scene)
 	}
@@ -120,7 +135,7 @@ func (c *ClickCaptcha) Generate(ctx context.Context, scenes ...string) (*app.Cli
 
 // Verify 校验点击顺序与坐标是否落在容错范围内（答案一次性消费）。
 func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.ClickCaptchaPoint, scenes ...string) (bool, error) {
-	scene := "login"
+	scene := captchaLogin
 	if len(scenes) > 0 {
 		scene = site.ResolveCaptchaScene(scenes[0], scene)
 	}
@@ -164,7 +179,7 @@ func (c *ClickCaptcha) Verify(ctx context.Context, token string, points []app.Cl
 
 		// 校验点击是否落在容错范围内
 		if !click.Validate(point.X, point.Y, target.X, target.Y, target.Width, target.Height, padding) {
-			c.store.logger.Error("点击位置不在答案区域内",
+			logctx.With(ctx, c.store.logger).Error("点击位置不在答案区域内", zap.String("event", "captcha.click.verify.failed"), zap.String("operation", "captcha.click.verify"),
 				zap.Int("index", point.Index), zap.Int("x", point.X), zap.Int("y", point.Y))
 
 			success = false
@@ -207,26 +222,30 @@ func (c *ClickCaptcha) ensure() error {
 }
 
 func (c *ClickCaptcha) ttl(scenes ...string) time.Duration {
-	scene := "login"
+	scene := captchaLogin
 	if len(scenes) > 0 {
 		scene = scenes[0]
 	}
+
 	cfg := c.cfgProvider.Get()
 	if cfg == nil {
 		return defaultClickCaptchaTTL
 	}
+
 	return time.Duration(cfg.Site.CaptchaSettings(scene, "click").TTLSeconds) * time.Second
 }
 
 func (c *ClickCaptcha) padding(scenes ...string) int {
-	scene := "login"
+	scene := captchaLogin
 	if len(scenes) > 0 {
 		scene = scenes[0]
 	}
+
 	cfg := c.cfgProvider.Get()
 	if cfg == nil {
 		return defaultClickCaptchaPadding
 	}
+
 	return cfg.Site.CaptchaSettings(scene, "click").Padding
 }
 

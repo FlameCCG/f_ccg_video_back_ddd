@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/casbins"
 	"io"
 
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
@@ -12,7 +13,6 @@ import (
 	identitydomain "f_ccg_video_back_ddd/internal/domain/identity"
 	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
 	videodomain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/pkg/casbins"
 )
 
 // IdentityVideoQuery 把 video 上下文的用户投稿用例适配为 identity 声明的 UserVideoQuery 端口。
@@ -106,6 +106,7 @@ func (a *IdentityCoinLedger) LockAccounts(ctx context.Context, userIDs []uint) e
 	if errors.Is(err, identitydomain.ErrUserRecordNotFound) {
 		return videodomain.ErrRecordNotFound
 	}
+
 	return err
 }
 
@@ -293,13 +294,17 @@ func (a *IdentityDefaultFolderEnsurer) EnsureDefaultFolder(ctx context.Context, 
 // IdentityContentAuthorizer checks live account status at the content boundary.
 type IdentityContentAuthorizer struct{ bans *identityapp.BanService }
 
+// NewIdentityContentAuthorizer adapts identity authorization to content publication.
 func NewIdentityContentAuthorizer(bans *identityapp.BanService) *IdentityContentAuthorizer {
 	return &IdentityContentAuthorizer{bans: bans}
 }
+
+// EnsureCanPublish checks whether the user is allowed to publish content.
 func (a *IdentityContentAuthorizer) EnsureCanPublish(ctx context.Context, uid uint) error {
 	return a.bans.EnsureCanPublish(ctx, uid)
 }
 
+// RevokeFavoriteReward reverses a previously granted favorite reward once.
 func (a *IdentityCoinLedger) RevokeFavoriteReward(ctx context.Context, authorID, actorID, videoID uint) error {
 	return a.coins.RevokeFavoriteReward(ctx, authorID, actorID, videoID)
 }

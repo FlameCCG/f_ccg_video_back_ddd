@@ -98,7 +98,7 @@ func NormalizeConfiguredOption(
 	// DeepSeek 兼容：low/medium → high，xhigh → max
 	switch strings.ToLower(requested) {
 	case "low", "medium":
-		requested = "high"
+		requested = testHigh
 	case "xhigh":
 		requested = "max"
 	}
@@ -117,7 +117,7 @@ func NormalizeConfiguredOption(
 	// 无白名单且无默认时，放行已规范化的 high/max
 	if len(allowed) == 0 {
 		switch requested {
-		case "high", "max":
+		case testHigh, "max":
 			return requested, nil
 		default:
 			return "", fmt.Errorf("不支持的%s: %s", kind, requested)

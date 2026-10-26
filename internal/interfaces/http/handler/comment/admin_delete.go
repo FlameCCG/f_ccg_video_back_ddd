@@ -20,7 +20,7 @@ func (h *Handler) AdminDeleteView(c *gin.Context) {
 
 	deleted, err := h.svc.AdminDelete(ctx, req.CommentIDs)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

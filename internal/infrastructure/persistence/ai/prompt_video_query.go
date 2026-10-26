@@ -8,13 +8,13 @@ package ai
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/ai"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )

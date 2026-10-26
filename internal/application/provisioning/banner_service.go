@@ -3,13 +3,13 @@ package provisioning
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"mime"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"go.uber.org/zap"
 )
@@ -52,7 +52,7 @@ func (s *BannerService) Provision(ctx context.Context) (int, error) {
 	}
 
 	if len(files) == 0 {
-		s.logger.Warn("No images found in images directory", zap.String("dir", bannerImagesDir))
+		logctx.With(ctx, s.logger).Warn("No images found in images directory", zap.String("event", "provisioning.banner_service.provision.degraded"), zap.String("operation", "provisioning.banner_service.provision"), zap.String("dir", bannerImagesDir))
 
 		return 0, nil
 	}
@@ -74,14 +74,14 @@ func (s *BannerService) Provision(ctx context.Context) (int, error) {
 		bannerType, ok := classifyBannerFile(filename)
 		if !ok {
 			// Skip files that don't match the criteria
-			s.logger.Debug("Skipping unrelated file in images folder", zap.String("filename", filename))
+			logctx.With(ctx, s.logger).Debug("Skipping unrelated file in images folder", zap.String("event", "provisioning.banner_service.provision.diagnostic"), zap.String("operation", "provisioning.banner_service.provision"), zap.String("filename", filename))
 
 			continue
 		}
 
 		publicURL, err := s.upload(ctx, filename)
 		if err != nil {
-			s.logger.Error("Failed to upload banner to storage",
+			logctx.With(ctx, s.logger).Error("Failed to upload banner to storage", zap.String("event", "provisioning.banner_service.provision.failed"), zap.String("operation", "provisioning.banner_service.provision"),
 				zap.String("filename", filename), zap.Error(err))
 
 			continue
@@ -89,19 +89,19 @@ func (s *BannerService) Provision(ctx context.Context) (int, error) {
 
 		created, err := s.repo.UpsertBannerByCover(ctx, publicURL, bannerType)
 		if err != nil {
-			s.logger.Error("Failed to persist banner record",
+			logctx.With(ctx, s.logger).Error("Failed to persist banner record", zap.String("event", "provisioning.banner_service.provision.failed"), zap.String("operation", "provisioning.banner_service.provision"),
 				zap.String("filename", filename), zap.Error(err))
 
 			continue
 		}
 
 		if created {
-			s.logger.Info("Created new banner record",
+			logctx.With(ctx, s.logger).Info("Created new banner record", zap.String("event", "provisioning.banner_service.provision.diagnostic"), zap.String("operation", "provisioning.banner_service.provision"),
 				zap.String("filename", filename),
 				zap.String("url", publicURL),
 				zap.Int("type", int(bannerType)))
 		} else {
-			s.logger.Info("Updated existing banner record",
+			logctx.With(ctx, s.logger).Info("Updated existing banner record", zap.String("event", "provisioning.banner_service.provision.diagnostic"), zap.String("operation", "provisioning.banner_service.provision"),
 				zap.String("filename", filename),
 				zap.String("url", publicURL))
 		}

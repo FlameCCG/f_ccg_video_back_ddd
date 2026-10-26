@@ -9,9 +9,8 @@
 package identity
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // AdminUserListParams 管理端用户列表查询参数.

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -67,7 +66,7 @@ func buildFFmpegArgsForOutputs(
 	sourceCodec string,
 	chunk *media.FFmpegChunkSpan,
 ) []string {
-	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
+	args := []string{ffmpegHideBanner, ffmpegLogLevelFlag, ffmpegErrorLogLevel, "-y"}
 
 	threads := policy.ThreadsOrZero()
 
@@ -102,71 +101,7 @@ func buildFFmpegArgsForOutputs(
 	}
 
 	// 针对每一个输出流
-	for idx, t := range targets {
-		args = append(args, "-map", fmt.Sprintf("[%s]", t.MapLabel))
-
-		if chunk == nil || !chunk.VideoOnly {
-			args = append(args, "-map", "0:a?")
-		}
-
-		args = append(args, "-c:v:0", videoCodec)
-
-		if chunk == nil || !chunk.VideoOnly {
-			// 音频编码
-			args = append(args, "-c:a:0", "aac")
-			args = append(args, "-b:a:0", "128k")
-		}
-
-		// 统一走 CRF(CPU)/CQP(GPU) 质量模式, 并叠加 -maxrate 码率上限 (capped CRF/CQP)。
-		// 无论源是否高码率, 各目标分辨率都走质量优先 + 码率封顶;
-		// -maxrate 取值来自 OutputBitrateForTarget (按输出分辨率削减源码率)。
-		val := policy.OutputCQPForTarget(t, useGPU)
-		if useGPU {
-			args = append(args, "-rc:v:0", "vbr", "-cq:v:0", strconv.Itoa(val))
-		} else {
-			args = append(args, "-crf:v:0", strconv.Itoa(val))
-		}
-
-		if vb := policy.OutputBitrateForTarget(t, sourceBitrate, sourceCodec); vb > 0 {
-			args = append(args,
-				"-maxrate:v:0", fmt.Sprintf("%dk", vb),
-				"-bufsize:v:0", fmt.Sprintf("%dk", vb*2),
-			)
-		}
-
-		// 可 seek 文件输出：+faststart 便于渐进播放。
-		// 不可 seek（tcp/pipe）仍需分片 MP4。分段中间产物跳过 faststart（拼装时统一重封装）。
-		output := fmt.Sprintf("pipe:%d", 3+idx)
-		if idx < len(outputs) && outputs[idx] != "" {
-			output = outputs[idx]
-		}
-
-		switch {
-		case chunk != nil && chunk.VideoOnly:
-		case isNonSeekableOutput(output):
-			args = append(args, "-movflags", "frag_keyframe+empty_moov")
-		default:
-			args = append(args, "-movflags", "+faststart")
-		}
-
-		if chunk != nil {
-			if chunk.ForceKeyframeEverySec > 0 {
-				args = append(args, "-force_key_frames",
-					fmt.Sprintf("expr:gte(t,n_forced*%d)", chunk.ForceKeyframeEverySec))
-				if useGPU {
-					args = append(args, "-forced-idr:v:0", "1")
-				}
-			}
-			// LenSec<=0 表示末块：编到源文件结尾，吃掉 ffprobe 整数截断的小数尾巴。
-			if chunk.LenSec > 0 {
-				args = append(args, "-t", strconv.Itoa(chunk.LenSec))
-			}
-		}
-
-		args = append(args, "-f", "mp4", output)
-	}
-
-	return args
+	return finishBuildFFmpegArgsForOutputs(policy, targets, outputs, useGPU, sourceBitrate, sourceCodec, chunk, &args, videoCodec)
 }
 
 // isNonSeekableOutput 判断输出目标是否不可随机写（tcp/pipe 等），用于选择 movflags。
@@ -192,7 +127,7 @@ func buildDASHFFmpegArgs(
 	sourceCodec string,
 	hasAudio bool,
 ) []string {
-	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
+	args := []string{ffmpegHideBanner, ffmpegLogLevelFlag, ffmpegErrorLogLevel, "-y"}
 
 	threads := policy.ThreadsOrZero()
 
@@ -218,6 +153,7 @@ func buildDASHFFmpegArgs(
 	for idx, t := range targets {
 		args = append(args, "-map", fmt.Sprintf("[%s]", t.MapLabel))
 		args = append(args, "-c:v:"+strconv.Itoa(idx), videoCodec)
+
 		args = append(args, "-force_key_frames:v:"+strconv.Itoa(idx),
 			fmt.Sprintf("expr:gte(t,n_forced*%d)", policy.SegDurationOrDefault()))
 		if useGPU {
@@ -273,22 +209,10 @@ func buildDASHFFmpegArgs(
 	return args
 }
 
-// guessDashContentType 为 DASH 产物推断 Content-Type (供 MinIO 落对象元数据用)。
-func guessDashContentType(name string) string {
-	switch strings.ToLower(path.Ext(name)) {
-	case ".mpd":
-		return "application/dash+xml"
-	case ".m4s":
-		return "video/iso.segment"
-	default:
-		return "video/mp4"
-	}
-}
-
 // buildAudioTrackEncodeArgs 整条音轨一次性编码为 AAC-LC 128k（与两条管线原参数一致）。
 func buildAudioTrackEncodeArgs(srcPath, outPath string) []string {
 	return []string{
-		"-hide_banner", "-loglevel", "error", "-y",
+		ffmpegHideBanner, ffmpegLogLevelFlag, ffmpegErrorLogLevel, "-y",
 		"-i", srcPath,
 		"-vn",
 		"-map", "0:a:0",
@@ -312,7 +236,7 @@ func writeChunkConcatList(dir, name string, files []string) (string, error) {
 	}
 
 	listPath := filepath.Join(dir, name)
-	if err := os.WriteFile(listPath, []byte(b.String()), 0o644); err != nil {
+	if err := os.WriteFile(listPath, []byte(b.String()), 0o600); err != nil {
 		return "", fmt.Errorf("write concat list %s: %w", name, err)
 	}
 
@@ -322,7 +246,7 @@ func writeChunkConcatList(dir, name string, files []string) (string, error) {
 // buildChunkConcatMP4Args 单目标 MP4 拼装：concat 视频块 + 可选混入共享音轨 + faststart。
 func buildChunkConcatMP4Args(listPath, audioPath, outPath string) []string {
 	args := []string{
-		"-hide_banner", "-loglevel", "error", "-y",
+		ffmpegHideBanner, ffmpegLogLevelFlag, ffmpegErrorLogLevel, "-y",
 		"-f", "concat", "-safe", "0", "-i", listPath,
 	}
 
@@ -347,7 +271,7 @@ func buildChunkConcatMP4Args(listPath, audioPath, outPath string) []string {
 // buildChunkedDASHMuxArgs DASH 终段拼装：每个 rep 一个 concat 输入，copy 进 dash muxer。
 // 块编码时已按 seg_duration 网格强制关键帧，copy 分段成立。
 func buildChunkedDASHMuxArgs(listPaths []string, audioPath, mpdPath, fileHash string, segDur int) []string {
-	args := []string{"-hide_banner", "-loglevel", "error", "-y"}
+	args := []string{ffmpegHideBanner, ffmpegLogLevelFlag, ffmpegErrorLogLevel, "-y"}
 
 	for _, lp := range listPaths {
 		args = append(args, "-f", "concat", "-safe", "0", "-i", lp)
@@ -389,7 +313,7 @@ func runFFmpegCopyMux(ctx context.Context, args []string, workDir string, timeou
 
 	var stderr bytes.Buffer
 
-	cmd := exec.CommandContext(muxCtx, "ffmpeg", args...)
+	cmd := exec.CommandContext(muxCtx, "ffmpeg", args...) // #nosec G204 -- Executes a fixed ffmpeg/ffprobe binary directly, with generated argv and no shell expansion.
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
@@ -402,4 +326,82 @@ func runFFmpegCopyMux(ctx context.Context, args []string, workDir string, timeou
 	}
 
 	return nil
+}
+
+func finishBuildFFmpegArgsForOutputs(policy *media.TranscodePolicy, targets []media.TranscodeTarget, outputs []string, useGPU bool, sourceBitrate int, sourceCodec string, chunk *media.FFmpegChunkSpan, args *[]string, videoCodec string) []string {
+	for idx, t := range targets {
+		(*args) = append((*args), "-map", fmt.Sprintf("[%s]", t.MapLabel))
+
+		if chunk == nil || !chunk.VideoOnly {
+			(*args) = append((*args), "-map", "0:a?")
+		}
+
+		(*args) = append((*args), "-c:v:0", videoCodec)
+
+		if chunk == nil || !chunk.VideoOnly {
+			// 音频编码
+			(*args) = append((*args), "-c:a:0", "aac")
+			(*args) = append((*args), "-b:a:0", "128k")
+		}
+
+		// 统一走 CRF(CPU)/CQP(GPU) 质量模式, 并叠加 -maxrate 码率上限 (capped CRF/CQP)。
+		// 无论源是否高码率, 各目标分辨率都走质量优先 + 码率封顶;
+		// -maxrate 取值来自 OutputBitrateForTarget (按输出分辨率削减源码率)。
+		val := policy.OutputCQPForTarget(t, useGPU)
+		if useGPU {
+			(*args) = append((*args), "-rc:v:0", "vbr", "-cq:v:0", strconv.Itoa(val))
+		} else {
+			(*args) = append((*args), "-crf:v:0", strconv.Itoa(val))
+		}
+
+		if vb := policy.OutputBitrateForTarget(t, sourceBitrate, sourceCodec); vb > 0 {
+			(*args) = append((*args),
+				"-maxrate:v:0", fmt.Sprintf("%dk", vb),
+				"-bufsize:v:0", fmt.Sprintf("%dk", vb*2),
+			)
+		}
+
+		// 可 seek 文件输出：+faststart 便于渐进播放。
+		// 不可 seek（tcp/pipe）仍需分片 MP4。分段中间产物跳过 faststart（拼装时统一重封装）。
+		output := fmt.Sprintf("pipe:%d", 3+idx)
+		if idx < len(outputs) && outputs[idx] != "" {
+			output = outputs[idx]
+		}
+
+		switch {
+		case chunk != nil && chunk.VideoOnly:
+		case isNonSeekableOutput(output):
+			(*args) = append((*args), "-movflags", "frag_keyframe+empty_moov")
+		default:
+			(*args) = append((*args), "-movflags", "+faststart")
+		}
+
+		*args = appendChunkEncodeArgs(*args, chunk, useGPU)
+
+		(*args) = append((*args), "-f", "mp4", output)
+	}
+
+	return (*args)
+}
+
+const ffmpegErrorLogLevel = "error"
+
+func appendChunkEncodeArgs(args []string, chunk *media.FFmpegChunkSpan, useGPU bool) []string {
+	if chunk == nil {
+		return args
+	}
+
+	if chunk.ForceKeyframeEverySec > 0 {
+		args = append(args, "-force_key_frames",
+			fmt.Sprintf("expr:gte(t,n_forced*%d)", chunk.ForceKeyframeEverySec))
+		if useGPU {
+			args = append(args, "-forced-idr:v:0", "1")
+		}
+	}
+	// LenSec<=0 表示末块：编到源文件结尾，吃掉 ffprobe 整数截断的小数尾巴。
+	if chunk.LenSec > 0 {
+		args = append(args, "-t", strconv.Itoa(chunk.LenSec))
+	}
+
+	return args
 }

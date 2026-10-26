@@ -2,12 +2,12 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strconv"
 	"sync"
 	"time"
-
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -50,7 +50,7 @@ func (b *DanmuEventBus) Publish(ctx context.Context, videoID, partID uint, paylo
 	defer cancel()
 
 	if err := b.redis.Publish(pubCtx, danmuChannelKey(videoID, partID), payload).Err(); err != nil {
-		b.logger.Warn("publish danmu event failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, b.logger).Warn("publish danmu event failed", zap.String("event", "cache.danmu_event_bus.publish.degraded"), zap.String("operation", "cache.danmu_event_bus.publish"), zap.Error(err), zap.Uint("video_id", videoID))
 	}
 }
 
@@ -82,10 +82,10 @@ func (b *DanmuEventBus) Subscribe(videoID, partID uint, handler func(payload []b
 			cancel()
 
 			if err := pubsub.Close(); err != nil {
-				b.logger.Warn("close danmu redis subscriber failed",
+				b.logger.Warn("close danmu redis subscriber failed", zap.String("event", "cache.danmu_event_bus.subscribe.degraded"), zap.String("operation", "cache.danmu_event_bus.subscribe"),
 					zap.Error(err),
-					zap.Uint("videoId", videoID),
-					zap.Uint("partId", partID),
+					zap.Uint("video_id", videoID),
+					zap.Uint("part_id", partID),
 				)
 			}
 		})
@@ -94,31 +94,15 @@ func (b *DanmuEventBus) Subscribe(videoID, partID uint, handler func(payload []b
 
 // AddOnline 把用户加入房间在线集合并返回集合基数；失败返回 (0, false)。
 func (b *DanmuEventBus) AddOnline(ctx context.Context, videoID, partID, userID uint) (int64, bool) {
-	if !b.Available() || userID == 0 {
-		return 0, false
-	}
-
-	opCtx, cancel := context.WithTimeout(orTODO(ctx), danmuPublishTimeout)
-	defer cancel()
-
-	key := danmuOnlineKey(videoID, partID)
-
-	pipe := b.redis.TxPipeline()
-	pipe.SAdd(opCtx, key, onlineMember(userID))
-	pipe.Expire(opCtx, key, danmuOnlineKeyTTL)
-
-	cardCmd := pipe.SCard(opCtx, key)
-	if _, err := pipe.Exec(opCtx); err != nil {
-		b.logger.Warn("update danmu online failed", zap.Error(err), zap.Uint("videoId", videoID))
-
-		return 0, false
-	}
-
-	return cardCmd.Val(), true
+	return b.updateOnline(ctx, videoID, partID, userID, true)
 }
 
 // RemoveOnline 把用户移出房间在线集合并返回集合基数；失败返回 (0, false)。
 func (b *DanmuEventBus) RemoveOnline(ctx context.Context, videoID, partID, userID uint) (int64, bool) {
+	return b.updateOnline(ctx, videoID, partID, userID, false)
+}
+
+func (b *DanmuEventBus) updateOnline(ctx context.Context, videoID, partID, userID uint, present bool) (int64, bool) {
 	if !b.Available() || userID == 0 {
 		return 0, false
 	}
@@ -127,19 +111,26 @@ func (b *DanmuEventBus) RemoveOnline(ctx context.Context, videoID, partID, userI
 	defer cancel()
 
 	key := danmuOnlineKey(videoID, partID)
-
 	pipe := b.redis.TxPipeline()
-	pipe.SRem(opCtx, key, onlineMember(userID))
+	operation, message := "cache.danmu_event_bus.add_online", "update danmu online failed"
+
+	if present {
+		pipe.SAdd(opCtx, key, onlineMember(userID))
+	} else {
+		pipe.SRem(opCtx, key, onlineMember(userID))
+
+		operation, message = "cache.danmu_event_bus.remove_online", "drop danmu online failed"
+	}
+
 	pipe.Expire(opCtx, key, danmuOnlineKeyTTL)
 
-	cardCmd := pipe.SCard(opCtx, key)
+	count := pipe.SCard(opCtx, key)
 	if _, err := pipe.Exec(opCtx); err != nil {
-		b.logger.Warn("drop danmu online failed", zap.Error(err), zap.Uint("videoId", videoID))
-
+		logctx.With(ctx, b.logger).Warn(message, zap.String("event", operation+".degraded"), zap.String("operation", operation), zap.Error(err), zap.Uint("video_id", videoID))
 		return 0, false
 	}
 
-	return cardCmd.Val(), true
+	return count.Val(), true
 }
 
 // CountOnline 读取房间在线集合基数；失败返回 (0, false)。
@@ -153,7 +144,7 @@ func (b *DanmuEventBus) CountOnline(ctx context.Context, videoID, partID uint) (
 
 	val, err := b.redis.SCard(opCtx, danmuOnlineKey(videoID, partID)).Result()
 	if err != nil {
-		b.logger.Warn("count danmu online failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, b.logger).Warn("count danmu online failed", zap.String("event", "cache.danmu_event_bus.count_online.degraded"), zap.String("operation", "cache.danmu_event_bus.count_online"), zap.Error(err), zap.Uint("video_id", videoID))
 
 		return 0, false
 	}

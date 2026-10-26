@@ -20,14 +20,14 @@ func (h *Handler) MessageListView(c *gin.Context) {
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {
-		res.FailWithMsg("请先登录", c)
+		res.FailWithMsg(testLoginRequired, c)
 
 		return
 	}
 
 	data, err := h.service.ListMessages(c.Request.Context(), uid, req.PeerID, req.Before)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

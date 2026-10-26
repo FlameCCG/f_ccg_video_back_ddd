@@ -124,7 +124,7 @@ func NewPromptVideoCandidate(input VideoCandidateInput) PromptVideoCandidate {
 		Partition:   strings.TrimSpace(input.Partition),
 		Cover:       strings.TrimSpace(input.Cover),
 		Route:       BuildVideoRoute(input.VideoID, 0),
-		WorkType:    "single",
+		WorkType:    testSingle,
 		Tags:        normalizeTagNames(input.Tags),
 	}
 

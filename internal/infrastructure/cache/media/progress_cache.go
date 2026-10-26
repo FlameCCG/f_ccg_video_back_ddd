@@ -10,12 +10,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strings"
 	"sync"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -54,12 +55,6 @@ func (c *ProgressCache) Write(ctx context.Context, snapshot *domain.TranscodePro
 	}
 
 	if err := c.redis.Set(ctx, domain.TranscodeProgressKey(snapshot.VideoID, snapshot.PartID), raw, ttl).Err(); err != nil {
-		c.logger.Warn("write transcode progress failed",
-			zap.Uint("videoId", snapshot.VideoID),
-			zap.Uint("partId", snapshot.PartID),
-			zap.Error(err),
-		)
-
 		return err
 	}
 
@@ -102,9 +97,9 @@ func (c *ProgressCache) Clear(ctx context.Context, videoID, partID uint) {
 	}
 
 	if _, err := pipe.Exec(cleanupCtx); err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("clear canceled transcode progress failed",
-			zap.Uint("videoId", videoID),
-			zap.Uint("partId", partID),
+		logctx.With(ctx, c.logger).Warn("clear canceled transcode progress failed", zap.String("event", "cache.progress_cache.clear.degraded"), zap.String("operation", "cache.progress_cache.clear"),
+			zap.Uint("video_id", videoID),
+			zap.Uint("part_id", partID),
 			zap.Error(err),
 		)
 	}
@@ -135,7 +130,7 @@ func (c *ProgressCache) Get(ctx context.Context, videoID, partID uint) (*domain.
 
 // ByVideoIDs 批量读取视频维度进度：存在分P 进度时展开为各分P，否则取视频级 key。
 func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]domain.TranscodeProgress, error) {
-	if c == nil || c.redis == nil || len(videoIDs) == 0 {
+	if progressCacheByVideoIDsCondition(c, videoIDs) {
 		return []domain.TranscodeProgress{}, nil
 	}
 
@@ -168,30 +163,7 @@ func (c *ProgressCache) ByVideoIDs(ctx context.Context, videoIDs []uint) ([]doma
 		partCmds[id] = pipe.HVals(ctx, domain.TranscodeProgressPartsKey(id))
 	}
 
-	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
-		return nil, err
-	}
-
-	out := make([]domain.TranscodeProgress, 0, len(ids))
-
-	for _, id := range ids {
-		partValues := partCmds[id].Val()
-		if len(partValues) > 0 {
-			for _, raw := range partValues {
-				if p, ok := decodeTranscodeProgress(raw, c.logger); ok {
-					out = append(out, p)
-				}
-			}
-
-			continue
-		}
-
-		if p, ok := decodeTranscodeProgress(videoCmds[id].Val(), c.logger); ok {
-			out = append(out, p)
-		}
-	}
-
-	return out, nil
+	return finishProgressCacheByVideoIDs(ctx, c, ids, pipe, videoCmds, partCmds)
 }
 
 // ByPairs 按显式 (videoId, partId) 组合批量读取进度。
@@ -256,7 +228,7 @@ func (c *ProgressCache) Subscribe(ctx context.Context) (domain.ProgressSubscript
 
 // progressSubscription 把 Redis Pub/Sub 消息解码成领域进度快照。
 type progressSubscription struct {
-	ctx       context.Context
+	ctx       context.Context //nolint:containedctx // Owns the lifetime of a Redis PubSub subscription.
 	done      chan struct{}
 	closeOnce sync.Once
 	closeErr  error
@@ -283,8 +255,10 @@ func newProgressSubscription(ctx context.Context, pubsub *redis.PubSub, logger *
 
 func (s *progressSubscription) pump() {
 	defer close(s.events)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
+
 	input := s.pubsub.Channel()
+
 	for {
 		select {
 		case <-s.done:
@@ -295,10 +269,12 @@ func (s *progressSubscription) pump() {
 			if !ok {
 				return
 			}
+
 			p, ok := decodeTranscodeProgress(message.Payload, s.logger)
 			if !ok {
 				continue
 			}
+
 			select {
 			case <-s.done:
 				return
@@ -328,10 +304,41 @@ func decodeTranscodeProgress(raw string, logger *zap.Logger) (domain.TranscodePr
 
 	var p domain.TranscodeProgress
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
-		logger.Debug("skip invalid transcode progress json", zap.Error(err))
+		logger.Debug("skip invalid transcode progress json", zap.String("event", "cache.progress_cache.decode_transcode_progress.diagnostic"), zap.String("operation", "cache.progress_cache.decode_transcode_progress"), zap.Error(err))
 
 		return domain.TranscodeProgress{}, false
 	}
 
 	return p, true
+}
+
+func progressCacheByVideoIDsCondition(c *ProgressCache, videoIDs []uint) bool {
+	return c == nil || c.redis == nil || len(videoIDs) == 0
+}
+
+func finishProgressCacheByVideoIDs(ctx context.Context, c *ProgressCache, ids []uint, pipe redis.Pipeliner, videoCmds map[uint]*redis.StringCmd, partCmds map[uint]*redis.StringSliceCmd) ([]domain.TranscodeProgress, error) {
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, err
+	}
+
+	out := make([]domain.TranscodeProgress, 0, len(ids))
+
+	for _, id := range ids {
+		partValues := partCmds[id].Val()
+		if len(partValues) > 0 {
+			for _, raw := range partValues {
+				if p, ok := decodeTranscodeProgress(raw, c.logger); ok {
+					out = append(out, p)
+				}
+			}
+
+			continue
+		}
+
+		if p, ok := decodeTranscodeProgress(videoCmds[id].Val(), c.logger); ok {
+			out = append(out, p)
+		}
+	}
+
+	return out, nil
 }

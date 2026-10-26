@@ -2,10 +2,10 @@ package contentops
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"fmt"
 
 	domain "f_ccg_video_back_ddd/internal/domain/contentops"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // ErrBannerNotFound 轮播图不存在（转发领域错误，供 interfaces 层做错误分支判断，

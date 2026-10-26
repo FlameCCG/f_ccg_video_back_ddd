@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
 	"io"
 	"net"
@@ -24,7 +25,6 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/config"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	emaillib "github.com/jordan-wright/email"
@@ -82,8 +82,6 @@ func (s *Sender) Send(to, subject, textBody, htmlBody string) error {
 	e.HTML = []byte(htmlBody)
 
 	if err := sendSMTPMail(e, em.Domain, em.Port, em.SendEmail, em.AuthCode, em.TLS, em.SSL, s.logger); err != nil {
-		s.logger.Error("send email error", zap.Error(err))
-
 		return err
 	}
 
@@ -129,7 +127,7 @@ func sendSMTPMail(
 		ServerName: domain,
 	}
 
-	implicitTLS := port == 465 || (enableSSL && !enableStartTLS)
+	implicitTLS := sendSMTPMailCondition(port, enableStartTLS, enableSSL)
 	if implicitTLS {
 		tlsConn := tls.Client(conn, tlsConfig)
 		if err := tlsConn.HandshakeContext(context.Background()); err != nil {
@@ -162,47 +160,7 @@ func sendSMTPMail(
 		_ = conn.SetDeadline(time.Now().Add(smtpSessionTimeout))
 	}
 
-	if username != "" && password != "" {
-		if ok, _ := client.Extension("AUTH"); !ok {
-			return fmt.Errorf("smtp server %s does not support AUTH", domain)
-		}
-
-		if err := client.Auth(smtp.PlainAuth("", username, password, domain)); err != nil {
-			return fmt.Errorf("smtp auth failed: %w", err)
-		}
-	}
-
-	if err := client.Mail(envelope.sender); err != nil {
-		return fmt.Errorf("smtp mail from failed: %w", err)
-	}
-
-	for _, recipient := range envelope.recipients {
-		if err := client.Rcpt(recipient); err != nil {
-			return fmt.Errorf("smtp rcpt to %s failed: %w", recipient, err)
-		}
-	}
-
-	writer, err := client.Data()
-	if err != nil {
-		return fmt.Errorf("smtp data failed: %w", err)
-	}
-
-	if _, err := writer.Write(envelope.raw); err != nil {
-		_ = writer.Close()
-
-		return fmt.Errorf("smtp write body failed: %w", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("smtp finalize body failed: %w", err)
-	}
-
-	// 仅 QUIT 阶段忽略部分服务商截断响应；DATA 成功后邮件通常已入队。
-	if err := client.Quit(); err != nil && !isSMTPQuitIgnorable(err) {
-		return fmt.Errorf("smtp quit failed: %w", err)
-	}
-
-	return nil
+	return finishSendSMTPMail(domain, username, password, envelope, client)
 }
 
 // isSMTPQuitIgnorable 仅在 QUIT 阶段容忍 short response 类兼容性问题。
@@ -257,7 +215,7 @@ func dialSMTP(targetAddr string, logger *zap.Logger) (net.Conn, error) {
 
 		directConn, directErr := (&net.Dialer{Timeout: smtpDialTimeout}).Dial("tcp", targetAddr)
 		if directErr == nil {
-			logger.Warn("smtp proxy dial failed, fallback to direct", zap.String("proxy", proxyURL.Redacted()), zap.Error(err))
+			logger.Warn("smtp proxy dial failed, fallback to direct", zap.String("event", "external.smtp.dial_smtp.degraded"), zap.String("operation", "external.smtp.dial_smtp"), zap.String("proxy", proxyURL.Redacted()), zap.Error(err))
 
 			return directConn, nil
 		}
@@ -335,6 +293,65 @@ func dialSMTPViaHTTPProxy(proxyURL *url.URL, targetAddr string, timeout time.Dur
 		return nil, fmt.Errorf("write proxy connect request failed: %w", err)
 	}
 
+	return finishDialSMTPViaHTTPProxy(conn)
+}
+
+// http200 代理 CONNECT 成功的状态码。
+const http200 = 200
+
+func sendSMTPMailCondition(port int, enableStartTLS, enableSSL bool) bool {
+	return port == 465 || (enableSSL && !enableStartTLS)
+}
+
+func finishSendSMTPMail(domain, username, password string, envelope *smtpEnvelope, client *smtp.Client) error {
+	var err error
+
+	if username != "" && password != "" {
+		if ok, _ := client.Extension("AUTH"); !ok {
+			return fmt.Errorf("smtp server %s does not support AUTH", domain)
+		}
+
+		if errLocal := client.Auth(smtp.PlainAuth("", username, password, domain)); errLocal != nil {
+			return fmt.Errorf("smtp auth failed: %w", errLocal)
+		}
+	}
+
+	if errLocal := client.Mail(envelope.sender); errLocal != nil {
+		return fmt.Errorf("smtp mail from failed: %w", errLocal)
+	}
+
+	for _, recipient := range envelope.recipients {
+		if errLocal := client.Rcpt(recipient); errLocal != nil {
+			return fmt.Errorf("smtp rcpt to %s failed: %w", recipient, errLocal)
+		}
+	}
+
+	writer, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data failed: %w", err)
+	}
+
+	if _, errLocal := writer.Write(envelope.raw); errLocal != nil {
+		_ = writer.Close()
+
+		return fmt.Errorf("smtp write body failed: %w", errLocal)
+	}
+
+	if errLocal := writer.Close(); errLocal != nil {
+		return fmt.Errorf("smtp finalize body failed: %w", errLocal)
+	}
+
+	// 仅 QUIT 阶段忽略部分服务商截断响应；DATA 成功后邮件通常已入队。
+	if errLocal := client.Quit(); errLocal != nil && !isSMTPQuitIgnorable(errLocal) {
+		return fmt.Errorf("smtp quit failed: %w", errLocal)
+	}
+
+	return nil
+}
+
+func finishDialSMTPViaHTTPProxy(conn net.Conn) (net.Conn, error) {
+	var err error
+
 	reader := bufio.NewReader(conn)
 
 	statusLine, err := reader.ReadString('\n')
@@ -361,11 +378,11 @@ func dialSMTPViaHTTPProxy(proxyURL *url.URL, targetAddr string, timeout time.Dur
 	}
 
 	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
+		line, errLocal := reader.ReadString('\n')
+		if errLocal != nil {
 			_ = conn.Close()
 
-			return nil, fmt.Errorf("read proxy response header failed: %w", err)
+			return nil, fmt.Errorf("read proxy response header failed: %w", errLocal)
 		}
 
 		if line == "\r\n" {
@@ -381,6 +398,3 @@ func dialSMTPViaHTTPProxy(proxyURL *url.URL, targetAddr string, timeout time.Dur
 
 	return &bufferedConn{Conn: conn, reader: reader}, nil
 }
-
-// http200 代理 CONNECT 成功的状态码。
-const http200 = 200

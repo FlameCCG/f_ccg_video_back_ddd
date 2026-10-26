@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/res"
+	"f_ccg_video_back_ddd/pkg/uploadcheck"
 	"path"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-	"f_ccg_video_back_ddd/pkg/res"
-	"f_ccg_video_back_ddd/pkg/uploadcheck"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"go.uber.org/zap"
 )
 
 // UploadChunkReq 标识整文件哈希和从 0 开始的分片序号，二进制内容由 multipart 的 chunk 字段传入。
@@ -27,6 +27,7 @@ type UploadChunkReq struct {
 // UploadChunkView 打开 multipart 分片流并交给带用户额度校验的上传用例，返回前关闭上传流。
 func (h *Handler) UploadChunkView(c *gin.Context) {
 	req := middlewares.GetBound[UploadChunkReq](c)
+
 	uid, ok := getUID(c)
 	if !ok {
 		res.FailWithMsg("请先登录", c)
@@ -35,8 +36,8 @@ func (h *Handler) UploadChunkView(c *gin.Context) {
 
 	file, header, err := c.Request.FormFile("chunk")
 	if err != nil {
-		h.log().Error("upload chunk failed", zap.Error(err))
-		res.FailWithMsg("获取上传分片失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/upload", nil, err), c)
+		res.FailWithCause(err, "获取上传分片失败", c)
 
 		return
 	}
@@ -44,8 +45,8 @@ func (h *Handler) UploadChunkView(c *gin.Context) {
 	defer func() { _ = file.Close() }()
 
 	if err := h.uploads.UploadChunkForUser(c.Request.Context(), uid, req.FileHash, req.Index, header.Size, file); err != nil {
-		h.log().Error("upload chunk failed", zap.Error(err))
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.RecordFailure(apperr.Wrap("handler/video/upload", nil, err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -69,6 +70,7 @@ type ChunkStatusResp struct {
 // ChunkStatusView 检查文件分片上传状态.
 func (h *Handler) ChunkStatusView(c *gin.Context) {
 	req := middlewares.GetBound[ChunkStatusReq](c)
+
 	uid, ok := getUID(c)
 	if !ok {
 		res.FailWithMsg("请先登录", c)
@@ -77,11 +79,12 @@ func (h *Handler) ChunkStatusView(c *gin.Context) {
 
 	status, err := h.uploads.GetUploadStatusForUser(c.Request.Context(), uid, req.FileHash)
 	if err != nil {
-		h.log().Error("list uploaded chunks failed", zap.Error(err))
+		res.RecordFailure(apperr.Wrap("handler/video/upload", nil, err), c)
+
 		if errors.Is(err, app.ErrDailyUploadLimit) || errors.Is(err, app.ErrUploadQuotaUnavailable) {
-			res.FailWithMsg(clienterror.Message(err), c)
+			res.FailWithCause(err, clienterror.Message(err), c)
 		} else {
-			res.FailWithMsg("检查上传状态失败", c)
+			res.FailWithCause(err, "检查上传状态失败", c)
 		}
 
 		return
@@ -110,6 +113,7 @@ type CompleteUploadResp struct {
 // CompleteUploadView 调用完整性检查与分片合并，认证后允许脱离客户端取消继续收尾，但保留独立上传超时。
 func (h *Handler) CompleteUploadView(c *gin.Context) {
 	req := middlewares.GetBound[CompleteUploadReq](c)
+
 	uid, ok := getUID(c)
 	if !ok {
 		res.FailWithMsg("请先登录", c)
@@ -125,8 +129,8 @@ func (h *Handler) CompleteUploadView(c *gin.Context) {
 
 	finalPath, err := h.uploads.CompleteUploadForUser(mergeCtx, uid, req.FileHash, req.FileName, req.TotalChunks)
 	if err != nil {
-		h.log().Error("complete upload failed", zap.Error(err))
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.RecordFailure(apperr.Wrap("handler/video/upload", nil, err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -139,16 +143,17 @@ func (h *Handler) CompleteUploadView(c *gin.Context) {
 // UploadImageView 接收前端上传的图片并返回存储地址.
 func (h *Handler) UploadImageView(c *gin.Context) {
 	middlewares.LimitRequestBody(c, 12<<20)
+
 	fileHash := strings.TrimSpace(c.PostForm("fileHash"))
 	if err := h.uploads.ValidateUploadID(fileHash); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
 
 	file, header, err := c.Request.FormFile("cover")
 	if err != nil {
-		res.FailWithMsg("请上传封面文件", c)
+		res.FailWithCause(err, "请上传封面文件", c)
 
 		return
 	}
@@ -159,7 +164,7 @@ func (h *Handler) UploadImageView(c *gin.Context) {
 		file, header.Filename, header.Size, uploadcheck.DefaultMaxImageBytes,
 	)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -168,8 +173,8 @@ func (h *Handler) UploadImageView(c *gin.Context) {
 
 	imageURL, err := h.uploads.SaveImage(c.Request.Context(), relativePath, header.Size, file, contentType)
 	if err != nil {
-		h.log().Error("save image failed", zap.Error(err))
-		res.FailWithMsg("封面上传失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/upload", nil, err), c)
+		res.FailWithCause(err, "封面上传失败", c)
 
 		return
 	}

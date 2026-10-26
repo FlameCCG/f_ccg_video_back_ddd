@@ -5,7 +5,7 @@
 package encrypt
 
 import (
-	"crypto/md5"
+	"crypto/md5" //nolint:gosec // Legacy non-authentication digest format must remain compatible with stored identifiers.
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -31,6 +31,7 @@ func ValidatePasswordHash(password, hashed string) bool {
 
 // Md5 返回字节数据的小写十六进制 MD5 摘要，用于标识/比较，不用于保存密码。
 func Md5(data []byte) string {
+	//nolint:gosec // Compatibility checksum only; authentication and passwords use stronger primitives.
 	md5New := md5.New()
 	md5New.Write(data)
 	md5Str := hex.EncodeToString(md5New.Sum(nil))
@@ -40,7 +41,7 @@ func Md5(data []byte) string {
 
 // Md5Str 读取整个文件并计算 MD5，读取失败返回错误；大文件处理需注意其整文件内存占用。
 func Md5Str(filepath string) (string, error) {
-	bytesData, err := os.ReadFile(filepath)
+	bytesData, err := os.ReadFile(filepath) // #nosec G304 -- This file utility intentionally reads an explicit caller-selected path; callers enforce their storage boundary.
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +72,7 @@ func HashFileSHA256(path string) (hash string, size int64, err error) {
 
 	size = fi.Size()
 
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- This file utility intentionally reads an explicit caller-selected path; callers enforce their storage boundary.
 	if err != nil {
 		return "", 0, err
 	}

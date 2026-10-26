@@ -27,8 +27,8 @@ func registerIdentityCommonRoutes(
 		userVideoGroup.GET("/list", middlewares.BindQueryParams[identityhandler.UserVideosReq], h.UserVideosView)
 		userVideoGroup.GET("/recent/liked", h.RecentLikedView)
 		userVideoGroup.GET("/recent/coined", h.RecentCoinedView)
-		userVideoGroup.DELETE("/delete", middlewares.JsonBindParams[identityhandler.DeleteVideoReq], mw.JwtAuth(), h.DeleteVideoView)
-		userVideoGroup.POST("/tag", mw.JwtAuth(), mw.VideoSubmissionCheck(), mw.UserBanCheck(), middlewares.JsonBindParams[identityhandler.CreateTagReq], h.CreateTag)
+		userVideoGroup.DELETE("/delete", middlewares.JSONBindParams[identityhandler.DeleteVideoReq], mw.JwtAuth(), h.DeleteVideoView)
+		userVideoGroup.POST("/tag", mw.JwtAuth(), mw.VideoSubmissionCheck(), mw.UserBanCheck(), middlewares.JSONBindParams[identityhandler.CreateTagReq], h.CreateTag)
 	}
 
 	// @ 联想（需登录）
@@ -61,7 +61,7 @@ func registerIdentityCommonRoutes(
 		registerGroup.POST("/email",
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 			mw.EmailCaptchaVerify(),
-			middlewares.JsonBindParams[identityhandler.RegisterReq],
+			middlewares.JSONBindParams[identityhandler.RegisterReq],
 			h.EmailRegisterView,
 		)
 	}
@@ -73,15 +73,15 @@ func registerIdentityCommonRoutes(
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 			mw.LoginRateLimit(),
 			mw.InteractiveCaptchaVerify("login"),
-			middlewares.JsonBindParams[identityhandler.PwdLoginReq],
+			middlewares.JSONBindParams[identityhandler.PwdLoginReq],
 			h.PwdLoginView,
 		)
-		loginGroup.POST("/qq", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.QQLoginReq], h.QQLoginView)
-		loginGroup.POST("/google", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.GoogleLoginReq], h.GoogleLoginView)
-		loginGroup.POST("/github", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.GitHubLoginReq], h.GitHubLoginView)
-		loginGroup.POST("/linuxdo", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.LinuxDoLoginReq], h.LinuxDoLoginView)
-		loginGroup.POST("/x", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JsonBindParams[identityhandler.XLoginReq], h.XLoginView)
-		loginGroup.POST("/refresh", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.JsonBindParams[identityhandler.RefreshTokenReq], h.RefreshTokenView)
+		loginGroup.POST("/qq", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JSONBindParams[identityhandler.QQLoginReq], h.QQLoginView)
+		loginGroup.POST("/google", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JSONBindParams[identityhandler.GoogleLoginReq], h.GoogleLoginView)
+		loginGroup.POST("/github", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JSONBindParams[identityhandler.GitHubLoginReq], h.GitHubLoginView)
+		loginGroup.POST("/linuxdo", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JSONBindParams[identityhandler.LinuxDoLoginReq], h.LinuxDoLoginView)
+		loginGroup.POST("/x", middlewares.RequestTimeout(ctxutil.RequestOAuthTimeout), mw.LoginRateLimit(), middlewares.JSONBindParams[identityhandler.XLoginReq], h.XLoginView)
+		loginGroup.POST("/refresh", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.JSONBindParams[identityhandler.RefreshTokenReq], h.RefreshTokenView)
 	}
 
 	// 用户信息模块
@@ -89,9 +89,9 @@ func registerIdentityCommonRoutes(
 	infoGroup.Use(middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth())
 	{
 		infoGroup.GET("", h.UserInfoView)                                                                           // 获取当前用户信息
-		infoGroup.PUT("", middlewares.JsonBindParams[identityhandler.UpdateUserInfoReq], h.UpdateUserInfoView)      // 更新当前用户信息
+		infoGroup.PUT("", middlewares.JSONBindParams[identityhandler.UpdateUserInfoReq], h.UpdateUserInfoView)      // 更新当前用户信息
 		infoGroup.GET("/conf", h.GetUserConfView)                                                                   // 获取用户配置
-		infoGroup.PUT("/conf", middlewares.JsonBindParams[identityhandler.UpdateUserConfReq], h.UpdateUserConfView) // 更新用户配置
+		infoGroup.PUT("/conf", middlewares.JSONBindParams[identityhandler.UpdateUserConfReq], h.UpdateUserConfView) // 更新用户配置
 	}
 
 	userGroup.POST("/banner/upload", middlewares.RequestTimeout(ctxutil.RequestUploadTimeout), mw.JwtAuth(), h.UploadBannerView)
@@ -101,7 +101,7 @@ func registerIdentityCommonRoutes(
 		middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 		mw.JwtAuth(),
 		mw.EmailCaptchaVerifyRequired(),
-		middlewares.JsonBindParams[identityhandler.BindEmailReq],
+		middlewares.JSONBindParams[identityhandler.BindEmailReq],
 		h.BindEmailView,
 	)
 
@@ -109,14 +109,14 @@ func registerIdentityCommonRoutes(
 	userGroup.POST("/password/reset",
 		middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 		mw.EmailCaptchaVerifyRequired(),
-		middlewares.JsonBindParams[identityhandler.ResetPasswordReq],
+		middlewares.JSONBindParams[identityhandler.ResetPasswordReq],
 		h.ResetPasswordView,
 	)
 
 	userGroup.PUT("/password/change",
 		middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 		mw.JwtAuth(),
-		middlewares.JsonBindParams[identityhandler.ChangePasswordReq],
+		middlewares.JSONBindParams[identityhandler.ChangePasswordReq],
 		h.ChangePasswordView,
 	)
 }
@@ -133,7 +133,7 @@ func registerIdentityAdminRoutes(
 			middlewares.RequestTimeout(ctxutil.RequestSlowTimeout),
 			mw.LoginRateLimit(),
 			mw.InteractiveCaptchaVerify("login"),
-			middlewares.JsonBindParams[identityhandler.AdminPwdLoginReq],
+			middlewares.JSONBindParams[identityhandler.AdminPwdLoginReq],
 			h.AdminPwdLoginView,
 		)
 	}
@@ -142,12 +142,12 @@ func registerIdentityAdminRoutes(
 	userGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.AuthAll())
 	{
 		userGroup.GET("list", middlewares.BindQueryParams[identityhandler.AdminUserListReq], h.AdminUserListView)
-		userGroup.PUT("role/switch", middlewares.JsonBindParams[identityhandler.SwitchRoleReq], h.SwitchRoleView)
+		userGroup.PUT("role/switch", middlewares.JSONBindParams[identityhandler.SwitchRoleReq], h.SwitchRoleView)
 		userGroup.GET("info", h.AdminUserInfoView)
-		userGroup.PUT("info", middlewares.JsonBindParams[identityhandler.AdminUpdateUserInfoReq], h.AdminUpdateUserInfoView)
-		userGroup.PUT("banner", middlewares.JsonBindParams[identityhandler.AdminSetUserBannerReq], h.AdminSetUserBannerView)
-		userGroup.PUT("banner/defaults", middlewares.JsonBindParams[identityhandler.AdminUpdateUserBannerListReq], h.AdminUpdateUserBannerListView)
-		userGroup.POST("ban", middlewares.JsonBindParams[identityhandler.AdminUserBanReq], h.AdminBanView)
+		userGroup.PUT("info", middlewares.JSONBindParams[identityhandler.AdminUpdateUserInfoReq], h.AdminUpdateUserInfoView)
+		userGroup.PUT("banner", middlewares.JSONBindParams[identityhandler.AdminSetUserBannerReq], h.AdminSetUserBannerView)
+		userGroup.PUT("banner/defaults", middlewares.JSONBindParams[identityhandler.AdminUpdateUserBannerListReq], h.AdminUpdateUserBannerListView)
+		userGroup.POST("ban", middlewares.JSONBindParams[identityhandler.AdminUserBanReq], h.AdminBanView)
 		userGroup.GET("ban/records", middlewares.BindQueryParams[identityhandler.AdminBanRecordListReq], h.AdminBanRecordListView)
 	}
 }

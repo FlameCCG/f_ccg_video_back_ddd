@@ -1,10 +1,9 @@
 package video
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"strings"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // maxReportHandleNoteLen 处理说明最大长度（与原 HandleReports 一致，按字节计）。
@@ -67,6 +66,8 @@ func NormalizeReportInput(reason, detail string) (string, string, error) {
 func ValidateReportHandle(status enum.ReportStatus, handleNote string) (string, error) {
 	switch status {
 	case enum.ReportStatusResolved, enum.ReportStatusRejected:
+	case enum.ReportStatusPending:
+		fallthrough
 	default:
 		return "", ErrReportStatusInvalid
 	}
@@ -113,6 +114,8 @@ func BuildReportHandledNotification(
 		content += "处理。"
 	case enum.ReportStatusRejected:
 		content += "驳回。"
+	case enum.ReportStatusPending:
+		fallthrough
 	default:
 		content += "处理。"
 	}
@@ -125,6 +128,8 @@ func BuildReportHandledNotification(
 			content += "处理说明：感谢反馈，我们已采取相应措施。"
 		case enum.ReportStatusRejected:
 			content += "处理说明：经核查暂不符合处理条件。"
+		case enum.ReportStatusPending:
+			fallthrough
 		default:
 			content += "处理说明：感谢反馈，我们已记录。"
 		}

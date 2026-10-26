@@ -2,10 +2,11 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"slices"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 )
 
@@ -31,7 +32,7 @@ func NewUserConfService(
 func (s *UserConfService) View(ctx context.Context, userID uint) (*UserConfView, error) {
 	view, err := s.query.View(ctx, userID)
 	if err != nil || view == nil {
-		return nil, domain.ErrUserConfNotFound
+		return nil, apperr.Wrap("application/identity/user_conf_service", domain.ErrUserConfNotFound, err)
 	}
 
 	return view, nil
@@ -43,7 +44,7 @@ func (s *UserConfService) View(ctx context.Context, userID uint) (*UserConfView,
 func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) error {
 	conf, err := s.confs.FindByUserID(ctx, in.UserID)
 	if err != nil || conf == nil {
-		return domain.ErrUserConfNotFound
+		return apperr.Wrap("application/identity/user_conf_service", domain.ErrUserConfNotFound, err)
 	}
 
 	changes := domain.UserConfChanges{
@@ -64,7 +65,7 @@ func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) er
 	switch {
 	case in.BannerID != nil:
 		if err = s.ensureSystemDefaultBannerSelectable(ctx, *in.BannerID); err != nil {
-			return domain.ErrSystemDefaultBannerNotFound
+			return apperr.Wrap("application/identity/user_conf_service", domain.ErrSystemDefaultBannerNotFound, err)
 		}
 
 		bannerID := *in.BannerID
@@ -80,7 +81,7 @@ func (s *UserConfService) Update(ctx context.Context, in UpdateUserConfInput) er
 	}
 
 	if err = s.confs.Update(ctx, in.UserID, changes); err != nil {
-		return ErrUpdateUserFailed
+		return apperr.Wrap("application/identity/user_conf_service", ErrUpdateUserFailed, err)
 	}
 
 	return nil

@@ -2,12 +2,19 @@ package river
 
 import (
 	"context"
-	"sync"
-
 	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"sync"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+)
+
+const (
+	test20240101000000 = "2024-01-01 00:00:00"
+	testAPng           = "a.png"
+	testAlice          = "alice"
+	testFCcgVideo      = "f_ccg_video"
 )
 
 // Component 是 MySQL binlog → ES 同步引擎的可注入后台组件（原 core/init_river.go）。
@@ -52,7 +59,7 @@ func NewRiverComponent(
 }
 
 // Start 启动 binlog 同步；重复调用无副作用，启动失败不返回错误（与原 core.InitRiver 一致）。
-func (c *Component) Start(_ context.Context) error {
+func (c *Component) Start(ctx context.Context) error {
 	c.mu.Lock()
 
 	if c.started {
@@ -65,14 +72,14 @@ func (c *Component) Start(_ context.Context) error {
 	c.mu.Unlock()
 
 	if c.riverCfg == nil || !c.riverCfg.Enable {
-		c.logger.Info("river disabled")
+		logctx.With(ctx, c.logger).Info("river disabled", zap.String("event", "river.component.start.diagnostic"), zap.String("operation", "river.component.start"))
 
 		return nil
 	}
 
-	r, err := NewRiver(c.riverCfg, c.mysqlCfg, c.esCfg, c.db)
+	r, err := NewRiver(c.riverCfg, c.mysqlCfg, c.esCfg, c.db, c.logger)
 	if err != nil {
-		c.logger.Error("init river failed", zap.Error(err))
+		logctx.With(ctx, c.logger).Error("init river failed", zap.String("event", "river.component.start.failed"), zap.String("operation", "river.component.start"), zap.Error(err))
 
 		return nil
 	}
@@ -83,17 +90,21 @@ func (c *Component) Start(_ context.Context) error {
 
 	go func() {
 		if err := r.Run(); err != nil {
-			c.logger.Error("river stopped", zap.Error(err))
+			if r.Ctx().Err() != nil {
+				return
+			}
+
+			logctx.With(ctx, c.logger).Error("river stopped", zap.String("event", "river.component.start.failed"), zap.String("operation", "river.component.start"), zap.Error(err))
 		}
 	}()
 
-	c.logger.Info("river started")
+	logctx.With(ctx, c.logger).Info("river started", zap.String("event", "river.component.start.diagnostic"), zap.String("operation", "river.component.start"))
 
 	return nil
 }
 
 // Stop 优雅关闭同步引擎：取消上下文、关闭 canal、强制刷盘 binlog 位点（幂等）。
-func (c *Component) Stop(_ context.Context) error {
+func (c *Component) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	r := c.river
 	c.river = nil
@@ -104,7 +115,7 @@ func (c *Component) Stop(_ context.Context) error {
 	}
 
 	r.Close()
-	c.logger.Info("river stopped")
+	logctx.With(ctx, c.logger).Info("river stopped", zap.String("event", "river.component.stop.diagnostic"), zap.String("operation", "river.component.stop"))
 
 	return nil
 }

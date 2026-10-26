@@ -25,7 +25,7 @@ func (h *AdminHandler) AdminReportListView(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if err := h.reports.ValidateReportListStatus(req.Status); err != nil {
-		res.FailWithMsg("status 非法", c)
+		res.FailWithCause(err, "status 非法", c)
 
 		return
 	}
@@ -34,7 +34,7 @@ func (h *AdminHandler) AdminReportListView(c *gin.Context) {
 	case "video":
 		list, total, err := h.reports.AdminVideoReports(ctx, req.Page, req.PageSize, int(req.Status))
 		if err != nil {
-			res.FailWithMsg(clienterror.Message(err), c)
+			res.FailWithCause(err, clienterror.Message(err), c)
 
 			return
 		}
@@ -43,7 +43,7 @@ func (h *AdminHandler) AdminReportListView(c *gin.Context) {
 	case "danmu":
 		list, total, err := h.reports.AdminDanmuReports(ctx, req.Page, req.PageSize, int(req.Status))
 		if err != nil {
-			res.FailWithMsg(clienterror.Message(err), c)
+			res.FailWithCause(err, clienterror.Message(err), c)
 
 			return
 		}
@@ -91,7 +91,7 @@ func (h *AdminHandler) AdminReportHandleView(c *gin.Context) {
 		c.Request.Context(), handleType, req.ReportIDs, req.Status, req.HandleNote, handlerID,
 	)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -120,7 +120,7 @@ func (h *AdminHandler) AdminDanmuListView(c *gin.Context) {
 		PageSize: req.PageSize,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -139,7 +139,7 @@ func (h *AdminHandler) AdminDeleteDanmuView(c *gin.Context) {
 
 	deleted, err := h.danmu.AdminDelete(c.Request.Context(), req.DanmuIDs)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

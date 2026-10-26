@@ -3,9 +3,7 @@ package identity
 import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,23 +20,5 @@ type AdminBanRecordListReq struct {
 // AdminBanRecordListView 管理员封禁记录列表.
 func (h *AdminHandler) AdminBanRecordListView(c *gin.Context) {
 	req := middlewares.GetBound[AdminBanRecordListReq](c)
-
-	if !ensureUserStatusValid(c, req.Status) {
-		return
-	}
-
-	list, total, err := h.records.AdminList(c.Request.Context(), app.AdminBanRecordListParams{
-		UserID:   req.UserID,
-		Username: req.Username,
-		Status:   req.Status,
-		Page:     req.Page,
-		PageSize: req.PageSize,
-	})
-	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
-
-		return
-	}
-
-	res.OkWithList(list, total, c)
+	serveAdminAccountList(c, req.Status, app.AdminBanRecordListParams{UserID: req.UserID, Username: req.Username, Status: req.Status, Page: req.Page, PageSize: req.PageSize}, h.records.AdminList)
 }

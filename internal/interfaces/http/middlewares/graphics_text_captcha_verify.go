@@ -2,13 +2,12 @@ package middlewares
 
 import (
 	"bytes"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"io"
 	"strings"
 
-	"f_ccg_video_back_ddd/pkg/res"
-
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // CaptchaMiddlewareRequest 是图形验证码中间件读取的局部载荷，不包含后续登录/注册请求的全部字段。
@@ -29,8 +28,8 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 
 		body, err := c.GetRawData()
 		if err != nil {
-			m.log().Error("read request body failed", zap.Error(err))
-			res.FailWithMsg("请求体无效", c)
+			res.RecordFailure(apperr.Wrap("middlewares/graphics_text_captcha_verify", nil, err, apperr.Validation), c)
+			res.FailWithCause(err, "请求体无效", c)
 			c.Abort()
 
 			return
@@ -40,8 +39,8 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 
 		var payload CaptchaMiddlewareRequest
 		if err = c.ShouldBind(&payload); err != nil {
-			m.log().Error("bind graphics captcha payload failed", zap.Error(err))
-			res.FailWithMsg("图形验证码参数错误", c)
+			res.RecordFailure(apperr.Wrap("middlewares/graphics_text_captcha_verify", nil, err, apperr.Validation), c)
+			res.FailWithCause(apperr.Wrap("middlewares/graphics_text_captcha_verify", nil, err, apperr.Validation), "图形验证码参数错误", c)
 			c.Abort()
 
 			return
@@ -50,6 +49,7 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 
 		captchaID := strings.TrimSpace(payload.CaptchaID)
+
 		captchaCode := strings.TrimSpace(payload.CaptchaCode)
 		if captchaID == "" || captchaCode == "" {
 			res.FailWithMsg("请填写图形验证码", c)
@@ -59,7 +59,6 @@ func (m *Middlewares) GraphicsTextCaptchaMiddleware() gin.HandlerFunc {
 		}
 
 		if ok := m.captcha.VerifyGraphic(captchaID, captchaCode); !ok {
-			m.log().Error("graphics captcha verify failed")
 			res.FailWithMsg("图形验证码错误", c)
 			c.Abort()
 

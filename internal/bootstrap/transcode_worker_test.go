@@ -3,12 +3,12 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/mq"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"testing"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/mq"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -21,8 +21,11 @@ func (s workerConsumerStub) Start() error { return s.start() }
 func (s workerConsumerStub) Stop() error  { return s.stop() }
 
 func TestTranscodeWorkerWaitsForCancellationAndStops(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	started := make(chan struct{})
 	stopped := false
 	worker := &TranscodeWorker{
@@ -34,37 +37,43 @@ func TestTranscodeWorkerWaitsForCancellationAndStops(t *testing.T) {
 		detached:  ctxutil.NewDetachedTaskGroup(),
 		logger:    zap.NewNop(),
 	}
+
 	done := make(chan error, 1)
 	go func() { done <- worker.Run(ctx) }()
+
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
 		t.Fatal("consumer did not start")
 	}
+
 	select {
 	case err := <-done:
 		t.Fatalf("worker exited before cancellation: %v", err)
 	default:
 	}
+
 	cancel()
+
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("worker did not stop")
 	}
-	if !stopped {
-		t.Fatal("consumer was not stopped before Run returned")
-	}
+
+	require.True(t, stopped, "consumer was not stopped before Run returned")
+
 	if worker.detached.Go(context.Background(), time.Second, func(context.Context) {}) {
 		t.Fatal("storage task group still accepts work after shutdown")
 	}
 }
 
 func TestTranscodeWorkerCleansUpOnStartFailureOrCanceledContext(t *testing.T) {
+	t.Parallel()
+
 	startErr := errors.New("subscription failed")
+
 	stopErr := errors.New("close failed")
 	for _, tt := range []struct {
 		name      string
@@ -78,12 +87,17 @@ func TestTranscodeWorkerCleansUpOnStartFailureOrCanceledContext(t *testing.T) {
 		{name: "already canceled", canceled: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+
 			if tt.canceled {
 				cancel()
 			}
+
 			var starts, stops int
+
 			worker := &TranscodeWorker{
 				consumer: workerConsumerStub{
 					start: func() error { starts++; return tt.startErr },
@@ -92,18 +106,15 @@ func TestTranscodeWorkerCleansUpOnStartFailureOrCanceledContext(t *testing.T) {
 				logger: zap.NewNop(),
 			}
 			err := worker.Run(ctx)
-			if starts != tt.wantStart || stops != 1 {
-				t.Fatalf("starts = %d, stops = %d", starts, stops)
-			}
-			if tt.startErr != nil && !errors.Is(err, tt.startErr) {
-				t.Fatalf("start error lost: %v", err)
-			}
-			if tt.stopErr != nil && !errors.Is(err, tt.stopErr) {
-				t.Fatalf("stop error lost: %v", err)
-			}
-			if tt.startErr == nil && tt.stopErr == nil && err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+
+			require.Equal(t, tt.wantStart, starts, "starts = %d, stops = %d", starts, stops)
+			require.Equal(t, 1, stops, "starts = %d, stops = %d", starts, stops)
+
+			require.False(t, tt.startErr != nil && !errors.Is(err, tt.startErr), "start error lost: %v", err)
+
+			require.False(t, tt.stopErr != nil && !errors.Is(err, tt.stopErr), "stop error lost: %v", err)
+
+			require.False(t, tt.startErr == nil && tt.stopErr == nil && err != nil, "unexpected error: %v", err)
 		})
 	}
 }

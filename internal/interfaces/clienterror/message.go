@@ -1,349 +1,82 @@
-// Package clienterror exposes only explicitly allowlisted business errors.
+// Package clienterror maps error identities to stable classifications and safe client text.
 package clienterror
 
 import (
 	"errors"
-	applicationcontentops "f_ccg_video_back_ddd/internal/application/contentops"
-	applicationidentity "f_ccg_video_back_ddd/internal/application/identity"
-	applicationnotification "f_ccg_video_back_ddd/internal/application/notification"
-	applicationprovisioning "f_ccg_video_back_ddd/internal/application/provisioning"
-	applicationsearch "f_ccg_video_back_ddd/internal/application/search"
-	applicationvideo "f_ccg_video_back_ddd/internal/application/video"
-	domainai "f_ccg_video_back_ddd/internal/domain/ai"
-	domainchat "f_ccg_video_back_ddd/internal/domain/chat"
-	domaincomment "f_ccg_video_back_ddd/internal/domain/comment"
-	domaincontentops "f_ccg_video_back_ddd/internal/domain/contentops"
-	domaindynamic "f_ccg_video_back_ddd/internal/domain/dynamic"
-	domainidentity "f_ccg_video_back_ddd/internal/domain/identity"
-	domainmedia "f_ccg_video_back_ddd/internal/domain/media"
-	domainnotification "f_ccg_video_back_ddd/internal/domain/notification"
-	domainrbac "f_ccg_video_back_ddd/internal/domain/rbac"
-	domainsocial "f_ccg_video_back_ddd/internal/domain/social"
-	domainvideo "f_ccg_video_back_ddd/internal/domain/video"
-	"log/slog"
+	"f_ccg_video_back_ddd/pkg/apperr"
 )
 
-var publicErrors = []error{
-	domainai.ErrAssetHostNotAllowed,
-	domainai.ErrChatAPIKeyMissing,
-	domainai.ErrConfigMissing,
-	domainai.ErrDoubaoAPIKeyMissing,
-	domainai.ErrEmptyInput,
-	domainai.ErrEmptyPrompt,
-	domainai.ErrEmptyRequestID,
-	domainai.ErrImageCountRange,
-	domainai.ErrImageRefExclusive,
-	domainai.ErrImageRefPlusCount,
-	domainai.ErrNoUserMessage,
-	domainai.ErrOutputTextNotFound,
-	domainai.ErrTooManyImageRefs,
-	domainai.ErrTooManyVideoRefs,
-	domainai.ErrUnsupportedAssetScheme,
-	domainai.ErrVideoInputRequired,
-	domainai.ErrVideoRefMixed,
-	domainai.ErrVideoRefPromptRequired,
-	domainchat.ErrConversationNotFound,
-	domainchat.ErrDailySendLimit,
-	domainchat.ErrEmptyEmoji,
-	domainchat.ErrEmptyMediaURL,
-	domainchat.ErrEmptyPeerID,
-	domainchat.ErrEmptyText,
-	domainchat.ErrInvalidCursor,
-	domainchat.ErrInvalidPeerID,
-	domainchat.ErrNotLoggedIn,
-	domainchat.ErrSelfConversation,
-	domainchat.ErrSelfMessage,
-	domainchat.ErrStoreUnavailable,
-	domainchat.ErrTextTooLong,
-	domainchat.ErrUnsupportedMessageType,
-	domaincomment.ErrAuthorIDRequired,
-	domaincomment.ErrAuthorNotFound,
-	domaincomment.ErrCommentIDRequired,
-	domaincomment.ErrCommentIDsRequired,
-	domaincomment.ErrCommentNotFound,
-	domaincomment.ErrContentEmpty,
-	domaincomment.ErrContentTooLong,
-	domaincomment.ErrDeleteForbidden,
-	domaincomment.ErrDynamicNotFound,
-	domaincomment.ErrLikeCacheUnavailable,
-	domaincomment.ErrLikeDuplicated,
-	domaincomment.ErrParentNotFound,
-	domaincomment.ErrPinForbidden,
-	domaincomment.ErrPinRootOnly,
-	domaincomment.ErrPinTargetMissing,
-	domaincomment.ErrRecordNotFound,
-	domaincomment.ErrTargetRequired,
-	domaincomment.ErrUserNotLogin,
-	domaincomment.ErrVideoNotPublished,
-	domaincontentops.ErrBannerInvalidParam,
-	domaincontentops.ErrBannerNoUpdatableField,
-	domaincontentops.ErrBannerNotFound,
-	domaincontentops.ErrBannerPartitionNotFound,
-	domaincontentops.ErrBannerPartitionTypeUnsupported,
-	domaindynamic.ErrAuthorIDRequired,
-	domaindynamic.ErrContentEmpty,
-	domaindynamic.ErrContentTooLong,
-	domaindynamic.ErrDeleteForbidden,
-	domaindynamic.ErrDynamicIDRequired,
-	domaindynamic.ErrDynamicIDsRequired,
-	domaindynamic.ErrDynamicNotFound,
-	domaindynamic.ErrLikeDuplicated,
-	domaindynamic.ErrLoginRequired,
-	domaindynamic.ErrPinForbidden,
-	domaindynamic.ErrRecordNotFound,
-	domaindynamic.ErrUserIDRequired,
-	domaindynamic.ErrUserNotFound,
-	domaindynamic.ErrUserNotLogin,
-	domaindynamic.ErrVideoIDRequired,
-	domaindynamic.ErrVideoPinForbidden,
-	domainidentity.ErrAccountBanned,
-	domainidentity.ErrAccountPermanentlyBanned,
-	domainidentity.ErrBanDaysRequired,
-	domainidentity.ErrBanStatusInvalid,
-	domainidentity.ErrBanUserIDRequired,
-	domainidentity.ErrBannerActionInvalid,
-	domainidentity.ErrBannerAlreadyInDefaults,
-	domainidentity.ErrBannerAlreadyRegisterDefault,
-	domainidentity.ErrBannerIDRequired,
-	domainidentity.ErrBannerIDsRequired,
-	domainidentity.ErrBirthdayFormatInvalid,
-	domainidentity.ErrCoinInsufficient,
-	domainidentity.ErrCredentialsInvalid,
-	domainidentity.ErrDuplicateRecord,
-	domainidentity.ErrEmailNotRegistered,
-	domainidentity.ErrEmailOccupied,
-	domainidentity.ErrGenderInvalid,
-	domainidentity.ErrIPRequired,
-	domainidentity.ErrNoFieldsToUpdate,
-	domainidentity.ErrOAuthOpenIDEmpty,
-	domainidentity.ErrOAuthRegisterSourceEmpty,
-	domainidentity.ErrOAuthStateInvalid,
-	domainidentity.ErrOldPasswordIncorrect,
-	domainidentity.ErrOldPasswordRequired,
-	domainidentity.ErrPasswordHashFailed,
-	domainidentity.ErrRecentCoinedNotPublic,
-	domainidentity.ErrRecentLikedNotPublic,
-	domainidentity.ErrRegisterDefaultBannerLocked,
-	domainidentity.ErrRoleNotOwned,
-	domainidentity.ErrSystemDefaultBannerNotFound,
-	domainidentity.ErrUserBannerNotFound,
-	domainidentity.ErrUserConfNotFound,
-	domainidentity.ErrUserIDRequired,
-	domainidentity.ErrUserNotFound,
-	domainidentity.ErrUserNotLogin,
-	domainidentity.ErrUserOrEmailExists,
-	domainidentity.ErrUserRecordNotFound,
-	domainidentity.ErrUsernameExists,
-	domainmedia.ErrTranscodeEncodeTimeout,
-	domainmedia.ErrTranscodeProgressStalled,
-	domainmedia.ErrTranscodeUploadTimeout,
-	domainmedia.ErrVideoDeleted,
-	domainnotification.ErrSystemNotificationNotDeletable,
-	domainrbac.ErrAddFailed,
-	domainrbac.ErrAddPermissionFailed,
-	domainrbac.ErrAssignFailed,
-	domainrbac.ErrBindMenuFailed,
-	domainrbac.ErrBreakInheritanceFailed,
-	domainrbac.ErrCasbinNotInitialized,
-	domainrbac.ErrCreateFailed,
-	domainrbac.ErrDeleteChildMenusFirst,
-	domainrbac.ErrDeleteFailed,
-	domainrbac.ErrEnforcerNotInitialized,
-	domainrbac.ErrGetFailed,
-	domainrbac.ErrGetPermissionFailed,
-	domainrbac.ErrGetResourceFailed,
-	domainrbac.ErrGetWildcardFailed,
-	domainrbac.ErrInheritCycle,
-	domainrbac.ErrInheritFailed,
-	domainrbac.ErrInvalidCasbinPermission,
-	domainrbac.ErrMenuComponentEmpty,
-	domainrbac.ErrMenuCreatorRoleMissing,
-	domainrbac.ErrMenuExists,
-	domainrbac.ErrMenuGenerationTitleEmpty,
-	domainrbac.ErrMenuGeneratorUnavailable,
-	domainrbac.ErrMenuIconTooLong,
-	domainrbac.ErrMenuIconUnsafe,
-	domainrbac.ErrMenuMoveAcrossLevels,
-	domainrbac.ErrMenuMovePosition,
-	domainrbac.ErrMenuNameEmpty,
-	domainrbac.ErrMenuNotFound,
-	domainrbac.ErrMenuParentCycle,
-	domainrbac.ErrMenuPathEmpty,
-	domainrbac.ErrMenuTitleEmpty,
-	domainrbac.ErrMenuTitleEnEmpty,
-	domainrbac.ErrMenuTitleJaEmpty,
-	domainrbac.ErrNoRouteFound,
-	domainrbac.ErrNoUpdatableFields,
-	domainrbac.ErrNotDirectInherit,
-	domainrbac.ErrOpenAPINotFound,
-	domainrbac.ErrOpenAPIParse,
-	domainrbac.ErrOpenAPIRead,
-	domainrbac.ErrParentMenuIsSelf,
-	domainrbac.ErrParentMenuNotFound,
-	domainrbac.ErrParentRoleIsSelf,
-	domainrbac.ErrParentRoleNotFound,
-	domainrbac.ErrPartialMenusNotFound,
-	domainrbac.ErrPermissionAlreadyOwned,
-	domainrbac.ErrPermissionParamIncomplete,
-	domainrbac.ErrPermissionSaveFailed,
-	domainrbac.ErrPermissionSyncFailed,
-	domainrbac.ErrPermissionsRequired,
-	domainrbac.ErrPrepareMenuDataFailed,
-	domainrbac.ErrQueryFailed,
-	domainrbac.ErrQueryMenuFailed,
-	domainrbac.ErrQueryPermissionFailed,
-	domainrbac.ErrQueryRoleFailed,
-	domainrbac.ErrQueryUserFailed,
-	domainrbac.ErrReadMenuDataFailed,
-	domainrbac.ErrReadParentMenuFailed,
-	domainrbac.ErrRemoveFailed,
-	domainrbac.ErrRoleHasUsers,
-	domainrbac.ErrRoleInitFailed,
-	domainrbac.ErrRoleNameBlank,
-	domainrbac.ErrRoleNameEmpty,
-	domainrbac.ErrRoleNameExists,
-	domainrbac.ErrRoleNotFound,
-	domainrbac.ErrRolePolicyCleanupFailed,
-	domainrbac.ErrRolePolicySaveFailed,
-	domainrbac.ErrSaveFailed,
-	domainrbac.ErrSavePermissionFailed,
-	domainrbac.ErrSomeMenusNotFound,
-	domainrbac.ErrSomeRolesNotFound,
-	domainrbac.ErrSortFailed,
-	domainrbac.ErrTemplatePermissionsRead,
-	domainrbac.ErrTemplateRoleNotFound,
-	domainrbac.ErrUpdateFailed,
-	domainrbac.ErrUserNotFound,
-	domainsocial.ErrAlreadyFocused,
-	domainsocial.ErrCannotFocusSelf,
-	domainsocial.ErrFansNotPublic,
-	domainsocial.ErrFocusFailed,
-	domainsocial.ErrFollowNotPublic,
-	domainsocial.ErrForeignPageLimited,
-	domainsocial.ErrListQueryFailed,
-	domainsocial.ErrNotFocused,
-	domainsocial.ErrSelfRelation,
-	domainsocial.ErrTargetUserNotFound,
-	domainsocial.ErrUnfocusFailed,
-	domainsocial.ErrUserIDRequired,
-	domainsocial.ErrUserNotFound,
-	domainvideo.ErrActionUnsupported,
-	domainvideo.ErrCoinCountInvalid,
-	domainvideo.ErrCoinInsufficient,
-	domainvideo.ErrCoinLimit,
-	domainvideo.ErrCreatePartResourcesFailed,
-	domainvideo.ErrCreatePartsFailed,
-	domainvideo.ErrCreateVideoFailed,
-	domainvideo.ErrCreateVideoResourceFailed,
-	domainvideo.ErrCreateVideoTagsFailed,
-	domainvideo.ErrDanmuContentEmpty,
-	domainvideo.ErrDanmuDeleteForbidden,
-	domainvideo.ErrDanmuIDRequired,
-	domainvideo.ErrDanmuIDsRequired,
-	domainvideo.ErrDanmuNotFound,
-	domainvideo.ErrDanmuPartIDRequired,
-	domainvideo.ErrDanmuPartNotFound,
-	domainvideo.ErrDanmuPositionInvalid,
-	domainvideo.ErrDanmuTimeOffsetNegative,
-	domainvideo.ErrDefaultFolderUndeletable,
-	domainvideo.ErrDuplicateCoin,
-	domainvideo.ErrDuplicateLike,
-	domainvideo.ErrFolderNameEmpty,
-	domainvideo.ErrFolderNotFoundOrForbidden,
-	domainvideo.ErrLoginRequired,
-	domainvideo.ErrNotLoggedIn,
-	domainvideo.ErrParamInvalid,
-	domainvideo.ErrPartitionHasVideos,
-	domainvideo.ErrPartitionInactive,
-	domainvideo.ErrPartitionNotFound,
-	domainvideo.ErrPartitionNotSubmittable,
-	domainvideo.ErrRecordNotFound,
-	domainvideo.ErrReportIDsRequired,
-	domainvideo.ErrReportNoteTooLong,
-	domainvideo.ErrReportReasonEmpty,
-	domainvideo.ErrReportStatusInvalid,
-	domainvideo.ErrReportTypeInvalid,
-	domainvideo.ErrSchedulerNotRunning,
-	domainvideo.ErrTagNameEmpty,
-	domainvideo.ErrTagNameTooLong,
-	domainvideo.ErrUserIDRequired,
-	domainvideo.ErrUserNotFound,
-	domainvideo.ErrUserNotLogin,
-	domainvideo.ErrVideoAuthorNotFound,
-	domainvideo.ErrVideoDeleteForbidden,
-	domainvideo.ErrVideoIDRequired,
-	domainvideo.ErrVideoIDsRequired,
-	domainvideo.ErrVideoNotFound,
-	domainvideo.ErrVideoNotPublished,
-	domainvideo.ErrVideoStatusInvalid,
-	applicationcontentops.ErrBannerPartitionFilterUnsupported,
-	applicationcontentops.ErrConfigFileRead,
-	applicationcontentops.ErrConfigFileWrite,
-	applicationcontentops.ErrConfigItemUnsupported,
-	applicationcontentops.ErrSiteConfigNotInitialized,
-	applicationidentity.ErrAdminRoleMissing,
-	applicationidentity.ErrBannerListFailed,
-	applicationidentity.ErrBannerUploadFailed,
-	applicationidentity.ErrBindEmailFailed,
-	applicationidentity.ErrChangePasswordFailed,
-	applicationidentity.ErrCreatorIDRequired,
-	applicationidentity.ErrCreatorMetricTypeInvalid,
-	applicationidentity.ErrCreatorRangeInvalid,
-	applicationidentity.ErrEmailAlreadyBound,
-	applicationidentity.ErrEmailAlreadyRegistered,
-	applicationidentity.ErrEmailCaptchaEmailNotRegistered,
-	applicationidentity.ErrEmailCaptchaRateLimited,
-	applicationidentity.ErrEmailCaptchaStoreFailed,
-	applicationidentity.ErrEmailHostNotExists,
-	applicationidentity.ErrEmailNoMXRecords,
-	applicationidentity.ErrEmailSyntaxInvalid,
-	applicationidentity.ErrEmailVerifyFailed,
-	applicationidentity.ErrLoginFailed,
-	applicationidentity.ErrNotAdminAccount,
-	applicationidentity.ErrOAuthAccountBindingRequired,
-	applicationidentity.ErrOAuthProviderFailed,
-	applicationidentity.ErrOAuthProviderUnsupported,
-	applicationidentity.ErrPersistSiteConfigFailed,
-	applicationidentity.ErrPwdLoginDisabled,
-	applicationidentity.ErrQueryUserFailed,
-	applicationidentity.ErrRefreshTokenFailed,
-	applicationidentity.ErrRefreshTokenInvalid,
-	applicationidentity.ErrRegisterFailed,
-	applicationidentity.ErrResetPasswordFailed,
-	applicationidentity.ErrRoleCheckFailed,
-	applicationidentity.ErrSetUserBannerFailed,
-	applicationidentity.ErrSiteConfigNotInitialized,
-	applicationidentity.ErrStorageConfigInvalid,
-	applicationidentity.ErrSwitchRoleFailed,
-	applicationidentity.ErrUpdateUserFailed,
-	applicationnotification.ErrNoticeNotFound,
-	applicationnotification.ErrNoticeQueryFailed,
-	applicationnotification.ErrNoticeUpdateFailed,
-	applicationprovisioning.ErrBannerImagesDirUnreadable,
-	applicationprovisioning.ErrSuperUserArgsRequired,
-	applicationsearch.ErrAIConfigMissing,
-	applicationsearch.ErrES8Unavailable,
-	applicationsearch.ErrESUnavailable,
-	applicationsearch.ErrEmbeddingAPIKeyMissing,
-	applicationsearch.ErrEmbeddingModelMissing,
-	applicationsearch.ErrInvalidMentionUserID,
-	applicationsearch.ErrUnexpectedMultiSearchSize,
-	applicationsearch.ErrVectorSourceNotFound,
-	applicationvideo.ErrDailyUploadLimit,
-	applicationvideo.ErrUploadQuotaUnavailable,
-	applicationvideo.ErrUploadStorageUnavailable,
-	applicationvideo.ErrVectorRebuildInProgress,
+// Descriptor separates safe response text from internal error classification.
+type Descriptor struct {
+	Error   error
+	Code    string
+	Kind    apperr.Kind
+	Message string
 }
 
-// Message never returns the outer error, which can contain SQL, storage keys or addresses.
-func Message(err error) string {
-	for _, known := range publicErrors {
-		if errors.Is(err, known) {
-			return known.Error()
+var descriptions = [][]Descriptor{
+	domainaiDescriptions,
+	domainchatDescriptions,
+	domaincommentDescriptions,
+	domaincontentopsDescriptions,
+	domaindynamicDescriptions,
+	domainidentityDescriptions,
+	domainmediaDescriptions,
+	domainnotificationDescriptions,
+	domainrbacDescriptions,
+	domainsocialDescriptions,
+	domainvideoDescriptions,
+	applicationcontentopsDescriptions,
+	applicationidentityDescriptions,
+	applicationnotificationDescriptions,
+	applicationprovisioningDescriptions,
+	applicationsearchDescriptions,
+	applicationvideoDescriptions,
+}
+
+func lookup(err error) (Descriptor, bool) {
+	for _, group := range descriptions {
+		for _, d := range group {
+			if errors.Is(err, d.Error) {
+				return d, true
+			}
 		}
 	}
-	if err != nil {
-		slog.Error("request failed", "error", err)
+
+	return Descriptor{}, false
+}
+
+// Describe gives explicit outer semantics precedence over business defaults.
+func Describe(err error) Descriptor {
+	d, ok := lookup(err)
+	if !ok {
+		d = Descriptor{Code: "internal.unknown", Kind: apperr.Internal, Message: "操作失败"}
 	}
-	return "操作失败"
+
+	if semantic := apperr.Semantic(err); semantic != nil {
+		d.Kind = semantic.Kind
+		if semantic.Code != "" {
+			d.Code = semantic.Code
+		} else if !ok {
+			d.Code = "request." + string(semantic.Kind)
+		}
+
+		return d
+	}
+
+	if cause, exists := causalDescriptor(err); exists {
+		return cause
+	}
+
+	return d
+}
+
+// Message is a pure conversion: safe visibility never controls whether an error is logged.
+func Message(err error) string {
+	d, _ := lookup(err)
+	if d.Message == "" {
+		return "操作失败"
+	}
+
+	return d.Message
 }

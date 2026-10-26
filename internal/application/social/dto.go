@@ -11,7 +11,7 @@ package social
 // ListUser 关注/粉丝列表条目（读模型）。
 //
 // 对外 JSON 由 interfaces 层的响应结构体（FocusUserInfo / FansUserInfo）承担，
-// 本类型只承载查询结果字段，与原 user_service.SocialListUser 一一对应。
+// 本类型只承载查询结果字段，与原 user_service.ListUser 一一对应。
 type ListUser struct {
 	ID          uint
 	Username    string

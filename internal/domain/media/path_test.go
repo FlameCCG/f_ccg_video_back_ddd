@@ -1,6 +1,16 @@
 package media
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	testMp4360Standard     = "mp4:360:standard"
+	testSrc                = "src"
+	testVideosHashX720pMp4 = "videos/hash/x_720p.mp4"
+)
 
 func TestStoredPathMatchesRelative(t *testing.T) {
 	t.Parallel()
@@ -14,19 +24,19 @@ func TestStoredPathMatchesRelative(t *testing.T) {
 		{
 			name:     "minio url with bucket prefix",
 			stored:   "http://minio:9000/bucket/videos/hash/x_720p.mp4",
-			relative: "videos/hash/x_720p.mp4",
+			relative: testVideosHashX720pMp4,
 			want:     true,
 		},
 		{
 			name:     "plain relative path",
-			stored:   "videos/hash/x_720p.mp4",
-			relative: "videos/hash/x_720p.mp4",
+			stored:   testVideosHashX720pMp4,
+			relative: testVideosHashX720pMp4,
 			want:     true,
 		},
 		{
 			name:     "different object",
 			stored:   "http://minio:9000/bucket/videos/other/x_720p.mp4",
-			relative: "videos/hash/x_720p.mp4",
+			relative: testVideosHashX720pMp4,
 			want:     false,
 		},
 		{
@@ -38,7 +48,7 @@ func TestStoredPathMatchesRelative(t *testing.T) {
 		{
 			name:     "empty stored",
 			stored:   "",
-			relative: "videos/hash/x_720p.mp4",
+			relative: testVideosHashX720pMp4,
 			want:     false,
 		},
 	}
@@ -47,9 +57,9 @@ func TestStoredPathMatchesRelative(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := StoredPathMatchesRelative(tt.stored, tt.relative); got != tt.want {
-				t.Fatalf("StoredPathMatchesRelative(%q, %q) = %v, want %v",
-					tt.stored, tt.relative, got, tt.want)
+			{
+				got := StoredPathMatchesRelative(tt.stored, tt.relative)
+				require.Equal(t, tt.want, got, "StoredPathMatchesRelative(%q, %q) = %v, want %v", tt.stored, tt.relative, got, tt.want)
 			}
 		})
 	}
@@ -84,9 +94,9 @@ func TestShouldDeleteOriginalSource(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := ShouldDeleteOriginalSource(tt.initial, tt.current); got != tt.want {
-				t.Fatalf("ShouldDeleteOriginalSource(%q, %q) = %v, want %v",
-					tt.initial, tt.current, got, tt.want)
+			{
+				got := ShouldDeleteOriginalSource(tt.initial, tt.current)
+				require.Equal(t, tt.want, got, "ShouldDeleteOriginalSource(%q, %q) = %v, want %v", tt.initial, tt.current, got, tt.want)
 			}
 		})
 	}
@@ -100,24 +110,29 @@ func TestShouldDeleteOriginalSource(t *testing.T) {
 func TestStoredPathBase(t *testing.T) {
 	t.Parallel()
 
-	if got := StoredPathBase(`videos\h\x.mp4`); got != "x.mp4" {
-		t.Fatalf("relative backslash base = %q, want x.mp4", got)
+	{
+		got := StoredPathBase(`videos\h\x.mp4`)
+		require.Equal(t, "x.mp4", got, "relative backslash base = %q, want x.mp4", got)
 	}
 
-	if got := StoredPathBase("http://minio:9000/bucket/videos/h/x.mp4"); got != "x.mp4" {
-		t.Fatalf("url base = %q, want x.mp4", got)
+	{
+		got := StoredPathBase("http://minio:9000/bucket/videos/h/x.mp4")
+		require.Equal(t, "x.mp4", got, "url base = %q, want x.mp4", got)
 	}
 
-	if got := StoredPathBase("/var/lib/videos/h/a.mp4"); got != "a.mp4" {
-		t.Fatalf("posix absolute base = %q, want a.mp4", got)
+	{
+		got := StoredPathBase("/var/lib/videos/h/a.mp4")
+		require.Equal(t, "a.mp4", got, "posix absolute base = %q, want a.mp4", got)
 	}
 
-	if got := StoredPathBase("  "); got != "" {
-		t.Fatalf("blank base = %q, want empty", got)
+	{
+		got := StoredPathBase("  ")
+		require.Empty(t, got, "blank base = %q, want empty", got)
 	}
 
 	// 带盘符的绝对路径：保留原行为（返回 "."）。
-	if got := StoredPathBase(`D:\tmp\a.mp4`); got != "." {
-		t.Fatalf("drive-letter path base = %q, want \".\" (legacy behavior)", got)
+	{
+		got := StoredPathBase(`D:\tmp\a.mp4`)
+		require.Equal(t, ".", got, "drive-letter path base = %q, want \".\" (legacy behavior)", got)
 	}
 }

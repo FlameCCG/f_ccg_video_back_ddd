@@ -2,13 +2,17 @@ package rbac_test
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/rbac"
+
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
 
 	"github.com/glebarez/sqlite"
@@ -34,20 +38,17 @@ func newFixture(t *testing.T) *fixture {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "rbac-test.db")), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
-	if err != nil {
-		t.Fatalf("open sqlite failed: %v", err)
-	}
+	require.NoError(t, err, "open sqlite failed: %v", err)
 
-	if err := db.AutoMigrate(
-		&po.Role{}, &po.Menu{}, &po.RoleMenu{}, &po.UserRole{}, &po.User{}, &po.APIResource{},
-	); err != nil {
-		t.Fatalf("migrate failed: %v", err)
+	{
+		err := db.AutoMigrate(
+			&po.Role{}, &po.Menu{}, &po.RoleMenu{}, &po.UserRole{}, &po.User{}, &po.APIResource{},
+		)
+		require.NoError(t, err, "migrate failed: %v", err)
 	}
 
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("db.DB: %v", err)
-	}
+	require.NoError(t, err, "db.DB: %v", err)
 
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
@@ -57,7 +58,7 @@ func newFixture(t *testing.T) *fixture {
 		menus:     infra.NewMenuRepository(db),
 		roleMenus: infra.NewRoleMenuRepository(db),
 		userRoles: infra.NewUserRoleRepository(db),
-		resources: infra.NewApiResourceRepository(db),
+		resources: infra.NewAPIResourceRepository(db),
 	}
 }
 
@@ -71,138 +72,126 @@ func (f *fixture) seedUser(t *testing.T, username string, currentRoleID uint) ui
 		Password:      "x",
 		CurrentRoleID: currentRoleID,
 	}
-	if err := f.db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error; err != nil {
-		t.Fatalf("create user failed: %v", err)
+	{
+		err := f.db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error
+		require.NoError(t, err, "create user failed: %v", err)
 	}
 
 	return user.ID
 }
 
 func TestRoleAndMenuRepositories(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	ctx := context.Background()
 
 	admin := domain.NewRole("超级管理员", "全部权限")
-	if err := f.roles.Create(ctx, admin); err != nil {
-		t.Fatalf("create role: %v", err)
+	{
+		err := f.roles.Create(ctx, admin)
+		require.NoError(t, err, "create role: %v", err)
 	}
 
-	if admin.ID == 0 {
-		t.Fatal("expected role id to be populated")
-	}
+	require.NotEqualValues(t, 0, admin.ID, "expected role id to be populated")
 
 	parent := domain.NewMenu("系统权限", "System", "", "icon", "/system", "System", "Layout", false, nil, 1)
-	if err := f.menus.Create(ctx, parent); err != nil {
-		t.Fatalf("create parent menu: %v", err)
+	{
+		err := f.menus.Create(ctx, parent)
+		require.NoError(t, err, "create parent menu: %v", err)
 	}
 
 	child := domain.NewMenu("角色管理", "Roles", "", "icon", "roles", "RoleManagement", "views/roles", true, &parent.ID, 2)
-	if err := f.menus.Create(ctx, child); err != nil {
-		t.Fatalf("create child menu: %v", err)
+	{
+		err := f.menus.Create(ctx, child)
+		require.NoError(t, err, "create child menu: %v", err)
 	}
 
 	// 直连 + 继承两类关联，验证 is_inherited 过滤。
-	if err := f.roleMenus.CreateIgnoreConflict(ctx, domain.NewDirectRoleMenus(admin.ID, []*domain.Menu{parent})); err != nil {
-		t.Fatalf("create direct role menu: %v", err)
+	{
+		err := f.roleMenus.CreateIgnoreConflict(ctx, domain.NewDirectRoleMenus(admin.ID, []*domain.Menu{parent}))
+		require.NoError(t, err, "create direct role menu: %v", err)
 	}
 
-	if err := f.roleMenus.CreateIgnoreConflict(ctx, domain.NewInheritedRoleMenus(admin.ID, []uint{child.ID})); err != nil {
-		t.Fatalf("create inherited role menu: %v", err)
+	{
+		err := f.roleMenus.CreateIgnoreConflict(ctx, domain.NewInheritedRoleMenus(admin.ID, []uint{child.ID}))
+		require.NoError(t, err, "create inherited role menu: %v", err)
 	}
 
 	direct, err := f.menus.ListByRoleInherited(ctx, admin.ID, false)
-	if err != nil {
-		t.Fatalf("list direct menus: %v", err)
-	}
+	require.NoError(t, err, "list direct menus: %v", err)
 
-	if len(direct) != 1 || direct[0].ID != parent.ID {
-		t.Fatalf("unexpected direct menus: %+v", direct)
-	}
+	require.Len(t, direct, 1, "unexpected direct menus: %+v", direct)
+	require.Equal(t, direct[0].ID, parent.ID, "unexpected direct menus: %+v", direct)
 
 	inherited, err := f.menus.ListByRoleInherited(ctx, admin.ID, true)
-	if err != nil {
-		t.Fatalf("list inherited menus: %v", err)
-	}
+	require.NoError(t, err, "list inherited menus: %v", err)
 
-	if len(inherited) != 1 || inherited[0].ID != child.ID {
-		t.Fatalf("unexpected inherited menus: %+v", inherited)
-	}
+	require.Len(t, inherited, 1, "unexpected inherited menus: %+v", inherited)
+	require.Equal(t, inherited[0].ID, child.ID, "unexpected inherited menus: %+v", inherited)
 
 	all, err := f.menus.ListByRole(ctx, admin.ID)
-	if err != nil {
-		t.Fatalf("list role menus: %v", err)
-	}
+	require.NoError(t, err, "list role menus: %v", err)
 
-	if len(all) != 2 {
-		t.Fatalf("expected 2 menus for role, got %d", len(all))
-	}
+	require.Len(t, all, 2, "expected 2 menus for role, got %d", len(all))
 
 	inheritedIDs, err := f.roleMenus.InheritedMenuIDs(ctx, admin.ID)
-	if err != nil {
-		t.Fatalf("inherited menu ids: %v", err)
-	}
+	require.NoError(t, err, "inherited menu ids: %v", err)
 
-	if _, ok := inheritedIDs[child.ID]; !ok || len(inheritedIDs) != 1 {
-		t.Fatalf("unexpected inherited ids: %+v", inheritedIDs)
+	{
+		_, ok := inheritedIDs[child.ID]
+		require.True(t, ok, "unexpected inherited ids: %+v", inheritedIDs)
+		require.Len(t, inheritedIDs, 1, "unexpected inherited ids: %+v", inheritedIDs)
 	}
 
 	distinct, err := f.roleMenus.DistinctMenuIDsByRoles(ctx, []uint{admin.ID})
-	if err != nil {
-		t.Fatalf("distinct menu ids: %v", err)
-	}
+	require.NoError(t, err, "distinct menu ids: %v", err)
 
-	if len(distinct) != 2 {
-		t.Fatalf("expected 2 distinct menu ids, got %d", len(distinct))
-	}
+	require.Len(t, distinct, 2, "expected 2 distinct menu ids, got %d", len(distinct))
 
 	// 角色列表应带出已绑定菜单（响应 JSON 依赖该预加载）。
 	list, err := f.roles.ListWithMenus(ctx)
-	if err != nil {
-		t.Fatalf("list roles: %v", err)
-	}
+	require.NoError(t, err, "list roles: %v", err)
 
-	if len(list) != 1 || len(list[0].Menus) != 2 {
-		t.Fatalf("unexpected role list: %+v", list)
-	}
+	require.Len(t, list, 1, "unexpected role list: %+v", list)
+	require.Len(t, list[0].Menus, 2, "unexpected role list: %+v", list)
 
 	// 菜单更新：清空父菜单 + 改标题。
 	title := "角色与权限"
-	if err := f.menus.UpdateFields(ctx, child.ID, domain.MenuFieldUpdate{
-		Title:       &title,
-		ClearParent: true,
-	}); err != nil {
-		t.Fatalf("update menu: %v", err)
+	{
+		err := f.menus.UpdateFields(ctx, child.ID, domain.MenuFieldUpdate{
+			Title:       &title,
+			ClearParent: true,
+		})
+		require.NoError(t, err, "update menu: %v", err)
 	}
 
 	reloaded, err := f.menus.FindByID(ctx, child.ID)
-	if err != nil || reloaded == nil {
-		t.Fatalf("reload menu: %v", err)
-	}
+	require.NoError(t, err, "reload menu: %v", err)
+	require.NotNil(t, reloaded, "reload menu: %v", err)
 
-	if reloaded.Title != title || reloaded.ParentID != nil {
-		t.Fatalf("unexpected menu after update: %+v", reloaded)
-	}
+	require.Equal(t, reloaded.Title, title, "unexpected menu after update: %+v", reloaded)
+	require.Nil(t, reloaded.ParentID, "unexpected menu after update: %+v", reloaded)
 
-	if err := gormx.NewTxManager(f.db).Do(ctx, func(txCtx context.Context) error {
-		if err := f.roles.DeleteBindings(txCtx, admin.ID); err != nil {
-			return err
-		}
-		return f.roles.DeleteByID(txCtx, admin.ID)
-	}); err != nil {
-		t.Fatalf("delete role: %v", err)
+	{
+		err := gormx.NewTxManager(f.db).Do(ctx, func(txCtx context.Context) error {
+			if err := f.roles.DeleteBindings(txCtx, admin.ID); err != nil {
+				return err
+			}
+
+			return f.roles.DeleteByID(txCtx, admin.ID)
+		})
+		require.NoError(t, err, "delete role: %v", err)
 	}
 
 	remaining, err := f.roleMenus.MenuIDsByRole(ctx, admin.ID)
-	if err != nil {
-		t.Fatalf("menu ids after delete: %v", err)
-	}
+	require.NoError(t, err, "menu ids after delete: %v", err)
 
-	if len(remaining) != 0 {
-		t.Fatalf("expected role_menus to be cleaned up, got %+v", remaining)
-	}
+	require.Empty(t, remaining, "expected role_menus to be cleaned up, got %+v", remaining)
 }
 
 func TestUserRoleRepository(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	ctx := context.Background()
 
@@ -210,8 +199,9 @@ func TestUserRoleRepository(t *testing.T) {
 	common := domain.NewRole("普通用户", "")
 
 	for _, role := range []*domain.Role{vip, common} {
-		if err := f.roles.Create(ctx, role); err != nil {
-			t.Fatalf("create role: %v", err)
+		{
+			err := f.roles.Create(ctx, role)
+			require.NoError(t, err, "create role: %v", err)
 		}
 	}
 
@@ -219,137 +209,131 @@ func TestUserRoleRepository(t *testing.T) {
 
 	// 无绑定关系时 GORM 预加载给出空切片，响应体为 data:[]，与原实现一致。
 	roles, err := f.userRoles.RolesByUser(ctx, userID)
-	if err != nil {
-		t.Fatalf("roles by user: %v", err)
+	require.NoError(t, err, "roles by user: %v", err)
+
+	require.Empty(t, roles, "expected no roles for unbound user, got %+v", roles)
+
+	{
+		_, err := f.userRoles.RolesByUser(ctx, userID+999)
+		require.ErrorIs(t, err, domain.ErrUserNotFound, "expected ErrUserNotFound, got %v", err)
 	}
 
-	if len(roles) != 0 {
-		t.Fatalf("expected no roles for unbound user, got %+v", roles)
-	}
-
-	if _, err := f.userRoles.RolesByUser(ctx, userID+999); err != domain.ErrUserNotFound {
-		t.Fatalf("expected ErrUserNotFound, got %v", err)
-	}
-
-	if err := f.userRoles.AppendRoles(ctx, userID, []*domain.Role{vip}); err != nil {
-		t.Fatalf("append roles: %v", err)
+	{
+		err := f.userRoles.AppendRoles(ctx, userID, []*domain.Role{vip})
+		require.NoError(t, err, "append roles: %v", err)
 	}
 
 	// 重复 append 走 ON CONFLICT DO NOTHING，不应报错也不应重复插入。
-	if err := f.userRoles.AppendRoles(ctx, userID, []*domain.Role{vip}); err != nil {
-		t.Fatalf("append roles twice: %v", err)
+	{
+		err := f.userRoles.AppendRoles(ctx, userID, []*domain.Role{vip})
+		require.NoError(t, err, "append roles twice: %v", err)
 	}
 
 	count, err := f.roles.UserCount(ctx, vip.ID)
-	if err != nil {
-		t.Fatalf("user count: %v", err)
-	}
+	require.NoError(t, err, "user count: %v", err)
 
-	if count != 1 {
-		t.Fatalf("user count = %d, want 1", count)
-	}
+	require.EqualValues(t, 1, count, "user count = %d, want 1", count)
 
-	if err := f.userRoles.ReplaceRoles(ctx, userID, []*domain.Role{common}); err != nil {
-		t.Fatalf("replace roles: %v", err)
+	{
+		err := f.userRoles.ReplaceRoles(ctx, userID, []*domain.Role{common})
+		require.NoError(t, err, "replace roles: %v", err)
 	}
 
 	roles, err = f.userRoles.RolesByUser(ctx, userID)
-	if err != nil {
-		t.Fatalf("roles by user after replace: %v", err)
-	}
+	require.NoError(t, err, "roles by user after replace: %v", err)
 
-	if len(roles) != 1 || roles[0].Name != "普通用户" {
-		t.Fatalf("unexpected roles after replace: %+v", roles)
-	}
+	require.Len(t, roles, 1, "unexpected roles after replace: %+v", roles)
+	require.Equal(t, "普通用户", roles[0].Name, "unexpected roles after replace: %+v", roles)
 
-	if err := f.userRoles.RemoveRoles(ctx, userID, []*domain.Role{common}); err != nil {
-		t.Fatalf("remove roles: %v", err)
+	{
+		err := f.userRoles.RemoveRoles(ctx, userID, []*domain.Role{common})
+		require.NoError(t, err, "remove roles: %v", err)
 	}
 
 	roles, err = f.userRoles.RolesByUser(ctx, userID)
-	if err != nil {
-		t.Fatalf("roles by user after remove: %v", err)
-	}
+	require.NoError(t, err, "roles by user after remove: %v", err)
 
-	if len(roles) != 0 {
-		t.Fatalf("expected no roles after remove, got %+v", roles)
-	}
+	require.Empty(t, roles, "expected no roles after remove, got %+v", roles)
 
 	// 用户 open_id 不应被角色绑定操作改写（原实现走 Association 会 Save users 行）。
 	var stored po.User
-	if err := f.db.First(&stored, userID).Error; err != nil {
-		t.Fatalf("reload user: %v", err)
+	{
+		err := f.db.First(&stored, userID).Error
+		require.NoError(t, err, "reload user: %v", err)
 	}
 
-	if stored.Username != "rbac_user" {
-		t.Fatalf("unexpected user row after role writes: %+v", stored)
-	}
+	require.Equal(t, "rbac_user", stored.Username, "unexpected user row after role writes: %+v", stored)
 }
 
 func TestApiResourceRepository(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	ctx := context.Background()
 
-	item := &domain.APIResource{Path: "/v1/admin/rbac/roles", Method: "GET", Summary: "GET /v1/admin/rbac/roles"}
-	if err := f.resources.Create(ctx, item); err != nil {
-		t.Fatalf("create resource: %v", err)
+	item := &domain.APIResource{Path: "/v1/admin/rbac/roles", Method: testGET, Summary: "GET /v1/admin/rbac/roles"}
+	{
+		err := f.resources.Create(ctx, item)
+		require.NoError(t, err, "create resource: %v", err)
 	}
 
 	summary := "角色列表"
 	tags := []byte(`["rbac"]`)
 
-	if err := f.resources.UpdateSummaryAndTags(ctx, item.ID, &summary, &tags); err != nil {
-		t.Fatalf("update resource: %v", err)
+	{
+		err := f.resources.UpdateSummaryAndTags(ctx, item.ID, &summary, &tags)
+		require.NoError(t, err, "update resource: %v", err)
 	}
 
 	list, err := f.resources.ListOrdered(ctx)
-	if err != nil {
-		t.Fatalf("list resources: %v", err)
+	require.NoError(t, err, "list resources: %v", err)
+
+	require.Len(t, list, 1, "unexpected resource list: %+v", list)
+	require.Equal(t, list[0].Summary, summary, "unexpected resource list: %+v", list)
+
+	{
+		got := domain.DecodeResourceTags(list[0].Tags)
+		require.Len(t, got, 1, "unexpected tags: %+v", got)
+		require.Equal(t, "rbac", got[0], "unexpected tags: %+v", got)
 	}
 
-	if len(list) != 1 || list[0].Summary != summary {
-		t.Fatalf("unexpected resource list: %+v", list)
-	}
-
-	if got := domain.DecodeResourceTags(list[0].Tags); len(got) != 1 || got[0] != "rbac" {
-		t.Fatalf("unexpected tags: %+v", got)
-	}
-
-	if err := f.resources.DeleteByID(ctx, item.ID); err != nil {
-		t.Fatalf("delete resource: %v", err)
+	{
+		err := f.resources.DeleteByID(ctx, item.ID)
+		require.NoError(t, err, "delete resource: %v", err)
 	}
 
 	list, err = f.resources.ListAll(ctx)
-	if err != nil {
-		t.Fatalf("list all resources: %v", err)
-	}
+	require.NoError(t, err, "list all resources: %v", err)
 
-	if len(list) != 0 {
-		t.Fatalf("expected empty resource table, got %+v", list)
-	}
+	require.Empty(t, list, "expected empty resource table, got %+v", list)
 }
 
 func TestMenuServiceAssignAndRead(t *testing.T) {
+	t.Parallel()
+
 	f := newFixture(t)
 	ctx := context.Background()
 
 	role := domain.NewRole("运营", "")
-	if err := f.roles.Create(ctx, role); err != nil {
-		t.Fatalf("create role: %v", err)
+	{
+		err := f.roles.Create(ctx, role)
+		require.NoError(t, err, "create role: %v", err)
 	}
 
 	first := domain.NewMenu("内容管理", "Content", "", "", "/content", "Content", "Layout", false, nil, 1)
 	second := domain.NewMenu("稿件审核", "Review", "", "", "review", "SubmissionReview", "views/review", false, nil, 2)
 
 	for _, menu := range []*domain.Menu{first, second} {
-		if err := f.menus.Create(ctx, menu); err != nil {
-			t.Fatalf("create menu: %v", err)
+		{
+			err := f.menus.Create(ctx, menu)
+			require.NoError(t, err, "create menu: %v", err)
 		}
 	}
 
 	second.ParentID = &first.ID
-	if err := f.menus.UpdateFields(ctx, second.ID, domain.MenuFieldUpdate{ParentID: &first.ID}); err != nil {
-		t.Fatalf("set parent: %v", err)
+	{
+		err := f.menus.UpdateFields(ctx, second.ID, domain.MenuFieldUpdate{ParentID: &first.ID})
+		require.NoError(t, err, "set parent: %v", err)
 	}
 
 	svc := app.NewMenuService(
@@ -363,56 +347,51 @@ func TestMenuServiceAssignAndRead(t *testing.T) {
 	)
 
 	// 继承菜单先落一条，AssignRoleMenus 必须把它从入参里过滤掉且不删除它。
-	if err := f.roleMenus.CreateIgnoreConflict(ctx, domain.NewInheritedRoleMenus(role.ID, []uint{second.ID})); err != nil {
-		t.Fatalf("seed inherited menu: %v", err)
+	{
+		err := f.roleMenus.CreateIgnoreConflict(ctx, domain.NewInheritedRoleMenus(role.ID, []uint{second.ID}))
+		require.NoError(t, err, "seed inherited menu: %v", err)
 	}
 
-	if err := svc.AssignRoleMenus(ctx, role.ID, []uint{first.ID, second.ID, first.ID}); err != nil {
-		t.Fatalf("assign role menus: %v", err)
+	{
+		err := svc.AssignRoleMenus(ctx, role.ID, []uint{first.ID, second.ID, first.ID})
+		require.NoError(t, err, "assign role menus: %v", err)
 	}
 
 	resp, err := svc.RoleMenus(ctx, role.ID)
-	if err != nil {
-		t.Fatalf("role menus: %v", err)
-	}
+	require.NoError(t, err, "role menus: %v", err)
 
-	if len(resp.DirectMenus) != 1 || resp.DirectMenus[0].ID != first.ID {
-		t.Fatalf("unexpected direct menu tree: %+v", resp.DirectMenus)
-	}
+	require.Len(t, resp.DirectMenus, 1, "unexpected direct menu tree: %+v", resp.DirectMenus)
+	require.Equal(t, resp.DirectMenus[0].ID, first.ID, "unexpected direct menu tree: %+v", resp.DirectMenus)
 
-	if len(resp.InheritMenus) != 1 || resp.InheritMenus[0].ID != second.ID {
-		t.Fatalf("unexpected inherit menu tree: %+v", resp.InheritMenus)
-	}
+	require.Len(t, resp.InheritMenus, 1, "unexpected inherit menu tree: %+v", resp.InheritMenus)
+	require.Equal(t, resp.InheritMenus[0].ID, second.ID, "unexpected inherit menu tree: %+v", resp.InheritMenus)
 
 	// 当前角色为 0 的用户拿到空列表（而不是 null）。
 	noRoleUser := f.seedUser(t, "no_role", 0)
 
 	menus, err := svc.UserMenus(ctx, noRoleUser)
-	if err != nil {
-		t.Fatalf("user menus: %v", err)
-	}
+	require.NoError(t, err, "user menus: %v", err)
 
-	if menus == nil || len(menus) != 0 {
-		t.Fatalf("expected empty non-nil slice, got %+v", menus)
-	}
+	require.NotNil(t, menus, "expected empty non-nil slice, got %+v", menus)
+	require.Empty(t, menus, "expected empty non-nil slice, got %+v", menus)
 
 	// 设置当前角色后应拿到菜单树（父子已挂接）。
 	withRoleUser := f.seedUser(t, "with_role", role.ID)
 
 	menus, err = svc.UserMenus(ctx, withRoleUser)
-	if err != nil {
-		t.Fatalf("user menus with role: %v", err)
+	require.NoError(t, err, "user menus with role: %v", err)
+
+	require.Len(t, menus, 1, "unexpected user menu tree: %+v", menus)
+	require.Equal(t, menus[0].ID, first.ID, "unexpected user menu tree: %+v", menus)
+	require.Len(t, menus[0].Children, 1, "unexpected user menu tree: %+v", menus)
+
+	{
+		_, err := svc.RoleMenus(ctx, role.ID+999)
+		require.ErrorIs(t, err, domain.ErrRoleNotFound, "expected ErrRoleNotFound, got %v", err)
 	}
 
-	if len(menus) != 1 || menus[0].ID != first.ID || len(menus[0].Children) != 1 {
-		t.Fatalf("unexpected user menu tree: %+v", menus)
-	}
-
-	if _, err := svc.RoleMenus(ctx, role.ID+999); err != domain.ErrRoleNotFound {
-		t.Fatalf("expected ErrRoleNotFound, got %v", err)
-	}
-
-	if _, err := svc.UserMenus(ctx, withRoleUser+999); err != domain.ErrUserNotFound {
-		t.Fatalf("expected ErrUserNotFound, got %v", err)
+	{
+		_, err := svc.UserMenus(ctx, withRoleUser+999)
+		require.ErrorIs(t, err, domain.ErrUserNotFound, "expected ErrUserNotFound, got %v", err)
 	}
 }

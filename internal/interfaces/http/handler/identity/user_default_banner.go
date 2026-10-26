@@ -3,11 +3,11 @@ package identity
 import (
 	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/res"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,7 +39,7 @@ func (h *Handler) ListDefaultUserBannersView(c *gin.Context) {
 
 	list, err := h.banners.ListDefaults(c.Request.Context(), viewerID)
 	if err != nil {
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}
@@ -60,12 +60,12 @@ func (h *AdminHandler) AdminUpdateUserBannerListView(c *gin.Context) {
 	if err != nil {
 		// 领域错误文案是「默认注册横幅不允许操作」，而本接口的原始响应文案更具体，此处显式映射。
 		if errors.Is(err, domain.ErrRegisterDefaultBannerLocked) {
-			res.FailWithMsg("默认注册横幅不允许在默认列表中操作", c)
+			res.FailWithCause(err, "默认注册横幅不允许在默认列表中操作", c)
 
 			return
 		}
 
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strings"
 	"sync"
@@ -39,13 +40,13 @@ func (s *TranscodeService) executeConfiguredPipelines(
 	plan := domain.PlanPipelines(task, meta, policy)
 
 	if plan.NotPlayableReason != "" {
-		s.logger.Info("source requires browser-compatible normalization",
-			zap.Uint("videoId", task.VideoID),
+		logctx.With(ctx, s.logger).Info("source requires browser-compatible normalization", zap.String("event", "media.pipeline_coordinator.execute_configured_pipelines.diagnostic"), zap.String("operation", "media.pipeline_coordinator.execute_configured_pipelines"),
+			zap.Uint("video_id", task.VideoID),
 			zap.String("reason", plan.NotPlayableReason),
-			zap.String("sourcePath", initialSrcPath),
+			zap.String("source_path", initialSrcPath),
 			zap.String("codec", meta.Codec),
-			zap.Uint16("pixelHeight", plan.PixelHeight),
-			zap.Uint16("classHeight", plan.ClassHeight),
+			zap.Uint16("pixel_height", plan.PixelHeight),
+			zap.Uint16("class_height", plan.ClassHeight),
 		)
 	}
 
@@ -104,57 +105,22 @@ func (s *TranscodeService) executeConfiguredPipelines(
 		return initialSrcPath, false, nil
 	}
 
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	currentSourceURL := initialSrcPath
-
-	var mp4Err, dashErr error
-
-	for result := range resultCh {
-		switch result.name {
-		case domain.TranscodePipelineMP4:
-			mp4Err = result.err
-			if result.currentSourceURL != "" {
-				currentSourceURL = result.currentSourceURL
-			}
-		case domain.TranscodePipelineDASH:
-			dashErr = result.err
-		}
-	}
-
-	if mp4Err != nil {
-		return currentSourceURL, false, mp4Err
-	}
-
-	if dashErr != nil {
-		if len(plan.MP4Targets) == 0 {
-			return currentSourceURL, false, dashErr
-		}
-
-		s.logger.Warn("dash pipeline failed (skipped)", zap.Uint("videoId", task.VideoID), zap.Error(dashErr))
-	}
-
-	deleteOriginal := plan.NeedsSourceMP4 && currentSourceURL != initialSrcPath
-
-	return currentSourceURL, deleteOriginal, nil
+	return finishTranscodeServiceExecuteConfiguredPipelines(ctx, s, task, initialSrcPath, plan, resultCh, &wg)
 }
 
 // logPipelineMode 输出「两者都关闭」两个分支的原始日志（其余模式原实现无额外日志）。
 func (s *TranscodeService) logPipelineMode(task domain.TranscodeTask, plan domain.PipelinePlan) {
 	switch plan.Mode {
 	case domain.PipelineModeSourceOnly:
-		s.logger.Info("mp4Enable and dashEnable both false, run source-only normalize",
-			zap.Uint("videoId", task.VideoID),
-			zap.Uint16("pixelHeight", plan.PixelHeight),
-			zap.Uint16("classHeight", plan.ClassHeight),
-			zap.Bool("highBitrate", plan.HighBitrate),
+		s.logger.Info("mp4Enable and dashEnable both false, run source-only normalize", zap.String("event", "media.pipeline_coordinator.log_pipeline_mode.diagnostic"), zap.String("operation", "media.pipeline_coordinator.log_pipeline_mode"),
+			zap.Uint("video_id", task.VideoID),
+			zap.Uint16("pixel_height", plan.PixelHeight),
+			zap.Uint16("class_height", plan.ClassHeight),
+			zap.Bool("high_bitrate", plan.HighBitrate),
 		)
 	case domain.PipelineModeNone:
-		s.logger.Info("mp4Enable and dashEnable both false, source already browser-playable",
-			zap.Uint("videoId", task.VideoID),
+		s.logger.Info("mp4Enable and dashEnable both false, source already browser-playable", zap.String("event", "media.pipeline_coordinator.log_pipeline_mode.diagnostic"), zap.String("operation", "media.pipeline_coordinator.log_pipeline_mode"),
+			zap.Uint("video_id", task.VideoID),
 		)
 	case domain.PipelineModeMP4Super, domain.PipelineModeDashOnly:
 	}
@@ -192,10 +158,10 @@ func (s *TranscodeService) runMP4SuperPipeline(
 				currentSourceURL = persistedURL
 			}
 
-			s.logger.Info("mp4 target already persisted, skip transcode",
-				zap.Uint("videoId", task.VideoID),
-				zap.Uint("partId", task.VideoPartID),
-				zap.String("targetId", target.ID),
+			logctx.With(ctx, s.logger).Info("mp4 target already persisted, skip transcode", zap.String("event", "media.pipeline_coordinator.run_mp4_super_pipeline.diagnostic"), zap.String("operation", "media.pipeline_coordinator.run_mp4_super_pipeline"),
+				zap.Uint("video_id", task.VideoID),
+				zap.Uint("part_id", task.VideoPartID),
+				zap.String("target_id", target.ID),
 			)
 
 			continue
@@ -231,55 +197,7 @@ func (s *TranscodeService) runMP4SuperPipeline(
 		return pipelineRunResult{name: domain.TranscodePipelineMP4, currentSourceURL: srcPath, err: runErr}
 	}
 
-	sourceName := task.SourceDisplayName()
-
-	for _, target := range pending {
-		result, ok := results[target.ID]
-		if !ok {
-			continue
-		}
-
-		var err error
-		if target.IsSource {
-			err = s.resources.UpdateOriginalResourceFile(
-				ctx, task, target.DBResolution, sourceName,
-				result.fileURL, result.fileSize, result.bitrate,
-			)
-			if err == nil {
-				currentSourceURL = result.fileURL
-			}
-		} else {
-			err = s.resources.SaveSpecificVideoResource(
-				ctx, task, target.DBResolution, sourceName,
-				result.fileURL, result.fileSize, result.bitrate, target.IsVIP, false,
-			)
-		}
-
-		if err != nil {
-			if runErr == nil {
-				runErr = fmt.Errorf("save MP4 output %s: %w", target.ID, err)
-			}
-
-			continue
-		}
-
-		saved++
-	}
-
-	if saved != len(targets) && runErr == nil {
-		runErr = fmt.Errorf("MP4 pipeline produced %d/%d outputs", saved, len(targets))
-	}
-
-	if domain.TaskWasDeleted(ctx, runErr) {
-		s.cleanupDeletedMP4Outputs(ctx, targets, driver)
-
-		runErr = domain.ErrVideoDeleted
-		currentSourceURL = srcPath
-	}
-
-	tracker.CompletePipeline(ctx, domain.TranscodePipelineMP4, runErr)
-
-	return pipelineRunResult{name: domain.TranscodePipelineMP4, currentSourceURL: currentSourceURL, err: runErr}
+	return finishTranscodeServiceRunMP4SuperPipeline(ctx, s, task, srcPath, driver, tracker, targets, &saved, &currentSourceURL, pending, results, &runErr)
 }
 
 // runDASHOutputPipeline 运行 DASH 管线：L1 跳过已入库整套 → 编码 → 上传 → 落库。
@@ -299,9 +217,9 @@ func (s *TranscodeService) runDASHOutputPipeline(
 	// 断点续传 L1：自适应资源行 + manifest 对象都在 → 整套 DASH 跳过。
 	// manifest 最后上传，它存在即代表各 representation 均已完整上传。
 	if s.artifacts.DASHPersisted(ctx, task, driver) {
-		s.logger.Info("dash output already persisted, skip transcode",
-			zap.Uint("videoId", task.VideoID),
-			zap.Uint("partId", task.VideoPartID),
+		logctx.With(ctx, s.logger).Info("dash output already persisted, skip transcode", zap.String("event", "media.pipeline_coordinator.run_dash_output_pipeline.diagnostic"), zap.String("operation", "media.pipeline_coordinator.run_dash_output_pipeline"),
+			zap.Uint("video_id", task.VideoID),
+			zap.Uint("part_id", task.VideoPartID),
 		)
 		tracker.CompletePipeline(ctx, domain.TranscodePipelineDASH, nil)
 
@@ -352,7 +270,7 @@ func (s *TranscodeService) cleanupDeletedMP4Outputs(
 		}
 
 		if err := driver.DeleteStoredFile(cleanupCtx, target.RelativePath); err != nil {
-			s.logger.Warn("cleanup deleted video MP4 output failed",
+			logctx.With(ctx, s.logger).Warn("cleanup deleted video MP4 output failed", zap.String("event", "media.pipeline_coordinator.cleanup_deleted_mp4_outputs.degraded"), zap.String("operation", "media.pipeline_coordinator.cleanup_deleted_mp4_outputs"),
 				zap.String("path", target.RelativePath),
 				zap.Error(err),
 			)
@@ -375,9 +293,100 @@ func (s *TranscodeService) cleanupDeletedDASHOutputs(
 
 	prefix := task.DashPrefix()
 	if _, err := driver.DeleteByPrefix(cleanupCtx, prefix); err != nil {
-		s.logger.Warn("cleanup deleted video DASH output failed",
+		logctx.With(ctx, s.logger).Warn("cleanup deleted video DASH output failed", zap.String("event", "media.pipeline_coordinator.cleanup_deleted_dash_outputs.degraded"), zap.String("operation", "media.pipeline_coordinator.cleanup_deleted_dash_outputs"),
 			zap.String("prefix", prefix),
 			zap.Error(err),
 		)
 	}
+}
+
+func finishTranscodeServiceExecuteConfiguredPipelines(ctx context.Context, s *TranscodeService, task domain.TranscodeTask, initialSrcPath string, plan domain.PipelinePlan, resultCh chan pipelineRunResult, wg *sync.WaitGroup) (string, bool, error) {
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	currentSourceURL := initialSrcPath
+
+	var mp4Err, dashErr error
+
+	for result := range resultCh {
+		switch result.name {
+		case domain.TranscodePipelineMP4:
+			mp4Err = result.err
+			if result.currentSourceURL != "" {
+				currentSourceURL = result.currentSourceURL
+			}
+		case domain.TranscodePipelineDASH:
+			dashErr = result.err
+		}
+	}
+
+	if mp4Err != nil {
+		return currentSourceURL, false, mp4Err
+	}
+
+	if dashErr != nil {
+		if len(plan.MP4Targets) == 0 {
+			return currentSourceURL, false, dashErr
+		}
+
+		logctx.With(ctx, s.logger).Warn("dash pipeline failed (skipped)", zap.String("event", "media.pipeline_coordinator.execute_configured_pipelines.degraded"), zap.String("operation", "media.pipeline_coordinator.execute_configured_pipelines"), zap.Uint("video_id", task.VideoID), zap.Error(dashErr))
+	}
+
+	deleteOriginal := plan.NeedsSourceMP4 && currentSourceURL != initialSrcPath
+
+	return currentSourceURL, deleteOriginal, nil
+}
+
+func finishTranscodeServiceRunMP4SuperPipeline(ctx context.Context, s *TranscodeService, task domain.TranscodeTask, srcPath string, driver domain.StorageDriver, tracker *domain.TranscodeProgressTracker, targets []domain.TranscodeTarget, saved *int, currentSourceURL *string, pending []domain.TranscodeTarget, results map[string]uploadResult, runErr *error) pipelineRunResult {
+	sourceName := task.SourceDisplayName()
+
+	for _, target := range pending {
+		result, ok := results[target.ID]
+		if !ok {
+			continue
+		}
+
+		var err error
+		if target.IsSource {
+			err = s.resources.UpdateOriginalResourceFile(
+				ctx, task, target.DBResolution, sourceName,
+				result.fileURL, result.fileSize, result.bitrate,
+			)
+			if err == nil {
+				(*currentSourceURL) = result.fileURL
+			}
+		} else {
+			err = s.resources.SaveSpecificVideoResource(
+				ctx, task, target.DBResolution, sourceName,
+				result.fileURL, result.fileSize, result.bitrate, target.IsVIP, false,
+			)
+		}
+
+		if err != nil {
+			if (*runErr) == nil {
+				(*runErr) = fmt.Errorf("save MP4 output %s: %w", target.ID, err)
+			}
+
+			continue
+		}
+
+		(*saved)++
+	}
+
+	if (*saved) != len(targets) && (*runErr) == nil {
+		(*runErr) = fmt.Errorf("MP4 pipeline produced %d/%d outputs", (*saved), len(targets))
+	}
+
+	if domain.TaskWasDeleted(ctx, (*runErr)) {
+		s.cleanupDeletedMP4Outputs(ctx, targets, driver)
+
+		(*runErr) = domain.ErrVideoDeleted
+		(*currentSourceURL) = srcPath
+	}
+
+	tracker.CompletePipeline(ctx, domain.TranscodePipelineMP4, (*runErr))
+
+	return pipelineRunResult{name: domain.TranscodePipelineMP4, currentSourceURL: (*currentSourceURL), err: (*runErr)}
 }

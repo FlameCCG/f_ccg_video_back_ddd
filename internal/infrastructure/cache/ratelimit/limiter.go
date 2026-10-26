@@ -14,6 +14,8 @@ import (
 )
 
 // allowScript 原子 INCR + 首次 EXPIRE，并自愈无 TTL 的 key（PTTL=-1）。
+//
+//nolint:dupword // Adjacent end tokens close independent Lua blocks.
 var allowScript = redis.NewScript(`
 local key = KEYS[1]
 local limit = tonumber(ARGV[1])

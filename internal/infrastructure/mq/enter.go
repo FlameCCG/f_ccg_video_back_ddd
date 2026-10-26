@@ -12,10 +12,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/config"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"

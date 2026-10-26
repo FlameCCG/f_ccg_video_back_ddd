@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-
-	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/constants"
+	"fmt"
+
+	app "f_ccg_video_back_ddd/internal/application/identity"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"

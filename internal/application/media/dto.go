@@ -1,11 +1,11 @@
 package media
 
 import (
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // TranscodeTaskInput 是投递转码任务的入参（字段与 Kafka 消息体 pkg/mq.TranscodePayload 一一对应）。
@@ -60,7 +60,7 @@ type TranscodeProgressItem struct {
 	OutTimeSec   float64                     `json:"outTimeSec,omitempty"`
 	Error        string                      `json:"error,omitempty"`
 	UpdatedAt    time.Time                   `json:"updatedAt"`
-	StartedAt    time.Time                   `json:"startedAt,omitempty"`
+	StartedAt    time.Time                   `json:"startedAt"`
 	Pipelines    []TranscodePipelineProgress `json:"pipelines,omitempty"`
 }
 
@@ -142,9 +142,9 @@ func PolicyFromConfig(cfg *config.Transcode) *domain.TranscodePolicy {
 		GpuCQP720:    cfg.GpuCQP720,
 		GpuCQP360:    cfg.GpuCQP360,
 
-		CpuMode:       cfg.CpuMode,
+		CPUMode:       cfg.CPUMode,
 		GpuMode:       cfg.GpuMode,
-		CpuPreset:     cfg.CpuPreset,
+		CPUPreset:     cfg.CPUPreset,
 		GpuPreset:     cfg.GpuPreset,
 		Threads:       cfg.Threads,
 		HardwareScale: cfg.HardwareScale,

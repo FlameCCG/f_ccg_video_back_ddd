@@ -3,10 +3,10 @@ package contentops
 import (
 	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-
-	app "f_ccg_video_back_ddd/internal/application/contentops"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+
+	app "f_ccg_video_back_ddd/internal/application/contentops"
 
 	"github.com/gin-gonic/gin"
 )
@@ -60,12 +60,12 @@ func (h *Handler) ListView(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrBannerPartitionFilterUnsupported) {
-			res.FailWithMsg("只有类型1支持按分区筛选", c)
+			res.FailWithCause(err, "只有类型1支持按分区筛选", c)
 
 			return
 		}
 
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}
@@ -86,12 +86,12 @@ func (h *Handler) AdminListView(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrBannerPartitionFilterUnsupported) {
-			res.FailWithMsg("只有类型1支持按分区筛选", c)
+			res.FailWithCause(err, "只有类型1支持按分区筛选", c)
 
 			return
 		}
 
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}
@@ -114,12 +114,12 @@ func (h *Handler) AdminCreateView(c *gin.Context) {
 		// 分区裁定失败回显原始文案，落库失败回显固定文案（与原实现一致）。
 		var partitionErr *app.PartitionResolveError
 		if errors.As(err, &partitionErr) {
-			res.FailWithMsg(clienterror.Message(partitionErr), c)
+			res.FailWithCause(partitionErr, clienterror.Message(partitionErr), c)
 
 			return
 		}
 
-		res.FailWithMsg("创建失败", c)
+		res.FailWithCause(err, "创建失败", c)
 
 		return
 	}
@@ -141,12 +141,12 @@ func (h *Handler) AdminUpdateView(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrBannerNotFound) {
-			res.FailWithMsg("轮播图不存在", c)
+			res.FailWithCause(err, "轮播图不存在", c)
 
 			return
 		}
 
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -159,7 +159,7 @@ func (h *Handler) AdminDeleteView(c *gin.Context) {
 	req := middlewares.GetBound[AdminDeleteBannerReq](c)
 
 	if err := h.banners.Delete(c.Request.Context(), req.BannerIDs); err != nil {
-		res.FailWithMsg("删除失败", c)
+		res.FailWithCause(err, "删除失败", c)
 
 		return
 	}

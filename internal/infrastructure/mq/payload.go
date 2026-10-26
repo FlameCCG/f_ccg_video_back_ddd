@@ -2,9 +2,9 @@ package mq
 
 import (
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // TranscodePayload 是转码任务的 Kafka 消息体（原 pkg/mq.TranscodePayload）。

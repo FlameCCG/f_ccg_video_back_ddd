@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
+//nolint:gosec // These constants are public OAuth endpoint URLs, not credentials.
 const (
 	xTokenURL    = "https://api.x.com/2/oauth2/token"
 	xUserInfoURL = "https://api.x.com/2/users/me"
@@ -127,7 +129,7 @@ func (c *XClient) userInfoByFields(ctx context.Context, accessToken, userFields 
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("x userinfo request failed, status=%d body=%s", resp.StatusCode, string(body))
+		return nil, apperr.Private("oauth.provider", fmt.Errorf("x userinfo request failed, status=%d body=%s", resp.StatusCode, string(body)))
 	}
 
 	var userInfoResp XUserInfoResponse
@@ -185,7 +187,7 @@ func (c *XClient) accessToken(ctx context.Context, code, codeVerifier string) (*
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("x token request failed, status=%d body=%s", resp.StatusCode, string(body))
+		return nil, apperr.Private("oauth.provider", fmt.Errorf("x token request failed, status=%d body=%s", resp.StatusCode, string(body)))
 	}
 
 	body = normalizeXTokenBody(body)

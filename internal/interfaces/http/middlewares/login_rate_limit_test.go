@@ -2,12 +2,11 @@ package middlewares
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"

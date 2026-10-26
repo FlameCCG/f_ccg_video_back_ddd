@@ -3,11 +3,13 @@ package captcha
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/pkg/constants"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -48,7 +50,11 @@ func (s *EmailCaptchaStore) Store(ctx context.Context, emailID, email, code stri
 func (s *EmailCaptchaStore) Consume(ctx context.Context, emailID string) (*app.EmailCaptchaPayload, error) {
 	data, err := s.redis.GetDel(ctx, constants.EmailCaptchaRedisKeyPrefix+emailID).Result()
 	if err != nil {
-		return nil, err
+		if errors.Is(err, redis.Nil) {
+			return nil, apperr.Wrap("captcha.email.consume", ErrCaptchaExpired, err, apperr.Rejected)
+		}
+
+		return nil, apperr.Wrap("captcha.email.consume", nil, err, apperr.Dependency)
 	}
 
 	var payload app.EmailCaptchaPayload

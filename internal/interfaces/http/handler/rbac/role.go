@@ -2,12 +2,12 @@ package rbac
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/res"
 	"strconv"
 	"strings"
 
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -44,7 +44,7 @@ type UpdateUserRolesReq struct {
 func (h *Handler) GetRoleListView(c *gin.Context) {
 	roles, err := h.roles.List(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -62,7 +62,7 @@ func (h *Handler) CreateRoleView(c *gin.Context) {
 		Permissions: toDomainPermissions(req.Permissions),
 		CopyRoleID:  req.CopyRoleID,
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -78,7 +78,7 @@ func (h *Handler) UpdateRoleView(c *gin.Context) {
 		Name:   req.Name,
 		Desc:   req.Desc,
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -86,7 +86,7 @@ func (h *Handler) UpdateRoleView(c *gin.Context) {
 }
 
 // DeleteRoleView 删除角色.
-// Query: id
+// Query: id.
 func (h *Handler) DeleteRoleView(c *gin.Context) {
 	roleIDStr := strings.TrimSpace(c.Query("id"))
 	if roleIDStr == "" {
@@ -101,7 +101,7 @@ func (h *Handler) DeleteRoleView(c *gin.Context) {
 	}
 
 	if err := h.roles.Delete(c.Request.Context(), roleID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -113,7 +113,7 @@ func (h *Handler) AssignRoleView(c *gin.Context) {
 	req := middlewares.GetBound[AssignRoleReq](c)
 
 	if err := h.roles.AssignUserRoles(c.Request.Context(), req.UserID, req.RoleIDs); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (h *Handler) RemoveRoleView(c *gin.Context) {
 	req := middlewares.GetBound[AssignRoleReq](c)
 
 	if err := h.roles.RemoveUserRoles(c.Request.Context(), req.UserID, req.RoleIDs); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *Handler) UpdateUserRolesView(c *gin.Context) {
 	req := middlewares.GetBound[UpdateUserRolesReq](c)
 
 	if err := h.roles.ReplaceUserRoles(c.Request.Context(), req.UserID, req.RoleIDs); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -145,7 +145,7 @@ func (h *Handler) UpdateUserRolesView(c *gin.Context) {
 }
 
 // GetUserRolesView 获取用户角色列表.
-// Query: userId
+// Query: userId.
 func (h *Handler) GetUserRolesView(c *gin.Context) {
 	userIDStr := strings.TrimSpace(c.Query("userId"))
 	if userIDStr == "" {
@@ -155,7 +155,7 @@ func (h *Handler) GetUserRolesView(c *gin.Context) {
 
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		res.FailWithMsg("用户ID格式错误", c)
+		res.FailWithCause(err, "用户ID格式错误", c)
 		return
 	}
 
@@ -166,7 +166,7 @@ func (h *Handler) GetUserRolesView(c *gin.Context) {
 
 	roles, err := h.roles.UserRoles(c.Request.Context(), uint(userID))
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -174,25 +174,7 @@ func (h *Handler) GetUserRolesView(c *gin.Context) {
 }
 
 // UserPermissionsView 获取用户最终权限列表.
-// Query: userId
+// Query: userId.
 func (h *Handler) UserPermissionsView(c *gin.Context) {
-	userIDStr := c.Query("userId")
-	if userIDStr == "" {
-		res.FailWithMsg("userId 不能为空", c)
-		return
-	}
-
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil || userID <= 0 {
-		res.FailWithMsg("userId 非法", c)
-		return
-	}
-
-	items, err := h.roles.UserPermissions(c.Request.Context(), uint(userID))
-	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
-		return
-	}
-
-	res.OkWithData(items, c)
+	serveIDLookup(c, "userId", h.roles.UserPermissions)
 }

@@ -3,13 +3,13 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"fmt"
 	"testing"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -39,38 +39,36 @@ func TestVideoVectorRebuildLogsItemFailureAndCompletion(t *testing.T) {
 		logger,
 	)
 
-	started, err := rebuild.StartRebuild(RebuildOptions{Workers: 1})
-	if err != nil || !started {
-		t.Fatalf("StartRebuild() = (%v, %v), want (true, nil)", started, err)
-	}
+	started, err := rebuild.StartRebuild(t.Context(), RebuildOptions{Workers: 1})
+	require.NoError(t, err, "StartRebuild() = (%v, %v), want (true, nil)", started, err)
+	require.True(t, started, "StartRebuild() = (%v, %v), want (true, nil)", started, err)
+
 	waitForRebuildTasks(t, tasks)
 
 	warnings := logs.FilterMessage("rebuild video vector failed").All()
-	if len(warnings) != 1 {
-		t.Fatalf("warning count = %d, want 1", len(warnings))
-	}
+	require.Len(t, warnings, 1, "warning count = %d, want 1", len(warnings))
+
 	warningFields := warnings[0].ContextMap()
-	if fmt.Sprint(warningFields["videoId"]) != "7" ||
-		fmt.Sprint(warningFields["error"]) != storeErr.Error() {
-		t.Fatalf("warning fields = %#v", warningFields)
-	}
+	require.Equal(t, "7", fmt.Sprint(warningFields["video_id"]), "warning fields = %#v", warningFields)
+	require.Equal(t, fmt.Sprint(warningFields["error"]), storeErr.Error(), "warning fields = %#v", warningFields)
 
 	completed := logs.FilterMessage("video vector rebuild finished").All()
-	if len(completed) != 1 {
-		t.Fatalf("completion log count = %d, want 1", len(completed))
-	}
+	require.Len(t, completed, 1, "completion log count = %d, want 1", len(completed))
+
 	completionFields := completed[0].ContextMap()
-	if completionFields["succeeded"] != int64(0) || completionFields["failed"] != int64(1) {
-		t.Fatalf("completion fields = %#v", completionFields)
-	}
-	if _, exists := completionFields["error"]; exists {
-		t.Fatalf("successful run must not carry a run error: %#v", completionFields)
+	require.EqualValues(t, int64(0), completionFields["succeeded"], "completion fields = %#v", completionFields)
+	require.EqualValues(t, int64(1), completionFields["failed"], "completion fields = %#v", completionFields)
+
+	{
+		_, exists := completionFields["error"]
+		require.False(t, exists, "successful run must not carry a run error: %#v", completionFields)
 	}
 
 	status := rebuild.RebuildStatus()
-	if status.Running || status.Succeeded != 0 || status.Failed != 1 || status.LastError != "" {
-		t.Fatalf("status = %#v", status)
-	}
+	require.False(t, status.Running, "status = %#v", status)
+	require.EqualValues(t, 0, status.Succeeded, "status = %#v", status)
+	require.EqualValues(t, 1, status.Failed, "status = %#v", status)
+	require.Empty(t, status.LastError, "status = %#v", status)
 }
 
 func TestVideoVectorRebuildCompletionLogsRunError(t *testing.T) {
@@ -95,35 +93,29 @@ func TestVideoVectorRebuildCompletionLogsRunError(t *testing.T) {
 		logger,
 	)
 
-	started, err := rebuild.StartRebuild(RebuildOptions{})
-	if err != nil || !started {
-		t.Fatalf("StartRebuild() = (%v, %v), want (true, nil)", started, err)
-	}
+	started, err := rebuild.StartRebuild(t.Context(), RebuildOptions{})
+	require.NoError(t, err, "StartRebuild() = (%v, %v), want (true, nil)", started, err)
+	require.True(t, started, "StartRebuild() = (%v, %v), want (true, nil)", started, err)
+
 	waitForRebuildTasks(t, tasks)
 
 	completed := logs.FilterMessage("video vector rebuild finished").All()
-	if len(completed) != 1 {
-		t.Fatalf("completion log count = %d, want 1", len(completed))
-	}
+	require.Len(t, completed, 1, "completion log count = %d, want 1", len(completed))
+
 	fields := completed[0].ContextMap()
-	if fields["succeeded"] != int64(0) || fields["failed"] != int64(0) ||
-		fmt.Sprint(fields["error"]) != prepareErr.Error() {
-		t.Fatalf("completion fields = %#v", fields)
-	}
+	require.EqualValues(t, int64(0), fields["succeeded"], "completion fields = %#v", fields)
+	require.EqualValues(t, int64(0), fields["failed"], "completion fields = %#v", fields)
+	require.Equal(t, fmt.Sprint(fields["error"]), prepareErr.Error(), "completion fields = %#v", fields)
 
 	status := rebuild.RebuildStatus()
-	if status.LastError != prepareErr.Error() {
-		t.Fatalf("LastError = %q, want %q", status.LastError, prepareErr)
-	}
+	require.Equal(t, status.LastError, prepareErr.Error(), "LastError = %q, want %q", status.LastError, prepareErr)
 }
 
 func TestNewVideoVectorRebuildServiceUsesNopLoggerWhenNil(t *testing.T) {
 	t.Parallel()
 
 	service := NewVideoVectorRebuildService(nil, nil, nil, nil, nil)
-	if service.logger == nil {
-		t.Fatal("logger = nil, want Nop logger")
-	}
+	require.NotNil(t, service.logger, "logger = nil, want Nop logger")
 }
 
 func waitForRebuildTasks(t *testing.T, tasks *ctxutil.DetachedTaskGroup) {
@@ -131,8 +123,10 @@ func waitForRebuildTasks(t *testing.T, tasks *ctxutil.DetachedTaskGroup) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := tasks.Wait(ctx); err != nil {
-		t.Fatalf("wait for rebuild: %v", err)
+
+	{
+		err := tasks.Wait(ctx)
+		require.NoError(t, err, "wait for rebuild: %v", err)
 	}
 }
 

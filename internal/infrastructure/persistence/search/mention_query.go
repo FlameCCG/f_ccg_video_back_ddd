@@ -2,9 +2,9 @@ package search
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 
 	"gorm.io/gorm"
 )

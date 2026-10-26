@@ -14,18 +14,18 @@ type Transcode struct {
 	Bitrate1080KbpsReduceRatio     int      `mapstructure:"bitrate1080KbpsReduceRatio" json:"bitrate1080KbpsReduceRatio"`         // 标准/中码率档：1080P maxrate 相对源码率削减比例(百分比)
 	Bitrate720KbpsReduceRatio      int      `mapstructure:"bitrate720KbpsReduceRatio" json:"bitrate720KbpsReduceRatio"`           // 标准档：720P maxrate 相对源码率削减比例(百分比，勿>=100)
 	Bitrate360KbpsReduceRatio      int      `mapstructure:"bitrate360KbpsReduceRatio" json:"bitrate360KbpsReduceRatio"`           // 标准档：360P maxrate 相对源码率削减比例(百分比，勿>=100)
-	CpuMode                        bool     `mapstructure:"cpuMode" json:"cpuMode"`                                               // 是否开启CPU转码（与 GpuMode 至少一个为 true）
+	CPUMode                        bool     `mapstructure:"cpuMode" json:"cpuMode"`                                               // 是否开启CPU转码（与 GpuMode 至少一个为 true）
 	CrfHigh                        int      `mapstructure:"crfHigh" json:"crfHigh"`                                               // QualityModeHigh：源片规范化/1080High/4K High 的 CPU CRF（越小质量越高，推荐18）
 	CrfMedium                      int      `mapstructure:"crfMedium" json:"crfMedium"`                                           // QualityModeMedium：高码率 1080 Medium 的 CPU CRF（推荐23）
 	Crf720                         int      `mapstructure:"crf720" json:"crf720"`                                                 // 标准档(QualityModeNone)：目标分辨率>=720（含普通1080/720）的 CPU CRF，与是否高码率无关（推荐24）
 	Crf360                         int      `mapstructure:"crf360" json:"crf360"`                                                 // 标准档(QualityModeNone)：目标分辨率<=360 的 CPU CRF，与是否高码率无关（推荐28）
-	CpuPreset                      string   `mapstructure:"cpuPreset" json:"cpuPreset"`                                           // CPU转码的预设参数(ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow),越慢压缩效率越好同时画质还能尽量保持,不要用ultrafast或者superfast因为他会忽略CRF的质量设置
+	CPUPreset                      string   `mapstructure:"cpuPreset" json:"cpuPreset"`                                           // CPU转码的预设参数(ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow),越慢压缩效率越好同时画质还能尽量保持,不要用ultrafast或者superfast因为他会忽略CRF的质量设置
 	GpuCQPHigh                     int      `mapstructure:"gpuCQPHigh" json:"gpuCQPHigh"`                                         // QualityModeHigh：源片规范化/1080High/4K High 的 GPU CQP（推荐18）
 	GpuCQPMedium                   int      `mapstructure:"gpuCQPMedium" json:"gpuCQPMedium"`                                     // QualityModeMedium：高码率 1080 Medium 的 GPU CQP（推荐22）
 	GpuCQP720                      int      `mapstructure:"gpuCQP720" json:"gpuCQP720"`                                           // 标准档：目标分辨率>=720（含普通1080/720）的 GPU CQP，与是否高码率无关（推荐24）
 	GpuCQP360                      int      `mapstructure:"gpuCQP360" json:"gpuCQP360"`                                           // 标准档：目标分辨率<=360 的 GPU CQP，与是否高码率无关（推荐28）
 	GpuPreset                      string   `mapstructure:"gpuPreset" json:"gpuPreset"`                                           // GPU转码的预设参数(p1、p2、p3、p4、p5、p6)
-	GpuMode                        bool     `mapstructure:"gpuMode" json:"gpuMode"`                                               // 是否开启GPU转码（与 CpuMode 至少一个为 true）
+	GpuMode                        bool     `mapstructure:"gpuMode" json:"gpuMode"`                                               // 是否开启GPU转码（与 CPUMode 至少一个为 true）
 	Threads                        int      `mapstructure:"threads" json:"threads"`                                               // 转码的线程数
 	HardwareScale                  bool     `mapstructure:"hardwareScale" json:"hardwareScale"`                                   // 是否开启硬件缩放
 	Mp4Enable                      bool     `mapstructure:"mp4Enable" json:"mp4Enable"`                                           // 是否产出 MP4 多分辨率资源；与 dashEnable 都为 false 时仍会做源片规范化
@@ -42,7 +42,7 @@ func (t *Transcode) Validate() error {
 		return nil
 	}
 
-	if !t.GpuMode && !t.CpuMode {
+	if !t.GpuMode && !t.CPUMode {
 		return errors.New("GpuMode 和 CpuMode 不能同时为 false，请至少开启一种转码模式")
 	}
 

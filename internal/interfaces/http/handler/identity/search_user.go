@@ -30,7 +30,7 @@ func (h *Handler) SearchView(c *gin.Context) {
 		UserOrder: req.UserOrder,
 	})
 	if err != nil {
-		res.FailWithMsg("搜索失败", c)
+		res.FailWithCause(err, "搜索失败", c)
 
 		return
 	}

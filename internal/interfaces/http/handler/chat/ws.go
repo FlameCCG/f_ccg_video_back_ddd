@@ -1,9 +1,8 @@
 package chat
 
 import (
-	"strconv"
-
 	"f_ccg_video_back_ddd/pkg/res"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,20 +11,20 @@ import (
 func (h *Handler) WSView(c *gin.Context) {
 	uidStr := c.GetString("uid")
 	if uidStr == "" {
-		res.FailWithMsg("请先登录", c)
+		res.FailWithMsg(testLoginRequired, c)
 
 		return
 	}
 
 	uid, err := strconv.ParseUint(uidStr, 10, 64)
 	if err != nil || uid == 0 {
-		res.FailWithMsg("请先登录", c)
+		res.FailWithMsg(testLoginRequired, c)
 
 		return
 	}
 
 	if err := h.hub.ServeWS(c, uint(uid)); err != nil {
-		res.FailWithMsg("连接私信服务失败", c)
+		res.RecordFailure(err, c)
 
 		return
 	}

@@ -2,10 +2,10 @@ package notification
 
 import (
 	"errors"
-
-	app "f_ccg_video_back_ddd/internal/application/notification"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+
+	app "f_ccg_video_back_ddd/internal/application/notification"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,7 +22,7 @@ func (h *Handler) AdminList(c *gin.Context) {
 
 	list, total, err := h.svc.AdminList(c.Request.Context(), req.Page, req.PageSize)
 	if err != nil {
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}
@@ -60,7 +60,7 @@ func (h *Handler) Create(c *gin.Context) {
 		VideoTitle: req.VideoTitle,
 		Link:       req.Link,
 	}); err != nil {
-		res.FailWithMsg("创建失败", c)
+		res.FailWithCause(err, "创建失败", c)
 
 		return
 	}
@@ -96,11 +96,11 @@ func (h *Handler) AdminUpdate(c *gin.Context) {
 		// 与原实现一致：查询失败 / 不存在 / 更新失败三种文案分别返回。
 		switch {
 		case errors.Is(err, app.ErrNoticeQueryFailed):
-			res.FailWithMsg("查询失败", c)
+			res.FailWithCause(err, "查询失败", c)
 		case errors.Is(err, app.ErrNoticeNotFound):
-			res.FailWithMsg("通知不存在", c)
+			res.FailWithCause(err, "通知不存在", c)
 		default:
-			res.FailWithMsg("更新失败", c)
+			res.FailWithCause(err, "更新失败", c)
 		}
 
 		return

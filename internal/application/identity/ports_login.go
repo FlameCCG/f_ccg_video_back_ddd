@@ -311,7 +311,7 @@ type UserSearchParams struct {
 
 // UserSearchQuery 用户搜索端口。
 //
-// 跨上下文依赖：应绑定到 search 上下文（原 search_service.SearchService.SearchUsers）。
+// 跨上下文依赖：应绑定到 search 上下文（原 search_service.Service.SearchUsers）。
 // 返回值原样交给 res.OkWithData，实现须返回 search 上下文自己的 *UserSearchResult。
 type UserSearchQuery interface {
 	SearchUsers(ctx context.Context, params UserSearchParams) (any, error)
@@ -319,7 +319,7 @@ type UserSearchQuery interface {
 
 // MentionSuggestQuery 评论 @ 联想端口。
 //
-// 跨上下文依赖：应绑定到 search 上下文（原 search_service.SearchService.SuggestFollowUsers）。
+// 跨上下文依赖：应绑定到 search 上下文（原 search_service.Service.SuggestFollowUsers）。
 // 返回的 items 原样交给 res.OkWithList，实现须返回 search 上下文自己的 []MentionUser。
 type MentionSuggestQuery interface {
 	SuggestFollowUsers(ctx context.Context, userID uint, keyword string, page, pageSize int) (items any, total int64, err error)

@@ -3,6 +3,9 @@ package contentops
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,13 +13,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	"f_ccg_video_back_ddd/internal/config"
-	"f_ccg_video_back_ddd/internal/config/site"
+
 	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/contentops"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
@@ -41,7 +46,7 @@ func newConfigHandler(t *testing.T, cfg *config.Config, configPath string) (*Han
 }
 
 func TestAdminConfigItemViewReturnsNamedConfig(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler, provider := newConfigHandler(t, &config.Config{
 		Site: &site.Site{
@@ -82,12 +87,12 @@ func TestAdminConfigItemViewReturnsNamedConfig(t *testing.T) {
 				Redirect:     testGoogleRedirect,
 			},
 		},
-		AI: &config.AI{
+		AI: &config.AI{ // #nosec G101 -- Deliberately fake credentials used only by this isolated test fixture.
 			ChatModelBaseURL: "https://api.deepseek.com/anthropic",
 			ChatModelAPIKey:  "deepseek-test-key",
-			ChatModel:        "deepseek-v4-flash",
+			ChatModel:        testDeepseekV4Flash,
 			ChatModels: []config.AIModel{
-				{Label: "DeepSeek V4 Flash", Value: "deepseek-v4-flash"},
+				{Label: "DeepSeek V4 Flash", Value: testDeepseekV4Flash},
 				{Label: "DeepSeek V4 Pro", Value: "deepseek-v4-pro"},
 			},
 			ThinkingEnabled: true,
@@ -114,240 +119,24 @@ func TestAdminConfigItemViewReturnsNamedConfig(t *testing.T) {
 		},
 	}, filepath.Join(t.TempDir(), "config.yaml"))
 
-	t.Run("site", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(recorder)
-		ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=site", nil)
+	//nolint:paralleltest // Cases share a mutable parent configuration or database fixture.
+	t.Run("site", func(t *testing.T) { checkNamedSiteConfig(t, handler, provider) })
 
-		handler.AdminConfigItemView(ctx)
+	//nolint:paralleltest // Cases share a mutable parent configuration or database fixture.
+	t.Run("transcode", func(t *testing.T) { checkNamedTranscodeConfig(t, handler) })
 
-		if recorder.Code != 200 {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
+	//nolint:paralleltest // Cases share a mutable parent configuration or database fixture.
+	t.Run("server", func(t *testing.T) { checkNamedServerConfig(t, handler) })
 
-		if provider.Get().Site.Storage == nil {
-			t.Fatal("global storage config should not be nil")
-		}
+	//nolint:paralleltest // Cases share a mutable parent configuration or database fixture.
+	t.Run("thirdLogin", func(t *testing.T) { checkNamedThirdLoginConfig(t, handler) })
 
-		payload := decodeResponseData(t, recorder)
-
-		var data map[string]any
-		if err := json.Unmarshal(payload, &data); err != nil {
-			t.Fatalf("unmarshal admin site response failed: %v", err)
-		}
-
-		if _, ok := data[configNameSite]; ok {
-			t.Fatal("admin site config response should not wrap payload in data.site")
-		}
-
-		var resp site.Site
-		if err := json.Unmarshal(payload, &resp); err != nil {
-			t.Fatalf("unmarshal site config failed: %v", err)
-		}
-
-		if resp.Login == nil || !resp.Login.QQLogin {
-			t.Fatal("admin site config should contain login settings")
-		}
-
-		if resp.Storage == nil || resp.Storage.ChunkDir != "runtime/chunks" {
-			t.Fatal("admin site config should contain full storage settings")
-		}
-
-		if resp.Storage.Local == nil || !resp.Storage.Local.Enable {
-			t.Fatal("admin site config should keep local storage settings")
-		}
-
-		if resp.Storage.MinIO == nil || !resp.Storage.MinIO.Enable {
-			t.Fatal("admin site config should keep minio settings")
-		}
-
-		if resp.Storage.MinIO.SecretKey != "minio-secret-key" {
-			t.Fatalf("admin site config should return plain minio secretKey, got: %s", resp.Storage.MinIO.SecretKey)
-		}
-	})
-
-	t.Run("transcode", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(recorder)
-		ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=transcode", nil)
-
-		handler.AdminConfigItemView(ctx)
-
-		if recorder.Code != 200 {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
-
-		payload := decodeResponseData(t, recorder)
-
-		var data map[string]any
-		if err := json.Unmarshal(payload, &data); err != nil {
-			t.Fatalf("unmarshal admin transcode response failed: %v", err)
-		}
-
-		if _, ok := data[configNameSite]; ok {
-			t.Fatal("admin transcode config response should not return site config")
-		}
-
-		var resp config.Transcode
-		if err := json.Unmarshal(payload, &resp); err != nil {
-			t.Fatalf("unmarshal transcode config failed: %v", err)
-		}
-
-		if resp.MaxWorkers != 4 {
-			t.Fatalf("unexpected maxWorkers: %d", resp.MaxWorkers)
-		}
-
-		if len(resp.TranscodeResolutions) != 3 {
-			t.Fatalf("unexpected transcode resolutions length: %d", len(resp.TranscodeResolutions))
-		}
-
-		if !resp.GpuMode {
-			t.Fatal("admin transcode config should contain gpuMode")
-		}
-	})
-
-	t.Run("server", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(recorder)
-		ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=server", nil)
-
-		handler.AdminConfigItemView(ctx)
-
-		if recorder.Code != 200 {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
-
-		payload := decodeResponseData(t, recorder)
-
-		var resp AdminServerCORSConfig
-		if err := json.Unmarshal(payload, &resp); err != nil {
-			t.Fatalf("unmarshal server cors config failed: %v", err)
-		}
-
-		if len(resp.CorsOrigins) != 2 {
-			t.Fatalf("unexpected corsOrigins length: %d", len(resp.CorsOrigins))
-		}
-
-		if resp.CorsOrigins[0] != "http://localhost:3000" {
-			t.Fatalf("unexpected first origin: %s", resp.CorsOrigins[0])
-		}
-
-		// 管理端响应不应泄露完整 server 监听字段（仅 corsOrigins）。
-		var raw map[string]any
-		if err := json.Unmarshal(payload, &raw); err != nil {
-			t.Fatalf("unmarshal raw failed: %v", err)
-		}
-
-		if _, ok := raw["addr"]; ok {
-			t.Fatal("admin server config should not expose addr")
-		}
-	})
-
-	t.Run("thirdLogin", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(recorder)
-		ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=thirdLogin", nil)
-
-		handler.AdminConfigItemView(ctx)
-
-		if recorder.Code != 200 {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
-
-		payload := decodeResponseData(t, recorder)
-
-		var resp config.ThirdLogin
-		if err := json.Unmarshal(payload, &resp); err != nil {
-			t.Fatalf("unmarshal third login config failed: %v", err)
-		}
-
-		if resp.Google == nil {
-			t.Fatal("admin third login config should contain google settings")
-		}
-
-		if resp.Google.ClientID != testGoogleClientID {
-			t.Fatalf("unexpected google clientID: %s", resp.Google.ClientID)
-		}
-
-		if resp.Google.Redirect != testGoogleRedirect {
-			t.Fatalf("unexpected google redirect: %s", resp.Google.Redirect)
-		}
-
-		if resp.QQ == nil || resp.QQ.AppID != "qq-app-id" {
-			t.Fatal("admin third login config should contain qq settings")
-		}
-
-		if resp.QQ.AppKey != "qq-app-key" {
-			t.Fatalf("admin third login config should return plain qq appKey, got: %s", resp.QQ.AppKey)
-		}
-
-		if resp.Google.ClientSecret != "google-client-secret" {
-			t.Fatalf("admin third login config should return plain google clientSecret, got: %s", resp.Google.ClientSecret)
-		}
-	})
-
-	t.Run("ai", func(t *testing.T) {
-		recorder := httptest.NewRecorder()
-		ctx, _ := gin.CreateTestContext(recorder)
-		ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=ai", nil)
-
-		handler.AdminConfigItemView(ctx)
-
-		if recorder.Code != 200 {
-			t.Fatalf("unexpected status code: %d", recorder.Code)
-		}
-
-		payload := decodeResponseData(t, recorder)
-
-		var resp config.AI
-		if err := json.Unmarshal(payload, &resp); err != nil {
-			t.Fatalf("unmarshal ai config failed: %v", err)
-		}
-
-		if resp.ChatModelBaseURL != "https://api.deepseek.com/anthropic" {
-			t.Fatalf("unexpected ai chatModelBaseURL: %s", resp.ChatModelBaseURL)
-		}
-
-		if resp.ChatModelAPIKey != "deepseek-test-key" {
-			t.Fatalf("admin ai config should return plain chatModelAPIKey, got: %s", resp.ChatModelAPIKey)
-		}
-
-		if resp.DoubaoModelAPIKey != "doubao-test-key" {
-			t.Fatalf("admin ai config should return plain doubaoModelAPIKey, got: %s", resp.DoubaoModelAPIKey)
-		}
-
-		if resp.ChatModel != "deepseek-v4-flash" {
-			t.Fatalf("unexpected ai chatModel: %s", resp.ChatModel)
-		}
-
-		if !resp.ThinkingEnabled {
-			t.Fatal("admin ai config should enable thinking by default in fixture")
-		}
-
-		if resp.ThinkingEffort != "high" {
-			t.Fatalf("unexpected ai thinkingEffort: %s", resp.ThinkingEffort)
-		}
-
-		if len(resp.ChatModels) != 2 {
-			t.Fatalf("unexpected ai chatModels len: %d", len(resp.ChatModels))
-		}
-
-		if len(resp.ThinkingEfforts) != 2 {
-			t.Fatalf("unexpected ai thinkingEfforts len: %d", len(resp.ThinkingEfforts))
-		}
-
-		if resp.EmbeddingModel != "doubao-embedding-vision-251215" {
-			t.Fatalf("unexpected ai embeddingModel: %s", resp.EmbeddingModel)
-		}
-
-		if resp.SystemPrompt == "" {
-			t.Fatal("admin ai config should contain systemPrompt")
-		}
-	})
+	//nolint:paralleltest // Cases share a mutable parent configuration or database fixture.
+	t.Run("ai", func(t *testing.T) { checkNamedAIConfig(t, handler) })
 }
 
 func TestAdminUpdateConfigItemViewPreservesMaskedThirdLoginSecret(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 
@@ -357,8 +146,9 @@ func TestAdminUpdateConfigItemViewPreservesMaskedThirdLoginSecret(t *testing.T) 
     clientSecret: "google-secret-old"
     redirect: "https://example.com/oauth/google-old"
 `)
-	if err := os.WriteFile(configPath, initialConfig, 0o644); err != nil {
-		t.Fatalf("write temp config failed: %v", err)
+	{
+		err := os.WriteFile(configPath, initialConfig, 0o600)
+		require.NoError(t, err, "write temp config failed: %v", err)
 	}
 
 	handler, provider := newConfigHandler(t, &config.Config{
@@ -386,26 +176,18 @@ func TestAdminUpdateConfigItemViewPreservesMaskedThirdLoginSecret(t *testing.T) 
 
 	handler.AdminUpdateConfigItemView(ctx)
 
-	if recorder.Code != 200 {
-		t.Fatalf("unexpected status code: %d", recorder.Code)
-	}
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
 
-	if provider.Get().ThirdLogin.Google.ClientSecret != "google-secret-old" {
-		t.Fatalf("masked secret should preserve old google clientSecret, got: %s", provider.Get().ThirdLogin.Google.ClientSecret)
-	}
+	require.Equal(t, "google-secret-old", provider.Get().ThirdLogin.Google.ClientSecret, "masked secret should preserve old google clientSecret, got: %s", provider.Get().ThirdLogin.Google.ClientSecret)
 
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read temp config failed: %v", err)
-	}
+	content, err := os.ReadFile(configPath) // #nosec G304 -- Reads a fixture created inside this test's private temporary directory.
+	require.NoError(t, err, "read temp config failed: %v", err)
 
-	if !strings.Contains(string(content), "google-secret-old") {
-		t.Fatalf("updated config file should preserve old google clientSecret, got: %s", string(content))
-	}
+	require.Contains(t, string(content), "google-secret-old", "updated config file should preserve old google clientSecret, got: %s", string(content))
 }
 
 func TestAdminConfigItemViewRejectsUnsupportedName(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler, _ := newConfigHandler(t, &config.Config{}, filepath.Join(t.TempDir(), "config.yaml"))
 
@@ -415,26 +197,21 @@ func TestAdminConfigItemViewRejectsUnsupportedName(t *testing.T) {
 
 	handler.AdminConfigItemView(ctx)
 
-	if recorder.Code != 200 {
-		t.Fatalf("unexpected status code: %d", recorder.Code)
-	}
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "unmarshal response failed: %v", err)
 	}
 
-	if response.Code != res.FailServiceCode {
-		t.Fatalf("unexpected response code: %d", response.Code)
-	}
+	require.EqualValues(t, res.FailServiceCode, response.Code, "unexpected response code: %d", response.Code)
 
-	if response.Msg != "不支持的配置项" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	require.Equal(t, "不支持的配置项", response.Msg, "unexpected response msg: %s", response.Msg)
 }
 
 func TestAdminUpdateConfigItemViewUpdatesThirdLogin(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 
@@ -448,8 +225,9 @@ func TestAdminUpdateConfigItemViewUpdatesThirdLogin(t *testing.T) {
     clientSecret: "google-secret-old"
     redirect: "https://example.com/oauth/google-old"
 `)
-	if err := os.WriteFile(configPath, initialConfig, 0o644); err != nil {
-		t.Fatalf("write temp config failed: %v", err)
+	{
+		err := os.WriteFile(configPath, initialConfig, 0o600)
+		require.NoError(t, err, "write temp config failed: %v", err)
 	}
 
 	handler, provider := newConfigHandler(t, &config.Config{
@@ -487,47 +265,33 @@ func TestAdminUpdateConfigItemViewUpdatesThirdLogin(t *testing.T) {
 
 	handler.AdminUpdateConfigItemView(ctx)
 
-	if recorder.Code != 200 {
-		t.Fatalf("unexpected status code: %d", recorder.Code)
-	}
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "unmarshal response failed: %v", err)
 	}
 
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d", response.Code)
-	}
+	require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d", response.Code)
 
-	if provider.Get().ThirdLogin == nil || provider.Get().ThirdLogin.Google == nil {
-		t.Fatal("global config should contain updated google settings")
-	}
+	require.NotNil(t, provider.Get().ThirdLogin, "global config should contain updated google settings")
+	require.NotNil(t, provider.Get().ThirdLogin.Google, "global config should contain updated google settings")
 
-	if provider.Get().ThirdLogin.Google.ClientID != "google-new" {
-		t.Fatalf("unexpected google clientID: %s", provider.Get().ThirdLogin.Google.ClientID)
-	}
+	require.Equal(t, "google-new", provider.Get().ThirdLogin.Google.ClientID, "unexpected google clientID: %s", provider.Get().ThirdLogin.Google.ClientID)
 
-	if provider.Get().ThirdLogin.Google.Redirect != "https://example.com/oauth/google-new" {
-		t.Fatalf("unexpected google redirect: %s", provider.Get().ThirdLogin.Google.Redirect)
-	}
+	require.Equal(t, "https://example.com/oauth/google-new", provider.Get().ThirdLogin.Google.Redirect, "unexpected google redirect: %s", provider.Get().ThirdLogin.Google.Redirect)
 
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read temp config failed: %v", err)
-	}
+	content, err := os.ReadFile(configPath) // #nosec G304 -- Reads a fixture created inside this test's private temporary directory.
+	require.NoError(t, err, "read temp config failed: %v", err)
 
-	if !strings.Contains(string(content), "google-new") {
-		t.Fatalf("updated config file should contain new google clientID, got: %s", string(content))
-	}
+	require.Contains(t, string(content), "google-new", "updated config file should contain new google clientID, got: %s", string(content))
 
-	if !strings.Contains(string(content), "google-secret-new") {
-		t.Fatalf("updated config file should contain new google clientSecret, got: %s", string(content))
-	}
+	require.Contains(t, string(content), "google-secret-new", "updated config file should contain new google clientSecret, got: %s", string(content))
 }
 
 func TestAdminUpdateConfigItemViewUpdatesAI(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 
@@ -545,15 +309,16 @@ func TestAdminUpdateConfigItemViewUpdatesAI(t *testing.T) {
   vectortopk: 12
   timeoutsec: 30
 `)
-	if err := os.WriteFile(configPath, initialConfig, 0o644); err != nil {
-		t.Fatalf("write temp config failed: %v", err)
+	{
+		err := os.WriteFile(configPath, initialConfig, 0o600)
+		require.NoError(t, err, "write temp config failed: %v", err)
 	}
 
 	handler, provider := newConfigHandler(t, &config.Config{
-		AI: &config.AI{
+		AI: &config.AI{ // #nosec G101 -- Deliberately fake credentials used only by this isolated test fixture.
 			ChatModelBaseURL:    "https://api.deepseek.com/anthropic",
 			ChatModelAPIKey:     "old-deepseek-key",
-			ChatModel:           "deepseek-v4-flash",
+			ChatModel:           testDeepseekV4Flash,
 			EmbeddingModel:      "doubao-embedding-vision-251215",
 			EmbeddingDimensions: 2048,
 			DoubaoModelAPIKey:   "old-doubao-key",
@@ -588,63 +353,40 @@ func TestAdminUpdateConfigItemViewUpdatesAI(t *testing.T) {
 
 	handler.AdminUpdateConfigItemView(ctx)
 
-	if recorder.Code != 200 {
-		t.Fatalf("unexpected status code: %d", recorder.Code)
-	}
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "unmarshal response failed: %v", err)
 	}
 
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d", response.Code)
-	}
+	require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d", response.Code)
 
-	if provider.Get().AI == nil {
-		t.Fatal("global config should contain updated ai settings")
-	}
+	require.NotNil(t, provider.Get().AI, "global config should contain updated ai settings")
 
-	if provider.Get().AI.ChatModelAPIKey != "new-deepseek-key" {
-		t.Fatalf("unexpected ai chatModelAPIKey: %s", provider.Get().AI.ChatModelAPIKey)
-	}
+	require.Equal(t, "new-deepseek-key", provider.Get().AI.ChatModelAPIKey, "unexpected ai chatModelAPIKey: %s", provider.Get().AI.ChatModelAPIKey)
 
-	if provider.Get().AI.DoubaoModelAPIKey != "new-doubao-key" {
-		t.Fatalf("unexpected ai doubaoModelAPIKey: %s", provider.Get().AI.DoubaoModelAPIKey)
-	}
+	require.Equal(t, "new-doubao-key", provider.Get().AI.DoubaoModelAPIKey, "unexpected ai doubaoModelAPIKey: %s", provider.Get().AI.DoubaoModelAPIKey)
 
-	if provider.Get().AI.SystemPrompt != "new prompt" {
-		t.Fatalf("unexpected ai systemPrompt: %s", provider.Get().AI.SystemPrompt)
-	}
+	require.Equal(t, "new prompt", provider.Get().AI.SystemPrompt, "unexpected ai systemPrompt: %s", provider.Get().AI.SystemPrompt)
 
-	if provider.Get().AI.ImageModel != "doubao-seedream-4-5-251128" {
-		t.Fatalf("unexpected ai imageModel: %s", provider.Get().AI.ImageModel)
-	}
+	require.Equal(t, "doubao-seedream-4-5-251128", provider.Get().AI.ImageModel, "unexpected ai imageModel: %s", provider.Get().AI.ImageModel)
 
-	if provider.Get().AI.VideoModel != "doubao-seedance-1-0-pro-fast-251015" {
-		t.Fatalf("unexpected ai videoModel: %s", provider.Get().AI.VideoModel)
-	}
+	require.Equal(t, "doubao-seedance-1-0-pro-fast-251015", provider.Get().AI.VideoModel, "unexpected ai videoModel: %s", provider.Get().AI.VideoModel)
 
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read temp config failed: %v", err)
-	}
+	content, err := os.ReadFile(configPath) // #nosec G304 -- Reads a fixture created inside this test's private temporary directory.
+	require.NoError(t, err, "read temp config failed: %v", err)
 
-	if !strings.Contains(string(content), "new-deepseek-key") {
-		t.Fatalf("updated config file should contain new ai chatModelAPIKey, got: %s", string(content))
-	}
+	require.Contains(t, string(content), "new-deepseek-key", "updated config file should contain new ai chatModelAPIKey, got: %s", string(content))
 
-	if !strings.Contains(string(content), "new-doubao-key") {
-		t.Fatalf("updated config file should contain new ai doubaoModelAPIKey, got: %s", string(content))
-	}
+	require.Contains(t, string(content), "new-doubao-key", "updated config file should contain new ai doubaoModelAPIKey, got: %s", string(content))
 
-	if !strings.Contains(string(content), "new prompt") {
-		t.Fatalf("updated config file should contain new ai systemPrompt, got: %s", string(content))
-	}
+	require.Contains(t, string(content), "new prompt", "updated config file should contain new ai systemPrompt, got: %s", string(content))
 }
 
 func TestCommonConfigViewHidesStorageConfig(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler, provider := newConfigHandler(t, &config.Config{
 		Site: &site.Site{
@@ -676,72 +418,68 @@ func TestCommonConfigViewHidesStorageConfig(t *testing.T) {
 
 	handler.CommonConfigView(ctx)
 
-	if recorder.Code != 200 {
-		t.Fatalf("unexpected status code: %d", recorder.Code)
-	}
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
 
-	if provider.Get().Site.Storage == nil {
-		t.Fatal("global storage config should not be nil")
-	}
+	require.NotNil(t, provider.Get().Site.Storage, "global storage config should not be nil")
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "unmarshal response failed: %v", err)
 	}
 
 	payload, err := json.Marshal(response.Data)
-	if err != nil {
-		t.Fatalf("marshal response data failed: %v", err)
-	}
+	require.NoError(t, err, "marshal response data failed: %v", err)
 
 	var resp SiteResp
-	if err = json.Unmarshal(payload, &resp); err != nil {
-		t.Fatalf("unmarshal site response failed: %v", err)
+	{
+		err = json.Unmarshal(payload, &resp)
+		require.NoError(t, err, "unmarshal site response failed: %v", err)
 	}
 
-	if resp.Site.Storage == nil {
-		t.Fatal("common config response should keep public storage settings")
-	}
+	require.NotNil(t, resp.Site.Storage, "common config response should keep public storage settings")
 
-	if resp.Site.Storage.Local != nil || resp.Site.Storage.MinIO != nil || resp.Site.Storage.ChunkDir != "" {
-		t.Fatalf("common config response should hide private storage fields, got %+v", resp.Site.Storage)
-	}
+	require.Nil(t, resp.Site.Storage.Local, "common config response should hide private storage fields, got %+v", resp.Site.Storage)
+	require.Nil(t, resp.Site.Storage.MinIO, "common config response should hide private storage fields, got %+v", resp.Site.Storage)
+	require.Empty(t, resp.Site.Storage.ChunkDir, "common config response should hide private storage fields, got %+v", resp.Site.Storage)
 
-	if resp.Site.Login == nil || !resp.Site.Login.QQLogin {
-		t.Fatal("common config should keep login settings")
-	}
+	require.NotNil(t, resp.Site.Login, "common config should keep login settings")
+	require.True(t, resp.Site.Login.QQLogin, "common config should keep login settings")
 
-	if resp.Site.Register == nil || !resp.Site.Register.EmailCaptcha {
-		t.Fatal("common config should keep register settings")
-	}
+	require.NotNil(t, resp.Site.Register, "common config should keep register settings")
+	require.True(t, resp.Site.Register.EmailCaptcha, "common config should keep register settings")
 
-	if len(resp.Site.DefaultUserBannerIDs) != 2 || resp.Site.DefaultUserBannerIDs[0] != 19 || resp.Site.DefaultUserBannerIDs[1] != 23 {
-		t.Fatalf("common config should keep default user banner ids, got %+v", resp.Site.DefaultUserBannerIDs)
-	}
+	require.Len(t, resp.Site.DefaultUserBannerIDs, 2, "common config should keep default user banner ids, got %+v", resp.Site.DefaultUserBannerIDs)
+	require.EqualValues(t, 19, resp.Site.DefaultUserBannerIDs[0], "common config should keep default user banner ids, got %+v", resp.Site.DefaultUserBannerIDs)
+	require.EqualValues(t, 23, resp.Site.DefaultUserBannerIDs[1], "common config should keep default user banner ids, got %+v", resp.Site.DefaultUserBannerIDs)
 }
 
 func decodeResponseData(t *testing.T, recorder *httptest.ResponseRecorder) []byte {
 	t.Helper()
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "unmarshal response failed: %v", err)
 	}
 
 	payload, err := json.Marshal(response.Data)
-	if err != nil {
-		t.Fatalf("marshal response data failed: %v", err)
-	}
+	require.NoError(t, err, "marshal response data failed: %v", err)
 
 	return payload
 }
 
 func TestSiteSubmissionPolicyRoundTripAndLegacyUpdates(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("site: {}\n"), 0600); err != nil {
-		t.Fatal(err)
+	{
+		err := os.WriteFile(path, []byte("site: {}\n"), 0o600)
+		require.NoError(t, err)
 	}
+
 	handler, provider := newConfigHandler(t, &config.Config{Site: &site.Site{}}, path)
+
 	for _, step := range []struct {
 		body string
 		want bool
@@ -752,59 +490,263 @@ func TestSiteSubmissionPolicyRoundTripAndLegacyUpdates(t *testing.T) {
 	} {
 		rec := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(rec)
-		ctx.Request = httptest.NewRequest(http.MethodPut, "/v1/admin/site/config?name=site", strings.NewReader(step.body))
+		ctx.Request = httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/v1/admin/site/config?name=site", strings.NewReader(step.body))
 		ctx.Request.Header.Set("Content-Type", "application/json")
 		handler.AdminUpdateConfigItemView(ctx)
+
 		var response res.Response
-		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || response.Code != 0 {
-			t.Fatalf("update failed: %s", rec.Body.String())
+		{
+			err := json.Unmarshal(rec.Body.Bytes(), &response)
+			require.False(t, err != nil || response.Code != 0, "update failed: %s", rec.Body.String())
 		}
-		if provider.Get().Site.DisableUserSubmission != step.want {
-			t.Fatalf("wrong effective policy: %+v", provider.Get().Site)
-		}
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
+
+		require.Equal(t, step.want, provider.Get().Site.DisableUserSubmission, "wrong effective policy: %+v", provider.Get().Site)
+
+		contents, err := os.ReadFile(path) // #nosec G304 -- Reads a fixture created inside this test's private temporary directory.
+		require.NoError(t, err)
+
 		var persisted struct {
 			Site site.Site `yaml:"site"`
 		}
-		if err := yaml.Unmarshal(contents, &persisted); err != nil {
-			t.Fatal(err)
+		{
+			err := yaml.Unmarshal(contents, &persisted)
+			require.NoError(t, err)
 		}
-		if persisted.Site.DisableUserSubmission != step.want {
-			t.Fatalf("policy not persisted: %s", contents)
-		}
+
+		require.Equal(t, step.want, persisted.Site.DisableUserSubmission, "policy not persisted: %s", contents)
+
 		for _, admin := range []bool{false, true} {
 			rec = httptest.NewRecorder()
 			ctx, _ = gin.CreateTestContext(rec)
-			ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/admin/site/config?name=site", nil)
+
+			ctx.Request = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/admin/site/config?name=site", nil)
 			if admin {
 				handler.AdminConfigItemView(ctx)
 			} else {
 				handler.CommonConfigView(ctx)
 			}
+
 			var result struct {
 				Data json.RawMessage `json:"data"`
 			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-				t.Fatal(err)
+			{
+				err := json.Unmarshal(rec.Body.Bytes(), &result)
+				require.NoError(t, err)
 			}
+
 			var cfg site.Site
+
 			if admin {
-				if err := json.Unmarshal(result.Data, &cfg); err != nil {
-					t.Fatal(err)
+				{
+					err := json.Unmarshal(result.Data, &cfg)
+					require.NoError(t, err)
 				}
 			} else {
 				var public SiteResp
-				if err := json.Unmarshal(result.Data, &public); err != nil {
-					t.Fatal(err)
+				{
+					err := json.Unmarshal(result.Data, &public)
+					require.NoError(t, err)
 				}
+
 				cfg = public.Site
 			}
-			if cfg.DisableUserSubmission != step.want {
-				t.Fatalf("policy not exposed to admin=%v: %s", admin, rec.Body.String())
-			}
+
+			require.Equal(t, step.want, cfg.DisableUserSubmission, "policy not exposed to admin=%v: %s", admin, rec.Body.String())
 		}
 	}
 }
+
+func checkNamedSiteConfig(t *testing.T, handler *Handler, provider *infraconfig.Provider) {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=site", nil)
+
+	handler.AdminConfigItemView(ctx)
+
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
+
+	require.NotNil(t, provider.Get().Site.Storage, "global storage config should not be nil")
+
+	payload := decodeResponseData(t, recorder)
+
+	var data map[string]any
+	{
+		err := json.Unmarshal(payload, &data)
+		require.NoError(t, err, "unmarshal admin site response failed: %v", err)
+	}
+
+	{
+		_, ok := data[configNameSite]
+		require.False(t, ok, "admin site config response should not wrap payload in data.site")
+	}
+
+	var resp site.Site
+	{
+		err := json.Unmarshal(payload, &resp)
+		require.NoError(t, err, "unmarshal site config failed: %v", err)
+	}
+
+	require.NotNil(t, resp.Login, "admin site config should contain login settings")
+	require.True(t, resp.Login.QQLogin, "admin site config should contain login settings")
+
+	require.NotNil(t, resp.Storage, "admin site config should contain full storage settings")
+	require.Equal(t, "runtime/chunks", resp.Storage.ChunkDir, "admin site config should contain full storage settings")
+
+	require.NotNil(t, resp.Storage.Local, "admin site config should keep local storage settings")
+	require.True(t, resp.Storage.Local.Enable, "admin site config should keep local storage settings")
+
+	require.NotNil(t, resp.Storage.MinIO, "admin site config should keep minio settings")
+	require.True(t, resp.Storage.MinIO.Enable, "admin site config should keep minio settings")
+
+	require.Equal(t, "minio-secret-key", resp.Storage.MinIO.SecretKey, "admin site config should return plain minio secretKey, got: %s", resp.Storage.MinIO.SecretKey)
+}
+
+func checkNamedTranscodeConfig(t *testing.T, handler *Handler) {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=transcode", nil)
+
+	handler.AdminConfigItemView(ctx)
+
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
+
+	payload := decodeResponseData(t, recorder)
+
+	var data map[string]any
+	{
+		err := json.Unmarshal(payload, &data)
+		require.NoError(t, err, "unmarshal admin transcode response failed: %v", err)
+	}
+
+	{
+		_, ok := data[configNameSite]
+		require.False(t, ok, "admin transcode config response should not return site config")
+	}
+
+	var resp config.Transcode
+	{
+		err := json.Unmarshal(payload, &resp)
+		require.NoError(t, err, "unmarshal transcode config failed: %v", err)
+	}
+
+	require.Equal(t, 4, resp.MaxWorkers, "unexpected maxWorkers: %d", resp.MaxWorkers)
+
+	require.Len(t, resp.TranscodeResolutions, 3, "unexpected transcode resolutions length: %d", len(resp.TranscodeResolutions))
+
+	require.True(t, resp.GpuMode, "admin transcode config should contain gpuMode")
+}
+
+func checkNamedServerConfig(t *testing.T, handler *Handler) {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=server", nil)
+
+	handler.AdminConfigItemView(ctx)
+
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
+
+	payload := decodeResponseData(t, recorder)
+
+	var resp AdminServerCORSConfig
+	{
+		err := json.Unmarshal(payload, &resp)
+		require.NoError(t, err, "unmarshal server cors config failed: %v", err)
+	}
+
+	require.Len(t, resp.CorsOrigins, 2, "unexpected corsOrigins length: %d", len(resp.CorsOrigins))
+
+	require.Equal(t, "http://localhost:3000", resp.CorsOrigins[0], "unexpected first origin: %s", resp.CorsOrigins[0])
+
+	// 管理端响应不应泄露完整 server 监听字段（仅 corsOrigins）。
+	var raw map[string]any
+	{
+		err := json.Unmarshal(payload, &raw)
+		require.NoError(t, err, "unmarshal raw failed: %v", err)
+	}
+
+	{
+		_, ok := raw["addr"]
+		require.False(t, ok, "admin server config should not expose addr")
+	}
+}
+
+func checkNamedThirdLoginConfig(t *testing.T, handler *Handler) {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=thirdLogin", nil)
+
+	handler.AdminConfigItemView(ctx)
+
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
+
+	payload := decodeResponseData(t, recorder)
+
+	var resp config.ThirdLogin
+	{
+		err := json.Unmarshal(payload, &resp)
+		require.NoError(t, err, "unmarshal third login config failed: %v", err)
+	}
+
+	require.NotNil(t, resp.Google, "admin third login config should contain google settings")
+
+	require.Equal(t, testGoogleClientID, resp.Google.ClientID, "unexpected google clientID: %s", resp.Google.ClientID)
+
+	require.Equal(t, testGoogleRedirect, resp.Google.Redirect, "unexpected google redirect: %s", resp.Google.Redirect)
+
+	require.NotNil(t, resp.QQ, "admin third login config should contain qq settings")
+	require.Equal(t, "qq-app-id", resp.QQ.AppID, "admin third login config should contain qq settings")
+
+	require.Equal(t, "qq-app-key", resp.QQ.AppKey, "admin third login config should return plain qq appKey, got: %s", resp.QQ.AppKey)
+
+	require.Equal(t, "google-client-secret", resp.Google.ClientSecret, "admin third login config should return plain google clientSecret, got: %s", resp.Google.ClientSecret)
+}
+
+func checkNamedAIConfig(t *testing.T, handler *Handler) {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/admin/site/config?name=ai", nil)
+
+	handler.AdminConfigItemView(ctx)
+
+	require.Equal(t, 200, recorder.Code, "unexpected status code: %d", recorder.Code)
+
+	payload := decodeResponseData(t, recorder)
+
+	var resp config.AI
+	{
+		err := json.Unmarshal(payload, &resp)
+		require.NoError(t, err, "unmarshal ai config failed: %v", err)
+	}
+
+	require.Equal(t, "https://api.deepseek.com/anthropic", resp.ChatModelBaseURL, "unexpected ai chatModelBaseURL: %s", resp.ChatModelBaseURL)
+
+	require.Equal(t, "deepseek-test-key", resp.ChatModelAPIKey, "admin ai config should return plain chatModelAPIKey, got: %s", resp.ChatModelAPIKey)
+
+	require.Equal(t, "doubao-test-key", resp.DoubaoModelAPIKey, "admin ai config should return plain doubaoModelAPIKey, got: %s", resp.DoubaoModelAPIKey)
+
+	require.Equal(t, testDeepseekV4Flash, resp.ChatModel, "unexpected ai chatModel: %s", resp.ChatModel)
+
+	require.True(t, resp.ThinkingEnabled, "admin ai config should enable thinking by default in fixture")
+
+	require.Equal(t, "high", resp.ThinkingEffort, "unexpected ai thinkingEffort: %s", resp.ThinkingEffort)
+
+	require.Len(t, resp.ChatModels, 2, "unexpected ai chatModels len: %d", len(resp.ChatModels))
+
+	require.Len(t, resp.ThinkingEfforts, 2, "unexpected ai thinkingEfforts len: %d", len(resp.ThinkingEfforts))
+
+	require.Equal(t, "doubao-embedding-vision-251215", resp.EmbeddingModel, "unexpected ai embeddingModel: %s", resp.EmbeddingModel)
+
+	require.NotEmpty(t, resp.SystemPrompt, "admin ai config should contain systemPrompt")
+}
+
+const testDeepseekV4Flash = "deepseek-v4-flash"

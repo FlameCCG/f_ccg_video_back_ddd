@@ -35,7 +35,7 @@ func (s *Searcher) XDB() *xdb.Searcher {
 func New(logger *zap.Logger) *Searcher {
 	searcher, err := xdb.NewWithFileOnly(xdb.IPv4, dbPath)
 	if err != nil {
-		logger.Error("初始化ip数据库失败", zap.Error(err))
+		logger.Warn("初始化ip数据库失败", zap.String("event", "ipregion.searcher.new.degraded"), zap.String("operation", "ipregion.searcher.new"), zap.Error(err))
 
 		return &Searcher{logger: logger}
 	}

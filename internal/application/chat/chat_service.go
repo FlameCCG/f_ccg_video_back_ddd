@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
@@ -236,10 +237,10 @@ func (s *Service) checkDailySendLimit(
 
 	receiverFollowsSender, err := s.follows.IsFollowing(ctx, receiverID, senderID)
 	if err != nil {
-		s.logger.Warn("check focus relation failed, skip chat daily limit",
+		logctx.With(ctx, s.logger).Warn("check focus relation failed, skip chat daily limit", zap.String("event", "chat.chat_service.check_daily_send_limit.degraded"), zap.String("operation", "chat.chat_service.check_daily_send_limit"),
 			zap.Error(err),
-			zap.Uint("senderId", senderID),
-			zap.Uint("receiverId", receiverID),
+			zap.Uint("sender_id", senderID),
+			zap.Uint("receiver_id", receiverID),
 		)
 
 		return nil

@@ -4,17 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	"f_ccg_video_back_ddd/internal/config"
+
 	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -73,55 +77,16 @@ func newOAuthHandler(t *testing.T, cfg *config.Config) (*Handler, *fakeOAuthStat
 }
 
 func TestGitHubUrlViewStoresState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
-	handler, states := newOAuthHandler(t, &config.Config{
-		ThirdLogin: &config.ThirdLogin{
-			GitHub: &thirdlogin.GitHub{
-				ClientID:     "github-client-id",
-				ClientSecret: "github-secret",
-				Redirect:     "http://localhost:3000/oauth/github",
-			},
-		},
-	})
+	handler, states := oauthURLTestProvider(t, "github")
+	recorder := performOAuthURLRequest(t, handler.GitHubURLView, "github", GitHubURLReq{State: "github-state"})
 
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/github-url", nil)
-	ctx.Set("request", GitHubURLReq{
-		State: "github-state",
-	})
-
-	handler.GitHubUrlView(ctx)
-
-	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
-	}
-
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d", response.Code)
-	}
-
-	authURL, ok := response.Data.(string)
-	if !ok {
-		t.Fatalf("authorization URL is %T", response.Data)
-	}
-	parsed, err := url.Parse(authURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state := parsed.Query().Get("state")
-	if state == "" || state == "github-state" {
-		t.Fatal("state must be server generated")
-	}
-	if err := states.consume("github", state); err != nil {
-		t.Fatalf("expected github state stored, got err: %v", err)
-	}
+	assertStoredOAuthState(t, recorder, states, "github", "github-state")
 }
 
 func TestXUrlViewStoresState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler, states := newOAuthHandler(t, &config.Config{
 		ThirdLogin: &config.ThirdLogin{
@@ -143,113 +108,60 @@ func TestXUrlViewStoresState(t *testing.T) {
 
 	handler.XUrlView(ctx)
 
-	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
-	}
-
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d", response.Code)
-	}
-
-	authURL, ok := response.Data.(string)
-	if !ok {
-		t.Fatalf("authorization URL is %T", response.Data)
-	}
-	parsed, err := url.Parse(authURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state := parsed.Query().Get("state")
-	if state == "" || state == "x-state" {
-		t.Fatal("state must be server generated")
-	}
-	if err := states.consume("x", state); err != nil {
-		t.Fatalf("expected x state stored, got err: %v", err)
-	}
+	assertStoredOAuthState(t, recorder, states, "x", "x-state")
 }
 
 func TestLinuxDoUrlViewStoresState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
-	handler, states := newOAuthHandler(t, &config.Config{
-		ThirdLogin: &config.ThirdLogin{
-			LinuxDo: &thirdlogin.LinuxDo{
-				ClientID:     "linuxdo-client-id",
-				ClientSecret: "linuxdo-secret",
-				Redirect:     "http://localhost:3000/oauth/linuxdo",
-			},
-		},
-	})
+	handler, states := oauthURLTestProvider(t, "linuxdo")
+	recorder := performOAuthURLRequest(t, handler.LinuxDoURLView, "linuxdo", LinuxDoURLReq{State: "linuxdo-state"})
 
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/common/site/linuxdo-url", nil)
-	ctx.Set("request", LinuxDoURLReq{
-		State: "linuxdo-state",
-	})
-
-	handler.LinuxDoUrlView(ctx)
-
-	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
-	}
-
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d", response.Code)
-	}
-
-	authURL, ok := response.Data.(string)
-	if !ok {
-		t.Fatalf("authorization URL is %T", response.Data)
-	}
-	parsed, err := url.Parse(authURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state := parsed.Query().Get("state")
-	if state == "" || state == "linuxdo-state" {
-		t.Fatal("state must be server generated")
-	}
-	if err := states.consume("linuxdo", state); err != nil {
-		t.Fatalf("expected linuxdo state stored, got err: %v", err)
-	}
+	assertStoredOAuthState(t, recorder, states, "linuxdo", "linuxdo-state")
 }
 
 func TestQQURLStoresOneTimeServerState(t *testing.T) {
+	t.Parallel()
+
 	handler, states := newOAuthHandler(t, &config.Config{ThirdLogin: &config.ThirdLogin{QQ: &thirdlogin.QQ{AppID: "app", AppKey: "secret", Redirect: "https://example.com/qq"}}})
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/site/qq-url", nil)
+	ctx.Request = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/site/qq-url", nil)
 	handler.QQUrlView(ctx)
+
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err)
 	}
+
 	raw, ok := response.Data.(string)
-	if !ok {
-		t.Fatal("missing authorization URL")
-	}
+	require.True(t, ok, "missing authorization URL")
+
 	parsed, err := url.Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	state := parsed.Query().Get("state")
-	if state == "" {
-		t.Fatal("QQ state missing")
+	require.NotEmpty(t, state, "QQ state missing")
+
+	{
+		err := states.consume("qq", state)
+		require.NoError(t, err)
 	}
-	if err := states.consume("qq", state); err != nil {
-		t.Fatal(err)
-	}
-	if err := states.consume("qq", state); err == nil {
-		t.Fatal("QQ state reused")
+
+	{
+		err := states.consume("qq", state)
+		require.Error(t, err, "QQ state reused")
 	}
 }
+
 func TestOAuthMissingConfigDoesNotStoreState(t *testing.T) {
+	t.Parallel()
+
 	states := newFakeOAuthStateStore()
 	provider := infraconfig.NewProvider(&config.Config{})
 	service := app.NewOAuthURLService(provider, states)
+
 	calls := []func() (string, error){
 		func() (string, error) { return service.GoogleURL(t.Context(), "caller-state") },
 		func() (string, error) {
@@ -260,11 +172,59 @@ func TestOAuthMissingConfigDoesNotStoreState(t *testing.T) {
 		func() (string, error) { return service.QQURL(t.Context()) },
 	}
 	for _, call := range calls {
-		if raw, err := call(); err != nil || raw != "" {
-			t.Fatalf("raw=%q err=%v", raw, err)
+		{
+			raw, err := call()
+			require.NoError(t, err, "raw=%q err=%v", raw, err)
+			require.Empty(t, raw, "raw=%q err=%v", raw, err)
 		}
 	}
-	if len(states.stored) != 0 {
-		t.Fatalf("missing configuration polluted state store: %v", states.stored)
+
+	require.Empty(t, states.stored, "missing configuration polluted state store: %v", states.stored)
+}
+
+func assertStoredOAuthState(t *testing.T, recorder *httptest.ResponseRecorder, states *fakeOAuthStateStore, provider, rejectedState string) {
+	t.Helper()
+
+	var response res.Response
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.EqualValues(t, res.SuccessCode, response.Code)
+	authURL, ok := response.Data.(string)
+	require.True(t, ok, "authorization URL is %T", response.Data)
+
+	parsed, err := url.Parse(authURL)
+	require.NoError(t, err)
+
+	state := parsed.Query().Get("state")
+	require.NotEmpty(t, state)
+	require.NotEqual(t, rejectedState, state, "state must be server generated")
+	require.NoError(t, states.consume(provider, state))
+}
+
+func oauthURLTestProvider(t *testing.T, provider string) (*Handler, *fakeOAuthStateStore) {
+	t.Helper()
+
+	login := &config.ThirdLogin{}
+
+	switch provider {
+	case "github":
+		login.GitHub = &thirdlogin.GitHub{ClientID: "github-client-id", ClientSecret: "github-secret", Redirect: "http://localhost:3000/oauth/github"}
+	case "linuxdo":
+		login.LinuxDo = &thirdlogin.LinuxDo{ClientID: "linuxdo-client-id", ClientSecret: "linuxdo-secret", Redirect: "http://localhost:3000/oauth/linuxdo"}
+	default:
+		t.Fatalf("unsupported test provider %q", provider)
 	}
+
+	return newOAuthHandler(t, &config.Config{ThirdLogin: login})
+}
+
+func performOAuthURLRequest(t *testing.T, serve func(*gin.Context), provider string, request any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/common/site/"+provider+"-url", nil)
+	c.Set("request", request)
+	serve(c)
+
+	return recorder
 }

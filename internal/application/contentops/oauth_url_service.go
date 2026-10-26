@@ -2,10 +2,9 @@ package contentops
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
 	"net/url"
 	"strings"
-
-	"f_ccg_video_back_ddd/internal/application/shared"
 
 	"github.com/google/uuid"
 )
@@ -64,6 +63,7 @@ func (s *OAuthURLService) QQURL(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	params := url.Values{}
 	params.Set("state", state)
 	params.Set("which", "Login")
@@ -75,12 +75,13 @@ func (s *OAuthURLService) QQURL(ctx context.Context) (string, error) {
 	return "https://graph.qq.com/oauth2.0/show?" + params.Encode(), nil
 }
 
-// GoogleURL 保存 state 并生成 Google 授权链接；state 为空时自动生成 UUID。
-func (s *OAuthURLService) GoogleURL(ctx context.Context, state string) (string, error) {
+// GoogleURL 生成并保存服务端 state 后返回 Google 授权链接；保留旧入参兼容调用方。
+func (s *OAuthURLService) GoogleURL(ctx context.Context, _ string) (string, error) {
 	cfg := s.provider.Get()
 	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.Google == nil || strings.TrimSpace(cfg.ThirdLogin.Google.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.Google.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.Google.Redirect) == "" {
 		return "", nil
 	}
+
 	state, err := s.newState(ctx, oauthProviderGoogle)
 	if err != nil {
 		return "", err
@@ -106,10 +107,12 @@ func (s *OAuthURLService) GitHubURL(ctx context.Context, params GitHubURLParams)
 	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.GitHub == nil || strings.TrimSpace(cfg.ThirdLogin.GitHub.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.GitHub.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.GitHub.Redirect) == "" {
 		return "", nil
 	}
+
 	state, err := s.newState(ctx, oauthProviderGitHub)
 	if err != nil {
 		return "", err
 	}
+
 	params.State = state
 
 	query := url.Values{}
@@ -136,11 +139,12 @@ func (s *OAuthURLService) GitHubURL(ctx context.Context, params GitHubURLParams)
 }
 
 // LinuxDoURL 保存 state 并生成 Linux.do 授权链接。
-func (s *OAuthURLService) LinuxDoURL(ctx context.Context, state string) (string, error) {
+func (s *OAuthURLService) LinuxDoURL(ctx context.Context, _ string) (string, error) {
 	cfg := s.provider.Get()
 	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.LinuxDo == nil || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.Redirect) == "" {
 		return "", nil
 	}
+
 	state, err := s.newState(ctx, oauthProviderLinuxDo)
 	if err != nil {
 		return "", err
@@ -165,10 +169,12 @@ func (s *OAuthURLService) XURL(ctx context.Context, params XURLParams) (string, 
 	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.X == nil || strings.TrimSpace(cfg.ThirdLogin.X.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.X.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.X.Redirect) == "" {
 		return "", nil
 	}
+
 	state, err := s.newState(ctx, oauthProviderX)
 	if err != nil {
 		return "", err
 	}
+
 	params.State = state
 
 	query := url.Values{}
@@ -198,5 +204,6 @@ func (s *OAuthURLService) newState(ctx context.Context, provider string) (string
 	if err := s.states.StoreOAuthState(ctx, provider, state); err != nil {
 		return "", err
 	}
+
 	return state, nil
 }

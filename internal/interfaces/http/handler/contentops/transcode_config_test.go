@@ -2,6 +2,7 @@ package contentops
 
 import (
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,18 +10,22 @@ import (
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/config"
-
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTranscodeLocalConsumerConfigRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("transcode:\n  cpuMode: true\n"), 0600); err != nil {
-		t.Fatal(err)
+	{
+		err := os.WriteFile(path, []byte("transcode:\n  cpuMode: true\n"), 0o600)
+		require.NoError(t, err)
 	}
-	handler, provider := newConfigHandler(t, &config.Config{Transcode: &config.Transcode{CpuMode: true}}, path)
+
+	handler, provider := newConfigHandler(t, &config.Config{Transcode: &config.Transcode{CPUMode: true}}, path)
+	//nolint:paralleltest // Cases share parent fixtures or must finish before their parent resource cleanup.
 	for _, step := range []struct {
 		name string
 		body string
@@ -34,43 +39,51 @@ func TestTranscodeLocalConsumerConfigRoundTrip(t *testing.T) {
 		t.Run(step.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			ctx, _ := gin.CreateTestContext(rec)
-			ctx.Request = httptest.NewRequest(http.MethodPut, "/v1/admin/site/config?name=transcode", strings.NewReader(step.body))
+			ctx.Request = httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/v1/admin/site/config?name=transcode", strings.NewReader(step.body))
 			ctx.Request.Header.Set("Content-Type", "application/json")
 			handler.AdminUpdateConfigItemView(ctx)
+
 			var response struct {
 				Code int `json:"code"`
 			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || response.Code != 0 {
-				t.Fatalf("update failed: %s", rec.Body.String())
+			{
+				err := json.Unmarshal(rec.Body.Bytes(), &response)
+				require.False(t, err != nil || response.Code != 0, "update failed: %s", rec.Body.String())
 			}
-			if provider.Get().Transcode.LocalConsumerDisabled != step.want {
-				t.Fatal("incorrect published local consumer role")
-			}
+
+			require.Equal(t, step.want, provider.Get().Transcode.LocalConsumerDisabled, "incorrect published local consumer role")
+
 			v := viper.New()
 			v.SetConfigFile(path)
-			if err := v.ReadInConfig(); err != nil {
-				t.Fatal(err)
+
+			{
+				err := v.ReadInConfig()
+				require.NoError(t, err)
 			}
+
 			var persisted config.Config
-			if err := v.Unmarshal(&persisted); err != nil {
-				t.Fatal(err)
+			{
+				err := v.Unmarshal(&persisted)
+				require.NoError(t, err)
 			}
-			if persisted.Transcode == nil || persisted.Transcode.LocalConsumerDisabled != step.want {
-				t.Fatal("local consumer role was not persisted")
-			}
+
+			require.NotNil(t, persisted.Transcode, "local consumer role was not persisted")
+			require.Equal(t, step.want, persisted.Transcode.LocalConsumerDisabled, "local consumer role was not persisted")
+
 			rec = httptest.NewRecorder()
 			ctx, _ = gin.CreateTestContext(rec)
-			ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/admin/site/config?name=transcode", nil)
+			ctx.Request = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/admin/site/config?name=transcode", nil)
 			handler.AdminConfigItemView(ctx)
+
 			var result struct {
 				Data config.Transcode `json:"data"`
 			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-				t.Fatal(err)
+			{
+				err := json.Unmarshal(rec.Body.Bytes(), &result)
+				require.NoError(t, err)
 			}
-			if result.Data.LocalConsumerDisabled != step.want {
-				t.Fatalf("GET did not return local consumer role: %s", rec.Body.String())
-			}
+
+			require.Equal(t, step.want, result.Data.LocalConsumerDisabled, "GET did not return local consumer role: %s", rec.Body.String())
 		})
 	}
 }

@@ -1,9 +1,8 @@
 package video
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // ResolvePublishVideoStatus 根据私密/定时/内容审核配置解析投稿或改稿后的视频状态。
@@ -82,6 +81,8 @@ func ResolveScheduledPublishOutcome(status enum.VideoStatus, contentReviewEnable
 
 		// 关闭审核时的历史数据：曾用 Review 表示定时待发。
 		return ScheduledPublishFromReview
+	case enum.VideoStatusPublished, enum.VideoStatusPrivate, enum.VideoStatusDeleted:
+		fallthrough
 	default:
 		// 已发布 / 私密 / 删除等：清理陈旧调度。
 		return ScheduledPublishDrop
@@ -93,6 +94,8 @@ func ValidateReviewTargetStatus(status enum.VideoStatus) error {
 	switch status {
 	case enum.VideoStatusPublished, enum.VideoStatusPrivate, enum.VideoStatusDeleted:
 		return nil
+	case enum.VideoStatusReview, enum.VideoStatusScheduled:
+		fallthrough
 	default:
 		return ErrVideoStatusInvalid
 	}

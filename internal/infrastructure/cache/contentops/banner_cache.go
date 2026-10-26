@@ -10,16 +10,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"strconv"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
 	domain "f_ccg_video_back_ddd/internal/domain/contentops"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+)
+
+const (
+	testRedisUninitialized = "redis 未初始化"
 )
 
 // 可见轮播图缓存参数（TTL 与超时属外部契约，与原 service/banner_service/cache.go 一致）。
@@ -70,7 +74,7 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get visible banner cache failed", zap.String("key", key), zap.Error(err))
+			c.logger.Warn("get visible banner cache failed", zap.String("event", "cache.banner_cache.load_visible.degraded"), zap.String("operation", "cache.banner_cache.load_visible"), zap.String("key", key), zap.Error(err))
 		}
 
 		return nil, false
@@ -78,7 +82,7 @@ func (c *BannerCache) LoadVisible(bannerType enum.BannerType, partitionID *uint)
 
 	var items []domain.Banner
 	if err := json.Unmarshal(raw, &items); err != nil {
-		c.logger.Warn("unmarshal visible banner cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("unmarshal visible banner cache failed", zap.String("event", "cache.banner_cache.load_visible.degraded"), zap.String("operation", "cache.banner_cache.load_visible"), zap.String("key", key), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
 
 		return nil, false
@@ -101,7 +105,7 @@ func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint
 
 	raw, err := json.Marshal(items)
 	if err != nil {
-		c.logger.Warn("marshal visible banner cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("marshal visible banner cache failed", zap.String("event", "cache.banner_cache.store_visible.degraded"), zap.String("operation", "cache.banner_cache.store_visible"), zap.String("key", key), zap.Error(err))
 
 		return
 	}
@@ -110,7 +114,7 @@ func (c *BannerCache) StoreVisible(bannerType enum.BannerType, partitionID *uint
 	defer cancel()
 
 	if err := c.redis.Set(cacheCtx, key, raw, visibleBannerCacheTTL).Err(); err != nil {
-		c.logger.Warn("set visible banner cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("set visible banner cache failed", zap.String("event", "cache.banner_cache.store_visible.degraded"), zap.String("operation", "cache.banner_cache.store_visible"), zap.String("key", key), zap.Error(err))
 	}
 }
 
@@ -124,7 +128,7 @@ func (c *BannerCache) InvalidateVisible() {
 	defer cancel()
 
 	if err := c.deleteKeysByPrefix(cacheCtx, constants.BannerVisibleCacheKeyPrefix); err != nil {
-		c.logger.Warn("invalidate visible banner cache failed", zap.Error(err))
+		c.logger.Warn("invalidate visible banner cache failed", zap.String("event", "cache.banner_cache.invalidate_visible.degraded"), zap.String("operation", "cache.banner_cache.invalidate_visible"), zap.Error(err))
 	}
 }
 

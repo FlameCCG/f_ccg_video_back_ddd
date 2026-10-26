@@ -3,7 +3,10 @@ package rbac_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
+
 	infra "f_ccg_video_back_ddd/internal/infrastructure/persistence/rbac"
 )
 
@@ -15,11 +18,19 @@ import (
 // 正因为要注入真实的 casbin 匹配器，本用例属于「领域规则 + 基础设施适配器」的集成测试，
 // 故放在 infrastructure 层：这样 internal/domain 目录保持对 infrastructure 的零引用
 // （见 docs/decisions.md D-017）。
+const (
+	testV1AdminBanner = "/v1/admin/banner"
+	testV1Common      = "/v1/common/**"
+	testGET           = "GET"
+)
+
 func newEvaluator() *domain.PermissionEvaluator {
 	return domain.NewPermissionEvaluator(infra.NewGlobPathMatcher())
 }
 
 func TestPermissionCovers(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		existRes string
@@ -30,25 +41,25 @@ func TestPermissionCovers(t *testing.T) {
 	}{
 		{
 			name:     "same wildcard path and method",
-			existRes: "/v1/common/**",
+			existRes: testV1Common,
 			existAct: "*",
-			newRes:   "/v1/common/**",
+			newRes:   testV1Common,
 			newAct:   "*",
 			want:     true,
 		},
 		{
 			name:     "method star covers GET",
-			existRes: "/v1/common/**",
+			existRes: testV1Common,
 			existAct: "*",
-			newRes:   "/v1/common/**",
-			newAct:   "GET",
+			newRes:   testV1Common,
+			newAct:   testGET,
 			want:     true,
 		},
 		{
 			name:     "wildcard path covers concrete path",
 			existRes: "/v1/admin/**",
 			existAct: "*",
-			newRes:   "/v1/admin/banner",
+			newRes:   testV1AdminBanner,
 			newAct:   "DELETE",
 			want:     true,
 		},
@@ -56,23 +67,23 @@ func TestPermissionCovers(t *testing.T) {
 			name:     "different prefix not covered",
 			existRes: "/v1/admin/**",
 			existAct: "*",
-			newRes:   "/v1/common/**",
+			newRes:   testV1Common,
 			newAct:   "*",
 			want:     false,
 		},
 		{
 			name:     "GET does not cover POST",
-			existRes: "/v1/admin/banner",
-			existAct: "GET",
-			newRes:   "/v1/admin/banner",
+			existRes: testV1AdminBanner,
+			existAct: testGET,
+			newRes:   testV1AdminBanner,
 			newAct:   "POST",
 			want:     false,
 		},
 		{
 			name:     "GET does not cover star",
-			existRes: "/v1/admin/banner",
-			existAct: "GET",
-			newRes:   "/v1/admin/banner",
+			existRes: testV1AdminBanner,
+			existAct: testGET,
+			newRes:   testV1AdminBanner,
 			newAct:   "*",
 			want:     false,
 		},
@@ -80,55 +91,69 @@ func TestPermissionCovers(t *testing.T) {
 
 	evaluator := newEvaluator()
 
+	//nolint:paralleltest // Cases share parent fixtures or must finish before their parent resource cleanup.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := evaluator.PermissionCovers(tt.existRes, tt.existAct, tt.newRes, tt.newAct)
-			if got != tt.want {
-				t.Fatalf("PermissionCovers() = %v, want %v", got, tt.want)
-			}
+			require.Equal(t, tt.want, got, "PermissionCovers() = %v, want %v", got, tt.want)
 		})
 	}
 }
 
 func TestCheckPermissionsAlreadyOwned(t *testing.T) {
+	t.Parallel()
+
 	owned := []domain.PermissionItem{
-		{Resource: "/v1/common/**", Action: "*"},
+		{Resource: testV1Common, Action: "*"},
 	}
 	targets := []domain.PermissionItem{
-		{Resource: "/v1/common/**", Action: "GET"},
+		{Resource: testV1Common, Action: testGET},
 	}
 
-	if err := newEvaluator().CheckAlreadyOwned(owned, targets); err != domain.ErrPermissionAlreadyOwned {
-		t.Fatalf("expected ErrPermissionAlreadyOwned, got %v", err)
+	{
+		err := newEvaluator().CheckAlreadyOwned(owned, targets)
+		require.ErrorIs(t, err, domain.ErrPermissionAlreadyOwned, "expected ErrPermissionAlreadyOwned, got %v", err)
 	}
 }
 
 func TestCheckInternalPermissionRedundancy(t *testing.T) {
+	t.Parallel()
+
 	items := []domain.PermissionItem{
 		{Resource: "/v1/admin/**", Action: "*"},
-		{Resource: "/v1/admin/banner", Action: "GET"},
+		{Resource: testV1AdminBanner, Action: testGET},
 	}
 
-	if err := newEvaluator().CheckInternalRedundancy(items); err != domain.ErrPermissionAlreadyOwned {
-		t.Fatalf("expected ErrPermissionAlreadyOwned, got %v", err)
+	{
+		err := newEvaluator().CheckInternalRedundancy(items)
+		require.ErrorIs(t, err, domain.ErrPermissionAlreadyOwned, "expected ErrPermissionAlreadyOwned, got %v", err)
 	}
 }
 
 func TestNormalizePermissionVariants(t *testing.T) {
+	t.Parallel()
+
 	// 三种入口对「空列表」的处理不同，迁移后必须保持各自语义。
-	if got, err := domain.NormalizeNewPermissions(nil); err != nil || got != nil {
-		t.Fatalf("NormalizeNewPermissions(nil) = (%v, %v), want (nil, nil)", got, err)
+	{
+		got, err := domain.NormalizeNewPermissions(nil)
+		require.NoError(t, err, "NormalizeNewPermissions(nil) = (%v, %v), want (nil, nil)", got, err)
+		require.Nil(t, got, "NormalizeNewPermissions(nil) = (%v, %v), want (nil, nil)", got, err)
 	}
 
-	if got, err := domain.NormalizeReplacementPermissions(nil); err != nil || got == nil || len(got) != 0 {
-		t.Fatalf("NormalizeReplacementPermissions(nil) = (%v, %v), want (empty slice, nil)", got, err)
+	{
+		got, err := domain.NormalizeReplacementPermissions(nil)
+		require.NoError(t, err, "NormalizeReplacementPermissions(nil) = (%v, %v), want (empty slice, nil)", got, err)
+		require.NotNil(t, got, "NormalizeReplacementPermissions(nil) = (%v, %v), want (empty slice, nil)", got, err)
+		require.Empty(t, got, "NormalizeReplacementPermissions(nil) = (%v, %v), want (empty slice, nil)", got, err)
 	}
 
-	if _, err := domain.CollectPermissions(nil); err != domain.ErrPermissionsRequired {
-		t.Fatalf("CollectPermissions(nil) error = %v, want ErrPermissionsRequired", err)
+	{
+		_, err := domain.CollectPermissions(nil)
+		require.ErrorIs(t, err, domain.ErrPermissionsRequired, "CollectPermissions(nil) error = %v, want ErrPermissionsRequired", err)
 	}
 
-	if _, err := domain.CollectPermissions([]domain.PermissionItem{{Resource: " ", Action: "GET"}}); err != domain.ErrPermissionParamIncomplete {
-		t.Fatalf("CollectPermissions(blank resource) error = %v, want ErrPermissionParamIncomplete", err)
+	{
+		_, err := domain.CollectPermissions([]domain.PermissionItem{{Resource: " ", Action: testGET}})
+		require.ErrorIs(t, err, domain.ErrPermissionParamIncomplete, "CollectPermissions(blank resource) error = %v, want ErrPermissionParamIncomplete", err)
 	}
 }

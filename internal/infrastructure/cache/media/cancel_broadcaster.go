@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"sync"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -113,6 +114,7 @@ func (s *CancelSubscriber) Start(parent context.Context) error {
 	pubsub := s.client.Subscribe(ctx, constants.TranscodeCancelChannel)
 	if _, err := pubsub.Receive(ctx); err != nil {
 		cancel()
+
 		_ = pubsub.Close()
 
 		return fmt.Errorf("subscribe transcode cancel events: %w", err)
@@ -145,16 +147,16 @@ func (s *CancelSubscriber) run(ctx context.Context, pubsub *redis.PubSub) {
 
 			var event cancelEvent
 			if err := json.Unmarshal([]byte(message.Payload), &event); err != nil {
-				s.logger.Warn("decode transcode cancel event failed", zap.Error(err))
+				logctx.With(ctx, s.logger).Warn("decode transcode cancel event failed", zap.String("event", "cache.cancel_broadcaster.run.degraded"), zap.String("operation", "cache.cancel_broadcaster.run"), zap.Error(err))
 
 				continue
 			}
 
 			canceled := s.registry.CancelVideos(event.VideoIDs)
 			if canceled > 0 {
-				s.logger.Info("remote transcode tasks canceled",
+				logctx.With(ctx, s.logger).Info("remote transcode tasks canceled", zap.String("event", "cache.cancel_broadcaster.run.diagnostic"), zap.String("operation", "cache.cancel_broadcaster.run"),
 					zap.Int("tasks", canceled),
-					zap.Ints("videoIds", uintsToInts(event.VideoIDs)),
+					zap.Ints("video_ids", uintsToInts(event.VideoIDs)),
 				)
 			}
 		}

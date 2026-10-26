@@ -3,9 +3,9 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 )

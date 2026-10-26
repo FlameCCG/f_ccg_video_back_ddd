@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strings"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
@@ -39,6 +40,7 @@ func (s *Service) buildResponsesSystemPrompt(
 	if s.prompts == nil || !s.prompts.Available() {
 		return basePrompt, nil
 	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -55,18 +57,20 @@ func (s *Service) buildResponsesSystemPrompt(
 	)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			s.logger.Debug("skip AI video query analysis after context deadline", zap.Error(err))
+			logctx.With(ctx, s.logger).Debug("skip AI video query analysis after context deadline", zap.String("event", "ai.prompt_service.build_responses_system_prompt.diagnostic"), zap.String("operation", "ai.prompt_service.build_responses_system_prompt"), zap.Error(err))
 
 			return basePrompt, nil
 		}
 
 		return basePrompt, err
 	}
+
 	if !analysis.WantsVideoSearch() {
 		return basePrompt, nil
 	}
 
 	limit := resolvePromptCandidateLimit(cfg)
+
 	candidateSet, err := s.loadPromptVideoCandidates(promptCtx, conv, analysis.Keywords, limit)
 	if err != nil {
 		return basePrompt, err
@@ -76,9 +80,11 @@ func (s *Service) buildResponsesSystemPrompt(
 	if err != nil {
 		return basePrompt, err
 	}
+
 	if contextPrompt == "" {
 		return basePrompt, nil
 	}
+
 	if basePrompt == "" {
 		return contextPrompt, nil
 	}
@@ -99,6 +105,7 @@ func (s *Service) analyzeVideoQuery(
 	if strings.TrimSpace(transcript) == "" {
 		return analysis, nil
 	}
+
 	if len(conv.queryImages()) > 0 {
 		transcript += "\n（用户本轮还上传了图片）"
 	}
@@ -118,13 +125,14 @@ func (s *Service) analyzeVideoQuery(
 	if err != nil {
 		return analysis, err
 	}
+
 	if err = json.Unmarshal([]byte(extractJSONObject(text)), &analysis); err != nil {
 		return analysis, fmt.Errorf("解析视频查询分析结果失败: %w", err)
 	}
 
 	analysis.Keywords = domain.NormalizeAnalysisKeywords(analysis.Keywords)
-	s.logger.Debug(
-		"video query analysis",
+	logctx.With(ctx, s.logger).Debug(
+		"video query analysis", zap.String("event", "ai.prompt_service.analyze_video_query.diagnostic"), zap.String("operation", "ai.prompt_service.analyze_video_query"),
 		zap.String("intent", analysis.Intent),
 		zap.Strings("keywords", analysis.Keywords),
 	)
@@ -135,6 +143,7 @@ func (s *Service) analyzeVideoQuery(
 func extractJSONObject(text string) string {
 	text = strings.TrimSpace(text)
 	start := strings.Index(text, "{")
+
 	end := strings.LastIndex(text, "}")
 	if start < 0 || end <= start {
 		return text
@@ -154,10 +163,12 @@ func (s *Service) loadPromptVideoCandidates(
 	}
 
 	keywords = domain.NormalizeAnalysisKeywords(keywords)
+
 	images := conv.queryImages()
 	if len(keywords) == 0 && len(images) == 0 {
 		return domain.PromptVideoCandidateSet{}, nil
 	}
+
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -168,6 +179,7 @@ func (s *Service) loadPromptVideoCandidates(
 		if err != nil {
 			return domain.PromptVideoCandidateSet{}, err
 		}
+
 		if len(latestIDs) == 0 {
 			return domain.PromptVideoCandidateSet{
 				RetrievalMode: domain.RetrievalModeLatest,
@@ -228,12 +240,14 @@ func (s *Service) searchPromptVideoIDs(
 ) ([]uint, string) {
 	limit = domain.EnsurePositiveLimit(limit)
 	images := conv.queryImages()
+
 	input := VideoVectorQuery{
 		Text: domain.TrimPromptText(strings.TrimSpace(conv.LatestUserText), vectorQueryMaxChars),
 	}
 	if len(images) > 0 {
 		input.ImageURL = images[0]
 	}
+
 	if input.Text == "" && len(keywords) > 0 {
 		input.Text = strings.Join(keywords, " ")
 	}
@@ -242,7 +256,7 @@ func (s *Service) searchPromptVideoIDs(
 		ids, err := s.vectors.SearchVideoVectorIDsMultiModal(ctx, input, limit)
 		switch {
 		case err != nil:
-			s.logger.Warn("search video vector index failed, fallback to keyword match", zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("search video vector index failed, fallback to keyword match", zap.String("event", "ai.prompt_service.search_prompt_video_i_ds.degraded"), zap.String("operation", "ai.prompt_service.search_prompt_video_i_ds"), zap.Error(err))
 		case len(ids) > 0 && input.ImageURL != "":
 			return ids, domain.RetrievalModeImageVector
 		case len(ids) > 0:
@@ -252,7 +266,7 @@ func (s *Service) searchPromptVideoIDs(
 
 	ids, err := s.prompts.KeywordSearchIDs(ctx, keywords, limit)
 	if err != nil {
-		s.logger.Warn("keyword match for AI video search failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("keyword match for AI video search failed", zap.String("event", "ai.prompt_service.search_prompt_video_i_ds.degraded"), zap.String("operation", "ai.prompt_service.search_prompt_video_i_ds"), zap.Error(err))
 
 		return nil, domain.RetrievalModeKeyword
 	}

@@ -65,4 +65,5 @@ var (
 	ErrBannerAlreadyRegisterDefault = errors.New("该横幅已是注册默认横幅")
 )
 
+// ErrAccountBanned indicates that the account is currently banned.
 var ErrAccountBanned = errors.New("account is banned")

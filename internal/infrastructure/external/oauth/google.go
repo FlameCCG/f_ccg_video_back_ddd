@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,12 +13,15 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
+
 	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
 
+//nolint:gosec // These constants are public OAuth endpoint URLs, not credentials.
 const (
 	googleTokenURL    = "https://oauth2.googleapis.com/token"
 	googleUserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
@@ -111,7 +115,7 @@ func (c *GoogleClient) GetUserInfo(ctx context.Context, code string) (*UserGoogl
 		return nil, fmt.Errorf("google userinfo request failed, status=%d", resp.StatusCode)
 	}
 
-	c.logger.Debug("Google UserInfo Response", zap.Int("status", resp.StatusCode))
+	logctx.With(ctx, c.logger).Debug("Google UserInfo Response", zap.String("event", "external.google.get_user_info.diagnostic"), zap.String("operation", "external.google.get_user_info"), zap.Int("status", resp.StatusCode))
 
 	var userInfo UserGoogleInfo
 	if err = json.Unmarshal(body, &userInfo); err != nil {
@@ -157,7 +161,7 @@ func (c *GoogleClient) accessToken(ctx context.Context, code string) (*GoogleAcc
 		return nil, err
 	}
 
-	c.logger.Debug("Google Token Response", zap.Int("status", resp.StatusCode))
+	logctx.With(ctx, c.logger).Debug("Google Token Response", zap.String("event", "external.google.access_token.diagnostic"), zap.String("operation", "external.google.access_token"), zap.Int("status", resp.StatusCode))
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("google token request failed, status=%d", resp.StatusCode)

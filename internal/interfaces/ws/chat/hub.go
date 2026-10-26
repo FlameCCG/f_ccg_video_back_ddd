@@ -3,15 +3,21 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wslog"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/authsession"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/res"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	chatapp "f_ccg_video_back_ddd/internal/application/chat"
-	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
-	"f_ccg_video_back_ddd/pkg/authsession"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -133,19 +139,26 @@ func (h *Hub) Stop(_ context.Context) error {
 
 // ServeWS 升级连接并进入读写循环，直到连接结束。
 func (h *Hub) ServeWS(c *gin.Context, userID uint) error {
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		h.log().Warn("chat websocket upgrade failed", zap.Error(err))
+	c.Status(http.StatusSwitchingProtocols)
 
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, http.Header{"X-Request-ID": []string{c.Writer.Header().Get("X-Request-ID")}})
+	if err != nil {
+		res.RecordFailure(wslog.UpgradeFailure(err, c.Writer.Status()), c)
 		return err
 	}
+
+	connectionCtx := wslog.Connection(c.Request.Context(), strconv.FormatUint(uint64(userID), 10))
+	res.SetSuccess(c, true)
+
+	logctx.With(connectionCtx, h.log()).Info("websocket.connection.opened", zap.String("event", "websocket.connection.opened"))
+	defer logctx.With(connectionCtx, h.log()).Info("websocket.connection.closed", zap.String("event", "websocket.connection.closed"))
 
 	client := &client{
 		id:     fmt.Sprintf("%s:%s", h.serverID, uuid.NewString()),
 		userID: userID,
 		conn:   conn,
 		send:   make(chan []byte, chatWSSendBuffer),
-		ctx:    c.Request.Context(),
+		ctx:    connectionCtx,
 	}
 
 	room := h.getRoom(userID)
@@ -219,6 +232,7 @@ func (h *Hub) tryDeleteRoom(r *room) {
 
 		if len(r.clients) == 0 {
 			delete(h.rooms, r.userID)
+
 			shouldStop = true
 		}
 
@@ -375,7 +389,7 @@ type client struct {
 	conn   *websocket.Conn
 	room   *room
 	send   chan []byte
-	ctx    context.Context
+	ctx    context.Context //nolint:containedctx // Owns a WebSocket connection lifetime beyond the HTTP upgrade request.
 }
 
 func (c *client) readPump() {
@@ -397,6 +411,7 @@ func (c *client) readPump() {
 
 		var evt clientEvent
 		if err := json.Unmarshal(message, &evt); err != nil {
+			wslog.Run(c.ctx, c.room.hub.log(), "chat.decode", func(context.Context) error { return apperr.Wrap("websocket.decode", nil, err, apperr.Validation) })
 			continue
 		}
 
@@ -404,9 +419,9 @@ func (c *client) readPump() {
 		case clientEventPing:
 			// handled by ws ping frame
 		case clientEventSend:
-			c.handleSend(evt)
+			wslog.Run(c.ctx, c.room.hub.log(), "chat.send", func(ctx context.Context) error { return c.handleSend(ctx, evt) })
 		case clientEventRead:
-			c.handleRead(evt)
+			wslog.Run(c.ctx, c.room.hub.log(), "chat.read", func(ctx context.Context) error { return c.handleRead(ctx, evt) })
 		default:
 			// ignore
 		}
@@ -425,9 +440,13 @@ func (c *client) writePump() {
 			if ok && c.userID != 0 {
 				authCtx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
 				err := authsession.Validate(authCtx)
+
 				cancel()
+
 				if err != nil {
+					wslog.Result(c.ctx, c.room.hub.log(), "chat.session.validate", err, "", 0)
 					c.closeWithReason("session revoked")
+
 					return
 				}
 			}
@@ -447,9 +466,13 @@ func (c *client) writePump() {
 			if c.userID != 0 {
 				authCtx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
 				err := authsession.Validate(authCtx)
+
 				cancel()
+
 				if err != nil {
+					wslog.Result(c.ctx, c.room.hub.log(), "chat.session.validate", err, "", 0)
 					c.closeWithReason("session revoked")
+
 					return
 				}
 			}
@@ -481,31 +504,29 @@ func (c *client) sendSystem(msg string) {
 	}
 }
 
-func (c *client) handleSend(evt clientEvent) {
+func (c *client) handleSend(parent context.Context, evt clientEvent) error {
 	if c.userID == 0 {
 		c.sendSystem("请先登录")
-
-		return
+		return apperr.Wrap("chat.send", nil, errors.New("authentication required"), apperr.Rejected)
 	}
 
 	if evt.To == 0 {
 		c.sendSystem("to 不能为空")
-
-		return
+		return apperr.Wrap("chat.send", nil, errors.New("recipient required"), apperr.Validation)
 	}
 
-	ctx, cancel := context.WithTimeout(c.ctx, sendTimeout)
+	ctx, cancel := context.WithTimeout(parent, sendTimeout)
 	defer cancel()
+
 	if err := authsession.Validate(ctx); err != nil {
 		c.sendSystem("session expired, please sign in again")
-		return
+		return err
 	}
 
 	msg, err := c.room.hub.service.SendMessage(ctx, c.userID, evt.To, evt.MsgType, evt.Text, evt.Emoji, evt.Media)
 	if err != nil {
 		c.sendSystem(clienterror.Message(err))
-
-		return
+		return err
 	}
 
 	ack := WSEvent{Type: serverEventAck, ClientMsgID: evt.ClientMsgID, Message: msg}
@@ -514,27 +535,32 @@ func (c *client) handleSend(evt clientEvent) {
 	messageEvt := WSEvent{Type: serverEventMessage, Message: msg}
 	c.room.hub.deliverToUser(evt.To, messageEvt)
 	c.room.hub.publishToUser(ctx, evt.To, messageEvt)
+
+	return nil
 }
 
-func (c *client) handleRead(evt clientEvent) {
+func (c *client) handleRead(parent context.Context, evt clientEvent) error {
 	if c.userID == 0 {
-		return
+		return apperr.Wrap("chat.read", nil, errors.New("authentication required"), apperr.Rejected)
 	}
 
 	if evt.PeerID == 0 {
-		return
+		return apperr.Wrap("chat.read", nil, errors.New("peer required"), apperr.Validation)
 	}
 
-	ctx, cancel := context.WithTimeout(c.ctx, readTimeout)
+	ctx, cancel := context.WithTimeout(parent, readTimeout)
 	defer cancel()
+
 	if err := authsession.Validate(ctx); err != nil {
 		c.sendSystem("session expired, please sign in again")
-		return
+		return err
 	}
 
 	if err := c.room.hub.service.MarkRead(ctx, c.userID, evt.PeerID); err != nil {
-		return
+		return err
 	}
 
 	c.room.dispatch(WSEvent{Type: serverEventReadAck, PeerID: evt.PeerID})
+
+	return nil
 }

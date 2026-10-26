@@ -55,7 +55,7 @@ var InfrastructureProviderSet = wire.NewSet(
 	search.ProviderSet,
 	ipregion.ProviderSet,
 	auth.ProviderSet,
-	ctxutil.NewDetachedTaskGroup,
+	ctxutil.NewLoggedDetachedTaskGroup,
 	NewInfrastructure,
 )
 

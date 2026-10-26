@@ -5,6 +5,14 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+const (
+	testDisplayAlice = "Alice"
+	testAlice        = "alice"
+	testVlog         = "vlog"
 )
 
 // 对应原 service/search_service/hot_keywords.go（原文件无单测，此处按分支补齐）。
@@ -19,29 +27,21 @@ func TestHotKeywordsReadsRedisZSetDescending(t *testing.T) {
 		total:     42,
 		entries: []HotKeywordEntry{
 			{Member: "教程", Score: 9.6},
-			{Member: "vlog", Score: 3.2},
+			{Member: testVlog, Score: 3.2},
 		},
 	}
 	svc := NewHotKeywordService(store, &fakeHotKeywordFallback{available: true})
 
 	items, total, err := svc.HotKeywords(context.Background(), 2, 10)
-	if err != nil {
-		t.Fatalf("HotKeywords: %v", err)
-	}
+	require.NoError(t, err, "HotKeywords: %v", err)
 
-	if total != 42 {
-		t.Fatalf("total = %d, want 42", total)
-	}
+	require.EqualValues(t, 42, total, "total = %d, want 42", total)
 
-	want := []HotKeywordItem{{Keyword: "教程", Score: 10}, {Keyword: "vlog", Score: 3}}
-	if !reflect.DeepEqual(items, want) {
-		t.Fatalf("items = %+v, want %+v", items, want)
-	}
+	want := []HotKeywordItem{{Keyword: "教程", Score: 10}, {Keyword: testVlog, Score: 3}}
+	require.True(t, reflect.DeepEqual(items, want), "items = %+v, want %+v", items, want)
 
 	// page=2、pageSize=10 → ZREVRANGE 的闭区间 [10, 19]。
-	if store.lastRange != [2]int64{10, 19} {
-		t.Fatalf("range = %v, want [10 19]", store.lastRange)
-	}
+	require.Equal(t, [2]int64{10, 19}, store.lastRange, "range = %v, want [10 19]", store.lastRange)
 }
 
 // TestHotKeywordsSkipsBlankMembers 榜单里的空白成员被丢弃（不入结果），总量仍取 ZCARD。
@@ -56,13 +56,11 @@ func TestHotKeywordsSkipsBlankMembers(t *testing.T) {
 	svc := NewHotKeywordService(store, &fakeHotKeywordFallback{available: true})
 
 	items, total, err := svc.HotKeywords(context.Background(), 1, 10)
-	if err != nil {
-		t.Fatalf("HotKeywords: %v", err)
-	}
+	require.NoError(t, err, "HotKeywords: %v", err)
 
-	if total != 2 || len(items) != 1 || items[0].Keyword != "教程" {
-		t.Fatalf("items = %+v, total = %d", items, total)
-	}
+	require.EqualValues(t, 2, total, "items = %+v, total = %d", items, total)
+	require.Len(t, items, 1, "items = %+v, total = %d", items, total)
+	require.Equal(t, "教程", items[0].Keyword, "items = %+v, total = %d", items, total)
 }
 
 // TestHotKeywordsFallsBackWhenRedisUnavailableOrEmpty Redis 不可用或榜单为空时，
@@ -88,29 +86,21 @@ func TestHotKeywordsFallsBackWhenRedisUnavailableOrEmpty(t *testing.T) {
 					{Title: "  教程  ", Views: 100},
 					{Title: "教程", Views: 50},  // 规范化后与上一条重复，应去重
 					{Title: "   ", Views: 10}, // 空白标题丢弃
-					{Title: "vlog", Views: 20},
+					{Title: testVlog, Views: 20},
 				},
 			}
 			svc := NewHotKeywordService(tt.store, fallback)
 
 			items, total, err := svc.HotKeywords(context.Background(), 1, 10)
-			if err != nil {
-				t.Fatalf("HotKeywords: %v", err)
-			}
+			require.NoError(t, err, "HotKeywords: %v", err)
 
-			want := []HotKeywordItem{{Keyword: "教程", Score: 100}, {Keyword: "vlog", Score: 20}}
-			if !reflect.DeepEqual(items, want) {
-				t.Fatalf("items = %+v, want %+v", items, want)
-			}
+			want := []HotKeywordItem{{Keyword: "教程", Score: 100}, {Keyword: testVlog, Score: 20}}
+			require.True(t, reflect.DeepEqual(items, want), "items = %+v, want %+v", items, want)
 
-			if total != 2 {
-				t.Fatalf("total = %d, want 2", total)
-			}
+			require.EqualValues(t, 2, total, "total = %d, want 2", total)
 
 			// 采样行数至少 50（page*pageSize*5 = 50）。
-			if fallback.lastSample != 50 {
-				t.Fatalf("sample size = %d, want 50", fallback.lastSample)
-			}
+			require.Equal(t, 50, fallback.lastSample, "sample size = %d, want 50", fallback.lastSample)
 		})
 	}
 }
@@ -128,22 +118,18 @@ func TestHotKeywordsFallbackPaginatesInMemory(t *testing.T) {
 	svc := NewHotKeywordService(&fakeHotKeywordStore{available: false}, fallback)
 
 	items, total, err := svc.HotKeywords(context.Background(), 2, 2)
-	if err != nil {
-		t.Fatalf("HotKeywords: %v", err)
-	}
+	require.NoError(t, err, "HotKeywords: %v", err)
 
-	if total != 3 || len(items) != 1 || items[0].Keyword != "c" {
-		t.Fatalf("items = %+v, total = %d", items, total)
-	}
+	require.EqualValues(t, 3, total, "items = %+v, total = %d", items, total)
+	require.Len(t, items, 1, "items = %+v, total = %d", items, total)
+	require.Equal(t, "c", items[0].Keyword, "items = %+v, total = %d", items, total)
 
 	items, total, err = svc.HotKeywords(context.Background(), 9, 2)
-	if err != nil {
-		t.Fatalf("HotKeywords: %v", err)
-	}
+	require.NoError(t, err, "HotKeywords: %v", err)
 
-	if total != 3 || items == nil || len(items) != 0 {
-		t.Fatalf("out-of-range page: items = %v, total = %d", items, total)
-	}
+	require.EqualValues(t, 3, total, "out-of-range page: items = %v, total = %d", items, total)
+	require.NotNil(t, items, "out-of-range page: items = %v, total = %d", items, total)
+	require.Empty(t, items, "out-of-range page: items = %v, total = %d", items, total)
 }
 
 // TestHotKeywordsReturnsEmptyWhenBothSourcesUnavailable Redis 与 DB 都不可用时
@@ -154,13 +140,11 @@ func TestHotKeywordsReturnsEmptyWhenBothSourcesUnavailable(t *testing.T) {
 	svc := NewHotKeywordService(&fakeHotKeywordStore{available: false}, &fakeHotKeywordFallback{available: false})
 
 	items, total, err := svc.HotKeywords(context.Background(), 1, 10)
-	if err != nil {
-		t.Fatalf("HotKeywords: %v", err)
-	}
+	require.NoError(t, err, "HotKeywords: %v", err)
 
-	if total != 0 || items == nil || len(items) != 0 {
-		t.Fatalf("items = %v, total = %d", items, total)
-	}
+	require.EqualValues(t, 0, total, "items = %v, total = %d", items, total)
+	require.NotNil(t, items, "items = %v, total = %d", items, total)
+	require.Empty(t, items, "items = %v, total = %d", items, total)
 }
 
 func TestHotKeywordsPropagatesRedisErrors(t *testing.T) {
@@ -172,8 +156,9 @@ func TestHotKeywordsPropagatesRedisErrors(t *testing.T) {
 		&fakeHotKeywordFallback{available: true},
 	)
 
-	if _, _, err := svc.HotKeywords(context.Background(), 1, 10); !errors.Is(err, cardErr) {
-		t.Fatalf("err = %v, want %v", err, cardErr)
+	{
+		_, _, err := svc.HotKeywords(context.Background(), 1, 10)
+		require.ErrorIs(t, err, cardErr, "err = %v, want %v", err, cardErr)
 	}
 
 	rangeErr := errors.New("zrevrange failed")
@@ -182,8 +167,9 @@ func TestHotKeywordsPropagatesRedisErrors(t *testing.T) {
 		&fakeHotKeywordFallback{available: true},
 	)
 
-	if _, _, err := svc.HotKeywords(context.Background(), 1, 10); !errors.Is(err, rangeErr) {
-		t.Fatalf("err = %v, want %v", err, rangeErr)
+	{
+		_, _, err := svc.HotKeywords(context.Background(), 1, 10)
+		require.ErrorIs(t, err, rangeErr, "err = %v, want %v", err, rangeErr)
 	}
 }
 
@@ -198,15 +184,11 @@ func TestRecordHotKeywordNormalizesAndSkipsBlank(t *testing.T) {
 	svc.RecordHotKeyword(context.Background(), "  多  空格   词 ")
 	svc.RecordHotKeyword(context.Background(), "   ")
 
-	if !reflect.DeepEqual(store.incremented, []string{"多 空格 词"}) {
-		t.Fatalf("incremented = %v", store.incremented)
-	}
+	require.True(t, reflect.DeepEqual(store.incremented, []string{"多 空格 词"}), "incremented = %v", store.incremented)
 
 	unavailable := &fakeHotKeywordStore{available: false}
 	NewHotKeywordService(unavailable, &fakeHotKeywordFallback{}).
 		RecordHotKeyword(context.Background(), "教程")
 
-	if len(unavailable.incremented) != 0 {
-		t.Fatalf("unavailable store must not record: %v", unavailable.incremented)
-	}
+	require.Empty(t, unavailable.incremented, "unavailable store must not record: %v", unavailable.incremented)
 }

@@ -8,12 +8,11 @@
 package comment
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
-// Item 评论返回结构（读模型，json tag 与原 comment_service.CommentItem 逐字一致）.
+// Item 评论返回结构（读模型，json tag 与原 comment_service.Item 逐字一致）.
 type Item struct {
 	ID            uint       `json:"id"`
 	Content       string     `json:"content"`

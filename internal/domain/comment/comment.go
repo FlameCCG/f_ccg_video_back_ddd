@@ -8,9 +8,8 @@
 package comment
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // Comment 评论实体。

@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	domainai "f_ccg_video_back_ddd/internal/domain/ai"
@@ -36,6 +37,7 @@ func (s *Service) GenerateMenuSuggestion(
 	if err != nil {
 		return "", err
 	}
+
 	cfg := &snapshot.settings
 
 	if err := requireChatAPIKey(cfg); err != nil {
@@ -54,7 +56,7 @@ func (s *Service) GenerateMenuSuggestion(
 
 	parentValue := "null（顶级菜单）"
 	if parentID != nil && *parentID > 0 {
-		parentValue = fmt.Sprintf("%d", *parentID)
+		parentValue = strconv.FormatUint(uint64(*parentID), 10)
 	}
 
 	userPrompt := fmt.Sprintf(

@@ -3,12 +3,12 @@ package identity
 import (
 	"context"
 	"errors"
-	"time"
-
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"time"
+
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -146,7 +146,7 @@ func (r *BanRecordRepository) FindLatestUnreleasedForUpdate(
 ) (*domain.BanRecord, error) {
 	var row po.UserBanRecord
 	if err := gormx.DB(ctx, r.db).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Clauses(clause.Locking{Strength: sqlLockUpdate}).
 		Where("user_id = ? AND status IN ? AND is_unbanned = ?", userID, statuses, false).
 		Order("created_at DESC, id DESC").
 		First(&row).Error; err != nil {
@@ -193,8 +193,11 @@ func (r *LoginRecordRepository) Create(ctx context.Context, userID uint, ip, add
 	return gormx.DB(ctx, r.db).Create(&rec).Error
 }
 
+// HasDedupKey checks whether a ledger operation was already recorded.
 func (r *CoinRecordRepository) HasDedupKey(ctx context.Context, uid uint, key string) (bool, error) {
 	var n int64
+
 	err := gormx.DB(ctx, r.db).Model(&po.UserCoinRecord{}).Where("user_id = ? AND dedup_key = ?", uid, key).Count(&n).Error
+
 	return n > 0, err
 }

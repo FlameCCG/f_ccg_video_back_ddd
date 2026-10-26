@@ -1,12 +1,13 @@
 package video
 
 import (
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 
+	app "f_ccg_video_back_ddd/internal/application/video"
+
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // DetailReq 指定作品详情 ID，访问者身份独立从令牌解析，不从查询参数信任。
@@ -30,13 +31,13 @@ func (h *Handler) DetailView(c *gin.Context) {
 	detail, err := h.detail.GetVideoDetail(ctx, req.VideoID, viewerID)
 	if err != nil {
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在或未发布", c)
+			res.FailWithCause(err, "视频不存在或未发布", c)
 
 			return
 		}
 
-		h.log().Error("get video detail failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
-		res.FailWithMsg("获取视频详情失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/detail", nil, err), c)
+		res.FailWithCause(err, "获取视频详情失败", c)
 
 		return
 	}

@@ -8,6 +8,7 @@ package adapters
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	chatapp "f_ccg_video_back_ddd/internal/application/chat"
 	commentapp "f_ccg_video_back_ddd/internal/application/comment"
@@ -15,7 +16,6 @@ import (
 	notificationapp "f_ccg_video_back_ddd/internal/application/notification"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	notificationdomain "f_ccg_video_back_ddd/internal/domain/notification"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // BadgeInvalidator 把通知角标缓存的 Invalidate 方法适配为 chat 的 InvalidateCount 端口。
@@ -84,7 +84,7 @@ func (a *Notifier) InvalidateCount(receiverID int) {
 	a.notifications.InvalidateCount(receiverID)
 }
 
-// NotifyDynamicLike 实现 dynamic.DynamicLikeNotifier：向动态作者发送点赞通知。
+// NotifyDynamicLike 实现 dynamic.LikeNotifier：向动态作者发送点赞通知。
 func (a *Notifier) NotifyDynamicLike(
 	ctx context.Context,
 	receiverID uint,
@@ -104,7 +104,7 @@ func (a *Notifier) NotifyDynamicLike(
 	})
 }
 
-// NotifyVideoLike 实现 video.VideoNotifier：视频被点赞通知。
+// NotifyVideoLike 实现 video.Notifier：视频被点赞通知。
 func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.Notice) {
 	_ = a.notifications.Create(ctx, &notificationdomain.Notification{
 		Type:             enum.NotificationVideoLikeType,
@@ -119,7 +119,7 @@ func (a *Notifier) NotifyVideoLike(ctx context.Context, notice videoapp.Notice) 
 	})
 }
 
-// NotifySystemBatch 实现 video.VideoNotifier：批量系统通知（举报处理结果）。
+// NotifySystemBatch 实现 video.Notifier：批量系统通知（举报处理结果）。
 func (a *Notifier) NotifySystemBatch(ctx context.Context, notices []videoapp.SystemNotice) {
 	if len(notices) == 0 {
 		return

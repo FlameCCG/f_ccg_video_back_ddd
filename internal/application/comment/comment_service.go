@@ -3,14 +3,15 @@ package comment
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strings"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/comment"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -110,49 +111,12 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*Item, error) 
 	candidates := domain.NormalizeAtUserIDs(draft.UserID, draft.AtUserIDs)
 
 	group, groupCtx := errgroup.WithContext(ctx)
-	group.Go(func() error {
-		profile, err := s.related.UserProfile(groupCtx, draft.UserID)
-		if err != nil {
-			return err
-		}
-		// 用户记录缺失时保留最小 actor，避免因缓存过期账号阻塞发评
-		if profile != nil {
-			actor = *profile
-		}
-
-		return nil
-	})
+	group.Go(func() error { return serviceCreateLoadActor(groupCtx, s, draft, &actor) })
 
 	if draft.VideoID > 0 {
-		group.Go(func() error {
-			brief, err := s.related.PublishedVideoBrief(groupCtx, draft.VideoID)
-			if err != nil {
-				return err
-			}
-
-			if brief == nil {
-				return domain.ErrVideoNotPublished
-			}
-
-			video = brief
-
-			return nil
-		})
+		group.Go(func() error { return serviceCreateLoadVideo(groupCtx, s, draft, &video) })
 	} else {
-		group.Go(func() error {
-			brief, err := s.related.DynamicBrief(groupCtx, draft.DynamicID)
-			if err != nil {
-				return err
-			}
-
-			if brief == nil {
-				return domain.ErrDynamicNotFound
-			}
-
-			dynamic = brief
-
-			return nil
-		})
+		group.Go(func() error { return serviceCreateLoadDynamic(groupCtx, s, draft, &dynamic) })
 	}
 
 	if len(candidates) > 0 {
@@ -192,91 +156,7 @@ func (s *Service) Create(ctx context.Context, cmd CreateCommand) (*Item, error) 
 		rootID = domain.ResolveRootID(*draft.ParentID, *parent)
 	}
 
-	entity := domain.NewComment(draft, commentType, rootID)
-
-	if rootID != nil && *rootID > 0 {
-		if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-			if err := s.comments.Create(txCtx, entity); err != nil {
-				return err
-			}
-
-			return s.comments.IncrReplyCount(txCtx, *rootID)
-		}); err != nil {
-			return nil, err
-		}
-	} else if err := s.comments.Create(ctx, entity); err != nil {
-		return nil, err
-	}
-
-	// 发送评论通知（作者/被回复者）
-	userSnapshot := actor
-	commentSnapshot := *entity
-
-	if draft.VideoID > 0 {
-		// 评论数同步更新，避免进程崩溃导致计数丢失；热度可异步
-		s.videos.UpdateCommentCount(ctx, draft.VideoID, 1)
-
-		videoIDSnapshot := draft.VideoID
-		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
-			s.hotScore.RecordHotScoreForComment(asyncCtx, videoIDSnapshot, 1)
-		})
-	}
-
-	switch {
-	case video != nil:
-		videoSnapshot := *video
-
-		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
-			s.sendCommentCreateNotifications(asyncCtx, &userSnapshot, &videoSnapshot, &commentSnapshot, replyTo)
-		})
-	case dynamic != nil:
-		dynamicSnapshot := *dynamic
-
-		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
-			s.sendDynamicCommentCreateNotifications(asyncCtx, &userSnapshot, &dynamicSnapshot, &commentSnapshot, replyTo)
-		})
-	}
-
-	// 发送 @ 通知
-	if len(draft.AtUserIDs) > 0 {
-		atUserIDs := draft.AtUserIDs
-		content := draft.Content
-
-		switch {
-		case video != nil:
-			videoSnapshot := *video
-
-			s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
-				s.sendAtNotifications(asyncCtx, &userSnapshot, &videoSnapshot, commentSnapshot.ID, content, atUserIDs)
-			})
-		case dynamic != nil:
-			dynamicIDSnapshot := dynamic.ID
-
-			s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
-				s.sendAtNotificationsForDynamic(asyncCtx, &userSnapshot, dynamicIDSnapshot, commentSnapshot.ID, content, atUserIDs)
-			})
-		}
-	}
-
-	return &Item{
-		ID:            entity.ID,
-		Content:       entity.Content,
-		UserID:        entity.UserID,
-		Username:      actor.Username,
-		Avatar:        actor.Avatar,
-		VideoID:       entity.VideoID,
-		DynamicID:     entity.DynamicID,
-		ParentID:      entity.ParentID,
-		RootID:        entity.RootID,
-		AtUserIDs:     entity.AtUserIDs,
-		Pictures:      entity.Pictures,
-		LikeCount:     0,
-		ReplyCount:    0,
-		CommenterAddr: entity.CommenterAddr,
-		CreatedAt:     entity.CreatedAt,
-		IsLiked:       false,
-		ReplyTo:       replyTo,
-	}, nil
+	return finishServiceCreate(ctx, s, draft, commentType, video, dynamic, &actor, replyTo, rootID)
 }
 
 // Delete 删除评论（评论作者或作品作者可删）。
@@ -374,6 +254,8 @@ func (s *Service) authorizeDelete(ctx context.Context, target *domain.Comment, u
 		}
 
 		return nil
+	case domain.DeleteDenied:
+		fallthrough
 	default:
 		return domain.ErrDeleteForbidden
 	}
@@ -527,22 +409,8 @@ func (s *Service) ToggleLike(ctx context.Context, userID, commentID uint) (int64
 	}
 
 	if s.likeCache.Available() {
-		// Set+Count 不完整则同步从 DB 重建（无 seeded 标记）
-		if err := s.ensureLikeCacheReady(ctx, commentID); err != nil {
-			s.logger.Warn("ensure comment like cache ready failed, fallback to db",
-				zap.Uint("commentId", commentID), zap.Error(err))
-		} else {
-			likeCount, isLiked, toggleErr := s.likeCache.Toggle(ctx, commentID, userID)
-			if toggleErr == nil {
-				if isLiked {
-					s.scheduleLikeNotification(ctx, userID, commentID)
-				}
-
-				return likeCount, isLiked, nil
-			}
-
-			s.logger.Warn("toggle like via redis failed, fallback to db",
-				zap.Uint("commentId", commentID), zap.Error(toggleErr))
+		if count, liked, hit := s.tryToggleLikeCache(ctx, userID, commentID); hit {
+			return count, liked, nil
 		}
 	}
 
@@ -562,34 +430,43 @@ func (s *Service) ToggleLike(ctx context.Context, userID, commentID uint) (int64
 // toggleLikeWithDB DB 回退路径：读当前点赞记录，落库切换后重读点赞数。
 func (s *Service) toggleLikeWithDB(ctx context.Context, userID, commentID uint) (int64, bool, error) {
 	var count int64
+
 	liked := false
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		err := s.likes.Create(txCtx, &domain.Like{CommentID: commentID, UserID: userID})
-		if err == nil {
+		switch {
+		case err == nil:
 			liked = true
+
 			if err := s.comments.IncrLikeCount(txCtx, commentID); err != nil {
 				return err
 			}
-		} else if errors.Is(err, domain.ErrLikeDuplicated) {
+		case errors.Is(err, domain.ErrLikeDuplicated):
 			existing, err := s.likes.Find(txCtx, commentID, userID)
 			if err != nil {
 				return err
 			}
+
 			if existing != nil {
 				if err := s.likes.DeleteByID(txCtx, existing.ID); err != nil {
 					return err
 				}
+
 				if err := s.comments.DecrLikeCount(txCtx, commentID); err != nil {
 					return err
 				}
 			}
-		} else {
+		default:
 			return err
 		}
+
 		var countErr error
+
 		count, countErr = s.comments.LikeCountByID(txCtx, commentID)
+
 		return countErr
 	})
+
 	return count, liked, err
 }
 
@@ -670,7 +547,7 @@ func (s *Service) scheduleLikeCacheRebuild(parent context.Context, commentIDs ..
 	s.tasks.Go(parent, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
 		for _, id := range ids {
 			if err := s.rebuildLikeCache(asyncCtx, id); err != nil {
-				s.logger.Warn("async rebuild comment like cache failed", zap.Uint("commentId", id), zap.Error(err))
+				logctx.With(asyncCtx, s.logger).Warn("async rebuild comment like cache failed", zap.String("event", "comment.comment_service.schedule_like_cache_rebuild.degraded"), zap.String("operation", "comment.comment_service.schedule_like_cache_rebuild"), zap.Uint("comment_id", id), zap.Error(err))
 			}
 		}
 	})
@@ -717,6 +594,7 @@ func (s *Service) buildCommentItems(ctx context.Context, rows []Row, userID uint
 	if userID > 0 {
 		// Redis 失败（nil）全量回源；部分 miss 仅回源 miss 评论
 		missIDs := likedMissIDs
+
 		if likedMap == nil {
 			likedMap = map[uint]bool{}
 			missIDs = commentIDs
@@ -735,64 +613,7 @@ func (s *Service) buildCommentItems(ctx context.Context, rows []Row, userID uint
 		}
 	}
 
-	if likedMap == nil {
-		likedMap = map[uint]bool{}
-	}
-
-	if countMap == nil {
-		countMap = map[uint]int64{}
-		rebuildComment = append(rebuildComment, commentIDs...)
-	} else if len(countMissIDs) > 0 {
-		rebuildComment = append(rebuildComment, countMissIDs...)
-	}
-
-	if len(rebuildComment) > 0 {
-		s.scheduleLikeCacheRebuild(ctx, rebuildComment...)
-	}
-
-	if replyCountMap == nil {
-		replyCountMap = map[uint]int64{}
-	}
-
-	items := make([]Item, len(rows))
-
-	for i, r := range rows {
-		likeCount := r.LikeCount
-		if v, ok := countMap[r.ID]; ok {
-			likeCount = v
-		}
-
-		replyCount := r.ReplyCount
-		if v, ok := replyCountMap[r.ID]; ok {
-			replyCount = v
-		}
-
-		items[i] = Item{
-			ID:            r.ID,
-			Content:       r.Content,
-			UserID:        r.UserID,
-			Username:      r.Username,
-			Avatar:        r.Avatar,
-			VideoID:       r.VideoID,
-			DynamicID:     r.DynamicID,
-			VideoTitle:    r.VideoTitle,
-			VideoCover:    r.VideoCover,
-			ParentID:      r.ParentID,
-			RootID:        r.RootID,
-			AtUserIDs:     r.AtUserIDs,
-			Pictures:      r.Pictures,
-			LikeCount:     likeCount,
-			ReplyCount:    replyCount,
-			IsPinned:      r.IsPinned,
-			PinnedAt:      r.PinnedAt,
-			CommenterAddr: r.CommenterAddr,
-			CreatedAt:     r.CreatedAt,
-			IsLiked:       likedMap[r.ID],
-			ReplyTo:       r.ReplyTo,
-		}
-	}
-
-	return items
+	return finishServiceBuildCommentItems(ctx, s, rows, commentIDs, &likedMap, &countMap, &countMissIDs, &replyCountMap, &rebuildComment)
 }
 
 // isVideoAuthor 判断用户是否为视频作者（用于删除/置顶评论的授权）。
@@ -811,7 +632,7 @@ func (s *Service) isVideoAuthor(ctx context.Context, userID, videoID uint) (bool
 
 // isDynamicAuthor 判断用户是否为动态作者。
 func (s *Service) isDynamicAuthor(ctx context.Context, userID, dynamicID uint) (bool, error) {
-	brief, err := s.related.DynamicBrief(ctx, dynamicID)
+	brief, err := s.related.Brief(ctx, dynamicID)
 	if err != nil {
 		return false, err
 	}
@@ -1066,7 +887,7 @@ func (s *Service) sendCommentLikeNotification(ctx context.Context, actionUserID,
 	}
 
 	if err := s.notifier.CreateNotices(ctx, []Notice{notice}); err != nil {
-		s.logger.Warn("create comment like notification failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("create comment like notification failed", zap.String("event", "comment.comment_service.send_comment_like_notification.degraded"), zap.String("operation", "comment.comment_service.send_comment_like_notification"), zap.Error(err))
 
 		return
 	}
@@ -1081,7 +902,7 @@ func (s *Service) dispatchNotices(ctx context.Context, notices []Notice, failMsg
 	}
 
 	if err := s.notifier.CreateNotices(ctx, notices); err != nil {
-		s.logger.Warn(failMsg, zap.Error(err))
+		logctx.With(ctx, s.logger).Warn(failMsg, zap.String("event", "comment.comment_service.dispatch_notices.degraded"), zap.String("operation", "comment.comment_service.dispatch_notices"), zap.Error(err))
 
 		return
 	}
@@ -1131,4 +952,217 @@ func (s *noticeSet) list() []Notice {
 	}
 
 	return list
+}
+
+func serviceCreateLoadActor(groupCtx context.Context, s *Service, draft domain.Draft, actor *UserProfile) error {
+	profile, err := s.related.UserProfile(groupCtx, draft.UserID)
+	if err != nil {
+		return err
+	}
+	// 用户记录缺失时保留最小 actor，避免因缓存过期账号阻塞发评
+	if profile != nil {
+		(*actor) = *profile
+	}
+
+	return nil
+}
+
+func serviceCreateLoadVideo(groupCtx context.Context, s *Service, draft domain.Draft, video **VideoBrief) error {
+	brief, err := s.related.PublishedVideoBrief(groupCtx, draft.VideoID)
+	if err != nil {
+		return err
+	}
+
+	if brief == nil {
+		return domain.ErrVideoNotPublished
+	}
+
+	(*video) = brief
+
+	return nil
+}
+
+func serviceCreateLoadDynamic(groupCtx context.Context, s *Service, draft domain.Draft, dynamic **Brief) error {
+	brief, err := s.related.Brief(groupCtx, draft.DynamicID)
+	if err != nil {
+		return err
+	}
+
+	if brief == nil {
+		return domain.ErrDynamicNotFound
+	}
+
+	(*dynamic) = brief
+
+	return nil
+}
+
+func finishServiceCreate(ctx context.Context, s *Service, draft domain.Draft, commentType enum.CommentType, video *VideoBrief, dynamic *Brief, actor *UserProfile, replyTo *ReplyInfo, rootID *uint) (*Item, error) {
+	entity := domain.NewComment(draft, commentType, rootID)
+
+	if rootID != nil && *rootID > 0 {
+		if err := s.txm.Do(ctx, func(txCtx context.Context) error {
+			if err := s.comments.Create(txCtx, entity); err != nil {
+				return err
+			}
+
+			return s.comments.IncrReplyCount(txCtx, *rootID)
+		}); err != nil {
+			return nil, err
+		}
+	} else if err := s.comments.Create(ctx, entity); err != nil {
+		return nil, err
+	}
+
+	// 发送评论通知（作者/被回复者）
+	userSnapshot := (*actor)
+	commentSnapshot := *entity
+
+	if draft.VideoID > 0 {
+		// 评论数同步更新，避免进程崩溃导致计数丢失；热度可异步
+		s.videos.UpdateCommentCount(ctx, draft.VideoID, 1)
+
+		videoIDSnapshot := draft.VideoID
+
+		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
+			s.hotScore.RecordHotScoreForComment(asyncCtx, videoIDSnapshot, 1)
+		})
+	}
+
+	switch {
+	case video != nil:
+		videoSnapshot := *video
+
+		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
+			s.sendCommentCreateNotifications(asyncCtx, &userSnapshot, &videoSnapshot, &commentSnapshot, replyTo)
+		})
+	case dynamic != nil:
+		dynamicSnapshot := *dynamic
+
+		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
+			s.sendDynamicCommentCreateNotifications(asyncCtx, &userSnapshot, &dynamicSnapshot, &commentSnapshot, replyTo)
+		})
+	}
+
+	// 发送 @ 通知
+	if len(draft.AtUserIDs) > 0 {
+		atUserIDs := draft.AtUserIDs
+		content := draft.Content
+
+		switch {
+		case video != nil:
+			videoSnapshot := *video
+
+			s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
+				s.sendAtNotifications(asyncCtx, &userSnapshot, &videoSnapshot, commentSnapshot.ID, content, atUserIDs)
+			})
+		case dynamic != nil:
+			dynamicIDSnapshot := dynamic.ID
+
+			s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(asyncCtx context.Context) {
+				s.sendAtNotificationsForDynamic(asyncCtx, &userSnapshot, dynamicIDSnapshot, commentSnapshot.ID, content, atUserIDs)
+			})
+		}
+	}
+
+	return &Item{
+		ID:            entity.ID,
+		Content:       entity.Content,
+		UserID:        entity.UserID,
+		Username:      actor.Username,
+		Avatar:        actor.Avatar,
+		VideoID:       entity.VideoID,
+		DynamicID:     entity.DynamicID,
+		ParentID:      entity.ParentID,
+		RootID:        entity.RootID,
+		AtUserIDs:     entity.AtUserIDs,
+		Pictures:      entity.Pictures,
+		LikeCount:     0,
+		ReplyCount:    0,
+		CommenterAddr: entity.CommenterAddr,
+		CreatedAt:     entity.CreatedAt,
+		IsLiked:       false,
+		ReplyTo:       replyTo,
+	}, nil
+}
+
+func finishServiceBuildCommentItems(ctx context.Context, s *Service, rows []Row, commentIDs []uint, likedMap *map[uint]bool, countMap *map[uint]int64, countMissIDs *[]uint, replyCountMap *map[uint]int64, rebuildComment *[]uint) []Item {
+	if (*likedMap) == nil {
+		(*likedMap) = map[uint]bool{}
+	}
+
+	if (*countMap) == nil {
+		(*countMap) = map[uint]int64{}
+
+		(*rebuildComment) = append((*rebuildComment), commentIDs...)
+	} else if len((*countMissIDs)) > 0 {
+		(*rebuildComment) = append((*rebuildComment), (*countMissIDs)...)
+	}
+
+	if len((*rebuildComment)) > 0 {
+		s.scheduleLikeCacheRebuild(ctx, (*rebuildComment)...)
+	}
+
+	if (*replyCountMap) == nil {
+		(*replyCountMap) = map[uint]int64{}
+	}
+
+	items := make([]Item, len(rows))
+
+	for i, r := range rows {
+		likeCount := r.LikeCount
+		if v, ok := (*countMap)[r.ID]; ok {
+			likeCount = v
+		}
+
+		replyCount := r.ReplyCount
+		if v, ok := (*replyCountMap)[r.ID]; ok {
+			replyCount = v
+		}
+
+		items[i] = Item{
+			ID:            r.ID,
+			Content:       r.Content,
+			UserID:        r.UserID,
+			Username:      r.Username,
+			Avatar:        r.Avatar,
+			VideoID:       r.VideoID,
+			DynamicID:     r.DynamicID,
+			VideoTitle:    r.VideoTitle,
+			VideoCover:    r.VideoCover,
+			ParentID:      r.ParentID,
+			RootID:        r.RootID,
+			AtUserIDs:     r.AtUserIDs,
+			Pictures:      r.Pictures,
+			LikeCount:     likeCount,
+			ReplyCount:    replyCount,
+			IsPinned:      r.IsPinned,
+			PinnedAt:      r.PinnedAt,
+			CommenterAddr: r.CommenterAddr,
+			CreatedAt:     r.CreatedAt,
+			IsLiked:       (*likedMap)[r.ID],
+			ReplyTo:       r.ReplyTo,
+		}
+	}
+
+	return items
+}
+
+func (s *Service) tryToggleLikeCache(ctx context.Context, userID, commentID uint) (int64, bool, bool) {
+	if err := s.ensureLikeCacheReady(ctx, commentID); err != nil {
+		logctx.With(ctx, s.logger).Warn("ensure comment like cache ready failed, fallback to db", zap.String("event", "comment.comment_service.toggle_like.degraded"), zap.String("operation", "comment.comment_service.toggle_like"), zap.Uint("comment_id", commentID), zap.Error(err))
+		return 0, false, false
+	}
+
+	count, liked, err := s.likeCache.Toggle(ctx, commentID, userID)
+	if err != nil {
+		logctx.With(ctx, s.logger).Warn("toggle like via redis failed, fallback to db", zap.String("event", "comment.comment_service.toggle_like.degraded"), zap.String("operation", "comment.comment_service.toggle_like"), zap.Uint("comment_id", commentID), zap.Error(err))
+		return 0, false, false
+	}
+
+	if liked {
+		s.scheduleLikeNotification(ctx, userID, commentID)
+	}
+
+	return count, liked, true
 }

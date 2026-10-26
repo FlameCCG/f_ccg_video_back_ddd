@@ -2,10 +2,11 @@ package ai
 
 import (
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
+	"slices"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/config"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
 
 	"github.com/cloudwego/eino/schema"
@@ -85,6 +86,7 @@ func splitContentParts(content any) (string, []string) {
 	var texts, images []string
 
 	var walk func(any)
+
 	walk = func(node any) {
 		switch value := node.(type) {
 		case string:
@@ -118,6 +120,7 @@ func conversationImageURL(part map[string]any) string {
 	if imageURL := strings.TrimSpace(conversationString(part[domain.ContentTypeImageURL])); imageURL != "" {
 		return imageURL
 	}
+
 	if nested, ok := part[domain.ContentTypeImageURL].(map[string]any); ok {
 		if imageURL := strings.TrimSpace(conversationString(nested["url"])); imageURL != "" {
 			return imageURL
@@ -139,6 +142,7 @@ func composeMessageText(text string, images []string) string {
 
 			continue
 		}
+
 		markers = append(markers, imagePlaceholderText)
 	}
 
@@ -156,16 +160,19 @@ func (c conversation) trimHistory(cfg *config.AI) conversation {
 	maxTurns, maxChars := historyLimits(cfg)
 
 	systemMessages := make([]*schema.Message, 0, len(c.Messages))
+
 	messages := make([]*schema.Message, 0, len(c.Messages))
 	for _, message := range c.Messages {
 		if message == nil {
 			continue
 		}
+
 		if message.Role == schema.System {
 			systemMessages = append(systemMessages, message)
 
 			continue
 		}
+
 		messages = append(messages, message)
 	}
 
@@ -174,22 +181,25 @@ func (c conversation) trimHistory(cfg *config.AI) conversation {
 	}
 
 	budget := maxChars
+
 	start := len(messages)
-	for index := len(messages) - 1; index >= 0; index-- {
-		cost := len([]rune(messageText(messages[index])))
+	for index, message := range slices.Backward(messages) {
+		cost := len([]rune(messageText(message)))
 		if budget-cost < 0 && index != len(messages)-1 {
 			break
 		}
+
 		budget -= cost
 		start = index
 	}
+
 	messages = messages[start:]
 
 	for len(messages) > 0 && messages[0].Role != schema.User {
 		messages = messages[1:]
 	}
 
-	c.Messages = append(systemMessages, messages...)
+	c.Messages = append(slices.Clone(systemMessages), messages...)
 
 	return c
 }
@@ -199,6 +209,7 @@ func historyLimits(cfg *config.AI) (int, int) {
 	if cfg != nil && cfg.HistoryMaxTurns > 0 {
 		maxTurns = cfg.HistoryMaxTurns
 	}
+
 	if cfg != nil && cfg.HistoryMaxChars > 0 {
 		maxChars = cfg.HistoryMaxChars
 	}
@@ -210,6 +221,7 @@ func messageText(message *schema.Message) string {
 	if message == nil {
 		return ""
 	}
+
 	if message.Content != "" {
 		return message.Content
 	}
@@ -220,6 +232,7 @@ func messageText(message *schema.Message) string {
 			texts = append(texts, part.Text)
 		}
 	}
+
 	for _, part := range message.AssistantGenMultiContent {
 		if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
 			texts = append(texts, part.Text)
@@ -247,11 +260,13 @@ func (c conversation) prependSystem(text string) conversation {
 // 它处理消息形状，不验证模型输出是否可信，也不把文本字符预算换算为真实 tokenizer 计数。
 func (c conversation) modelMessages() []*schema.Message {
 	var systemTexts []string
+
 	messages := make([]*schema.Message, 0, len(c.Messages))
 	for _, message := range c.Messages {
 		if message == nil {
 			continue
 		}
+
 		if message.Role == schema.System {
 			if text := strings.TrimSpace(messageText(message)); text != "" {
 				systemTexts = append(systemTexts, text)
@@ -264,11 +279,13 @@ func (c conversation) modelMessages() []*schema.Message {
 		if text == "" {
 			continue
 		}
+
 		if len(messages) > 0 && messages[len(messages)-1].Role == message.Role {
 			messages[len(messages)-1].Content += "\n\n" + text
 
 			continue
 		}
+
 		messages = append(messages, &schema.Message{Role: message.Role, Content: text})
 	}
 
@@ -301,10 +318,12 @@ func (c conversation) transcript(maxMessages, maxCharsPerMessage int) string {
 		if message == nil || message.Role == schema.System {
 			continue
 		}
+
 		speaker := "用户"
 		if message.Role == schema.Assistant {
 			speaker = "助手"
 		}
+
 		lines = append(lines, speaker+": "+domain.TrimPromptText(messageText(message), maxCharsPerMessage))
 	}
 

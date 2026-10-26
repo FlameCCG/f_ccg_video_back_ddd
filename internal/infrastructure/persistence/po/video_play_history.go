@@ -10,8 +10,8 @@ type VideoPlayHistory struct {
 	Duration  int       `gorm:"default:0;comment:视频总时长(秒)" json:"duration"`
 	CreatedAt time.Time `gorm:"not null" json:"-"`
 	// 关联关系
-	User  User  `gorm:"foreignKey:UserID" json:"userEntity,omitempty"`
-	Video Video `gorm:"foreignKey:VideoID" json:"video,omitempty"`
+	User  User  `gorm:"foreignKey:UserID" json:"userEntity"`
+	Video Video `gorm:"foreignKey:VideoID" json:"video"`
 }
 
 // TableName 显式绑定表名 video_play_histories，保持迁移与仓储 SQL 使用同一张表。

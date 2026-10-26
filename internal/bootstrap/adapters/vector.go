@@ -45,8 +45,8 @@ func NewVideoVectorRebuilder(rebuild *searchapp.VideoVectorRebuildService) *Vide
 }
 
 // StartRebuild 启动全量回填。
-func (a *VideoVectorRebuilder) StartRebuild(options videoapp.VectorRebuildOptions) (bool, error) {
-	return a.rebuild.StartRebuild(searchapp.RebuildOptions{
+func (a *VideoVectorRebuilder) StartRebuild(ctx context.Context, options videoapp.VectorRebuildOptions) (bool, error) {
+	return a.rebuild.StartRebuild(ctx, searchapp.RebuildOptions{
 		Recreate: options.Recreate,
 		Workers:  options.Workers,
 	})

@@ -38,7 +38,7 @@ func (h *AdminHandler) AdminUserInfoView(c *gin.Context) {
 
 	info, err := h.profiles.AdminUserInfo(c.Request.Context(), uid)
 	if err != nil {
-		res.FailWithMsg("用户不存在", c)
+		res.FailWithCause(err, "用户不存在", c)
 
 		return
 	}

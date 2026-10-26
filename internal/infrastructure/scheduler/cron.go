@@ -9,6 +9,11 @@ package scheduler
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/logmeta"
+	"f_ccg_video_back_ddd/pkg/logsafe"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -43,7 +48,7 @@ type cronJob struct {
 	// spec 六段 cron 表达式。
 	spec string
 	// run 任务执行体。
-	run func()
+	run func(context.Context)
 }
 
 // CronComponent 定时任务调度组件。
@@ -99,34 +104,36 @@ func (c *CronComponent) jobs() []cronJob {
 		{
 			name: "SyncCommentLike",
 			spec: SpecSyncCommentLike,
-			run:  func() { c.commentLike.Run(context.Background()) },
+			run:  func(ctx context.Context) { c.commentLike.Run(ctx) },
 		},
 		{
 			name: "SyncVideoStat",
 			spec: SpecSyncVideoStat,
-			run:  func() { c.videoStat.Run(context.Background()) },
+			run:  func(ctx context.Context) { c.videoStat.Run(ctx) },
 		},
 		{
 			name: "DecayVideoHotScore",
 			spec: SpecDecayVideoHotScore,
-			run:  func() { c.hotRank.Run(context.Background()) },
+			run:  func(ctx context.Context) { c.hotRank.Run(ctx) },
 		},
 		{
 			name: "AutoUnbanUsers",
 			spec: SpecAutoUnbanUsers,
-			run:  func() { c.autoUnban.Run(context.Background()) },
+			run:  func(ctx context.Context) { c.autoUnban.Run(ctx) },
 		},
 	}
 	if c.uploadCleanup != nil {
 		jobs = append(jobs, cronJob{
 			name: "CleanupUploads", spec: SpecCleanupUploads,
-			run: func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+			run: func(parent context.Context) {
+				ctx, cancel := context.WithTimeout(parent, 4*time.Minute)
 				defer cancel()
+
 				c.uploadCleanup.Run(ctx)
 			},
 		})
 	}
+
 	return jobs
 }
 
@@ -135,7 +142,7 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 	c.mu.Lock()
 	if c.crontab != nil {
 		c.mu.Unlock()
-		c.logger.Warn("定时任务已在运行，忽略重复启动")
+		c.logger.Warn("定时任务已在运行，忽略重复启动", zap.String("event", "scheduler.cron.start_jobs.degraded"), zap.String("operation", "scheduler.cron.start_jobs"))
 
 		return nil
 	}
@@ -145,14 +152,31 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 		cron.WithSeconds(),
 		cron.WithLocation(c.cronLocation()),
 		cron.WithChain(
-			cron.SkipIfStillRunning(cron.DefaultLogger),
-			cron.Recover(cron.DefaultLogger),
+			cron.SkipIfStillRunning(cronLogger{logger: c.logger}),
+			cron.Recover(cronLogger{logger: c.logger}),
 		),
 	)
 
 	for _, job := range jobs {
-		if _, err := crontab.AddFunc(job.spec, job.run); err != nil {
-			c.logger.Error("register "+job.name+" cron failed", zap.Error(err))
+		if _, err := crontab.AddFunc(job.spec, func() {
+			ctx := logmeta.With(context.Background(), logmeta.Values{TaskID: logmeta.NewID(), AttemptID: logmeta.NewID()})
+			logger := logctx.With(ctx, c.logger)
+			start := time.Now()
+
+			logger.Info("scheduler.task.started", zap.String("event", "scheduler.task.started"), zap.String("operation", job.name))
+
+			defer func() {
+				if value := recover(); value != nil {
+					logger.Error("scheduler.task.failed", zap.String("event", "scheduler.task.failed"), zap.String("operation", job.name), zap.String("error", logsafe.Text(fmt.Sprint(value), logsafe.ErrorLimit)), zap.String("stack", string(debug.Stack())))
+					return
+				}
+
+				logger.Info("scheduler.task.finished", zap.String("event", "scheduler.task.finished"), zap.String("operation", job.name), zap.Float64("duration_ms", float64(time.Since(start))/float64(time.Millisecond)))
+			}()
+
+			job.run(ctx)
+		}); err != nil {
+			c.logger.Error("register "+job.name+" cron failed", zap.String("event", "scheduler.cron.start_jobs.failed"), zap.String("operation", "scheduler.cron.start_jobs"), zap.Error(err))
 		}
 	}
 
@@ -162,7 +186,7 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 	c.crontab = crontab
 	c.mu.Unlock()
 
-	c.logger.Info("定时任务启动成功!")
+	c.logger.Info("定时任务启动成功!", zap.String("event", "scheduler.cron.start_jobs.diagnostic"), zap.String("operation", "scheduler.cron.start_jobs"))
 
 	return nil
 }
@@ -171,7 +195,7 @@ func (c *CronComponent) startJobs(jobs []cronJob) error {
 //
 // 等价原 cron_service.Stop：幂等，等待窗口固定为 5s、不受传入 context 影响，
 // 保证与原优雅退出时序完全一致。
-func (c *CronComponent) Stop(_ context.Context) error {
+func (c *CronComponent) Stop(ctx context.Context) error {
 	if c == nil {
 		return nil
 	}
@@ -188,9 +212,9 @@ func (c *CronComponent) Stop(_ context.Context) error {
 	stopCtx := crontab.Stop()
 	select {
 	case <-stopCtx.Done():
-		c.logger.Info("定时任务已停止")
+		logctx.With(ctx, c.logger).Info("定时任务已停止", zap.String("event", "scheduler.cron.stop.diagnostic"), zap.String("operation", "scheduler.cron.stop"))
 	case <-time.After(cronStopTimeout):
-		c.logger.Warn("定时任务停止超时，继续退出")
+		logctx.With(ctx, c.logger).Warn("定时任务停止超时，继续退出", zap.String("event", "scheduler.cron.stop.degraded"), zap.String("operation", "scheduler.cron.stop"))
 	}
 
 	return nil
@@ -204,11 +228,22 @@ func (c *CronComponent) Stop(_ context.Context) error {
 func (c *CronComponent) cronLocation() *time.Location {
 	timezone, err := time.LoadLocation(cronTimezone)
 	if err != nil || timezone == nil {
-		c.logger.Warn("load cron timezone failed, fallback to local",
+		c.logger.Warn("load cron timezone failed, fallback to local", zap.String("event", "scheduler.cron.cron_location.degraded"), zap.String("operation", "scheduler.cron.cron_location"),
 			zap.String("timezone", cronTimezone), zap.Error(err))
 
 		return time.Local
 	}
 
 	return timezone
+}
+
+// cronLogger routes the scheduler library's diagnostics through its injected logger.
+type cronLogger struct{ logger *zap.Logger }
+
+func (l cronLogger) Info(msg string, _ ...any) {
+	logctx.With(context.Background(), l.logger).Debug(msg, zap.String("event", "scheduler.diagnostic"))
+}
+
+func (l cronLogger) Error(err error, msg string, _ ...any) {
+	logctx.With(context.Background(), l.logger).Error(msg, zap.String("event", "scheduler.diagnostic.failed"), zap.Error(err))
 }

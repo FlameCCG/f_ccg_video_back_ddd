@@ -26,12 +26,12 @@ func registerCommentCommonRoutes(
 	{
 		authGroup.POST("create",
 			mw.UserBanCheck(),
-			middlewares.JsonBindParams[commenthandler.CreateCommentReq],
+			middlewares.JSONBindParams[commenthandler.CreateCommentReq],
 			h.CreateView,
 		)
-		authGroup.DELETE("delete", middlewares.JsonBindParams[commenthandler.DeleteCommentReq], h.DeleteView)
-		authGroup.PUT("pin", middlewares.JsonBindParams[commenthandler.PinReq], h.PinView)
-		authGroup.POST("like", middlewares.JsonBindParams[commenthandler.LikeReq], h.LikeView)
+		authGroup.DELETE("delete", middlewares.JSONBindParams[commenthandler.DeleteCommentReq], h.DeleteView)
+		authGroup.PUT("pin", middlewares.JSONBindParams[commenthandler.PinReq], h.PinView)
+		authGroup.POST("like", middlewares.JSONBindParams[commenthandler.LikeReq], h.LikeView)
 		authGroup.GET("creator/list", middlewares.BindQueryParams[commenthandler.CreatorCommentListReq], h.CreatorListView)
 	}
 }
@@ -46,6 +46,6 @@ func registerCommentAdminRoutes(
 	commentGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.AuthAll())
 	{
 		commentGroup.GET("list", middlewares.BindQueryParams[commenthandler.AdminCommentListReq], h.AdminListView)
-		commentGroup.DELETE("", middlewares.JsonBindParams[commenthandler.AdminDeleteCommentReq], h.AdminDeleteView)
+		commentGroup.DELETE("", middlewares.JSONBindParams[commenthandler.AdminDeleteCommentReq], h.AdminDeleteView)
 	}
 }

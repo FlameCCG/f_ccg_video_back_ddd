@@ -1,17 +1,19 @@
 package identity
 
 import (
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/internal/infrastructure/external/oauth"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http"
 	"testing"
 
-	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/config"
-	"f_ccg_video_back_ddd/internal/config/site"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/external/oauth"
-	"f_ccg_video_back_ddd/pkg/res"
+	"github.com/stretchr/testify/require"
 
-	"github.com/gin-gonic/gin"
+	app "f_ccg_video_back_ddd/internal/application/identity"
+
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+
 	"go.uber.org/zap"
 )
 
@@ -33,7 +35,7 @@ func newOAuthLoginHandler(t *testing.T, login *site.Login) *Handler {
 }
 
 func TestGitHubLoginViewRejectsInvalidState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler := newOAuthLoginHandler(t, &site.Login{GitHubLogin: true})
 
@@ -46,17 +48,13 @@ func TestGitHubLoginViewRejectsInvalidState(t *testing.T) {
 	handler.GitHubLoginView(ctx)
 
 	response := decodeResponse(t, recorder)
-	if response.Code != res.FailServiceCode {
-		t.Fatalf("expected fail response code, got %d", response.Code)
-	}
+	require.EqualValues(t, res.FailServiceCode, response.Code, "expected fail response code, got %d", response.Code)
 
-	if response.Msg != "github登录状态无效" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	require.Equal(t, "github登录状态无效", response.Msg, "unexpected response msg: %s", response.Msg)
 }
 
 func TestXLoginViewRejectsInvalidState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler := newOAuthLoginHandler(t, &site.Login{XLogin: true})
 
@@ -70,17 +68,13 @@ func TestXLoginViewRejectsInvalidState(t *testing.T) {
 	handler.XLoginView(ctx)
 
 	response := decodeResponse(t, recorder)
-	if response.Code != res.FailServiceCode {
-		t.Fatalf("expected fail response code, got %d", response.Code)
-	}
+	require.EqualValues(t, res.FailServiceCode, response.Code, "expected fail response code, got %d", response.Code)
 
-	if response.Msg != "x登录状态无效" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	require.Equal(t, "x登录状态无效", response.Msg, "unexpected response msg: %s", response.Msg)
 }
 
 func TestLinuxDoLoginViewRejectsInvalidState(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler := newOAuthLoginHandler(t, &site.Login{LinuxDoLogin: true})
 
@@ -93,11 +87,7 @@ func TestLinuxDoLoginViewRejectsInvalidState(t *testing.T) {
 	handler.LinuxDoLoginView(ctx)
 
 	response := decodeResponse(t, recorder)
-	if response.Code != res.FailServiceCode {
-		t.Fatalf("expected fail response code, got %d", response.Code)
-	}
+	require.EqualValues(t, res.FailServiceCode, response.Code, "expected fail response code, got %d", response.Code)
 
-	if response.Msg != "linuxdo登录状态无效" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	require.Equal(t, "linuxdo登录状态无效", response.Msg, "unexpected response msg: %s", response.Msg)
 }

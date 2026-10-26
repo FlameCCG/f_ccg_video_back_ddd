@@ -2,10 +2,10 @@ package search
 
 import (
 	"context"
-
-	app "f_ccg_video_back_ddd/internal/application/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/constants"
+
+	app "f_ccg_video_back_ddd/internal/application/search"
 
 	"github.com/olivere/elastic/v7"
 	"go.uber.org/zap"
@@ -66,42 +66,40 @@ func (a *Adapter) MultiSearch(ctx context.Context, opts app.Options, from int) (
 
 // SearchVideos 检索视频索引（已发布过滤 + 排序 + 高亮）。
 func (a *Adapter) SearchVideos(ctx context.Context, opts app.Options, from int) (app.VideoHits, error) {
-	if !a.Available() {
-		return app.VideoHits{}, app.ErrESUnavailable
-	}
+	return runSearchPage(ctx, a, constants.VideoSearchIndex, func() *elastic.SearchSource {
+		source := buildVideoSearchSource(opts, from)
+		applyVideoSortToSource(source, opts.VideoSort, opts.VideoOrder)
 
-	source := buildVideoSearchSource(opts, from)
-	applyVideoSortToSource(source, opts.VideoSort, opts.VideoOrder)
-
-	resp, err := a.client.Search().
-		Index(constants.VideoSearchIndex).
-		SearchSource(source).
-		Do(ctx)
-	if err != nil {
-		return app.VideoHits{}, err
-	}
-
-	return app.VideoHits{Total: resp.TotalHits(), Items: parseVideoList(resp)}, nil
+		return source
+	}, func(response *elastic.SearchResult) app.VideoHits {
+		return app.VideoHits{Total: response.TotalHits(), Items: parseVideoList(response)}
+	})
 }
 
 // SearchUsers 检索用户索引（排序 + 高亮）。
 func (a *Adapter) SearchUsers(ctx context.Context, opts app.Options, from int) (app.UserHits, error) {
+	return runSearchPage(ctx, a, constants.UserSearchIndex, func() *elastic.SearchSource {
+		source := buildUserSearchSource(opts, from)
+		applyUserSortToSource(source, opts.UserSort, opts.UserOrder)
+
+		return source
+	}, func(response *elastic.SearchResult) app.UserHits {
+		return app.UserHits{Total: response.TotalHits(), Items: parseUserList(response)}
+	})
+}
+
+func runSearchPage[T any](ctx context.Context, a *Adapter, index string, build func() *elastic.SearchSource, decode func(*elastic.SearchResult) T) (T, error) {
+	var zero T
 	if !a.Available() {
-		return app.UserHits{}, app.ErrESUnavailable
+		return zero, app.ErrESUnavailable
 	}
 
-	source := buildUserSearchSource(opts, from)
-	applyUserSortToSource(source, opts.UserSort, opts.UserOrder)
-
-	resp, err := a.client.Search().
-		Index(constants.UserSearchIndex).
-		SearchSource(source).
-		Do(ctx)
+	response, err := a.client.Search().Index(index).SearchSource(build()).Do(ctx)
 	if err != nil {
-		return app.UserHits{}, err
+		return zero, err
 	}
 
-	return app.UserHits{Total: resp.TotalHits(), Items: parseUserList(resp)}, nil
+	return decode(response), nil
 }
 
 // CountUsers 只取用户索引命中总量（size=0）。
@@ -162,9 +160,6 @@ func (a *Adapter) FieldSuggest(
 		SearchSource(source).
 		Do(ctx)
 	if err != nil {
-		a.logger.Warn("suggest search failed",
-			zap.String("index", index), zap.String("docType", docType), zap.Error(err))
-
 		return nil, err
 	}
 
@@ -183,7 +178,7 @@ func (a *Adapter) MatchUserIDs(ctx context.Context, userIDs []uint, keyword stri
 
 	ids := make([]any, 0, len(userIDs))
 	for _, id := range userIDs {
-		ids = append(ids, int64(id))
+		ids = append(ids, id)
 	}
 
 	source := elastic.NewSearchSource().

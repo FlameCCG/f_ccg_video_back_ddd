@@ -3,12 +3,12 @@ package identity
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/coinutil"
 	"fmt"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	"f_ccg_video_back_ddd/pkg/coinutil"
 )
 
 // CoinService 硬币用例服务（原 service/user_service/coin_service.go）。
@@ -66,38 +66,7 @@ func (s *CoinService) ApplyChange(
 	applied := false
 
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		before, err := s.users.CoinBalanceForUpdate(txCtx, userID)
-		if err != nil {
-			return err
-		}
-		if dedupKey != nil {
-			exists, err := s.records.HasDedupKey(txCtx, userID, *dedupKey)
-			if err != nil || exists {
-				return err
-			}
-		}
-
-		afterCoins := coinutil.Round(before + delta)
-		if delta < 0 && afterCoins < 0 {
-			return domain.ErrCoinInsufficient
-		}
-
-		if createErr := s.records.Create(txCtx, userID, delta, reason, dedupKey); createErr != nil {
-			if errors.Is(createErr, domain.ErrDuplicateRecord) {
-				return nil
-			}
-
-			return createErr
-		}
-
-		if updateErr := s.users.UpdateCoinBalance(txCtx, userID, afterCoins); updateErr != nil {
-			return updateErr
-		}
-
-		out = &domain.User{ID: userID, CoinCount: afterCoins}
-		applied = true
-
-		return nil
+		return coinServiceApplyChangeTransaction(txCtx, s, userID, delta, reason, dedupKey, &out, &applied)
 	})
 	if err != nil {
 		return nil, false, err
@@ -203,26 +172,69 @@ func (s *CoinService) RevokeFavoriteReward(ctx context.Context, authorID, actorI
 	if authorID == 0 || authorID == actorID {
 		return nil
 	}
+
 	return s.txm.Do(ctx, func(txCtx context.Context) error {
 		if err := s.users.LockAccounts(txCtx, []uint{authorID}); err != nil {
 			return err
 		}
+
 		key := fmt.Sprintf("favorite:%d:%d", actorID, videoID)
+
 		earned, err := s.records.HasDedupKey(txCtx, authorID, key)
 		if err != nil || !earned {
 			return err
 		}
+
 		balance, err := s.users.CoinBalanceForUpdate(txCtx, authorID)
 		if err != nil {
 			return err
 		}
+
 		revokeKey := "revoke:" + key
 		if err := s.records.Create(txCtx, authorID, -domain.CoinFavoriteReward, "取消收藏，收回作品收藏奖励", &revokeKey); err != nil {
 			if errors.Is(err, domain.ErrDuplicateRecord) {
 				return nil
 			}
+
 			return err
 		}
+
 		return s.users.UpdateCoinBalance(txCtx, authorID, coinutil.Round(balance-domain.CoinFavoriteReward))
 	})
+}
+
+func coinServiceApplyChangeTransaction(txCtx context.Context, s *CoinService, userID uint, delta float64, reason string, dedupKey *string, out **domain.User, applied *bool) error {
+	before, err := s.users.CoinBalanceForUpdate(txCtx, userID)
+	if err != nil {
+		return err
+	}
+
+	if dedupKey != nil {
+		exists, err := s.records.HasDedupKey(txCtx, userID, *dedupKey)
+		if err != nil || exists {
+			return err
+		}
+	}
+
+	afterCoins := coinutil.Round(before + delta)
+	if delta < 0 && afterCoins < 0 {
+		return domain.ErrCoinInsufficient
+	}
+
+	if createErr := s.records.Create(txCtx, userID, delta, reason, dedupKey); createErr != nil {
+		if errors.Is(createErr, domain.ErrDuplicateRecord) {
+			return nil
+		}
+
+		return createErr
+	}
+
+	if updateErr := s.users.UpdateCoinBalance(txCtx, userID, afterCoins); updateErr != nil {
+		return updateErr
+	}
+
+	(*out) = &domain.User{ID: userID, CoinCount: afterCoins}
+	(*applied) = true
+
+	return nil
 }

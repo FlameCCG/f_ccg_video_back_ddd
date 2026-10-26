@@ -2,11 +2,11 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )
@@ -136,6 +136,7 @@ func (q *DanmuQuery) MonthInstants(
 	start, end time.Time,
 ) ([]time.Time, error) {
 	var instants []time.Time
+
 	err := gormx.DB(ctx, q.db).
 		Model(&po.Danmu{}).
 		Where("video_id = ? AND video_part_id = ?", videoID, partID).

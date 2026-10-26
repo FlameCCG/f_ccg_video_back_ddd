@@ -75,6 +75,7 @@ func (s *AuthorStatsService) aggregateUncached(
 	statsByVideoID := s.stats.LoadBatch(ctx, videoIDs)
 
 	var result UserVideoStats
+
 	for _, row := range rows {
 		if cached := statsByVideoID[row.ID]; cached != nil {
 			result.TotalViews += cached.Views

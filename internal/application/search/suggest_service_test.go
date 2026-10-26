@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -28,14 +29,10 @@ func TestMergeSuggestionPriority(t *testing.T) {
 	)
 
 	want := []string{"v1", "u1", "t1"}
-	if len(got) != len(want) {
-		t.Fatalf("len=%d want %d", len(got), len(want))
-	}
+	require.Len(t, got, len(want), "len=%d want %d", len(got), len(want))
 
 	for i := range want {
-		if got[i].Value != want[i] {
-			t.Fatalf("idx %d got %q want %q", i, got[i].Value, want[i])
-		}
+		require.Equal(t, got[i].Value, want[i], "idx %d got %q want %q", i, got[i].Value, want[i])
 	}
 }
 
@@ -45,17 +42,14 @@ func TestMergeSuggestionPriorityDedupIsCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
 	got := mergeSuggestionPriority(10,
-		[]SuggestionItem{{Value: "Alice", DocType: DocTypeUser}},
-		[]SuggestionItem{{Value: "alice", DocType: DocTypeUser}, {Value: "alice", DocType: DocTypeTag}},
+		[]SuggestionItem{{Value: testAlice, DocType: DocTypeUser}},
+		[]SuggestionItem{{Value: testAlice, DocType: DocTypeUser}, {Value: testAlice, DocType: DocTypeTag}},
 	)
 
-	if len(got) != 2 {
-		t.Fatalf("items = %+v, want 2 entries", got)
-	}
+	require.Len(t, got, 2, "items = %+v, want 2 entries", got)
 
-	if got[0].Value != "Alice" || got[1].DocType != DocTypeTag {
-		t.Fatalf("items = %+v", got)
-	}
+	require.Equal(t, testAlice, got[0].Value, "items = %+v", got)
+	require.Equal(t, DocTypeTag, got[1].DocType, "items = %+v", got)
 }
 
 // TestSuggestReturnsEmptyForBlankPrefix 空白前缀直接返回空切片，不查 ES、不写缓存。
@@ -66,17 +60,12 @@ func TestSuggestReturnsEmptyForBlankPrefix(t *testing.T) {
 	svc := NewSuggestService(&fakeSuggestSearch{available: true}, &fakeSuggestFallback{available: true}, cache, zap.NewNop())
 
 	items, err := svc.Suggest(context.Background(), "   ", 10)
-	if err != nil {
-		t.Fatalf("Suggest: %v", err)
-	}
+	require.NoError(t, err, "Suggest: %v", err)
 
-	if items == nil || len(items) != 0 {
-		t.Fatalf("items = %v, want empty slice", items)
-	}
+	require.NotNil(t, items, "items = %v, want empty slice", items)
+	require.Empty(t, items, "items = %v, want empty slice", items)
 
-	if cache.stores != 0 {
-		t.Fatalf("blank prefix must not populate the cache (stores=%d)", cache.stores)
-	}
+	require.Equal(t, 0, cache.stores, "blank prefix must not populate the cache (stores=%d)", cache.stores)
 }
 
 // TestSuggestServesFromCacheWithoutQueryingES 命中缓存时不再查 ES。
@@ -91,21 +80,18 @@ func TestSuggestServesFromCacheWithoutQueryingES(t *testing.T) {
 	svc := NewSuggestService(index, &fakeSuggestFallback{available: true}, cache, zap.NewNop())
 
 	items, err := svc.Suggest(context.Background(), "Go", 10)
-	if err != nil {
-		t.Fatalf("Suggest: %v", err)
-	}
+	require.NoError(t, err, "Suggest: %v", err)
 
-	if !reflect.DeepEqual(items, cached) {
-		t.Fatalf("items = %+v, want %+v", items, cached)
-	}
+	require.True(t, reflect.DeepEqual(items, cached), "items = %+v, want %+v", items, cached)
 }
 
 // TestSuggestCacheKeyIgnoresCaseAndSurroundingSpace 缓存键按小写前缀 + size 归一。
 func TestSuggestCacheKeyIgnoresCaseAndSurroundingSpace(t *testing.T) {
 	t.Parallel()
 
-	if got, want := suggestCacheKey("  GoLang ", 10), "golang|10"; got != want {
-		t.Fatalf("suggestCacheKey = %q, want %q", got, want)
+	{
+		got, want := suggestCacheKey("  GoLang ", 10), "golang|10"
+		require.Equal(t, want, got, "suggestCacheKey = %q, want %q", got, want)
 	}
 }
 
@@ -125,17 +111,14 @@ func TestSuggestMergesThreeDimensionsByPriority(t *testing.T) {
 	svc := NewSuggestService(index, &fakeSuggestFallback{available: true}, cache, zap.NewNop())
 
 	items, err := svc.Suggest(context.Background(), "x", 10)
-	if err != nil {
-		t.Fatalf("Suggest: %v", err)
+	require.NoError(t, err, "Suggest: %v", err)
+
+	{
+		got := suggestValues(items)
+		require.True(t, reflect.DeepEqual(got, []string{"v", "u", "t"}), "values = %v, want [v u t]", got)
 	}
 
-	if got := suggestValues(items); !reflect.DeepEqual(got, []string{"v", "u", "t"}) {
-		t.Fatalf("values = %v, want [v u t]", got)
-	}
-
-	if cache.stores != 1 {
-		t.Fatalf("stores = %d, want 1", cache.stores)
-	}
+	require.Equal(t, 1, cache.stores, "stores = %d, want 1", cache.stores)
 }
 
 // TestSuggestFallsBackToDatabaseWhenESFails ES 出错时回退 MySQL，并缓存回退结果。
@@ -146,24 +129,21 @@ func TestSuggestFallsBackToDatabaseWhenESFails(t *testing.T) {
 	fallback := &fakeSuggestFallback{
 		available: true,
 		titles:    []string{"标题"},
-		usernames: []string{"alice"},
+		usernames: []string{testAlice},
 		tags:      []string{"教程"},
 	}
 	cache := newFakeSuggestionCache()
 	svc := NewSuggestService(index, fallback, cache, zap.NewNop())
 
 	items, err := svc.Suggest(context.Background(), "x", 10)
-	if err != nil {
-		t.Fatalf("Suggest: %v", err)
+	require.NoError(t, err, "Suggest: %v", err)
+
+	{
+		got := suggestValues(items)
+		require.True(t, reflect.DeepEqual(got, []string{"标题", testAlice, "教程"}), "values = %v", got)
 	}
 
-	if got := suggestValues(items); !reflect.DeepEqual(got, []string{"标题", "alice", "教程"}) {
-		t.Fatalf("values = %v", got)
-	}
-
-	if cache.stores != 1 {
-		t.Fatalf("stores = %d, want 1", cache.stores)
-	}
+	require.Equal(t, 1, cache.stores, "stores = %d, want 1", cache.stores)
 }
 
 // TestFallbackSuggestOnlyQueriesLaterDimensionsWhenShort 前一维度已填满 size 时，
@@ -180,16 +160,16 @@ func TestFallbackSuggestOnlyQueriesLaterDimensionsWhenShort(t *testing.T) {
 	svc := NewSuggestService(&fakeSuggestSearch{available: false}, fallback, newFakeSuggestionCache(), zap.NewNop())
 
 	items, err := svc.Suggest(context.Background(), "x", 2)
-	if err != nil {
-		t.Fatalf("Suggest: %v", err)
+	require.NoError(t, err, "Suggest: %v", err)
+
+	{
+		got := suggestValues(items)
+		require.True(t, reflect.DeepEqual(got, []string{"t1", "t2"}), "values = %v, want [t1 t2]", got)
 	}
 
-	if got := suggestValues(items); !reflect.DeepEqual(got, []string{"t1", "t2"}) {
-		t.Fatalf("values = %v, want [t1 t2]", got)
-	}
-
-	if _, queried := fallback.sizes["usernames"]; queried {
-		t.Fatal("usernames dimension must be skipped once size is satisfied")
+	{
+		_, queried := fallback.sizes["usernames"]
+		require.False(t, queried, "usernames dimension must be skipped once size is satisfied")
 	}
 }
 
@@ -205,16 +185,19 @@ func TestFallbackSuggestPassesRemainingSizeToLaterDimensions(t *testing.T) {
 	}
 	svc := NewSuggestService(&fakeSuggestSearch{available: false}, fallback, newFakeSuggestionCache(), zap.NewNop())
 
-	if _, err := svc.Suggest(context.Background(), "x", 3); err != nil {
-		t.Fatalf("Suggest: %v", err)
+	{
+		_, err := svc.Suggest(context.Background(), "x", 3)
+		require.NoError(t, err, "Suggest: %v", err)
 	}
 
-	if got := fallback.sizes["usernames"]; got != 2 {
-		t.Fatalf("usernames size = %d, want 2", got)
+	{
+		got := fallback.sizes["usernames"]
+		require.Equal(t, 2, got, "usernames size = %d, want 2", got)
 	}
 
-	if got := fallback.sizes["tags"]; got != 1 {
-		t.Fatalf("tags size = %d, want 1", got)
+	{
+		got := fallback.sizes["tags"]
+		require.Equal(t, 1, got, "tags size = %d, want 1", got)
 	}
 }
 
@@ -226,16 +209,19 @@ func TestSuggestClampsSize(t *testing.T) {
 	cache := newFakeSuggestionCache()
 	svc := NewSuggestService(&fakeSuggestSearch{available: false}, fallback, cache, zap.NewNop())
 
-	if _, err := svc.Suggest(context.Background(), "x", 1_000); err != nil {
-		t.Fatalf("Suggest: %v", err)
+	{
+		_, err := svc.Suggest(context.Background(), "x", 1_000)
+		require.NoError(t, err, "Suggest: %v", err)
 	}
 
-	if got := fallback.sizes["titles"]; got != 20 {
-		t.Fatalf("clamped size = %d, want 20", got)
+	{
+		got := fallback.sizes["titles"]
+		require.Equal(t, 20, got, "clamped size = %d, want 20", got)
 	}
 
-	if _, ok := cache.entries[suggestCacheKey("x", 20)]; !ok {
-		t.Fatalf("cache keys = %v", cache.entries)
+	{
+		_, ok := cache.entries[suggestCacheKey("x", 20)]
+		require.True(t, ok, "cache keys = %v", cache.entries)
 	}
 }
 
@@ -246,16 +232,14 @@ func TestSuggestReturnsEmptyWhenBothESAndDBUnavailable(t *testing.T) {
 	svc := NewSuggestService(
 		&fakeSuggestSearch{available: false},
 		&fakeSuggestFallback{available: false},
-		newFakeSuggestionCache(), zap.NewNop())
+		newFakeSuggestionCache(), zap.NewNop(),
+	)
 
 	items, err := svc.Suggest(context.Background(), "x", 10)
-	if err != nil {
-		t.Fatalf("Suggest: %v", err)
-	}
+	require.NoError(t, err, "Suggest: %v", err)
 
-	if items == nil || len(items) != 0 {
-		t.Fatalf("items = %v, want empty slice", items)
-	}
+	require.NotNil(t, items, "items = %v, want empty slice", items)
+	require.Empty(t, items, "items = %v, want empty slice", items)
 }
 
 // TestSuggestPropagatesFallbackError 回退查询报错时向上返回错误、不写缓存。
@@ -267,15 +251,15 @@ func TestSuggestPropagatesFallbackError(t *testing.T) {
 	svc := NewSuggestService(
 		&fakeSuggestSearch{available: false},
 		&fakeSuggestFallback{available: true, err: wantErr},
-		cache, zap.NewNop())
+		cache, zap.NewNop(),
+	)
 
-	if _, err := svc.Suggest(context.Background(), "x", 10); !errors.Is(err, wantErr) {
-		t.Fatalf("err = %v, want %v", err, wantErr)
+	{
+		_, err := svc.Suggest(context.Background(), "x", 10)
+		require.ErrorIs(t, err, wantErr, "err = %v, want %v", err, wantErr)
 	}
 
-	if cache.stores != 0 {
-		t.Fatalf("failed fallback must not populate the cache (stores=%d)", cache.stores)
-	}
+	require.Equal(t, 0, cache.stores, "failed fallback must not populate the cache (stores=%d)", cache.stores)
 }
 
 // TestBuildSuggestionItemsDropsBlankValuesAndHighlights 空值被丢弃，其余带上高亮。
@@ -283,13 +267,10 @@ func TestBuildSuggestionItemsDropsBlankValuesAndHighlights(t *testing.T) {
 	t.Parallel()
 
 	items := buildSuggestionItems([]string{"HelloWorld", ""}, "hell", DocTypeVideo)
-	if len(items) != 1 {
-		t.Fatalf("items = %+v, want 1 entry", items)
-	}
+	require.Len(t, items, 1, "items = %+v, want 1 entry", items)
 
-	if items[0].Highlight != "<em>Hell</em>oWorld" || items[0].DocType != DocTypeVideo {
-		t.Fatalf("item = %+v", items[0])
-	}
+	require.Equal(t, "<em>Hell</em>oWorld", items[0].Highlight, "item = %+v", items[0])
+	require.Equal(t, DocTypeVideo, items[0].DocType, "item = %+v", items[0])
 }
 
 func suggestValues(items []SuggestionItem) []string {

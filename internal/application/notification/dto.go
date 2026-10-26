@@ -9,9 +9,8 @@ package notification
 
 import (
 	"context"
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // Item 通知列表项（读模型，json tag 与原实现一致）.

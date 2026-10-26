@@ -47,8 +47,8 @@ type RelatedQuery interface {
 	VideoBrief(ctx context.Context, videoID uint) (*VideoBrief, error)
 	// VideoAuthorRef 读取视频及其作者用户 ID；视频不存在时返回 (nil, nil)。
 	VideoAuthorRef(ctx context.Context, videoID uint) (*VideoAuthorRef, error)
-	// DynamicBrief 读取动态 id/user_id；不存在时返回 (nil, nil)。
-	DynamicBrief(ctx context.Context, dynamicID uint) (*Brief, error)
+	// Brief 读取动态 id/user_id；不存在时返回 (nil, nil)。
+	Brief(ctx context.Context, dynamicID uint) (*Brief, error)
 	// AllowedAtUserIDs 过滤出与操作者互相关注（任一方向）的候选 @ 用户；
 	// 查询失败时返回 nil（与原实现忽略错误一致）。
 	AllowedAtUserIDs(ctx context.Context, actorID uint, candidateIDs []uint) []uint

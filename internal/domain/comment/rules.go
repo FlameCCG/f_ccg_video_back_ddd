@@ -1,9 +1,8 @@
 package comment
 
 import (
-	"strings"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"strings"
 )
 
 const (

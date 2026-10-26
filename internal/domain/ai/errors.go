@@ -12,6 +12,19 @@ import (
 	"strconv"
 )
 
+const (
+	test169              = "16:9"
+	testDefaultChat      = "default-chat"
+	testDoubaoSeedream3  = "doubao-seedream-3"
+	testDoubaoSeedream45 = "doubao-seedream-4-5"
+	testHigh             = "high"
+	testRust             = "rust"
+	testSingle           = "single"
+	testCatPrompt        = "一只猫"
+	testEditPrompt       = "换背景"
+	testSunsetPrompt     = "海边日落"
+)
+
 // 领域错误。错误文案会经 handler 过滤后返回前端，属于外部可观测契约，不得修改。
 var (
 	// ErrConfigMissing AI 配置段缺失。
@@ -58,6 +71,16 @@ type APIError struct {
 	Code       string
 	Message    string
 	Body       string
+}
+
+// LogMessage excludes untrusted provider messages, which can echo prompts or API credentials.
+// The complete provider response remains available on the original error for inspection.
+func (e *APIError) LogMessage() string {
+	if e == nil {
+		return ""
+	}
+
+	return "AI provider error: status=" + strconv.Itoa(e.StatusCode)
 }
 
 // Error 实现 error；文案格式属于外部可观测契约。

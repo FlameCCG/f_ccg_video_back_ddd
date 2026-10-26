@@ -25,7 +25,7 @@ func (h *Handler) ResetPasswordView(c *gin.Context) {
 		Email:       req.Email,
 		NewPassword: req.NewPassword,
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

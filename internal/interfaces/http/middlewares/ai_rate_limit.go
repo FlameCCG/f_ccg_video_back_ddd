@@ -1,12 +1,13 @@
 package middlewares
 
 import (
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 	"net/http"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // AIGenerationLimit reserves per-user and per-IP budgets before paid work starts.
@@ -17,13 +18,17 @@ func (m *Middlewares) AIGenerationLimit() gin.HandlerFunc {
 		if !ok {
 			res.FailWithMsg("请先登录", c)
 			c.Abort()
+
 			return
 		}
+
 		if m == nil || !m.limiter.Available() {
 			res.FailWithMsg("AI 服务暂不可用", c)
 			c.Abort()
+
 			return
 		}
+
 		limits := []struct {
 			key    string
 			count  int64
@@ -37,17 +42,21 @@ func (m *Middlewares) AIGenerationLimit() gin.HandlerFunc {
 		for _, limit := range limits {
 			allowed, err := m.limiter.Allow(c.Request.Context(), limit.key, limit.count, limit.window)
 			if err != nil {
-				m.log().Error("AI quota unavailable", zap.Error(err))
-				res.FailWithMsg("AI 服务暂不可用", c)
+				res.RecordFailure(apperr.Wrap("middlewares/ai_rate_limit", nil, err), c)
+				res.FailWithCause(err, "AI 服务暂不可用", c)
 				c.Abort()
+
 				return
 			}
+
 			if !allowed {
 				c.Header("Retry-After", "60")
 				c.AbortWithStatusJSON(http.StatusTooManyRequests, res.Response{Code: res.FailServiceCode, Msg: "AI 请求额度已用完，请稍后重试", Data: gin.H{}})
+
 				return
 			}
 		}
+
 		c.Next()
 	}
 }

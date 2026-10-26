@@ -24,7 +24,7 @@ func (h *Handler) FocusUserView(c *gin.Context) {
 	}
 
 	if err := h.focus.Focus(c.Request.Context(), uid, req.FocusUserID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

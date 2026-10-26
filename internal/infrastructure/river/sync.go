@@ -6,11 +6,12 @@ import ( // 依赖导入：二进制序列化、反射、时间、ES/canal/mysql
 	"encoding/json"    // 解析 JSON 列类型
 	stderrors "errors" // errors.Is：识别被 Trace 包装的哨兵错误
 	"fmt"              // 格式化输出
-	"net/http"         // ES bulk 状态码分类
-	"reflect"          // 反射（判断整型、比较变更）
-	"strconv"          // 字符串转数字
-	"strings"          // 字符串处理
-	"time"             // 时间处理
+	"math"
+	"net/http" // ES bulk 状态码分类
+	"reflect"  // 反射（判断整型、比较变更）
+	"strconv"  // 字符串转数字
+	"strings"  // 字符串处理
+	"time"     // 时间处理
 
 	"f_ccg_video_back_ddd/internal/config"                    // MySQL 显式时区
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"        // 业务枚举
@@ -19,12 +20,12 @@ import ( // 依赖导入：二进制序列化、反射、时间、ES/canal/mysql
 
 	"github.com/juju/errors"                               // 错误包装：附带堆栈
 	elastic7 "github.com/olivere/elastic/v7"               // 支持 context 的 ES bulk 客户端
-	"github.com/siddontang/go-log/log"                     // 日志
 	"github.com/siddontang/go-mysql-elasticsearch/elastic" // ES 客户端封装：BulkRequest/Client
 	"github.com/siddontang/go-mysql/canal"                 // canal：订阅 MySQL binlog
 	"github.com/siddontang/go-mysql/mysql"                 // MySQL 工具：位点、时间格式等
 	"github.com/siddontang/go-mysql/replication"           // 复制层事件定义（Rotate/DDl 等）
 	"github.com/siddontang/go-mysql/schema"                // 表结构描述（列类型、主键、取值）
+	"go.uber.org/zap"                                      // 日志
 	"gorm.io/gorm"                                         // ErrRecordNotFound：区分行删除与查询故障
 )
 
@@ -91,6 +92,10 @@ func (r *River) enqueue(value any) error {
 }
 
 func (h *eventHandler) OnRotate(e *replication.RotateEvent) error { // binlog 切换文件事件
+	if e.Position > math.MaxUint32 {
+		return errors.New("binlog position exceeds uint32")
+	}
+
 	pos := mysql.Position{
 		Name: string(e.NextLogName), // 下一份 binlog 文件名
 		Pos:  uint32(e.Position),    // 下一写入位置
@@ -131,7 +136,8 @@ func (h *eventHandler) OnRow(e *canal.RowsEvent) error { // 核心：行变更�
 		return nil // 不走默认规则（这张表只是桥表）
 	case "tags":
 		tagIDs := h.r.collectIDsFromRows(e.Rows, e.Table, "id") // 收集变更的 tag IDs
-		videoIDs, err := h.r.videoIDsByTagIDs(tagIDs)           // 反查受影响的视频
+
+		videoIDs, err := h.r.videoIDsByTagIDs(tagIDs) // 反查受影响的视频
 		if err != nil {
 			h.r.cancel()
 
@@ -199,60 +205,7 @@ func (r *River) syncLoop() { // 核心批处理协程：聚合 BulkRequest，控
 		bulkSize = r.cfg.BulkSize
 	}
 
-	ticker := time.NewTicker(syncFlushInterval) // 周期触发器
-	defer ticker.Stop()                         // 函数退出时停止
-	defer r.wg.Done()                           // 协程结束，通知 WaitGroup
-
-	lastSavedTime := time.Now()                              // 上次保存位点的时间（节流）
-	reqs := make([]*elastic.BulkRequest, 0, syncReqsInitCap) // 聚合待写 ES 的请求数组
-
-	var pos mysql.Position // 待保存的位点
-
-	for { // 主循环：选择处理三种输入（channel、tick、ctx.Done）
-		needFlush := false   // 本轮是否需要 flush ES
-		needSavePos := false // 本轮 flush 后是否需要保存位点
-
-		select {
-		case v := <-r.syncCh: // 从事件队列拿数据：可能是 posSaver 或 []*BulkRequest
-			switch v := v.(type) {
-			case posSaver: // 位点保存请求
-				now := time.Now()
-				if v.force || now.Sub(lastSavedTime) > posSaveThrottle { // 强制或“距离上次保存>3s”
-					lastSavedTime = now
-					needFlush = true // 保存位点前必须先 flush，确保“位点晚于数据”
-					needSavePos = true
-					pos = v.pos // 记录要持久化的位点
-				}
-			case []*elastic.BulkRequest: // 来自 OnRow 的批量写请求
-				reqs = append(reqs, v...)         // 累加
-				needFlush = len(reqs) >= bulkSize // 达到批量阈值则触发 flush
-			}
-		case <-ticker.C: // 定时触发：避免长期攒批
-			needFlush = true
-		case <-r.ctx.Done(): // 收到取消信号：退出
-			return
-		}
-
-		if needFlush {
-			if err := r.doBulkWithRetry(reqs); err != nil { // 执行 ES 批量写
-				log.Errorf("do ES bulk err %v, close sync", err)
-				r.cancel() // 一旦 Bulk 失败，立刻停止（防止位点继续前进造成丢数）
-
-				return
-			}
-
-			reqs = reqs[0:0] // 清空聚合
-		}
-
-		if needSavePos { // 只有在本轮 flush 成功后才会进入保存位点
-			if err := r.master.Save(pos); err != nil { // 持久化位点（文件/DB）
-				log.Errorf("save sync position %s err %v, close sync", pos, err)
-				r.cancel() // 位点无法保存 → 停止，避免“认定已写成功但位点没记住”的不一致
-
-				return
-			}
-		}
-	}
+	finishRiverSyncLoop(r, bulkSize)
 }
 
 // makeRequest 为 INSERT/DELETE 构造批量请求（共用构造器）。
@@ -303,7 +256,7 @@ func (r *River) makeUpdateRequest(rule *rule.Rule, rows [][]any) ([]*elastic.Bul
 
 	reqs := make([]*elastic.BulkRequest, 0, len(rows)) // 容量上界
 
-	for i := 0; i < len(rows); i += 2 { // 每次处理一对
+	for i := 0; i+1 < len(rows); i += 2 { // 每次处理一对
 		beforeID, err := r.getDocID(rule, rows[i]) // 变更前的文档ID
 		if err != nil {
 			return nil, errors.Trace(err)
@@ -327,8 +280,7 @@ func (r *River) makeUpdateRequest(rule *rule.Rule, rows [][]any) ([]*elastic.Bul
 
 		// 只有未变更索引字段的 UPDATE（例如 users.coin_count）无需重建全文档，
 		// 也不应触发标签/关系等派生查询。主键或 Parent 变化仍必须执行删旧建新。
-		if beforeID == afterID && beforeParentID == afterParentID &&
-			!hasIndexRelevantChange(rule, rows[i], rows[i+1]) {
+		if rivermakeUpdateRequestCondition(rule, rows, i, beforeID, afterID, beforeParentID, afterParentID) {
 			continue
 		}
 
@@ -400,92 +352,97 @@ func isEnrichmentSourceColumn(table, column string) bool {
 	return false
 }
 
-func (r *River) makeReqColumnData(col *schema.TableColumn, value any) any { // 将 MySQL 列值转换为 ES 友好值（按列类型）
+func (r *River) makeReqColumnData(col *schema.TableColumn, value any) any {
 	switch col.Type {
-	case schema.TYPE_ENUM: // ENUM 存 binlog 时可能是 int64，下标从 1 开始
-		switch value := value.(type) {
-		case int64:
-			// for binlog, ENUM may be int64, but for dump, enum is string
-			eNum := value - 1 // 下标转为 0 开始
-			if eNum < 0 || eNum >= int64(len(col.EnumValues)) {
-				// 如果历史插入过非法值，则返回空字符串以避免映射异常
-				log.Warnf("invalid binlog enum index %d, for enum %v", eNum, col.EnumValues)
-
-				return ""
-			}
-
-			return col.EnumValues[eNum] // 取枚举对应字符串
-		}
-	case schema.TYPE_SET: // SET 以 bitset 编码
-		switch value := value.(type) {
-		case int64:
-			// for binlog, SET may be int64, but for dump, SET is string
-			bitmask := value
-
-			sets := make([]string, 0, len(col.SetValues))
-			for i, s := range col.SetValues {
-				if bitmask&int64(1<<uint(i)) > 0 { // 位上为1表示该取值被选择
-					sets = append(sets, s)
-				}
-			}
-
-			return strings.Join(sets, ",") // 返回逗号分隔字符串
-		}
-	case schema.TYPE_BIT: // BIT 在 dump 时是字符串 "\x01"/"\x00"
-		switch value := value.(type) {
-		case string:
-			// for binlog, BIT is int64, but for dump, BIT is string
-			// for dump 0x01 is for 1, \0 is for 0
-			if value == "\x01" {
+	case schema.TYPE_ENUM:
+		return r.enumColumnValue(col, value)
+	case schema.TYPE_SET:
+		return setColumnValue(col, value)
+	case schema.TYPE_BIT:
+		if text, ok := value.(string); ok {
+			if text == "\x01" {
 				return int64(1)
 			}
 
 			return int64(0)
 		}
-	case schema.TYPE_STRING: // BLOB/TEXT 可能是 []byte，需要转 string
-		switch value := value.(type) {
-		case []byte:
-			return string(value[:])
+	case schema.TYPE_STRING:
+		if data, ok := value.([]byte); ok {
+			return string(data)
 		}
-	case schema.TYPE_JSON: // JSON 存储时可能是 string 或 []byte，需要反序列化为 interface{}
-		var (
-			f   any
-			err error
-		)
+	case schema.TYPE_JSON:
+		return jsonColumnValue(value)
+	case schema.TYPE_DATETIME, schema.TYPE_TIMESTAMP:
+		return temporalColumnValue(value, mysql.TimeFormat, r.mysqlTimeLocation(), time.RFC3339)
+	case schema.TYPE_DATE:
+		return temporalColumnValue(value, mysqlDateFormat, time.UTC, mysqlDateFormat)
+	}
 
-		switch v := value.(type) {
-		case string:
-			err = json.Unmarshal([]byte(v), &f)
-		case []byte:
-			err = json.Unmarshal(v, &f)
-		}
+	return value
+}
 
-		if err == nil && f != nil {
-			return f // 返回结构化对象，ES 能按 nested/object 解析
-		}
-	case schema.TYPE_DATETIME, schema.TYPE_TIMESTAMP: // 日期时间，字符串解析为 RFC3339 输出
-		switch v := value.(type) {
-		case string:
-			vt, err := time.ParseInLocation(mysql.TimeFormat, v, r.mysqlTimeLocation()) // 按 MySQL 业务时区解析
-			if err != nil || vt.IsZero() {                                              // 解析失败或零日期
-				return nil
-			}
+func (r *River) enumColumnValue(col *schema.TableColumn, value any) any {
+	index, ok := value.(int64)
+	if !ok {
+		return value
+	}
 
-			return vt.Format(time.RFC3339) // 输出标准 RFC3339，ES 内建解析
-		}
-	case schema.TYPE_DATE: // 纯日期
-		switch v := value.(type) {
-		case string:
-			vt, err := time.Parse(mysqlDateFormat, v)
-			if err != nil || vt.IsZero() { // 解析失败或零日期
-				return nil
-			}
+	if index <= 0 || index > int64(len(col.EnumValues)) {
+		r.log().Warn("river.enum.invalid", zap.String("event", "river.sync.make_req_column_data.degraded"), zap.String("operation", "river.sync.make_req_column_data"), zap.Int64("index", index-1))
+		return ""
+	}
 
-			return vt.Format(mysqlDateFormat) // 按 YYYY-MM-DD 输出
+	return col.EnumValues[index-1]
+}
+
+func setColumnValue(col *schema.TableColumn, value any) any {
+	bitmask, ok := value.(int64)
+	if !ok {
+		return value
+	}
+
+	sets := make([]string, 0, len(col.SetValues))
+	for i, s := range col.SetValues {
+		if bitmask&int64(1<<uint(i)) > 0 {
+			sets = append(sets, s)
 		}
 	}
 
-	return value // 默认原样返回（数字/布尔等）
+	return strings.Join(sets, ",")
+}
+
+func jsonColumnValue(value any) any {
+	var data []byte
+
+	switch v := value.(type) {
+	case string:
+		data = []byte(v)
+	case []byte:
+		data = v
+	default:
+		return value
+	}
+
+	var decoded any
+	if err := json.Unmarshal(data, &decoded); err == nil && decoded != nil {
+		return decoded
+	}
+
+	return value
+}
+
+func temporalColumnValue(value any, layout string, location *time.Location, outputLayout string) any {
+	text, ok := value.(string)
+	if !ok {
+		return value
+	}
+
+	parsed, err := time.ParseInLocation(layout, text, location)
+	if err != nil || parsed.IsZero() {
+		return nil
+	}
+
+	return parsed.Format(outputLayout)
 }
 
 func (r *River) mysqlTimeLocation() *time.Location {
@@ -780,36 +737,25 @@ func (r *River) getColumnData(rule *rule.Rule, row []any, column string) any {
 //
 // binlog 与 mysqldump 对同一列可能给出不同 Go 类型，因此逐类型兜底。
 func isPublishedStatusValue(value any) bool {
-	switch v := value.(type) {
-	case enum.VideoStatus:
-		return v == enum.VideoStatusPublished
-	case int:
-		return v == int(enum.VideoStatusPublished)
-	case int8:
-		return int(v) == int(enum.VideoStatusPublished)
-	case int16:
-		return int(v) == int(enum.VideoStatusPublished)
-	case int32:
-		return int(v) == int(enum.VideoStatusPublished)
-	case int64:
-		return int(v) == int(enum.VideoStatusPublished)
-	case uint:
-		return int(v) == int(enum.VideoStatusPublished)
-	case uint8:
-		return int(v) == int(enum.VideoStatusPublished)
-	case uint16:
-		return int(v) == int(enum.VideoStatusPublished)
-	case uint32:
-		return int(v) == int(enum.VideoStatusPublished)
-	case uint64:
-		return int(v) == int(enum.VideoStatusPublished)
-	case string:
-		status, err := strconv.Atoi(strings.TrimSpace(v))
-
-		return err == nil && status == int(enum.VideoStatusPublished)
-	default:
+	v := reflect.ValueOf(value)
+	if !v.IsValid() {
 		return false
 	}
+
+	if v.CanInt() {
+		return v.Int() == int64(enum.VideoStatusPublished)
+	}
+
+	if v.CanUint() {
+		return v.Uint() == uint64(enum.VideoStatusPublished)
+	}
+
+	if text, ok := value.(string); ok {
+		status, err := strconv.Atoi(strings.TrimSpace(text))
+		return err == nil && status == int(enum.VideoStatusPublished)
+	}
+
+	return false
 }
 
 func (r *River) reindexVideosByIDs(ids map[uint64]struct{}) error { // 批量重建视频文档：用于 tags 或 video_tags 变化后的“派生修复”
@@ -966,56 +912,32 @@ func (r *River) loadVideoTagsByID(videoID uint64) ([]string, error) { // 按视�
 
 // convertInterfaceToUint 将各种可能类型（string/[]byte/intX/uintX）转为 uint64。
 func convertInterfaceToUint(value any) (uint64, bool) {
-	switch v := value.(type) {
-	case uint64:
-		return v, true
-	case uint32:
-		return uint64(v), true
-	case uint:
-		return uint64(v), true
-	case int64:
-		if v < 0 {
-			return 0, false
-		}
+	if data, ok := value.([]byte); ok {
+		value = string(data)
+	}
 
-		return uint64(v), true
-	case int32:
-		if v < 0 {
-			return 0, false
-		}
+	if text, ok := value.(string); ok {
+		id, err := strconv.ParseUint(text, 10, 64)
+		return id, err == nil
+	}
 
-		return uint64(v), true
-	case int:
-		if v < 0 {
-			return 0, false
-		}
-
-		return uint64(v), true
-	case string:
-		if v == "" {
-			return 0, false
-		}
-
-		id, err := strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			return 0, false
-		}
-
-		return id, true
-	case []byte:
-		if len(v) == 0 {
-			return 0, false
-		}
-
-		id, err := strconv.ParseUint(string(v), 10, 64)
-		if err != nil {
-			return 0, false
-		}
-
-		return id, true
-	default:
+	v := reflect.ValueOf(value)
+	if !v.IsValid() {
 		return 0, false
 	}
+
+	if v.CanUint() {
+		return v.Uint(), true
+	}
+
+	if v.CanInt() {
+		n := v.Int()
+		if n >= 0 {
+			return uint64(n), true
+		}
+	}
+
+	return 0, false
 }
 
 // makeUserFocusFollowerRequests 处理 user_focus 变更 → 批量重建被影响用户的完整文档。
@@ -1078,7 +1000,7 @@ func (r *River) buildUserBulkRequest(userID uint64) (*elastic.BulkRequest, error
 		UpdatedAt   time.Time
 	}
 	if err := r.db.WithContext(r.ctx).
-		Table("users").
+		Table(tableUsers).
 		Select("id, username, description, avatar, level, created_at, updated_at").
 		Where("id = ?", userID).
 		First(&user).Error; err != nil {
@@ -1174,12 +1096,7 @@ func (r *River) doBulkWithRetry(reqs []*elastic.BulkRequest) error {
 			return fmt.Errorf("ES bulk still failing after %d attempts: %w", attempt, err)
 		}
 
-		log.Errorf(
-			"transient ES bulk error (attempt=%d, retry_in=%s): %v",
-			attempt,
-			backoff,
-			err,
-		)
+		r.log().Warn("river.bulk.retry", zap.String("event", "river.bulk.retry"), zap.Int("attempt", attempt), zap.Int64("retry_in_ms", backoff.Milliseconds()), zap.Error(err))
 
 		timer := time.NewTimer(backoff)
 		select {
@@ -1372,8 +1289,7 @@ func (r *River) getFieldValue(col *schema.TableColumn, fieldType string, value a
 			col.Type = schema.TYPE_DATETIME // 暂改类型以复用 DATETIME 的处理分支
 
 			v := reflect.ValueOf(value)
-			switch v.Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if v.CanInt() {
 				fieldValue = r.makeReqColumnData(col, time.Unix(v.Int(), 0).Format(mysql.TimeFormat)) // 转本地时间字符串，再交给 DATETIME 流程输出 RFC3339
 			}
 		}
@@ -1384,4 +1300,79 @@ func (r *River) getFieldValue(col *schema.TableColumn, fieldType string, value a
 	}
 
 	return fieldValue
+}
+
+func rivermakeUpdateRequestCondition(rule *rule.Rule, rows [][]any, i int, beforeID, afterID, beforeParentID, afterParentID string) bool {
+	return beforeID == afterID && beforeParentID == afterParentID &&
+		!hasIndexRelevantChange(rule, rows[i], rows[i+1])
+}
+
+func finishRiverSyncLoop(r *River, bulkSize int) {
+	ticker := time.NewTicker(syncFlushInterval) // 周期触发器
+	defer ticker.Stop()                         // 函数退出时停止
+	defer r.wg.Done()                           // 协程结束，通知 WaitGroup
+
+	lastSavedTime := time.Now()                              // 上次保存位点的时间（节流）
+	reqs := make([]*elastic.BulkRequest, 0, syncReqsInitCap) // 聚合待写 ES 的请求数组
+
+	var pos mysql.Position // 待保存的位点
+
+	for { // 主循环：选择处理三种输入（channel、tick、ctx.Done）
+		needFlush := false   // 本轮是否需要 flush ES
+		needSavePos := false // 本轮 flush 后是否需要保存位点
+
+		select {
+		case v := <-r.syncCh: // 从事件队列拿数据：可能是 posSaver 或 []*BulkRequest
+			switch v := v.(type) {
+			case posSaver: // 位点保存请求
+				now := time.Now()
+				if v.force || now.Sub(lastSavedTime) > posSaveThrottle { // 强制或“距离上次保存>3s”
+					lastSavedTime = now
+					needFlush = true // 保存位点前必须先 flush，确保“位点晚于数据”
+					needSavePos = true
+					pos = v.pos // 记录要持久化的位点
+				}
+			case []*elastic.BulkRequest: // 来自 OnRow 的批量写请求
+				reqs = append(reqs, v...)         // 累加
+				needFlush = len(reqs) >= bulkSize // 达到批量阈值则触发 flush
+			}
+		case <-ticker.C: // 定时触发：避免长期攒批
+			needFlush = true
+		case <-r.ctx.Done(): // 收到取消信号：退出
+			return
+		}
+
+		if needFlush {
+			if !r.flushSyncBatch(reqs) {
+				return
+			}
+
+			reqs = reqs[0:0] // 清空聚合
+		}
+
+		if needSavePos { // 只有在本轮 flush 成功后才会进入保存位点
+			if err := r.master.Save(pos); err != nil { // 持久化位点（文件/DB）
+				r.log().Error("river.position.save.failed", zap.String("event", "river.position.save.failed"), zap.Error(err))
+				r.cancel() // 位点无法保存 → 停止，避免“认定已写成功但位点没记住”的不一致
+
+				return
+			}
+		}
+	}
+}
+
+func (r *River) flushSyncBatch(requests []*elastic.BulkRequest) bool {
+	err := r.doBulkWithRetry(requests)
+	if err == nil {
+		return true
+	}
+
+	if stderrors.Is(err, context.Canceled) && r.ctx.Err() != nil {
+		return false
+	}
+
+	r.log().Error("river.sync.failed", zap.String("event", "river.sync.failed"), zap.Error(err))
+	r.cancel()
+
+	return false
 }

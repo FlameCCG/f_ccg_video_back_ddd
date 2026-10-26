@@ -19,14 +19,14 @@ func (h *Handler) CreateConversationView(c *gin.Context) {
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {
-		res.FailWithMsg("请先登录", c)
+		res.FailWithMsg(testLoginRequired, c)
 
 		return
 	}
 
 	item, err := h.service.CreateConversation(c.Request.Context(), uid, req.PeerID)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

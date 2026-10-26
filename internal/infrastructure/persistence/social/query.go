@@ -3,11 +3,11 @@ package social
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	app "f_ccg_video_back_ddd/internal/application/social"
 	domain "f_ccg_video_back_ddd/internal/domain/social"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -125,52 +125,37 @@ func (q *RelationQuery) Counts(ctx context.Context, userID uint, withDynamic boo
 
 // FollowPrivacy 读取关注/粉丝列表公开性；无 user_confs 行时用 COALESCE 缺省为公开。
 func (q *RelationQuery) FollowPrivacy(ctx context.Context, userID uint) (domain.FollowPrivacy, error) {
-	type row struct {
-		ID         uint `gorm:"column:id"`
-		OpenFollow int8 `gorm:"column:open_follow"`
-		OpenFans   int8 `gorm:"column:open_fans"`
-	}
-
-	var data row
-	if err := gormx.DB(ctx, q.db).
-		Table("users").
-		Select("users.id AS id, COALESCE(uc.open_follow, 1) AS open_follow, COALESCE(uc.open_fans, 1) AS open_fans").
-		Joins("LEFT JOIN user_confs uc ON uc.user_id = users.id").
-		Where("users.id = ?", userID).
-		Take(&data).Error; err != nil {
+	data, err := q.privacySwitches(ctx, userID, "users.id AS id, COALESCE(uc.open_follow, 1) AS first_switch, COALESCE(uc.open_fans, 1) AS second_switch")
+	if err != nil {
 		return domain.FollowPrivacy{}, err
 	}
 
-	return domain.FollowPrivacy{
-		Exists:     data.ID > 0,
-		OpenFollow: data.OpenFollow > 0,
-		OpenFans:   data.OpenFans > 0,
-	}, nil
+	return domain.FollowPrivacy{Exists: data.ID > 0, OpenFollow: data.FirstSwitch > 0, OpenFans: data.SecondSwitch > 0}, nil
 }
 
 // ActionPrivacy 读取最近点赞/投币公开性；无 user_confs 行时用 COALESCE 缺省为公开。
 func (q *RelationQuery) ActionPrivacy(ctx context.Context, userID uint) (domain.ActionPrivacy, error) {
-	type row struct {
-		ID            uint `gorm:"column:id"`
-		OpenLikeVideo int8 `gorm:"column:open_like_video"`
-		OpenCoinVideo int8 `gorm:"column:open_coin_video"`
-	}
-
-	var data row
-	if err := gormx.DB(ctx, q.db).
-		Table("users").
-		Select("users.id AS id, COALESCE(uc.open_like_video, 1) AS open_like_video, COALESCE(uc.open_coin_video, 1) AS open_coin_video").
-		Joins("LEFT JOIN user_confs uc ON uc.user_id = users.id").
-		Where("users.id = ?", userID).
-		Take(&data).Error; err != nil {
+	data, err := q.privacySwitches(ctx, userID, "users.id AS id, COALESCE(uc.open_like_video, 1) AS first_switch, COALESCE(uc.open_coin_video, 1) AS second_switch")
+	if err != nil {
 		return domain.ActionPrivacy{}, err
 	}
 
-	return domain.ActionPrivacy{
-		Exists:        data.ID > 0,
-		OpenLikeVideo: data.OpenLikeVideo > 0,
-		OpenCoinVideo: data.OpenCoinVideo > 0,
-	}, nil
+	return domain.ActionPrivacy{Exists: data.ID > 0, OpenLikeVideo: data.FirstSwitch > 0, OpenCoinVideo: data.SecondSwitch > 0}, nil
+}
+
+type userPrivacySwitches struct {
+	ID           uint
+	FirstSwitch  int8
+	SecondSwitch int8
+}
+
+// privacySwitches uses only the fixed projections declared by the privacy query methods.
+func (q *RelationQuery) privacySwitches(ctx context.Context, userID uint, projection string) (userPrivacySwitches, error) {
+	var data userPrivacySwitches
+
+	err := gormx.DB(ctx, q.db).Table("users").Select(projection).Joins("LEFT JOIN user_confs uc ON uc.user_id = users.id").Where("users.id = ?", userID).Take(&data).Error
+
+	return data, err
 }
 
 // ListFocus 分页列出 userID 关注的用户（原 ListFocusUsers）。

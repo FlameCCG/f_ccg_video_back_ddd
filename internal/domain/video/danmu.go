@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+const (
+	mediaTypeVideo = "video"
+	mediaTypeAudio = "audio"
+)
+
 // 弹幕规则常量（与原 service/video_service/danmu_service.go 一致）。
 const (
 	// MaxDanmuLength 弹幕内容最大字符数.

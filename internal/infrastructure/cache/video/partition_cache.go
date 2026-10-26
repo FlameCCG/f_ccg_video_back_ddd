@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -47,7 +47,7 @@ func (c *PartitionCache) Load() ([]app.PartitionItem, bool) {
 	raw, err := c.redis.Get(cacheCtx, constants.PartitionSubmittableCacheKey).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get submittable partition cache failed", zap.Error(err))
+			c.logger.Warn("get submittable partition cache failed", zap.String("event", "cache.partition_cache.load.degraded"), zap.String("operation", "cache.partition_cache.load"), zap.Error(err))
 		}
 
 		return nil, false
@@ -55,7 +55,7 @@ func (c *PartitionCache) Load() ([]app.PartitionItem, bool) {
 
 	var items []app.PartitionItem
 	if err := json.Unmarshal(raw, &items); err != nil {
-		c.logger.Warn("unmarshal submittable partition cache failed", zap.Error(err))
+		c.logger.Warn("unmarshal submittable partition cache failed", zap.String("event", "cache.partition_cache.load.degraded"), zap.String("operation", "cache.partition_cache.load"), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, constants.PartitionSubmittableCacheKey).Err()
 
 		return nil, false
@@ -75,7 +75,7 @@ func (c *PartitionCache) Store(items []app.PartitionItem) {
 
 	raw, err := json.Marshal(items)
 	if err != nil {
-		c.logger.Warn("marshal submittable partition cache failed", zap.Error(err))
+		c.logger.Warn("marshal submittable partition cache failed", zap.String("event", "cache.partition_cache.store.degraded"), zap.String("operation", "cache.partition_cache.store"), zap.Error(err))
 
 		return
 	}
@@ -89,7 +89,7 @@ func (c *PartitionCache) Store(items []app.PartitionItem) {
 		raw,
 		submittablePartitionCacheTTL,
 	).Err(); err != nil {
-		c.logger.Warn("set submittable partition cache failed", zap.Error(err))
+		c.logger.Warn("set submittable partition cache failed", zap.String("event", "cache.partition_cache.store.degraded"), zap.String("operation", "cache.partition_cache.store"), zap.Error(err))
 	}
 }
 
@@ -106,6 +106,6 @@ func (c *PartitionCache) Invalidate() {
 		cacheCtx,
 		constants.PartitionSubmittableCacheKey,
 	).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("invalidate submittable partition cache failed", zap.Error(err))
+		c.logger.Warn("invalidate submittable partition cache failed", zap.String("event", "cache.partition_cache.invalidate.degraded"), zap.String("operation", "cache.partition_cache.invalidate"), zap.Error(err))
 	}
 }

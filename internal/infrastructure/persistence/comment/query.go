@@ -3,11 +3,11 @@ package comment
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	app "f_ccg_video_back_ddd/internal/application/comment"
 	domain "f_ccg_video_back_ddd/internal/domain/comment"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )

@@ -31,7 +31,7 @@ func (h *Handler) AdminListView(c *gin.Context) {
 		PageSize: req.PageSize,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

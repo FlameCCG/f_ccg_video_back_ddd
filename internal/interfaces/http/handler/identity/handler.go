@@ -31,7 +31,6 @@ type Handler struct {
 	expRecords   *app.ExpRecordService
 	coinRecords  *app.CoinRecordService
 	resolver     ipUtils.RegionResolver
-	logger       *zap.Logger
 }
 
 // NewHandler 构造用户侧处理器。
@@ -51,7 +50,7 @@ func NewHandler(
 	expRecords *app.ExpRecordService,
 	coinRecords *app.CoinRecordService,
 	resolver ipUtils.RegionResolver,
-	logger *zap.Logger,
+	_ *zap.Logger,
 ) *Handler {
 	return &Handler{
 		activity:     activity,
@@ -67,22 +66,5 @@ func NewHandler(
 		expRecords:   expRecords,
 		coinRecords:  coinRecords,
 		resolver:     resolver,
-		logger:       loggerOrNop(logger),
 	}
-}
-
-func (h *Handler) log() *zap.Logger {
-	if h == nil {
-		return zap.NewNop()
-	}
-
-	return loggerOrNop(h.logger)
-}
-
-func loggerOrNop(logger *zap.Logger) *zap.Logger {
-	if logger == nil {
-		return zap.NewNop()
-	}
-
-	return logger
 }

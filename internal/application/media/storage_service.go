@@ -2,10 +2,10 @@ package media
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"io"
 
 	domain "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // StorageService 是存储用例服务（原 service/storage_service 的编排部分）。

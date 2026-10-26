@@ -20,7 +20,7 @@ import (
 func attachFFmpegProgress(
 	cmd *exec.Cmd,
 	onProgress media.ProgressCallback,
-) (stderrBuf *strings.Builder, afterStart func(), waitProgress func()) {
+) (stderrBuf *strings.Builder, afterStart, waitProgress func()) {
 	if cmd == nil {
 		b := &strings.Builder{}
 
@@ -51,6 +51,7 @@ func attachFFmpegProgress(
 
 	waitProgress = func() {
 		_ = pw.Close()
+
 		wg.Wait()
 	}
 
@@ -94,6 +95,7 @@ func parseFFmpegProgressStream(r io.Reader, errBuf *strings.Builder, onProgress 
 		}
 
 		lastEmit = now
+
 		onProgress(outSec)
 	}
 
@@ -101,21 +103,6 @@ func parseFFmpegProgressStream(r io.Reader, errBuf *strings.Builder, onProgress 
 		errBuf.WriteString("ffmpeg progress scan error: ")
 		errBuf.WriteString(err.Error())
 		errBuf.WriteByte('\n')
-	}
-}
-
-// progressCbFromTracker 返回绑定 tracker 与 ctx 的阶段级进度回调。
-func progressCbFromTracker(ctx context.Context, tracker *media.TranscodeProgressTracker) media.ProgressCallback {
-	if tracker == nil {
-		return nil
-	}
-
-	return func(outTimeSec float64) {
-		if ctx != nil && ctx.Err() != nil {
-			return
-		}
-
-		tracker.UpdateFFmpegProgress(ctx, outTimeSec)
 	}
 }
 

@@ -24,7 +24,7 @@ func (h *Handler) CreateTag(c *gin.Context) {
 
 	tag, err := h.activity.CreateTag(c.Request.Context(), req.Name)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

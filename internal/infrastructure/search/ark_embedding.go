@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,12 @@ import (
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	arkmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+)
+
+const (
+	testAlice      = "alice"
+	responseFields = "fields"
+	fieldUsername  = "username"
 )
 
 const (
@@ -68,12 +75,14 @@ func (v *VideoVectorIndex) embedder(cfg app.VectorConfig) *arkEmbedder {
 // Embed 把文本与图片融合成一个稠密向量。
 func (e *arkEmbedder) Embed(ctx context.Context, input app.EmbedInput) ([]float32, error) {
 	input.Text = strings.TrimSpace(input.Text)
+
 	input.ImageURL = strings.TrimSpace(input.ImageURL)
 	if input.IsZero() {
 		return nil, errors.New("embedding input is empty")
 	}
 
 	inputs := make([]arkmodel.MultimodalEmbeddingInput, 0, 2)
+
 	if input.Text != "" {
 		text := input.Text
 		inputs = append(inputs, arkmodel.MultimodalEmbeddingInput{
@@ -81,6 +90,7 @@ func (e *arkEmbedder) Embed(ctx context.Context, input app.EmbedInput) ([]float3
 			Text: &text,
 		})
 	}
+
 	if input.ImageURL != "" {
 		imageURL := input.ImageURL
 		inputs = append(inputs, arkmodel.MultimodalEmbeddingInput{
@@ -90,6 +100,7 @@ func (e *arkEmbedder) Embed(ctx context.Context, input app.EmbedInput) ([]float3
 	}
 
 	encodingFormat := arkmodel.EmbeddingEncodingFormatFloat
+
 	request := arkmodel.MultiModalEmbeddingRequest{
 		Input:          inputs,
 		Model:          e.model,
@@ -102,13 +113,14 @@ func (e *arkEmbedder) Embed(ctx context.Context, input app.EmbedInput) ([]float3
 
 	response, err := e.client.CreateMultiModalEmbeddings(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("call ark multimodal embeddings failed: %w", err)
+		return nil, apperr.Private("ai.embedding", fmt.Errorf("call ark multimodal embeddings failed: %w", err))
 	}
 
 	vector := response.Data.Embedding
 	if len(vector) == 0 {
 		return nil, errors.New("ark multimodal embeddings returned an empty vector")
 	}
+
 	if e.dims > 0 && len(vector) != e.dims {
 		return nil, fmt.Errorf(
 			"embedding dimension mismatch: configured=%d, got=%d; 请同步修改 embeddingDimensions 或重建向量索引",

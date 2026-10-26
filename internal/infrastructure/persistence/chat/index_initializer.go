@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
@@ -32,7 +33,7 @@ func NewIndexInitializer(repo domain.Repository, logger *zap.Logger) *IndexIniti
 // 语义与原实现一致：使用独立 10s 超时；Mongo 未初始化时静默跳过
 // （原实现此时根本不会走到 EnsureIndexes）；创建失败仅告警、不阻断启动，
 // 因此始终返回 nil。
-func (i *IndexInitializer) Start(_ context.Context) error {
+func (i *IndexInitializer) Start(ctx context.Context) error {
 	if i == nil || i.repo == nil || !i.repo.Available() {
 		return nil
 	}
@@ -42,7 +43,7 @@ func (i *IndexInitializer) Start(_ context.Context) error {
 	defer cancel()
 
 	if err := i.repo.EnsureIndexes(indexCtx); err != nil {
-		i.logger.Warn("Mongo 索引初始化失败", zap.Error(err))
+		logctx.With(ctx, i.logger).Warn("Mongo 索引初始化失败", zap.String("event", "persistence.index_initializer.start.degraded"), zap.String("operation", "persistence.index_initializer.start"), zap.Error(err))
 	}
 
 	return nil

@@ -1,6 +1,13 @@
 package site
 
-import "math/rand/v2"
+import (
+	"crypto/rand"
+	"math/big"
+)
+
+const (
+	captchaSlide = "slide"
+)
 
 // CaptchaOptions 表示当前场景允许使用的交互验证码。
 type CaptchaOptions struct {
@@ -13,6 +20,7 @@ func (s *Site) InteractiveCaptchaOptions(scene string) CaptchaOptions {
 	if s == nil {
 		return CaptchaOptions{}
 	}
+
 	switch scene {
 	case "login":
 		if s.Login != nil {
@@ -23,23 +31,29 @@ func (s *Site) InteractiveCaptchaOptions(scene string) CaptchaOptions {
 			return CaptchaOptions{Click: s.Register.TextClickCaptcha, Slide: s.Register.SlideCaptcha}
 		}
 	}
+
 	return CaptchaOptions{}
 }
 
 // SelectType 在已开启的验证码中等概率选择一种；未开启时返回 none。
 func (o CaptchaOptions) SelectType() string {
 	if o.Click && o.Slide {
-		if rand.IntN(2) == 0 {
+		choice, err := rand.Int(rand.Reader, big.NewInt(2))
+		if err == nil && choice.Sign() == 0 {
 			return "click"
 		}
-		return "slide"
+
+		return captchaSlide
 	}
+
 	if o.Click {
 		return "click"
 	}
+
 	if o.Slide {
-		return "slide"
+		return captchaSlide
 	}
+
 	return "none"
 }
 
@@ -52,22 +66,25 @@ type CaptchaSettings struct {
 // CaptchaSettings 返回当前场景的参数，不向其他场景回退；边距 0 表示不放宽落点。
 func (s *Site) CaptchaSettings(scene, kind string) CaptchaSettings {
 	settings := CaptchaSettings{TTLSeconds: 300, Padding: 20}
-	if kind == "slide" {
+	if kind == captchaSlide {
 		settings.Padding = 10
 	}
+
 	if s == nil {
 		return settings
 	}
+
 	var ttl, padding int
+
 	switch {
 	case scene == "login" && s.Login != nil:
-		if kind == "slide" {
+		if kind == captchaSlide {
 			ttl, padding = s.Login.SlideCaptchaTTL, s.Login.SlideCaptchaPadding
 		} else {
 			ttl, padding = s.Login.TextClickCaptchaTTL, s.Login.TextClickCaptchaPadding
 		}
 	case scene == "register" && s.Register != nil:
-		if kind == "slide" {
+		if kind == captchaSlide {
 			ttl, padding = s.Register.SlideCaptchaTTL, s.Register.SlideCaptchaPadding
 		} else {
 			ttl, padding = s.Register.TextClickCaptchaTTL, s.Register.TextClickCaptchaPadding
@@ -75,12 +92,15 @@ func (s *Site) CaptchaSettings(scene, kind string) CaptchaSettings {
 	default:
 		return settings
 	}
+
 	if ttl > 0 {
 		settings.TTLSeconds = ttl
 	}
+
 	if padding >= 0 {
 		settings.Padding = padding
 	}
+
 	return settings
 }
 
@@ -89,5 +109,6 @@ func ResolveCaptchaScene(scene, fallback string) string {
 	if scene == "" {
 		return fallback
 	}
+
 	return scene
 }

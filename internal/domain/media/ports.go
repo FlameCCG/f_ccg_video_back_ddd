@@ -2,10 +2,9 @@ package media
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"io"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // ChunkReader 是分片写入时的数据读取接口（原 storage_service.ChunkReader）。

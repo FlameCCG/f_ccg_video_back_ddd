@@ -3,11 +3,11 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
 	domain "f_ccg_video_back_ddd/internal/domain/platform"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 )

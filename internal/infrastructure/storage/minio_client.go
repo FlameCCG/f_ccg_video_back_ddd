@@ -4,12 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config/site"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
-
-	"f_ccg_video_back_ddd/internal/config/site"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -118,7 +117,7 @@ func (p *MinIOClientPool) applyPublicPolicy(client *minio.Client, cfg *site.MinI
 
 		policy, err := buildPublicPolicy(cfg)
 		if err != nil {
-			p.logger.Warn("build minio policy failed", zap.Error(err))
+			p.logger.Warn("build minio policy failed", zap.String("event", "storage.minio_client.apply_public_policy.degraded"), zap.String("operation", "storage.minio_client.apply_public_policy"), zap.Error(err))
 
 			return
 		}
@@ -128,9 +127,9 @@ func (p *MinIOClientPool) applyPublicPolicy(client *minio.Client, cfg *site.MinI
 		}
 
 		if err := client.SetBucketPolicy(ctx, cfg.Bucket, policy); err != nil {
-			p.logger.Warn("set minio bucket policy failed", zap.Error(err))
+			p.logger.Warn("set minio bucket policy failed", zap.String("event", "storage.minio_client.apply_public_policy.degraded"), zap.String("operation", "storage.minio_client.apply_public_policy"), zap.Error(err))
 		} else {
-			p.logger.Info("minio bucket policy applied", zap.Strings("prefixes", cfg.PublicPrefixes))
+			p.logger.Info("minio bucket policy applied", zap.String("event", "storage.minio_client.apply_public_policy.diagnostic"), zap.String("operation", "storage.minio_client.apply_public_policy"), zap.Strings("prefixes", cfg.PublicPrefixes))
 		}
 	})
 }

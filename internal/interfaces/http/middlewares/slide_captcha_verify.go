@@ -3,14 +3,14 @@ package middlewares
 import (
 	"bytes"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"io"
 
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 type slideCaptchaVerifyReq struct {
@@ -31,8 +31,8 @@ func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 
 		body, err := c.GetRawData()
 		if err != nil {
-			m.log().Error("read request body failed", zap.Error(err))
-			res.FailWithMsg("invalid request body", c)
+			res.RecordFailure(apperr.Wrap("middlewares/slide_captcha_verify", nil, err, apperr.Validation), c)
+			res.FailWithCause(err, "invalid request body", c)
 			c.Abort()
 
 			return
@@ -42,8 +42,8 @@ func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 
 		var req slideCaptchaVerifyReq
 		if err = c.ShouldBind(&req); err != nil {
-			m.log().Error("bind slide captcha payload failed", zap.Error(err))
-			res.FailWithMsg("invalid slide captcha payload", c)
+			res.RecordFailure(apperr.Wrap("middlewares/slide_captcha_verify", nil, err, apperr.Validation), c)
+			res.FailWithCause(apperr.Wrap("middlewares/slide_captcha_verify", nil, err, apperr.Validation), "invalid slide captcha payload", c)
 			c.Abort()
 
 			return
@@ -66,11 +66,20 @@ func (m *Middlewares) SlideCaptchaVerify() gin.HandlerFunc {
 			"login",
 		)
 		if verifyErr != nil || !ok {
+			if verifyErr != nil {
+				res.RecordFailure(verifyErr, c)
+			}
+
 			switch {
 			case errors.Is(verifyErr, captcha.ErrCaptchaExpired):
 				res.FailWithMsg(captcha.ErrCaptchaExpired.Error(), c)
 			default:
-				m.log().Error("滑块验证码验证失败", zap.Error(verifyErr))
+				if verifyErr != nil {
+					res.RecordFailure(verifyErr, c)
+				} else {
+					res.RecordFailure(apperr.Wrap("captcha.verify", nil, nil, apperr.Rejected), c)
+				}
+
 				res.FailWithMsg("验证码验证失败", c)
 			}
 

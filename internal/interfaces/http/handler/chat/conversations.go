@@ -8,6 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	testLoginRequired = "请先登录"
+)
+
 // ConversationListReq 会话列表请求参数.
 type ConversationListReq struct {
 	Page     int `form:"page" binding:"omitempty,min=1" label:"页码"`
@@ -20,14 +24,14 @@ func (h *Handler) ConversationListView(c *gin.Context) {
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {
-		res.FailWithMsg("请先登录", c)
+		res.FailWithMsg(testLoginRequired, c)
 
 		return
 	}
 
 	list, total, err := h.service.ListConversations(c.Request.Context(), uid, req.Page, req.PageSize)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

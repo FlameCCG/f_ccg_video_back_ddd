@@ -2,14 +2,14 @@ package video
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // PublishVideoReq 是 HTTP 投稿载荷，支持单源文件或 Parts；上传是否完成需由服务端重新核验，不能仅信任 FilePath。
@@ -47,6 +47,7 @@ type PublishVideoResp struct {
 // PublishVideoView 从认证上下文取得作者身份，把请求翻译为 PublishVideoCommand，保存与异步派发由应用服务编排。
 func (h *Handler) PublishVideoView(c *gin.Context) {
 	req := middlewares.GetBound[PublishVideoReq](c)
+
 	uid, loggedIn := getUID(c)
 	if !loggedIn {
 		res.FailWithMsg("用户未登录", c)
@@ -89,7 +90,7 @@ func (h *Handler) PublishVideoView(c *gin.Context) {
 		AuthorUsername: authorUsername,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -148,13 +149,13 @@ func (h *Handler) UpdateVideoView(c *gin.Context) {
 	})
 	if err != nil {
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在或无权限", c)
+			res.FailWithCause(err, "视频不存在或无权限", c)
 
 			return
 		}
 
-		res.FailWithMsg(clienterror.Message(err), c)
-		h.log().Error("update video failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
+		res.FailWithCause(err, clienterror.Message(err), c)
+		res.RecordFailure(apperr.Wrap("handler/video/publish", nil, err), c)
 
 		return
 	}

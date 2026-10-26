@@ -72,44 +72,7 @@ func (s *RecommendService) RelatedVideos(ctx context.Context, videoID uint, size
 		appendUnique(tagRelated)
 	}
 
-	if len(ids) < size && partitionID > 0 {
-		partitionRelated, pErr := s.query.PartitionRelatedIDs(ctx, partitionID, fetchLimit, collectExcludeIDs(seen))
-		if pErr != nil {
-			return nil, pErr
-		}
-
-		appendUnique(partitionRelated)
-	}
-
-	if len(ids) < size {
-		hotRelated, hErr := s.query.HotRelatedIDs(ctx, fetchLimit, collectExcludeIDs(seen))
-		if hErr != nil {
-			return nil, hErr
-		}
-
-		appendUnique(hotRelated)
-	}
-
-	if len(ids) == 0 {
-		return []FeedItem{}, nil
-	}
-
-	itemMap, err := s.query.FetchAnyStatusByIDs(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-
-	statsMap := s.stats.LoadBatch(ctx, ids)
-
-	items := make([]FeedItem, 0, len(ids))
-
-	for _, id := range ids {
-		if item, ok := itemMap[id]; ok {
-			items = append(items, applyCachedStatsToFeedItem(item, statsMap[id]))
-		}
-	}
-
-	return items, nil
+	return finishRecommendServiceRelatedVideos(ctx, s, size, partitionID, &ids, seen, appendUnique, fetchLimit)
 }
 
 // collectExcludeIDs 把去重集合转成排除列表（顺序不敏感，与原实现一致）。
@@ -126,4 +89,47 @@ func collectExcludeIDs(exclude map[uint]struct{}) []uint {
 	}
 
 	return ids
+}
+
+func finishRecommendServiceRelatedVideos(ctx context.Context, s *RecommendService, size int, partitionID uint, ids *[]uint, seen map[uint]struct{}, appendUnique func(list []uint), fetchLimit int) ([]FeedItem, error) {
+	var err error
+
+	if len((*ids)) < size && partitionID > 0 {
+		partitionRelated, pErr := s.query.PartitionRelatedIDs(ctx, partitionID, fetchLimit, collectExcludeIDs(seen))
+		if pErr != nil {
+			return nil, pErr
+		}
+
+		appendUnique(partitionRelated)
+	}
+
+	if len((*ids)) < size {
+		hotRelated, hErr := s.query.HotRelatedIDs(ctx, fetchLimit, collectExcludeIDs(seen))
+		if hErr != nil {
+			return nil, hErr
+		}
+
+		appendUnique(hotRelated)
+	}
+
+	if len((*ids)) == 0 {
+		return []FeedItem{}, nil
+	}
+
+	itemMap, err := s.query.FetchAnyStatusByIDs(ctx, (*ids))
+	if err != nil {
+		return nil, err
+	}
+
+	statsMap := s.stats.LoadBatch(ctx, (*ids))
+
+	items := make([]FeedItem, 0, len((*ids)))
+
+	for _, id := range *ids {
+		if item, ok := itemMap[id]; ok {
+			items = append(items, applyCachedStatsToFeedItem(item, statsMap[id]))
+		}
+	}
+
+	return items, nil
 }

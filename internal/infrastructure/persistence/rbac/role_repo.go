@@ -3,10 +3,10 @@ package rbac
 import (
 	"context"
 	"errors"
-
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 
 	"gorm.io/gorm"
 )
@@ -177,6 +177,7 @@ func (r *RoleRepository) UpdateName(ctx context.Context, roleID uint, name strin
 	return gormx.DB(ctx, r.db).Model(&po.Role{Model: po.Model{ID: roleID}}).Update("name", name).Error
 }
 
+// DeleteByID deletes the role row identified by its primary key.
 func (r *RoleRepository) DeleteByID(ctx context.Context, roleID uint) error {
 	return gormx.DB(ctx, r.db).Delete(&po.Role{Model: po.Model{ID: roleID}}).Error
 }
@@ -208,8 +209,10 @@ func (r *RoleRepository) DeleteBindings(ctx context.Context, roleID uint) error 
 	if err := db.Where("role_id = ?", roleID).Delete(&po.RoleMenu{}).Error; err != nil {
 		return err
 	}
+
 	if err := db.Where("role_id = ?", roleID).Delete(&po.UserRole{}).Error; err != nil {
 		return err
 	}
+
 	return db.Model(&po.User{}).Where("current_role_id = ?", roleID).Update("current_role_id", 0).Error
 }

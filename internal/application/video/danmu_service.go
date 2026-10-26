@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strings"
 	"time"
 
@@ -82,9 +83,11 @@ func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuPa
 	if s.authorizer == nil {
 		return nil, domain.ErrUserNotLogin
 	}
+
 	if err := s.authorizer.EnsureCanPublish(ctx, userID); err != nil {
 		return nil, err
 	}
+
 	cmd, err := domain.NormalizeSendDanmu(userID, domain.SendDanmuCommand{
 		VideoID:     params.VideoID,
 		VideoPartID: params.VideoPartID,
@@ -120,9 +123,9 @@ func (s *DanmuService) Send(ctx context.Context, userID uint, params SendDanmuPa
 
 	if _, err := s.stats.ApplyDelta(ctx, cmd.VideoID, domain.StatsDelta{DanmuCount: 1}); err != nil {
 		// 弹幕已落库，stats 失败不回滚发送结果，仅告警。
-		s.logger.Warn("apply video stats delta after send danmu failed",
+		logctx.With(ctx, s.logger).Warn("apply video stats delta after send danmu failed", zap.String("event", "video.danmu_service.send.degraded"), zap.String("operation", "video.danmu_service.send"),
 			zap.Error(err),
-			zap.Uint("videoId", cmd.VideoID),
+			zap.Uint("video_id", cmd.VideoID),
 		)
 	} else {
 		s.stats.RecordHotScoreDelta(ctx, cmd.VideoID, domain.HotScoreDanmuWeight, 1)
@@ -161,31 +164,7 @@ func (s *DanmuService) History(ctx context.Context, params DanmuHistoryParams) (
 		return nil, err
 	}
 
-	if params.UserID != 0 && len(result) > 0 {
-		ids := make([]uint, 0, len(result))
-		for _, item := range result {
-			if item.ID != 0 {
-				ids = append(ids, item.ID)
-			}
-		}
-
-		if len(ids) > 0 {
-			likedSet, likeErr := s.danmus.LikedSet(ctx, params.UserID, ids)
-			if likeErr != nil {
-				s.logger.Warn("load user danmu likes failed",
-					zap.Error(likeErr),
-					zap.Uint("userId", params.UserID),
-					zap.Uint("videoId", params.VideoID),
-				)
-			} else {
-				for i := range result {
-					if _, ok := likedSet[result[i].ID]; ok {
-						result[i].IsLiked = true
-					}
-				}
-			}
-		}
-	}
+	s.markHistoryLikes(ctx, params, result)
 
 	return result, nil
 }
@@ -283,35 +262,7 @@ func (s *DanmuService) RoomList(
 		queryParams.DateEnd = end
 	}
 
-	items, total, err := s.query.RoomList(ctx, queryParams)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	if total == 0 {
-		return []DanmuRoomItem{}, 0, nil
-	}
-
-	if params.UserID != 0 && len(items) > 0 {
-		ids := make([]uint, 0, len(items))
-		for i := range items {
-			ids = append(ids, items[i].ID)
-		}
-
-		likedSet, likeErr := s.danmus.LikedSet(ctx, params.UserID, ids)
-		if likeErr != nil {
-			s.logger.Warn("load user danmu likes failed", zap.Error(likeErr), zap.Uint("userId", params.UserID))
-			// 点赞状态失败时仍返回弹幕列表，仅 isLiked 保持默认 false
-		} else {
-			for idx := range items {
-				if _, ok := likedSet[items[idx].ID]; ok {
-					items[idx].IsLiked = true
-				}
-			}
-		}
-	}
-
-	return items, total, nil
+	return finishDanmuServiceRoomList(ctx, s, params, queryParams)
 }
 
 // ToggleLike 点赞/取消点赞弹幕。
@@ -478,16 +429,72 @@ func (s *DanmuService) deleteDanmus(ctx context.Context, danmus []domain.Danmu) 
 	}
 
 	// 同步 Redis 视频统计与弹幕缓存（最佳努力）
+	return finishDanmuServiceDeleteDanmus(ctx, s, danmus, videoDelta, partDelta)
+}
+
+// toDanmuDTO 把弹幕实体转为响应 DTO。
+func toDanmuDTO(record *domain.Danmu) DanmuDTO {
+	return DanmuDTO{
+		ID:          record.ID,
+		VideoID:     record.VideoID,
+		VideoPartID: record.VideoPartID,
+		UserID:      record.UserID,
+		Content:     record.Content,
+		TimeOffset:  record.TimeOffset,
+		Color:       record.Color,
+		FontSize:    record.FontSize,
+		Position:    record.Position,
+		LikeCount:   record.LikeCount,
+		IsLiked:     false,
+		CreatedAt:   record.CreatedAt,
+	}
+}
+
+func finishDanmuServiceRoomList(ctx context.Context, s *DanmuService, params DanmuRoomListParams, queryParams DanmuRoomQueryParams) ([]DanmuRoomItem, int64, error) {
+	var err error
+
+	items, total, err := s.query.RoomList(ctx, queryParams)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if total == 0 {
+		return []DanmuRoomItem{}, 0, nil
+	}
+
+	if params.UserID != 0 && len(items) > 0 {
+		ids := make([]uint, 0, len(items))
+		for i := range items {
+			ids = append(ids, items[i].ID)
+		}
+
+		likedSet, likeErr := s.danmus.LikedSet(ctx, params.UserID, ids)
+		if likeErr != nil {
+			logctx.With(ctx, s.logger).Warn("load user danmu likes failed", zap.String("event", "video.danmu_service.room_list.degraded"), zap.String("operation", "video.danmu_service.room_list"), zap.Error(likeErr), zap.Uint("user_id", params.UserID))
+			// 点赞状态失败时仍返回弹幕列表，仅 isLiked 保持默认 false
+		} else {
+			for idx := range items {
+				if _, ok := likedSet[items[idx].ID]; ok {
+					items[idx].IsLiked = true
+				}
+			}
+		}
+	}
+
+	return items, total, nil
+}
+
+func finishDanmuServiceDeleteDanmus(ctx context.Context, s *DanmuService, danmus []domain.Danmu, videoDelta, partDelta map[uint]int64) error {
 	for videoID, dec := range videoDelta {
 		if dec <= 0 {
 			continue
 		}
 
 		if _, err := s.stats.ApplyDelta(ctx, videoID, domain.StatsDelta{DanmuCount: -dec}); err != nil {
-			s.logger.Warn("apply video stats delta after delete danmu failed",
+			logctx.With(ctx, s.logger).Warn("apply video stats delta after delete danmu failed", zap.String("event", "video.danmu_service.delete_danmus.degraded"), zap.String("operation", "video.danmu_service.delete_danmus"),
 				zap.Error(err),
-				zap.Uint("videoId", videoID),
-				zap.Int64("danmuDelta", -dec),
+				zap.Uint("video_id", videoID),
+				zap.Int64("danmu_delta", -dec),
 			)
 		} else {
 			s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreDanmuWeight, -dec)
@@ -517,20 +524,31 @@ func (s *DanmuService) deleteDanmus(ctx context.Context, danmus []domain.Danmu) 
 	return nil
 }
 
-// toDanmuDTO 把弹幕实体转为响应 DTO。
-func toDanmuDTO(record *domain.Danmu) DanmuDTO {
-	return DanmuDTO{
-		ID:          record.ID,
-		VideoID:     record.VideoID,
-		VideoPartID: record.VideoPartID,
-		UserID:      record.UserID,
-		Content:     record.Content,
-		TimeOffset:  record.TimeOffset,
-		Color:       record.Color,
-		FontSize:    record.FontSize,
-		Position:    record.Position,
-		LikeCount:   record.LikeCount,
-		IsLiked:     false,
-		CreatedAt:   record.CreatedAt,
+func (s *DanmuService) markHistoryLikes(ctx context.Context, params DanmuHistoryParams, rows []DanmuDTO) {
+	if params.UserID == 0 || len(rows) == 0 {
+		return
+	}
+
+	ids := make([]uint, 0, len(rows))
+	for _, row := range rows {
+		if row.ID != 0 {
+			ids = append(ids, row.ID)
+		}
+	}
+
+	if len(ids) == 0 {
+		return
+	}
+
+	liked, err := s.danmus.LikedSet(ctx, params.UserID, ids)
+	if err != nil {
+		logctx.With(ctx, s.logger).Warn("load user danmu likes failed", zap.String("event", "video.danmu_service.history.degraded"), zap.String("operation", "video.danmu_service.history"), zap.Error(err), zap.Uint("user_id", params.UserID), zap.Uint("video_id", params.VideoID))
+		return
+	}
+
+	for i := range rows {
+		if _, ok := liked[rows[i].ID]; ok {
+			rows[i].IsLiked = true
+		}
 	}
 }

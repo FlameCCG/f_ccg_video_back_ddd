@@ -35,7 +35,7 @@ const (
 func (h *Handler) HomeSearchTopView(c *gin.Context) {
 	list, _, err := h.search.HotKeywords(c.Request.Context(), 1, homeHotKeywordLimit)
 	if err != nil {
-		res.FailWithMsg("获取首页热搜关键词失败", c)
+		res.FailWithCause(err, "获取首页热搜关键词失败", c)
 
 		return
 	}
@@ -80,7 +80,7 @@ func (h *Handler) VideoSearchView(c *gin.Context) {
 		VideoOrder: normalizeOrder(req.VideoOrder),
 	})
 	if err != nil {
-		res.FailWithMsg("搜索失败", c)
+		res.FailWithCause(err, "搜索失败", c)
 
 		return
 	}
@@ -107,7 +107,7 @@ func (h *Handler) SuggestView(c *gin.Context) {
 
 	suggestions, err := h.search.Suggest(c.Request.Context(), req.Prefix, size)
 	if err != nil {
-		res.FailWithMsg("获取搜索提示失败", c)
+		res.FailWithCause(err, "获取搜索提示失败", c)
 
 		return
 	}

@@ -3,11 +3,12 @@ package rbac
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/casbins"
 	"strings"
 
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	"f_ccg_video_back_ddd/pkg/casbins"
 
 	"go.uber.org/zap"
 )
@@ -45,7 +46,7 @@ func NewRoleService(
 func (s *RoleService) List(ctx context.Context) ([]*domain.Role, error) {
 	roles, err := s.roles.ListWithMenus(ctx)
 	if err != nil {
-		return nil, domain.ErrGetFailed
+		return nil, apperr.Wrap("application/rbac/role_service", domain.ErrGetFailed, err)
 	}
 
 	return roles, nil
@@ -61,6 +62,7 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (resu
 		return err
 	}
 	defer finish(&result)
+
 	service := *s
 	service.enforcer = scoped
 	s = &service
@@ -77,70 +79,13 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (resu
 	)
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		bizErr = nil
-
-		if err := s.roles.Create(txCtx, role); err != nil {
-			s.logger.Error("创建角色失败", zap.Error(err))
-			bizErr = domain.ErrCreateFailed
-
-			return bizErr
-		}
-
-		var templateMenus []*domain.Menu
-
-		if params.CopyRoleID > 0 {
-			copyRole, err := s.roles.FindWithMenusByID(txCtx, params.CopyRoleID)
-			if err != nil || copyRole == nil {
-				bizErr = domain.ErrTemplateRoleNotFound
-
-				return bizErr
-			}
-
-			templateMenus = copyRole.Menus
-
-			perms, err := s.enforcer.GetPermissionsForUser(copyRole.Name)
-			if err != nil {
-				bizErr = domain.ErrTemplatePermissionsRead
-
-				return bizErr
-			}
-
-			copyPerms = append(copyPerms, domain.NormalizeCasbinPolicyRows(perms)...)
-		}
-
-		ids := domain.MergeMenuIDs(templateMenus, params.MenuIDs)
-		if len(ids) == 0 {
-			return nil
-		}
-
-		menus, err := s.menus.FindByIDs(txCtx, ids)
-		if err != nil {
-			bizErr = domain.ErrMenuNotFound
-
-			return bizErr
-		}
-
-		if len(menus) != len(ids) {
-			bizErr = domain.ErrPartialMenusNotFound
-
-			return bizErr
-		}
-
-		if err := s.roles.AppendMenus(txCtx, role, menus); err != nil {
-			bizErr = domain.ErrBindMenuFailed
-
-			return bizErr
-		}
-
-		return nil
+		return roleServiceCreateTransaction(txCtx, s, params, role, &copyPerms, &bizErr)
 	}); err != nil {
 		if bizErr != nil {
 			return bizErr
 		}
 
-		s.logger.Error("提交事务失败", zap.Error(err))
-
-		return domain.ErrCreateFailed
+		return apperr.Wrap("application/rbac/role_service", domain.ErrCreateFailed, err)
 	}
 
 	perms, err := domain.NormalizeNewPermissions(params.Permissions)
@@ -153,13 +98,13 @@ func (s *RoleService) Create(ctx context.Context, params CreateRoleParams) (resu
 
 	for _, p := range perms {
 		if _, err := s.enforcer.AddPolicy(role.Name, p.Resource, p.Action); err != nil {
-			return domain.ErrAddPermissionFailed
+			return apperr.Wrap("application/rbac/role_service", domain.ErrAddPermissionFailed, err)
 		}
 	}
 
 	if len(perms) > 0 {
 		if err := s.enforcer.SavePolicy(); err != nil {
-			return domain.ErrSavePermissionFailed
+			return apperr.Wrap("application/rbac/role_service", domain.ErrSavePermissionFailed, err)
 		}
 	}
 
@@ -173,16 +118,18 @@ func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) (resu
 		return err
 	}
 	defer finish(&result)
+
 	service := *s
 	service.enforcer = scoped
 	s = &service
+
 	if params.Name == nil && params.Desc == nil {
 		return domain.ErrNoUpdatableFields
 	}
 
 	role, err := s.roles.FindByID(ctx, params.RoleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/role_service", domain.ErrRoleNotFound, err)
 	}
 
 	oldName := role.Name
@@ -208,34 +155,7 @@ func (s *RoleService) Update(ctx context.Context, params UpdateRoleParams) (resu
 		}
 	}
 
-	if params.Desc != nil {
-		desc := strings.TrimSpace(*params.Desc)
-		descUpdate = &desc
-	}
-
-	if nameUpdate == nil && descUpdate == nil {
-		return domain.ErrNoUpdatableFields
-	}
-
-	if err := s.roles.UpdateNameAndDesc(ctx, role.ID, nameUpdate, descUpdate); err != nil {
-		s.logger.Error("更新角色失败", zap.Error(err))
-
-		return domain.ErrUpdateFailed
-	}
-
-	if newName != oldName {
-		if err := s.renameInCasbin(oldName, newName); err != nil {
-			s.logger.Error("同步 Casbin 角色名失败", zap.Error(err))
-			if rollbackErr := s.roles.UpdateName(context.WithoutCancel(ctx), role.ID, oldName); rollbackErr != nil {
-				s.logger.Error("RBAC role rename compensation failed", zap.Error(rollbackErr))
-				return errors.Join(domain.ErrPermissionSyncFailed, err, rollbackErr)
-			}
-
-			return domain.ErrPermissionSyncFailed
-		}
-	}
-
-	return nil
+	return finishRoleServiceUpdate(ctx, s, params, role, oldName, newName, nameUpdate, &descUpdate)
 }
 
 // renameInCasbin 把 oldName 的全部策略、子角色与父角色关系迁移到 newName。
@@ -265,33 +185,7 @@ func (s *RoleService) renameInCasbin(oldName, newName string) error {
 		}
 	}
 
-	for _, parent := range parents {
-		if _, err := s.enforcer.DeleteRoleForUser(oldName, parent); err != nil {
-			return err
-		}
-
-		if _, err := s.enforcer.AddRoleForUser(newName, parent); err != nil {
-			return err
-		}
-	}
-
-	if len(permissions) > 0 {
-		for _, p := range permissions {
-			if len(p) < 3 {
-				return domain.ErrInvalidCasbinPermission
-			}
-
-			if _, err := s.enforcer.AddPolicy(newName, p[1], p[2]); err != nil {
-				return err
-			}
-		}
-
-		if _, err := s.enforcer.RemoveFilteredPolicy(0, oldName); err != nil {
-			return err
-		}
-	}
-
-	return s.enforcer.SavePolicy()
+	return finishRoleServiceRenameInCasbin(s, oldName, newName, permissions, parents)
 }
 
 // Delete 删除角色：角色下仍有用户时拒绝；删除后清理 Casbin 策略。
@@ -301,18 +195,20 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) (result error) {
 		return err
 	}
 	defer finish(&result)
+
 	service := *s
 	service.enforcer = scoped
 	s = &service
+
 	role, err := s.roles.FindByID(ctx, roleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/role_service", domain.ErrRoleNotFound, err)
 	}
 
 	userCount, err := s.roles.UserCount(ctx, role.ID)
 	if err != nil {
 		// 原实现把「预加载用户失败」与「角色不存在」合并为同一文案。
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/role_service", domain.ErrRoleNotFound, err)
 	}
 
 	// 检查是否有用户使用该角色
@@ -324,21 +220,18 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) (result error) {
 
 	// 删除 Casbin 中该角色的所有权限
 	if _, err := s.enforcer.DeleteRole(role.Name); err != nil {
-		s.logger.Error("删除 Casbin 角色失败", zap.Error(err))
-
-		return domain.ErrRolePolicyCleanupFailed
+		return apperr.Wrap("application/rbac/role_service", domain.ErrRolePolicyCleanupFailed, err)
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
-		s.logger.Error("保存 Casbin 策略失败", zap.Error(err))
-
-		return domain.ErrRolePolicySaveFailed
+		return apperr.Wrap("application/rbac/role_service", domain.ErrRolePolicySaveFailed, err)
 	}
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		if err := s.roles.DeleteBindings(txCtx, role.ID); err != nil {
 			return err
 		}
+
 		return s.roles.DeleteByID(txCtx, role.ID)
 	}); err != nil {
 		return errors.Join(domain.ErrDeleteFailed, err)
@@ -351,7 +244,7 @@ func (s *RoleService) Delete(ctx context.Context, roleID uint) (result error) {
 func (s *RoleService) UserRoles(ctx context.Context, userID uint) ([]*domain.Role, error) {
 	roles, err := s.userRoles.RolesByUser(ctx, userID)
 	if err != nil {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/rbac/role_service", domain.ErrUserNotFound, err)
 	}
 
 	return roles, nil
@@ -361,14 +254,14 @@ func (s *RoleService) UserRoles(ctx context.Context, userID uint) ([]*domain.Rol
 func (s *RoleService) UserPermissions(ctx context.Context, userID uint) ([]UserPermissionItem, error) {
 	exists, err := s.userRoles.UserExists(ctx, userID)
 	if err != nil || !exists {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/rbac/role_service", domain.ErrUserNotFound, err)
 	}
 
 	sub := casbins.GetUserSub(userID)
 
 	perms, err := s.enforcer.GetImplicitPermissionsForUser(sub)
 	if err != nil {
-		return nil, domain.ErrQueryFailed
+		return nil, apperr.Wrap("application/rbac/role_service", domain.ErrQueryFailed, err)
 	}
 
 	items := make([]UserPermissionItem, 0, len(perms))
@@ -401,83 +294,53 @@ func (s *RoleService) RemoveUserRoles(ctx context.Context, userID uint, roleIDs 
 func (s *RoleService) ReplaceUserRoles(ctx context.Context, userID uint, roleIDs []uint) error {
 	return s.changeUserRoles(ctx, userID, roleIDs, "replace")
 }
+
 func (s *RoleService) changeUserRoles(ctx context.Context, userID uint, roleIDs []uint, mode string) (result error) {
 	scoped, finish, err := beginPolicyChange(s.enforcer)
 	if err != nil {
 		return err
 	}
 	defer finish(&result)
+
 	service := *s
 	service.enforcer = scoped
 	s = &service
+
 	var oldRoles, newRoles []*domain.Role
+
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		var err error
-		oldRoles, err = s.userRoles.RolesByUser(txCtx, userID)
-		if err != nil {
-			return s.mapUserLookupError(err)
-		}
-		selected, err := s.roles.FindByIDs(txCtx, roleIDs)
-		if err != nil {
-			return domain.ErrQueryRoleFailed
-		}
-		if len(selected) != len(roleIDs) {
-			return domain.ErrSomeRolesNotFound
-		}
-		switch mode {
-		case "assign":
-			newRoles = append(newRoles, oldRoles...)
-			for _, r := range selected {
-				for _, old := range oldRoles {
-					if r.ID == old.ID {
-						return domain.DuplicateRoleAssignedError(r.Name)
-					}
-				}
-				newRoles = append(newRoles, r)
-			}
-		case "remove":
-			remove := map[uint]bool{}
-			for _, r := range selected {
-				remove[r.ID] = true
-			}
-			for _, r := range oldRoles {
-				if !remove[r.ID] {
-					newRoles = append(newRoles, r)
-				}
-			}
-		default:
-			newRoles = selected
-		}
-		return s.userRoles.ReplaceRoles(txCtx, userID, newRoles)
+		return roleServicechangeUserRolesTransaction(txCtx, s, userID, roleIDs, mode, &oldRoles, &newRoles)
 	}); err != nil {
 		return err
 	}
 	// No Casbin write is made before the user_roles transaction commits.
 	syncErr := func() error {
 		sub := casbins.GetUserSub(userID)
+
 		existing, err := s.enforcer.GetRolesForUser(sub)
 		if err != nil {
 			return err
 		}
+
 		for _, name := range existing {
 			if _, err := s.enforcer.DeleteRoleForUser(sub, name); err != nil {
 				return err
 			}
 		}
+
 		for _, r := range newRoles {
 			if _, err := s.enforcer.AddRoleForUser(sub, r.Name); err != nil {
 				return err
 			}
 		}
+
 		return s.enforcer.SavePolicy()
 	}()
 	if syncErr != nil {
 		rollbackErr := s.txm.Do(context.WithoutCancel(ctx), func(txCtx context.Context) error { return s.userRoles.ReplaceRoles(txCtx, userID, oldRoles) })
-		if rollbackErr != nil {
-			s.logger.Error("RBAC role binding compensation failed", zap.Error(rollbackErr))
-		}
 		return errors.Join(domain.ErrPermissionSyncFailed, syncErr, rollbackErr)
 	}
+
 	return nil
 }
 
@@ -487,7 +350,167 @@ func (s *RoleService) mapUserLookupError(err error) error {
 		return domain.ErrUserNotFound
 	}
 
-	s.logger.Error("查询用户失败", zap.Error(err))
+	return apperr.Wrap("rbac.user.lookup", domain.ErrQueryUserFailed, err)
+}
 
-	return domain.ErrQueryUserFailed
+func roleServiceCreateTransaction(txCtx context.Context, s *RoleService, params CreateRoleParams, role *domain.Role, copyPerms *[]domain.PermissionItem, bizErr *error) error {
+	(*bizErr) = nil
+
+	if err := s.roles.Create(txCtx, role); err != nil {
+		(*bizErr) = apperr.Wrap("application/rbac/role_service", domain.ErrCreateFailed, err)
+
+		return (*bizErr)
+	}
+
+	var templateMenus []*domain.Menu
+
+	if params.CopyRoleID > 0 {
+		copyRole, err := s.roles.FindWithMenusByID(txCtx, params.CopyRoleID)
+		if err != nil || copyRole == nil {
+			(*bizErr) = apperr.Wrap("application/rbac/role_service", domain.ErrTemplateRoleNotFound, err)
+
+			return (*bizErr)
+		}
+
+		templateMenus = copyRole.Menus
+
+		perms, err := s.enforcer.GetPermissionsForUser(copyRole.Name)
+		if err != nil {
+			(*bizErr) = apperr.Wrap("application/rbac/role_service", domain.ErrTemplatePermissionsRead, err)
+
+			return (*bizErr)
+		}
+
+		(*copyPerms) = append((*copyPerms), domain.NormalizeCasbinPolicyRows(perms)...)
+	}
+
+	ids := domain.MergeMenuIDs(templateMenus, params.MenuIDs)
+	if len(ids) == 0 {
+		return nil
+	}
+
+	menus, err := s.menus.FindByIDs(txCtx, ids)
+	if err != nil {
+		(*bizErr) = apperr.Wrap("application/rbac/role_service", domain.ErrMenuNotFound, err)
+
+		return (*bizErr)
+	}
+
+	if len(menus) != len(ids) {
+		(*bizErr) = domain.ErrPartialMenusNotFound
+
+		return (*bizErr)
+	}
+
+	if err := s.roles.AppendMenus(txCtx, role, menus); err != nil {
+		(*bizErr) = apperr.Wrap("application/rbac/role_service", domain.ErrBindMenuFailed, err)
+
+		return (*bizErr)
+	}
+
+	return nil
+}
+
+func roleServicechangeUserRolesTransaction(txCtx context.Context, s *RoleService, userID uint, roleIDs []uint, mode string, oldRoles, newRoles *[]*domain.Role) error {
+	var err error
+
+	(*oldRoles), err = s.userRoles.RolesByUser(txCtx, userID)
+	if err != nil {
+		return s.mapUserLookupError(err)
+	}
+
+	selected, err := s.roles.FindByIDs(txCtx, roleIDs)
+	if err != nil {
+		return apperr.Wrap("application/rbac/role_service", domain.ErrQueryRoleFailed, err)
+	}
+
+	if len(selected) != len(roleIDs) {
+		return domain.ErrSomeRolesNotFound
+	}
+
+	switch mode {
+	case "assign":
+		(*newRoles) = append((*newRoles), (*oldRoles)...)
+		for _, r := range selected {
+			for _, old := range *oldRoles {
+				if r.ID == old.ID {
+					return domain.DuplicateRoleAssignedError(r.Name)
+				}
+			}
+
+			(*newRoles) = append((*newRoles), r)
+		}
+	case "remove":
+		remove := map[uint]bool{}
+		for _, r := range selected {
+			remove[r.ID] = true
+		}
+
+		for _, r := range *oldRoles {
+			if !remove[r.ID] {
+				(*newRoles) = append((*newRoles), r)
+			}
+		}
+	default:
+		(*newRoles) = selected
+	}
+
+	return s.userRoles.ReplaceRoles(txCtx, userID, (*newRoles))
+}
+
+func finishRoleServiceUpdate(ctx context.Context, s *RoleService, params UpdateRoleParams, role *domain.Role, oldName, newName string, nameUpdate *string, descUpdate **string) error {
+	if params.Desc != nil {
+		desc := strings.TrimSpace(*params.Desc)
+		(*descUpdate) = &desc
+	}
+
+	if nameUpdate == nil && (*descUpdate) == nil {
+		return domain.ErrNoUpdatableFields
+	}
+
+	if err := s.roles.UpdateNameAndDesc(ctx, role.ID, nameUpdate, (*descUpdate)); err != nil {
+		return apperr.Wrap("application/rbac/role_service", domain.ErrUpdateFailed, err)
+	}
+
+	if newName != oldName {
+		if err := s.renameInCasbin(oldName, newName); err != nil {
+			if rollbackErr := s.roles.UpdateName(context.WithoutCancel(ctx), role.ID, oldName); rollbackErr != nil {
+				return errors.Join(domain.ErrPermissionSyncFailed, err, rollbackErr)
+			}
+
+			return apperr.Wrap("application/rbac/role_service", domain.ErrPermissionSyncFailed, err)
+		}
+	}
+
+	return nil
+}
+
+func finishRoleServiceRenameInCasbin(s *RoleService, oldName, newName string, permissions [][]string, parents []string) error {
+	for _, parent := range parents {
+		if _, err := s.enforcer.DeleteRoleForUser(oldName, parent); err != nil {
+			return err
+		}
+
+		if _, err := s.enforcer.AddRoleForUser(newName, parent); err != nil {
+			return err
+		}
+	}
+
+	if len(permissions) > 0 {
+		for _, p := range permissions {
+			if len(p) < 3 {
+				return domain.ErrInvalidCasbinPermission
+			}
+
+			if _, err := s.enforcer.AddPolicy(newName, p[1], p[2]); err != nil {
+				return err
+			}
+		}
+
+		if _, err := s.enforcer.RemoveFilteredPolicy(0, oldName); err != nil {
+			return err
+		}
+	}
+
+	return s.enforcer.SavePolicy()
 }

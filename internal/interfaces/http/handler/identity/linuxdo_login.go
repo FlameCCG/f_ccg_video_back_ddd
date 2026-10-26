@@ -3,7 +3,6 @@ package identity
 import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,13 +21,7 @@ func (h *Handler) LinuxDoLoginView(c *gin.Context) {
 
 	cr := middlewares.GetBound[LinuxDoLoginReq](c)
 
-	if err := h.oauth.ConsumeOAuthState(c.Request.Context(), app.OAuthProviderLinuxDo, cr.State); err != nil {
-		res.FailWithMsg("linuxdo登录状态无效", c)
-
-		return
-	}
-
-	h.completeOAuthLogin(c, oauthLoginParams{
+	h.completeOAuthCallback(c, cr.State, "linuxdo登录状态无效", oauthLoginParams{
 		provider: app.OAuthProviderLinuxDo,
 		code:     cr.Code,
 	})

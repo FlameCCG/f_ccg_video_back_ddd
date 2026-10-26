@@ -9,10 +9,9 @@ package migration
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"fmt"
 	"strings"
-
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -35,8 +34,8 @@ func NewMigrator(db *gorm.DB, logger *zap.Logger) *Migrator {
 // 迁移的实体集合与顺序与原 flags.FlagDB 完全一致。
 func (m *Migrator) AutoMigrate() error {
 	if m == nil || m.db == nil {
-		err := fmt.Errorf("数据库未初始化")
-		m.logger.Error("数据库迁移失败!", zap.Error(err))
+		err := errors.New("数据库未初始化")
+		m.logger.Error("数据库迁移失败!", zap.String("event", "persistence.migrator.auto_migrate.failed"), zap.String("operation", "persistence.migrator.auto_migrate"), zap.Error(err))
 
 		return err
 	}
@@ -80,21 +79,18 @@ func (m *Migrator) AutoMigrate() error {
 		po.APIResource{},
 	)
 	if err != nil {
-		m.logger.Error("数据库迁移失败!", zap.Error(err))
-
 		return fmt.Errorf("数据库迁移失败: %w", err)
 	}
 
 	if err := ensureUsersOAuthUniqueIndex(m.db); err != nil {
-		m.logger.Error("创建 OAuth 唯一索引失败!", zap.Error(err))
-
 		return fmt.Errorf("创建 OAuth 唯一索引失败: %w", err)
 	}
 
 	if err := migrateLegacySchedules(m.db); err != nil {
 		return fmt.Errorf("迁移旧定时计划失败: %w", err)
 	}
-	m.logger.Info("数据库迁移成功!")
+
+	m.logger.Info("数据库迁移成功!", zap.String("event", "persistence.migrator.auto_migrate.diagnostic"), zap.String("operation", "persistence.migrator.auto_migrate"))
 
 	return nil
 }
@@ -205,7 +201,7 @@ func isSQLiteDialector(db *gorm.DB) bool {
 		return false
 	}
 
-	name := strings.ToLower(db.Dialector.Name())
+	name := strings.ToLower(db.Name())
 
 	return name == "sqlite" || strings.Contains(name, "sqlite")
 }

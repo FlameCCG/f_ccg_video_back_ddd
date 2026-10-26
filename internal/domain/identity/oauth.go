@@ -53,6 +53,7 @@ func (p OAuthProfile) ResolvedEmail() string {
 	if !p.EmailVerified {
 		return BuildOAuthFallbackEmail(p.RegisterSource, p.OpenID, p.FallbackEmail)
 	}
+
 	return NormalizeOAuthEmail(p.RegisterSource, p.OpenID, p.Email, p.FallbackEmail)
 }
 

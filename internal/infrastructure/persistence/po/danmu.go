@@ -12,8 +12,8 @@ type Danmu struct {
 	FontSize    int8   `gorm:"default:25;comment:字体大小" json:"fontSize"`
 	Position    int8   `gorm:"default:0;comment:位置: 0-滚动 1-顶部 2-底部" json:"position"`
 	LikeCount   int64  `gorm:"default:0;comment:点赞数" json:"likeCount"`
-	Video       Video  `gorm:"foreignKey:VideoID" json:"video,omitempty"`
-	User        User   `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Video       Video  `gorm:"foreignKey:VideoID" json:"video"`
+	User        User   `gorm:"foreignKey:UserID" json:"user"`
 }
 
 // TableName 显式绑定表名 danmu，保持迁移与仓储 SQL 使用同一张表。

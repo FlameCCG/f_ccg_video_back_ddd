@@ -9,9 +9,8 @@
 package identity
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // User 用户实体（身份上下文的聚合根）。

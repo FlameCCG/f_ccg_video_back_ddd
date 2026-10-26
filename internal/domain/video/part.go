@@ -1,9 +1,8 @@
 package video
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // Part 视频分P实体。

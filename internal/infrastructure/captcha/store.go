@@ -9,16 +9,16 @@ package captcha
 import (
 	"context"
 	"errors"
-	"time"
-
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
 
 // ErrCaptchaExpired 验证码已过期或不存在（文案与原实现一致）。
-var ErrCaptchaExpired = errors.New("验证码已过期或不存在")
+var ErrCaptchaExpired = apperr.Wrap("", nil, errors.New("验证码已过期或不存在"), apperr.Rejected)
 
 // payloadStore 封装验证码答案在 Redis 中的存取，供点击/滑块验证码复用。
 type payloadStore struct {
@@ -41,9 +41,11 @@ func (s payloadStore) consume(ctx context.Context, key string) ([]byte, error) {
 
 	data, err := s.redis.GetDel(ctxWithTimeout, key).Bytes()
 	if err != nil {
-		s.logger.Error("无效的captchaToken,可能已过期或不存在", zap.Error(err))
+		if errors.Is(err, redis.Nil) {
+			return nil, apperr.Wrap("captcha.consume", ErrCaptchaExpired, err, apperr.Rejected)
+		}
 
-		return nil, ErrCaptchaExpired
+		return nil, apperr.Wrap("captcha.consume", ErrCaptchaExpired, err, apperr.Dependency)
 	}
 
 	return data, nil

@@ -12,14 +12,7 @@ package bootstrap
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"f_ccg_video_back_ddd/internal/infrastructure/cache"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/infrastructure/ipregion"
 	"f_ccg_video_back_ddd/internal/infrastructure/logger"
 	"f_ccg_video_back_ddd/internal/infrastructure/mq"
@@ -28,6 +21,13 @@ import (
 	"f_ccg_video_back_ddd/internal/infrastructure/search"
 	"f_ccg_video_back_ddd/internal/interfaces/http/router"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/casbin/casbin/v2"
 	"go.uber.org/zap"
@@ -122,6 +122,7 @@ func NewApp(
 // Start 启动后台组件，语义与原 core.InitCore 尾部的后台启动序列一致。
 // 单个组件启动失败只记录日志、不阻断 HTTP 服务启动（与原实现一致）。
 
+// Start starts the application components in dependency order.
 func (a *App) Start(ctx context.Context) error {
 	a.runtime.Start(ctx)
 
@@ -139,7 +140,7 @@ func (a *App) log() *zap.Logger {
 // Serve 启动 HTTP 服务，并在收到 SIGINT/SIGTERM 后执行优雅关闭。
 // 监听与关闭错误返回给 main 统一转换退出码，确保后台组件和基础设施仍会显式停机。
 func (a *App) Serve() error {
-	if a == nil || a.router == nil || a.cfgProvider == nil {
+	if appServeCondition(a) {
 		return errors.New("HTTP server is not initialized")
 	}
 
@@ -183,8 +184,6 @@ func (a *App) Serve() error {
 	select {
 	case err := <-errCh:
 		if err != nil {
-			a.log().Error("http server run error", zap.Error(err))
-
 			return fmt.Errorf("run HTTP server: %w", err)
 		}
 
@@ -199,7 +198,6 @@ func (a *App) Serve() error {
 	var shutdownErr error
 	if err := srv.Shutdown(ctx); err != nil {
 		shutdownErr = fmt.Errorf("shutdown HTTP server: %w", err)
-		a.log().Error("http server shutdown error", zap.Error(err))
 
 		if closeErr := srv.Close(); closeErr != nil {
 			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("close HTTP server: %w", closeErr))
@@ -208,7 +206,6 @@ func (a *App) Serve() error {
 
 	serveErr := <-errCh
 	if serveErr != nil {
-		a.log().Error("http server exit error", zap.Error(serveErr))
 		serveErr = fmt.Errorf("exit HTTP server: %w", serveErr)
 	}
 
@@ -237,9 +234,20 @@ func (a *App) Stop(ctx context.Context) error {
 	if err := a.producers.Close(); err != nil {
 		a.log().Warn("close Kafka producers failed", zap.Error(err))
 	}
+
 	a.infra.Stop()
+	a.cfgProvider.Close()
 	a.lg.Stop()
 
 	// Logger 已 Sync，后续尽量少打日志；这里用标准库无法再保证刷盘，故不再输出。
 	return nil
+}
+
+// ReportError records the process boundary before resource cleanup closes logging.
+func (a *App) ReportError(err error) {
+	a.log().Error("process.failed", zap.String("event", "process.failed"), zap.String("component", "process"), zap.Error(err))
+}
+
+func appServeCondition(a *App) bool {
+	return a == nil || a.router == nil || a.cfgProvider == nil
 }

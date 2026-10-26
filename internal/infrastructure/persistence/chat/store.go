@@ -3,12 +3,12 @@ package chat
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 	"fmt"
 	"reflect"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -103,43 +103,55 @@ func (s *Store) SendMessage(ctx context.Context, msg *domain.Message, preview st
 	if !s.Available() {
 		return domain.ErrStoreUnavailable
 	}
+
 	if msg == nil {
 		return nil
 	}
+
 	if msg.ID == "" {
 		msg.ID = primitive.NewObjectID().Hex()
 	}
+
 	session, err := s.db.Client().StartSession()
 	if err != nil {
 		return err
 	}
 	defer session.EndSession(ctx)
 
-	_, err = session.WithTransaction(ctx, func(txCtx mongo.SessionContext) (interface{}, error) {
+	_, err = session.WithTransaction(ctx, func(txCtx mongo.SessionContext) (any, error) {
 		oid, err := primitive.ObjectIDFromHex(msg.ID)
 		if err != nil {
 			return nil, err
 		}
+
 		var existing mongopo.ChatMessage
+
 		err = s.db.Collection(chatMessagesCol).FindOne(txCtx, bson.D{{Key: fieldID, Value: oid}}).Decode(&existing)
 		if err == nil {
-			if existing.ConversationID != msg.ConversationID || existing.SenderID != msg.SenderID || existing.ReceiverID != msg.ReceiverID || existing.Type != msg.Type || existing.Text != msg.Text || existing.Emoji != msg.Emoji || !reflect.DeepEqual(existing.Media, toPOMedia(msg.Media)) {
+			if storeSendMessageCondition(msg, existing) {
 				return nil, errors.New("message ID already belongs to different content")
 			}
+
 			msg.CreatedAt = existing.CreatedAt
+
 			return nil, nil
 		}
+
 		if !errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, err
 		}
+
 		if err := s.InsertMessage(txCtx, msg); err != nil {
 			return nil, err
 		}
+
 		if err := s.ApplySend(txCtx, msg, preview); err != nil {
 			return nil, err
 		}
+
 		return nil, nil
 	})
+
 	return err
 }
 
@@ -154,13 +166,16 @@ func (s *Store) InsertMessage(ctx context.Context, msg *domain.Message) error {
 	}
 
 	oid := primitive.NewObjectID()
+
 	if msg.ID != "" {
 		var err error
+
 		oid, err = primitive.ObjectIDFromHex(msg.ID)
 		if err != nil {
 			return err
 		}
 	}
+
 	row := mongopo.ChatMessage{
 		ID:             oid,
 		ConversationID: msg.ConversationID,
@@ -412,4 +427,8 @@ func visibleConversationFilter(userID uint) bson.M {
 			bson.M{fieldMemberBUserID: userID, "memberB" + suffixVisible: true},
 		},
 	}
+}
+
+func storeSendMessageCondition(msg *domain.Message, existing mongopo.ChatMessage) bool {
+	return existing.ConversationID != msg.ConversationID || existing.SenderID != msg.SenderID || existing.ReceiverID != msg.ReceiverID || existing.Type != msg.Type || existing.Text != msg.Text || existing.Emoji != msg.Emoji || !reflect.DeepEqual(existing.Media, toPOMedia(msg.Media))
 }

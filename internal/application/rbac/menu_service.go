@@ -3,12 +3,13 @@ package rbac
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 	"strings"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
 )
@@ -56,7 +57,7 @@ func NewMenuService(
 func (s *MenuService) Tree(ctx context.Context) ([]*domain.Menu, error) {
 	menus, err := s.menus.ListOrdered(ctx)
 	if err != nil {
-		return nil, domain.ErrGetFailed
+		return nil, apperr.Wrap("application/rbac/menu_service", domain.ErrGetFailed, err)
 	}
 
 	return domain.BuildMenuTree(menus), nil
@@ -102,6 +103,7 @@ func (s *MenuService) Create(ctx context.Context, params CreateMenuParams) error
 		}
 
 		target := normalizedTargetSort(menu.SortOrder, len(siblingIDs))
+
 		siblingIDs = insertMenuID(siblingIDs, menu.ID, int(target-1))
 		if err := s.applyMenuSequence(txCtx, siblingIDs); err != nil {
 			return err
@@ -120,9 +122,7 @@ func (s *MenuService) Create(ctx context.Context, params CreateMenuParams) error
 
 // Update 更新菜单字段；父级或排序变化时会原子地重排新旧层级。
 func (s *MenuService) Update(ctx context.Context, params UpdateMenuParams) error {
-	if params.Title == nil && params.TitleEn == nil && params.TitleJa == nil && params.Icon == nil &&
-		params.Path == nil && params.Name == nil && params.Component == nil && params.KeepAlive == nil &&
-		!params.ParentProvided && params.SortOrder == nil {
+	if menuServiceUpdateCondition(params) {
 		return domain.ErrNoUpdatableFields
 	}
 
@@ -137,46 +137,7 @@ func (s *MenuService) Update(ctx context.Context, params UpdateMenuParams) error
 		return err
 	}
 
-	err = s.txm.Do(ctx, func(txCtx context.Context) error {
-		menu, err := s.menus.FindByIDForUpdate(txCtx, params.ID)
-		if err != nil {
-			return fmt.Errorf("读取菜单失败: %w", err)
-		}
-		if menu == nil {
-			return domain.ErrMenuNotFound
-		}
-
-		if update.Title != nil {
-			if err := s.ensureMenuTitleAvailable(txCtx, *update.Title, menu.ID); err != nil {
-				return err
-			}
-		}
-
-		nextParentID := normalizedParentID(menu.ParentID)
-		if params.ParentProvided {
-			nextParentID = normalizedParentID(params.ParentID)
-		}
-
-		if err := s.validateMenuParent(txCtx, menu.ID, nextParentID); err != nil {
-			return err
-		}
-
-		if params.ParentProvided || params.SortOrder != nil {
-			if err := s.placeExistingMenu(txCtx, menu, nextParentID, params.SortOrder); err != nil {
-				return err
-			}
-		}
-
-		if update.IsEmpty() {
-			return nil
-		}
-
-		if err := s.menus.UpdateFields(txCtx, menu.ID, update); err != nil {
-			return fmt.Errorf("更新菜单失败: %w", err)
-		}
-
-		return nil
-	})
+	err = s.txm.Do(ctx, func(txCtx context.Context) error { return menuServiceUpdateTransaction(txCtx, s, params, update) })
 
 	return err
 }
@@ -192,55 +153,7 @@ func (s *MenuService) Move(ctx context.Context, menuID, targetID uint, position 
 	}
 
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		menus, err := s.menus.FindByIDsForUpdate(txCtx, []uint{menuID, targetID})
-		if err != nil {
-			return fmt.Errorf("读取拖拽菜单失败: %w", err)
-		}
-		if len(menus) != 2 {
-			return domain.ErrMenuNotFound
-		}
-
-		var moving, target *domain.Menu
-		for _, menu := range menus {
-			if menu == nil {
-				continue
-			}
-
-			switch menu.ID {
-			case menuID:
-				moving = menu
-			case targetID:
-				target = menu
-			}
-		}
-
-		if moving == nil || target == nil {
-			return domain.ErrMenuNotFound
-		}
-
-		parentID := normalizedParentID(moving.ParentID)
-		if !sameParent(parentID, normalizedParentID(target.ParentID)) {
-			return domain.ErrMenuMoveAcrossLevels
-		}
-
-		siblingIDs, err := s.menus.ListSiblingIDsForUpdate(txCtx, parentID)
-		if err != nil {
-			return fmt.Errorf("读取同层菜单失败: %w", err)
-		}
-
-		siblingIDs = removeMenuID(siblingIDs, menuID)
-		targetIndex := menuIDIndex(siblingIDs, targetID)
-		if targetIndex < 0 {
-			return domain.ErrMenuNotFound
-		}
-
-		if position == MenuMoveAfter {
-			targetIndex++
-		}
-
-		siblingIDs = insertMenuID(siblingIDs, menuID, targetIndex)
-
-		return s.applyMenuSequence(txCtx, siblingIDs)
+		return menuServiceMoveTransaction(txCtx, s, menuID, targetID, position)
 	})
 
 	return err
@@ -263,6 +176,7 @@ func (s *MenuService) Generate(
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", domain.ErrReadParentMenuFailed, err)
 		}
+
 		if parent == nil {
 			return nil, domain.ErrParentMenuNotFound
 		}
@@ -286,6 +200,7 @@ func (s *MenuService) Generate(
 	if err != nil {
 		return nil, err
 	}
+
 	return parseMenuSuggestion(text)
 }
 
@@ -329,6 +244,7 @@ func (s *MenuService) placeExistingMenu(
 	sortOrder *uint,
 ) error {
 	oldParentID := normalizedParentID(menu.ParentID)
+
 	oldSiblingIDs, err := s.menus.ListSiblingIDsForUpdate(ctx, oldParentID)
 	if err != nil {
 		return fmt.Errorf("读取原层级菜单失败: %w", err)
@@ -359,6 +275,7 @@ func (s *MenuService) placeExistingMenu(
 	}
 
 	target := normalizedTargetSort(requestedSort, len(destinationIDs))
+
 	destinationIDs = insertMenuID(destinationIDs, menu.ID, int(target-1))
 	if err := s.applyMenuSequence(ctx, destinationIDs); err != nil {
 		return err
@@ -405,6 +322,7 @@ func (s *MenuService) grantMenuToCreatorRole(ctx context.Context, creatorID, men
 	if err != nil {
 		return fmt.Errorf("读取创建者角色失败: %w", err)
 	}
+
 	if !found || roleID == 0 {
 		return domain.ErrMenuCreatorRoleMissing
 	}
@@ -413,6 +331,7 @@ func (s *MenuService) grantMenuToCreatorRole(ctx context.Context, creatorID, men
 	if err != nil {
 		return fmt.Errorf("读取创建者当前角色失败: %w", err)
 	}
+
 	if role == nil {
 		return domain.ErrMenuCreatorRoleMissing
 	}
@@ -429,6 +348,7 @@ func (s *MenuService) ensureMenuTitleAvailable(ctx context.Context, title string
 	if err != nil {
 		return fmt.Errorf("检查菜单标题失败: %w", err)
 	}
+
 	if count > 0 {
 		return domain.ErrMenuExists
 	}
@@ -442,20 +362,24 @@ func (s *MenuService) validateMenuParent(ctx context.Context, menuID uint, paren
 	}
 
 	visited := make(map[uint]struct{})
+
 	currentID := *parentID
 	for currentID > 0 {
 		if menuID > 0 && currentID == menuID {
 			return domain.ErrMenuParentCycle
 		}
+
 		if _, ok := visited[currentID]; ok {
 			return domain.ErrMenuParentCycle
 		}
+
 		visited[currentID] = struct{}{}
 
 		parent, err := s.menus.FindByIDForUpdate(ctx, currentID)
 		if err != nil {
 			return fmt.Errorf("读取父菜单失败: %w", err)
 		}
+
 		if parent == nil {
 			return domain.ErrParentMenuNotFound
 		}
@@ -513,6 +437,7 @@ func insertMenuID(menuIDs []uint, menuID uint, index int) []uint {
 	if index < 0 {
 		index = 0
 	}
+
 	if index > len(menuIDs) {
 		index = len(menuIDs)
 	}
@@ -582,12 +507,12 @@ func toMenuPromptRows(menus []*domain.Menu) []menuPromptRow {
 func (s *MenuService) Delete(ctx context.Context, menuID uint) error {
 	menu, err := s.menus.FindByID(ctx, menuID)
 	if err != nil || menu == nil {
-		return domain.ErrMenuNotFound
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrMenuNotFound, err)
 	}
 
 	childCount, err := s.menus.CountChildren(ctx, menu.ID)
 	if err != nil {
-		return domain.ErrQueryFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrQueryFailed, err)
 	}
 
 	if childCount > 0 {
@@ -595,11 +520,11 @@ func (s *MenuService) Delete(ctx context.Context, menuID uint) error {
 	}
 
 	if err := s.roleMenus.DeleteByMenu(ctx, menu.ID); err != nil {
-		return domain.ErrDeleteFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrDeleteFailed, err)
 	}
 
 	if err := s.menus.DeleteByID(ctx, menu.ID); err != nil {
-		return domain.ErrDeleteFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrDeleteFailed, err)
 	}
 
 	return nil
@@ -609,20 +534,18 @@ func (s *MenuService) Delete(ctx context.Context, menuID uint) error {
 func (s *MenuService) AssignRoleMenus(ctx context.Context, roleID uint, menuIDs []uint) error {
 	role, err := s.roles.FindIDByID(ctx, roleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrRoleNotFound, err)
 	}
 
 	inheritMenuIDs, err := s.roleMenus.InheritedMenuIDs(ctx, role.ID)
 	if err != nil {
-		return domain.ErrQueryFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrQueryFailed, err)
 	}
 
 	filteredIDs := domain.DedupeMenuIDs(menuIDs, inheritMenuIDs)
 	if len(filteredIDs) == 0 {
 		if err := s.roleMenus.DeleteDirectByRole(ctx, role.ID); err != nil {
-			s.logger.Error("清空菜单失败", zap.Error(err))
-
-			return domain.ErrUpdateFailed
+			return apperr.Wrap("application/rbac/menu_service", domain.ErrUpdateFailed, err)
 		}
 
 		return nil
@@ -630,24 +553,19 @@ func (s *MenuService) AssignRoleMenus(ctx context.Context, roleID uint, menuIDs 
 
 	menus, err := s.menus.FindByIDs(ctx, filteredIDs)
 	if err != nil {
-		s.logger.Error("查询菜单失败", zap.Error(err))
-
-		return domain.ErrQueryMenuFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrQueryMenuFailed, err)
 	}
+
 	if len(menus) != len(filteredIDs) {
 		return domain.ErrSomeMenusNotFound
 	}
 
 	if err := s.roleMenus.DeleteDirectByRoleExcept(ctx, role.ID, filteredIDs); err != nil {
-		s.logger.Error("更新菜单失败", zap.Error(err))
-
-		return domain.ErrUpdateFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrUpdateFailed, err)
 	}
 
 	if err := s.roleMenus.CreateIgnoreConflict(ctx, domain.NewDirectRoleMenus(role.ID, menus)); err != nil {
-		s.logger.Error("更新菜单失败", zap.Error(err))
-
-		return domain.ErrUpdateFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrUpdateFailed, err)
 	}
 
 	return nil
@@ -657,12 +575,12 @@ func (s *MenuService) AssignRoleMenus(ctx context.Context, roleID uint, menuIDs 
 func (s *MenuService) RemoveRoleMenus(ctx context.Context, roleID uint, menuIDs []uint) error {
 	role, err := s.roles.FindIDByID(ctx, roleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrRoleNotFound, err)
 	}
 
 	inheritMenuIDs, err := s.roleMenus.InheritedMenuIDs(ctx, role.ID)
 	if err != nil {
-		return domain.ErrQueryFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrQueryFailed, err)
 	}
 
 	filteredIDs := domain.DedupeMenuIDs(menuIDs, inheritMenuIDs)
@@ -672,16 +590,15 @@ func (s *MenuService) RemoveRoleMenus(ctx context.Context, roleID uint, menuIDs 
 
 	menus, err := s.menus.FindByIDs(ctx, filteredIDs)
 	if err != nil {
-		return domain.ErrQueryMenuFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrQueryMenuFailed, err)
 	}
+
 	if len(menus) != len(filteredIDs) {
 		return domain.ErrSomeMenusNotFound
 	}
 
 	if err := s.roleMenus.DeleteDirectByRoleAndMenus(ctx, role.ID, filteredIDs); err != nil {
-		s.logger.Error("移除菜单失败", zap.Error(err))
-
-		return domain.ErrRemoveFailed
+		return apperr.Wrap("application/rbac/menu_service", domain.ErrRemoveFailed, err)
 	}
 
 	return nil
@@ -691,17 +608,17 @@ func (s *MenuService) RemoveRoleMenus(ctx context.Context, roleID uint, menuIDs 
 func (s *MenuService) RoleMenus(ctx context.Context, roleID uint) (RoleMenusResp, error) {
 	role, err := s.roles.FindIDByID(ctx, roleID)
 	if err != nil || role == nil {
-		return RoleMenusResp{}, domain.ErrRoleNotFound
+		return RoleMenusResp{}, apperr.Wrap("application/rbac/menu_service", domain.ErrRoleNotFound, err)
 	}
 
 	directMenus, err := s.menus.ListByRoleInherited(ctx, role.ID, false)
 	if err != nil {
-		return RoleMenusResp{}, domain.ErrGetFailed
+		return RoleMenusResp{}, apperr.Wrap("application/rbac/menu_service", domain.ErrGetFailed, err)
 	}
 
 	inheritMenus, err := s.menus.ListByRoleInherited(ctx, role.ID, true)
 	if err != nil {
-		return RoleMenusResp{}, domain.ErrGetFailed
+		return RoleMenusResp{}, apperr.Wrap("application/rbac/menu_service", domain.ErrGetFailed, err)
 	}
 
 	return RoleMenusResp{
@@ -714,7 +631,7 @@ func (s *MenuService) RoleMenus(ctx context.Context, roleID uint) (RoleMenusResp
 func (s *MenuService) UserMenus(ctx context.Context, userID uint) ([]*domain.Menu, error) {
 	roleID, found, err := s.userRoles.CurrentRoleID(ctx, userID)
 	if err != nil || !found {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/rbac/menu_service", domain.ErrUserNotFound, err)
 	}
 
 	if roleID == 0 {
@@ -723,8 +640,111 @@ func (s *MenuService) UserMenus(ctx context.Context, userID uint) ([]*domain.Men
 
 	menus, err := s.menus.ListByRole(ctx, roleID)
 	if err != nil {
-		return nil, domain.ErrGetFailed
+		return nil, apperr.Wrap("application/rbac/menu_service", domain.ErrGetFailed, err)
 	}
 
 	return domain.BuildMenuTree(menus), nil
+}
+
+func menuServiceUpdateCondition(params UpdateMenuParams) bool {
+	return params.Title == nil && params.TitleEn == nil && params.TitleJa == nil && params.Icon == nil &&
+		params.Path == nil && params.Name == nil && params.Component == nil && params.KeepAlive == nil &&
+		!params.ParentProvided && params.SortOrder == nil
+}
+
+func menuServiceUpdateTransaction(txCtx context.Context, s *MenuService, params UpdateMenuParams, update domain.MenuFieldUpdate) error {
+	menu, err := s.menus.FindByIDForUpdate(txCtx, params.ID)
+	if err != nil {
+		return fmt.Errorf("读取菜单失败: %w", err)
+	}
+
+	if menu == nil {
+		return domain.ErrMenuNotFound
+	}
+
+	if update.Title != nil {
+		if err := s.ensureMenuTitleAvailable(txCtx, *update.Title, menu.ID); err != nil {
+			return err
+		}
+	}
+
+	nextParentID := normalizedParentID(menu.ParentID)
+	if params.ParentProvided {
+		nextParentID = normalizedParentID(params.ParentID)
+	}
+
+	if err := s.validateMenuParent(txCtx, menu.ID, nextParentID); err != nil {
+		return err
+	}
+
+	if params.ParentProvided || params.SortOrder != nil {
+		if err := s.placeExistingMenu(txCtx, menu, nextParentID, params.SortOrder); err != nil {
+			return err
+		}
+	}
+
+	if update.IsEmpty() {
+		return nil
+	}
+
+	if err := s.menus.UpdateFields(txCtx, menu.ID, update); err != nil {
+		return fmt.Errorf("更新菜单失败: %w", err)
+	}
+
+	return nil
+}
+
+func menuServiceMoveTransaction(txCtx context.Context, s *MenuService, menuID, targetID uint, position string) error {
+	menus, err := s.menus.FindByIDsForUpdate(txCtx, []uint{menuID, targetID})
+	if err != nil {
+		return fmt.Errorf("读取拖拽菜单失败: %w", err)
+	}
+
+	if len(menus) != 2 {
+		return domain.ErrMenuNotFound
+	}
+
+	var moving, target *domain.Menu
+
+	for _, menu := range menus {
+		if menu == nil {
+			continue
+		}
+
+		switch menu.ID {
+		case menuID:
+			moving = menu
+		case targetID:
+			target = menu
+		}
+	}
+
+	if moving == nil || target == nil {
+		return domain.ErrMenuNotFound
+	}
+
+	parentID := normalizedParentID(moving.ParentID)
+	if !sameParent(parentID, normalizedParentID(target.ParentID)) {
+		return domain.ErrMenuMoveAcrossLevels
+	}
+
+	siblingIDs, err := s.menus.ListSiblingIDsForUpdate(txCtx, parentID)
+	if err != nil {
+		return fmt.Errorf("读取同层菜单失败: %w", err)
+	}
+
+	siblingIDs = removeMenuID(siblingIDs, menuID)
+
+	targetIndex := menuIDIndex(siblingIDs, targetID)
+	if targetIndex < 0 {
+		return domain.ErrMenuNotFound
+	}
+
+	if position == MenuMoveAfter {
+		targetIndex++
+	}
+
+	siblingIDs = insertMenuID(siblingIDs, menuID, targetIndex)
+
+	return s.applyMenuSequence(txCtx, siblingIDs)
 }

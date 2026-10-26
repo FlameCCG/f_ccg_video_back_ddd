@@ -2,13 +2,13 @@ package video
 
 import (
 	"encoding/xml"
+	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // DASHVariant 是 MPD 中的一个 Representation（DASH 资源下的视频或音频轨）。
@@ -118,6 +118,7 @@ func IsDASHResource(r ResourceBrief) bool {
 // MaxVariantBitrateKbps 返回指定 contentType 下最大的 kbps 码率；contentType 为空表示不过滤。
 func MaxVariantBitrateKbps(variants []DASHVariant, contentType string) int {
 	maxBitrate := 0
+
 	for _, v := range variants {
 		if contentType != "" && v.ContentType != contentType {
 			continue
@@ -149,84 +150,24 @@ func ParseMPDVariants(data []byte) ([]DASHVariant, error) {
 		for _, as := range period.AdaptationSets {
 			asType := classifyAdaptationContentType(as)
 			for _, rep := range as.Reps {
-				v := DASHVariant{
-					ID:          strings.TrimSpace(rep.ID),
-					ContentType: asType,
-					Width:       rep.Width,
-					Height:      rep.Height,
-					Bandwidth:   rep.Bandwidth,
-					Codecs:      firstNonEmpty(rep.Codecs, as.Codecs),
-					MimeType:    firstNonEmpty(rep.MimeType, as.MimeType),
-					BaseURL:     strings.TrimSpace(rep.BaseURL),
-					FrameRate:   firstNonEmpty(rep.FrameRate, as.FrameRate),
-				}
-				if v.Bandwidth > 0 {
-					v.Bitrate = (v.Bandwidth + 500) / 1000 // bps → kbps（四舍五入）
+				v, err := buildMPDVariant(asType, as, rep)
+				if err != nil {
+					return nil, err
 				}
 
-				if v.BaseURL != "" {
-					v.FileName = baseNameOf(strings.Split(v.BaseURL, "?")[0])
-				}
-
-				// AdaptationSet 未声明时，用 mime/codecs 推断内容类型。
-				if v.ContentType == "unknown" {
-					v.ContentType = classifyRepContentType(v)
-				}
-
-				switch v.ContentType {
-				case "video":
-					v.Resolution = ResolutionLabelFromSize(v.Width, v.Height)
-				case "audio":
-					v.Resolution = "音频"
-				default:
-					v.Resolution = firstNonEmpty(v.MimeType, "流")
-				}
-
-				template := rep.Template
-				if template == nil {
-					template = as.Template
-				}
-				if template != nil {
-					files, err := templateFiles(template, rep.ID, rep.Bandwidth)
-					if err != nil {
-						return nil, err
-					}
-					v.Files = files
-					if len(files) > 0 {
-						v.FileName = baseNameOf(files[0])
-					}
-				}
-				v.FileSize = estimateRepFileSize(rep)
 				out = append(out, v)
 			}
 		}
 	}
 
-	if len(out) == 0 {
-		return nil, fmt.Errorf("no representation in mpd")
-	}
-
-	sort.SliceStable(out, func(i, j int) bool {
-		// 视频优先，其次按高度降序，再按带宽降序
-		if out[i].ContentType != out[j].ContentType {
-			return contentTypeRank(out[i].ContentType) < contentTypeRank(out[j].ContentType)
-		}
-
-		if out[i].Height != out[j].Height {
-			return out[i].Height > out[j].Height
-		}
-
-		return out[i].Bandwidth > out[j].Bandwidth
-	})
-
-	return out, nil
+	return finishParseMPDVariants(out)
 }
 
 func contentTypeRank(t string) int {
 	switch t {
-	case "video":
+	case mediaTypeVideo:
 		return 0
-	case "audio":
+	case mediaTypeAudio:
 		return 1
 	default:
 		return 2
@@ -235,7 +176,7 @@ func contentTypeRank(t string) int {
 
 func classifyAdaptationContentType(as mpdAdaptationSet) string {
 	ct := strings.ToLower(strings.TrimSpace(as.ContentType))
-	if ct == "video" || ct == "audio" {
+	if ct == mediaTypeVideo || ct == mediaTypeAudio {
 		return ct
 	}
 
@@ -243,13 +184,13 @@ func classifyAdaptationContentType(as mpdAdaptationSet) string {
 
 	switch {
 	case strings.HasPrefix(mime, "video/"):
-		return "video"
+		return mediaTypeVideo
 	case strings.HasPrefix(mime, "audio/"):
-		return "audio"
+		return mediaTypeAudio
 	}
 
 	if as.MaxHeight > 0 || as.MaxWidth > 0 {
-		return "video"
+		return mediaTypeVideo
 	}
 
 	return "unknown"
@@ -260,25 +201,23 @@ func classifyRepContentType(v DASHVariant) string {
 
 	switch {
 	case strings.HasPrefix(mime, "video/"):
-		return "video"
+		return mediaTypeVideo
 	case strings.HasPrefix(mime, "audio/"):
-		return "audio"
+		return mediaTypeAudio
 	}
 
 	codecs := strings.ToLower(v.Codecs)
-	if strings.Contains(codecs, "avc") || strings.Contains(codecs, "hev") ||
-		strings.Contains(codecs, "hvc") || strings.Contains(codecs, "vp9") ||
-		strings.Contains(codecs, "av01") {
-		return "video"
+	if classifyRepContentTypeCondition(codecs) {
+		return mediaTypeVideo
 	}
 
 	if strings.Contains(codecs, "mp4a") || strings.Contains(codecs, "opus") ||
 		strings.Contains(codecs, "ac-3") || strings.Contains(codecs, "ec-3") {
-		return "audio"
+		return mediaTypeAudio
 	}
 
 	if v.Width > 0 || v.Height > 0 {
-		return "video"
+		return mediaTypeVideo
 	}
 
 	return "unknown"
@@ -432,52 +371,159 @@ func templateFiles(t *mpdSegmentTemplate, id string, bandwidth int) ([]string, e
 			if m[1] == "RepresentationID" {
 				return id
 			}
+
 			value := number
 			if m[1] == "Time" {
 				value = stamp
 			}
+
 			if m[1] == "Bandwidth" {
 				value = int64(bandwidth)
 			}
+
 			width, _ := strconv.Atoi(m[3])
+
 			return fmt.Sprintf("%0*d", width, value)
 		})
+
 		return strings.ReplaceAll(pattern, "\x00", "$")
 	}
+
 	files := []string{}
 	if t.Initialization != "" {
 		files = append(files, expand(t.Initialization, 0, 0))
 	}
+
 	if t.Media == "" || t.Timeline == nil {
-		return nil, fmt.Errorf("DASH template requires media and timeline")
+		return nil, errors.New("DASH template requires media and timeline")
 	}
+
 	number := t.StartNumber
 	if number == 0 {
 		number = 1
 	}
+
+	return finishTemplateFiles(t, expand, &files, &number)
+}
+
+func classifyRepContentTypeCondition(codecs string) bool {
+	return strings.Contains(codecs, "avc") || strings.Contains(codecs, "hev") ||
+		strings.Contains(codecs, "hvc") || strings.Contains(codecs, "vp9") ||
+		strings.Contains(codecs, "av01")
+}
+
+func templateFilesCondition(files []string, repeat int64) bool {
+	return repeat < 0 || repeat > 100000 || int64(len(files))+repeat+1 > 100000
+}
+
+func finishParseMPDVariants(out []DASHVariant) ([]DASHVariant, error) {
+	if len(out) == 0 {
+		return nil, errors.New("no representation in mpd")
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		// 视频优先，其次按高度降序，再按带宽降序
+		if out[i].ContentType != out[j].ContentType {
+			return contentTypeRank(out[i].ContentType) < contentTypeRank(out[j].ContentType)
+		}
+
+		if out[i].Height != out[j].Height {
+			return out[i].Height > out[j].Height
+		}
+
+		return out[i].Bandwidth > out[j].Bandwidth
+	})
+
+	return out, nil
+}
+
+func finishTemplateFiles(t *mpdSegmentTemplate, expand func(pattern string, number, stamp int64) string, files *[]string, number *int64) ([]string, error) {
 	var stamp int64
+
 	for i, e := range t.Timeline.Entries {
 		if e.Start != nil {
 			stamp = *e.Start
 		}
+
 		repeat := e.Repeat
 		if e.Duration <= 0 {
-			return nil, fmt.Errorf("invalid DASH segment duration")
+			return nil, errors.New("invalid DASH segment duration")
 		}
+
 		if repeat < 0 {
 			if i+1 >= len(t.Timeline.Entries) || t.Timeline.Entries[i+1].Start == nil {
-				return nil, fmt.Errorf("unbounded DASH timeline")
+				return nil, errors.New("unbounded DASH timeline")
 			}
+
 			repeat = (*t.Timeline.Entries[i+1].Start-stamp+e.Duration-1)/e.Duration - 1
 		}
-		if repeat < 0 || repeat > 100000 || int64(len(files))+repeat+1 > 100000 {
-			return nil, fmt.Errorf("DASH timeline exceeds segment limit")
+
+		if templateFilesCondition((*files), repeat) {
+			return nil, errors.New("DASH timeline exceeds segment limit")
 		}
+
 		for j := int64(0); j <= repeat; j++ {
-			files = append(files, expand(t.Media, number, stamp))
-			number++
+			(*files) = append((*files), expand(t.Media, (*number), stamp))
+			(*number)++
 			stamp += e.Duration
 		}
 	}
-	return files, nil
+
+	return (*files), nil
+}
+
+func buildMPDVariant(asType string, as mpdAdaptationSet, rep mpdRepresentation) (DASHVariant, error) {
+	v := DASHVariant{
+		ID:          strings.TrimSpace(rep.ID),
+		ContentType: asType,
+		Width:       rep.Width,
+		Height:      rep.Height,
+		Bandwidth:   rep.Bandwidth,
+		Codecs:      firstNonEmpty(rep.Codecs, as.Codecs),
+		MimeType:    firstNonEmpty(rep.MimeType, as.MimeType),
+		BaseURL:     strings.TrimSpace(rep.BaseURL),
+		FrameRate:   firstNonEmpty(rep.FrameRate, as.FrameRate),
+	}
+	if v.Bandwidth > 0 {
+		v.Bitrate = (v.Bandwidth + 500) / 1000 // bps → kbps（四舍五入）
+	}
+
+	if v.BaseURL != "" {
+		v.FileName = baseNameOf(strings.Split(v.BaseURL, "?")[0])
+	}
+
+	// AdaptationSet 未声明时，用 mime/codecs 推断内容类型。
+	if v.ContentType == "unknown" {
+		v.ContentType = classifyRepContentType(v)
+	}
+
+	switch v.ContentType {
+	case mediaTypeVideo:
+		v.Resolution = ResolutionLabelFromSize(v.Width, v.Height)
+	case mediaTypeAudio:
+		v.Resolution = "音频"
+	default:
+		v.Resolution = firstNonEmpty(v.MimeType, "流")
+	}
+
+	template := rep.Template
+	if template == nil {
+		template = as.Template
+	}
+
+	if template != nil {
+		files, err := templateFiles(template, rep.ID, rep.Bandwidth)
+		if err != nil {
+			return DASHVariant{}, err
+		}
+
+		v.Files = files
+		if len(files) > 0 {
+			v.FileName = baseNameOf(files[0])
+		}
+	}
+
+	v.FileSize = estimateRepFileSize(rep)
+
+	return v, nil
 }

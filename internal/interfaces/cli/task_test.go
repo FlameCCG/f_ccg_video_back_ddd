@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 // TestResolveTaskPriority 校验多开关同时给出时的优先级与原 core.InitCore 执行顺序一致：
 // -db → -vp → -br → -su → -es → -rs → -rbac。
@@ -16,8 +20,9 @@ func TestResolveTaskPriority(t *testing.T) {
 		RS:              true,
 		RBAC:            true,
 	}
-	if got := ResolveTask(all); got != TaskMigrateDB {
-		t.Fatalf("all flags: got %v, want TaskMigrateDB", got)
+	{
+		got := ResolveTask(all)
+		require.Equal(t, TaskMigrateDB, got, "all flags: got %v, want TaskMigrateDB", got)
 	}
 
 	cases := []struct {
@@ -42,8 +47,9 @@ func TestResolveTaskPriority(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := ResolveTask(tt.opts); got != tt.want {
-				t.Fatalf("ResolveTask(%s) = %v, want %v", tt.name, got, tt.want)
+			{
+				got := ResolveTask(tt.opts)
+				require.Equal(t, tt.want, got, "ResolveTask(%s) = %v, want %v", tt.name, got, tt.want)
 			}
 		})
 	}
@@ -55,41 +61,40 @@ func TestInfraScopePerTask(t *testing.T) {
 
 	dbOnly := []Task{TaskMigrateDB, TaskVideoPartitions}
 	for _, task := range dbOnly {
-		if !NeedsDBOnly(task) {
-			t.Fatalf("task %v should only need config+logger+mysql", task)
-		}
+		require.True(t, NeedsDBOnly(task), "task %v should only need config+logger+mysql", task)
 
-		if NeedsStorage(task) || NeedsCasbin(task) || NeedsES(task) || NeedsFullInfra(task) {
-			t.Fatalf("task %v should not need storage, Casbin, ES or full infra", task)
-		}
+		require.False(t, NeedsStorage(task), "task %v should not need storage, Casbin, ES or full infra", task)
+		require.False(t, NeedsCasbin(task), "task %v should not need storage, Casbin, ES or full infra", task)
+		require.False(t, NeedsES(task), "task %v should not need storage, Casbin, ES or full infra", task)
+		require.False(t, NeedsFullInfra(task), "task %v should not need storage, Casbin, ES or full infra", task)
 	}
 
-	if !NeedsStorage(TaskBanner) || NeedsDBOnly(TaskBanner) || NeedsCasbin(TaskBanner) ||
-		NeedsES(TaskBanner) || NeedsFullInfra(TaskBanner) {
-		t.Fatal("TaskBanner should need config+logger+mysql+storage only")
-	}
+	require.True(t, NeedsStorage(TaskBanner), "TaskBanner should need config+logger+mysql+storage only")
+	require.False(t, NeedsDBOnly(TaskBanner), "TaskBanner should need config+logger+mysql+storage only")
+	require.False(t, NeedsCasbin(TaskBanner), "TaskBanner should need config+logger+mysql+storage only")
+	require.False(t, NeedsES(TaskBanner), "TaskBanner should need config+logger+mysql+storage only")
+	require.False(t, NeedsFullInfra(TaskBanner), "TaskBanner should need config+logger+mysql+storage only")
 
-	if !NeedsCasbin(TaskSuperUser) || NeedsDBOnly(TaskSuperUser) || NeedsStorage(TaskSuperUser) ||
-		NeedsES(TaskSuperUser) || NeedsFullInfra(TaskSuperUser) {
-		t.Fatal("TaskSuperUser should need config+logger+mysql+Casbin only")
-	}
+	require.True(t, NeedsCasbin(TaskSuperUser), "TaskSuperUser should need config+logger+mysql+Casbin only")
+	require.False(t, NeedsDBOnly(TaskSuperUser), "TaskSuperUser should need config+logger+mysql+Casbin only")
+	require.False(t, NeedsStorage(TaskSuperUser), "TaskSuperUser should need config+logger+mysql+Casbin only")
+	require.False(t, NeedsES(TaskSuperUser), "TaskSuperUser should need config+logger+mysql+Casbin only")
+	require.False(t, NeedsFullInfra(TaskSuperUser), "TaskSuperUser should need config+logger+mysql+Casbin only")
 
-	if !NeedsES(TaskESIndex) || NeedsDBOnly(TaskESIndex) || NeedsFullInfra(TaskESIndex) {
-		t.Fatal("TaskESIndex should need config+logger+mysql+es only")
-	}
+	require.True(t, NeedsES(TaskESIndex), "TaskESIndex should need config+logger+mysql+es only")
+	require.False(t, NeedsDBOnly(TaskESIndex), "TaskESIndex should need config+logger+mysql+es only")
+	require.False(t, NeedsFullInfra(TaskESIndex), "TaskESIndex should need config+logger+mysql+es only")
 
 	for _, task := range []Task{TaskResourceSync, TaskRBACInit} {
-		if !NeedsFullInfra(task) {
-			t.Fatalf("task %v should need full infrastructure", task)
-		}
+		require.True(t, NeedsFullInfra(task), "task %v should need full infrastructure", task)
 
-		if NeedsDBOnly(task) || NeedsES(task) {
-			t.Fatalf("task %v scope classification is wrong", task)
-		}
+		require.False(t, NeedsDBOnly(task), "task %v scope classification is wrong", task)
+		require.False(t, NeedsES(task), "task %v scope classification is wrong", task)
 	}
 
-	if NeedsDBOnly(TaskServe) || NeedsStorage(TaskServe) || NeedsCasbin(TaskServe) ||
-		NeedsES(TaskServe) || NeedsFullInfra(TaskServe) {
-		t.Fatal("TaskServe is not a CLI maintenance task")
-	}
+	require.False(t, NeedsDBOnly(TaskServe), "TaskServe is not a CLI maintenance task")
+	require.False(t, NeedsStorage(TaskServe), "TaskServe is not a CLI maintenance task")
+	require.False(t, NeedsCasbin(TaskServe), "TaskServe is not a CLI maintenance task")
+	require.False(t, NeedsES(TaskServe), "TaskServe is not a CLI maintenance task")
+	require.False(t, NeedsFullInfra(TaskServe), "TaskServe is not a CLI maintenance task")
 }

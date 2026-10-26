@@ -155,6 +155,7 @@ func FilterInheritedPermissions(direct, effective []PermissionItem) []Permission
 	inherited := make([]PermissionItem, 0)
 
 	seen := make(map[string]struct{})
+
 	for _, p := range effective {
 		key := p.Resource + "\x00" + strings.ToUpper(p.Action)
 		if _, ok := directSet[key]; ok {
@@ -166,6 +167,7 @@ func FilterInheritedPermissions(direct, effective []PermissionItem) []Permission
 		}
 
 		seen[key] = struct{}{}
+
 		inherited = append(inherited, p)
 	}
 

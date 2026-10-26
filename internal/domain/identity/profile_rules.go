@@ -1,10 +1,9 @@
 package identity
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"strings"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // RegisterSourceEmail 邮箱注册来源标识（落库到 users.register_source）。

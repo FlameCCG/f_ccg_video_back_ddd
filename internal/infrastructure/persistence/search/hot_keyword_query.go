@@ -2,11 +2,11 @@ package search
 
 import (
 	"context"
-
-	app "f_ccg_video_back_ddd/internal/application/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/search"
 
 	"gorm.io/gorm"
 )

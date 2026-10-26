@@ -2,15 +2,16 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/uploadcheck"
 	"path"
 	"slices"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/config"
-	"f_ccg_video_back_ddd/internal/config/site"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/pkg/uploadcheck"
 
 	"go.uber.org/zap"
 )
@@ -56,7 +57,7 @@ func (s *UserBannerService) ListDefaults(ctx context.Context, viewerID uint) (*D
 
 	list, err := s.banners.ListVisible(ctx, bannerIDs)
 	if err != nil {
-		return nil, ErrBannerListFailed
+		return nil, apperr.Wrap("application/identity/user_banner_service", ErrBannerListFailed, err)
 	}
 
 	currentBannerID, currentBannerImageURL := s.resolveCurrentSelection(ctx, viewerID)
@@ -101,7 +102,7 @@ func (s *UserBannerService) resolveCurrentSelection(ctx context.Context, viewerI
 // AdminSetDefault 更换注册默认横幅：写回配置并把旧默认横幅的用户批量迁移到新横幅。
 func (s *UserBannerService) AdminSetDefault(ctx context.Context, bannerID uint) error {
 	if err := s.ensureUserBannerSelectable(ctx, bannerID); err != nil {
-		return domain.ErrUserBannerNotFound
+		return apperr.Wrap("application/identity/user_banner_service", domain.ErrUserBannerNotFound, err)
 	}
 
 	s.ensureSiteConfig()
@@ -122,11 +123,11 @@ func (s *UserBannerService) AdminSetDefault(ctx context.Context, bannerID uint) 
 	})
 
 	if err := s.persistSiteConfig(); err != nil {
-		return ErrPersistSiteConfigFailed
+		return apperr.Wrap("application/identity/user_banner_service", ErrPersistSiteConfigFailed, err)
 	}
 
 	if err := s.confs.ReassignBanner(ctx, oldDefaultBannerID, bannerID); err != nil {
-		return ErrSetUserBannerFailed
+		return apperr.Wrap("application/identity/user_banner_service", ErrSetUserBannerFailed, err)
 	}
 
 	return nil
@@ -142,7 +143,7 @@ func (s *UserBannerService) AdminUpdateDefaults(
 
 	// 注意：此处按原实现读取「未经兜底」的配置值，与 AdminSetDefault 的语义不同。
 	if err := domain.EnsureRegisterDefaultBannerNotTouched(bannerIDs, s.configuredDefaultBannerID()); err != nil {
-		return nil, domain.ErrRegisterDefaultBannerLocked
+		return nil, apperr.Wrap("application/identity/user_banner_service", domain.ErrRegisterDefaultBannerLocked, err)
 	}
 
 	current := s.editableBannerIDs()
@@ -150,7 +151,7 @@ func (s *UserBannerService) AdminUpdateDefaults(
 	switch action {
 	case domain.UserBannerActionAdd:
 		if err := s.ensureUserBannersSelectable(ctx, bannerIDs); err != nil {
-			return nil, domain.ErrUserBannerNotFound
+			return nil, apperr.Wrap("application/identity/user_banner_service", domain.ErrUserBannerNotFound, err)
 		}
 		// 校验：如果要添加的 bannerID 已经存在于系统默认列表中，则报错。
 		for _, id := range domain.NormalizeBannerIDs(bannerIDs) {
@@ -171,7 +172,7 @@ func (s *UserBannerService) AdminUpdateDefaults(
 	})
 
 	if err := s.persistSiteConfig(); err != nil {
-		return nil, ErrPersistSiteConfigFailed
+		return nil, apperr.Wrap("application/identity/user_banner_service", ErrPersistSiteConfigFailed, err)
 	}
 
 	return &AdminUpdateUserBannerListResult{BannerIDs: current}, nil
@@ -189,16 +190,14 @@ func (s *UserBannerService) UploadBanner(ctx context.Context, in UploadBannerInp
 	}
 
 	if err = s.storage.EnsureReady(); err != nil {
-		return "", ErrStorageConfigInvalid
+		return "", apperr.Wrap("application/identity/user_banner_service", ErrStorageConfigInvalid, err)
 	}
 
 	relativePath := path.Join("banners", "user", in.FileHash+ext)
 
 	bannerURL, err := s.storage.SaveBanner(ctx, relativePath, in.Size, in.File, contentType)
 	if err != nil {
-		s.logger.Error("save banner failed", zap.Error(err))
-
-		return "", ErrBannerUploadFailed
+		return "", apperr.Wrap("application/identity/user_banner_service", ErrBannerUploadFailed, err)
 	}
 
 	return bannerURL, nil

@@ -1,9 +1,8 @@
 package video
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // Revision 是作者改稿的业务意图；nil 字段保留原值，不包含数据库列名。
@@ -23,12 +22,14 @@ type Revision struct {
 // Revise 保护作者身份和可编辑状态，再应用改稿。删除后的恢复仅属于管理端用例。
 // now 和审核开关由调用方提供，领域不读取时钟、配置或调度存储。
 func (v *Video) Revise(author string, change Revision, now time.Time, reviewEnabled bool) error {
-	if v == nil || !v.OwnedBy(author) || v.IsDeleted() {
+	if videoReviseCondition(v, author) {
 		return ErrRecordNotFound
 	}
 
 	switch v.Status {
 	case enum.VideoStatusPublished, enum.VideoStatusPrivate, enum.VideoStatusReview, enum.VideoStatusScheduled:
+	case enum.VideoStatusDeleted:
+		fallthrough
 	default:
 		return ErrVideoStatusInvalid
 	}
@@ -36,15 +37,19 @@ func (v *Video) Revise(author string, change Revision, now time.Time, reviewEnab
 	if change.Title != nil {
 		v.Title = *change.Title
 	}
+
 	if change.Description != nil {
 		v.Description = *change.Description
 	}
+
 	if change.Cover != nil {
 		v.Cover = *change.Cover
 	}
+
 	if change.PartitionID != nil {
 		v.PartitionID = *change.PartitionID
 	}
+
 	if change.IsOriginal != nil {
 		v.IsOriginal = *change.IsOriginal
 	}
@@ -54,12 +59,22 @@ func (v *Video) Revise(author string, change Revision, now time.Time, reviewEnab
 		if change.IsPrivate != nil {
 			isPrivate = *change.IsPrivate
 		}
+
 		v.Status = ResolvePublishVideoStatus(now, change.PublishTime, isPrivate, reviewEnabled)
-		v.IsScheduled = !isPrivate && change.PublishTime != nil && change.PublishTime.After(now)
+
+		v.IsScheduled = videoReviseCondition2(change, now, isPrivate)
 		if v.Status == enum.VideoStatusReview {
 			v.ApprovedAt = nil
 		}
 	}
 
 	return nil
+}
+
+func videoReviseCondition(v *Video, author string) bool {
+	return v == nil || !v.OwnedBy(author) || v.IsDeleted()
+}
+
+func videoReviseCondition2(change Revision, now time.Time, isPrivate bool) bool {
+	return !isPrivate && change.PublishTime != nil && change.PublishTime.After(now)
 }

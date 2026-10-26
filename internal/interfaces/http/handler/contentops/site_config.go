@@ -2,13 +2,13 @@ package contentops
 
 import (
 	"errors"
-	"strings"
-
-	app "f_ccg_video_back_ddd/internal/application/contentops"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+	"strings"
+
+	app "f_ccg_video_back_ddd/internal/application/contentops"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,7 +34,7 @@ type SiteResp struct {
 func (h *Handler) CommonConfigView(c *gin.Context) {
 	siteCfg, err := h.siteCfg.PublicSite()
 	if err != nil {
-		res.FailWithMsg("站点配置未初始化", c)
+		res.FailWithCause(err, "站点配置未初始化", c)
 
 		return
 	}
@@ -43,7 +43,7 @@ func (h *Handler) CommonConfigView(c *gin.Context) {
 }
 
 // AdminConfigItemView 管理员站点配置（按名称）.
-// Query: name
+// Query: name.
 func (h *Handler) AdminConfigItemView(c *gin.Context) {
 	name := strings.TrimSpace(c.Query("name"))
 	if name == "" {
@@ -54,7 +54,7 @@ func (h *Handler) AdminConfigItemView(c *gin.Context) {
 
 	resp, err := h.siteCfg.AdminConfigByName(name)
 	if err != nil {
-		res.FailWithMsg("不支持的配置项", c)
+		res.FailWithCause(err, "不支持的配置项", c)
 
 		return
 	}
@@ -63,7 +63,7 @@ func (h *Handler) AdminConfigItemView(c *gin.Context) {
 }
 
 // AdminUpdateConfigItemView 管理员更新站点配置（按名称）.
-// Query: name
+// Query: name.
 func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 	name := strings.TrimSpace(c.Query("name"))
 	if name == "" {
@@ -74,37 +74,24 @@ func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 
 	var err error
 
+	restartRequired := false
+
 	middlewares.LimitRequestBody(c, middlewares.DefaultJSONBodyLimit)
 
 	// 绑定停留在 interfaces 层；应用层负责浅拷贝顶层、保留密钥、原子发布并写回文件。
 	switch name {
 	case configNameSite:
-		var siteCfg *struct {
-			site.Site
-			DisableUserSubmission *bool `json:"disableUserSubmission"`
-		}
-		if err = c.ShouldBindJSON(&siteCfg); err == nil {
-			if siteCfg == nil {
-				err = h.siteCfg.UpdateSite(nil, nil)
-			} else {
-				err = h.siteCfg.UpdateSite(&siteCfg.Site, siteCfg.DisableUserSubmission)
-			}
-		}
+		err = h.bindSiteSection(c)
 	case app.ConfigNameLogger:
 		var logger *config.Logger
 		if err = c.ShouldBindJSON(&logger); err == nil {
+			restartRequired = h.siteCfg.LoggerRestartRequired(logger)
 			err = h.siteCfg.UpdateLogger(logger)
 		}
 	case app.ConfigNameEmail:
-		var email *config.Email
-		if err = c.ShouldBindJSON(&email); err == nil {
-			err = h.siteCfg.UpdateEmail(email)
-		}
+		err = bindConfigSection(c, h.siteCfg.UpdateEmail)
 	case app.ConfigNameAI:
-		var ai *config.AI
-		if err = c.ShouldBindJSON(&ai); err == nil {
-			err = h.siteCfg.UpdateAI(ai)
-		}
+		err = bindConfigSection(c, h.siteCfg.UpdateAI)
 	case app.ConfigNameTranscode:
 		var body struct {
 			config.Transcode
@@ -114,15 +101,9 @@ func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 			err = h.siteCfg.UpdateTranscode(&body.Transcode, body.LocalConsumerDisabled)
 		}
 	case configNameThirdLogin:
-		var thirdLogin *config.ThirdLogin
-		if err = c.ShouldBindJSON(&thirdLogin); err == nil {
-			err = h.siteCfg.UpdateThirdLogin(thirdLogin)
-		}
+		err = bindConfigSection(c, h.siteCfg.UpdateThirdLogin)
 	case app.ConfigNameJWT:
-		var jwt *config.Jwt
-		if err = c.ShouldBindJSON(&jwt); err == nil {
-			err = h.siteCfg.UpdateJWT(jwt)
-		}
+		err = bindConfigSection(c, h.siteCfg.UpdateJWT)
 	case configNameServer:
 		var body AdminServerCORSConfig
 		if err = c.ShouldBindJSON(&body); err == nil {
@@ -134,13 +115,7 @@ func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 		return
 	}
 
-	if err != nil {
-		respondConfigUpdateError(err, c)
-
-		return
-	}
-
-	res.OkWithMsg("更新成功", c)
+	finishHandlerAdminUpdateConfigItemView(c, name, err, restartRequired)
 }
 
 // respondConfigUpdateError 把配置更新失败映射为与原实现逐字一致的响应。
@@ -150,12 +125,52 @@ func (h *Handler) AdminUpdateConfigItemView(c *gin.Context) {
 func respondConfigUpdateError(err error, c *gin.Context) {
 	switch {
 	case errors.Is(err, app.ErrConfigFileRead):
-		res.FailWithMsg("读取配置文件失败", c)
+		res.FailWithCause(err, "读取配置文件失败", c)
 	case errors.Is(err, app.ErrConfigFileWrite):
-		res.FailWithMsg("更新配置文件失败", c)
+		res.FailWithCause(err, "更新配置文件失败", c)
 	case errors.Is(err, app.ErrConfigItemUnsupported):
 		res.FailWithMsg("不支持的配置项", c)
 	default:
 		res.FailWithError(err, c)
 	}
+}
+
+func finishHandlerAdminUpdateConfigItemView(c *gin.Context, name string, err error, restartRequired bool) {
+	if err != nil {
+		respondConfigUpdateError(err, c)
+
+		return
+	}
+
+	if name == app.ConfigNameLogger {
+		res.OkWithData(gin.H{"restartRequired": restartRequired}, c, "更新成功")
+		return
+	}
+
+	res.OkWithMsg("更新成功", c)
+}
+
+func bindConfigSection[T any](c *gin.Context, update func(*T) error) error {
+	var value *T
+	if err := c.ShouldBindJSON(&value); err != nil {
+		return err
+	}
+
+	return update(value)
+}
+
+func (h *Handler) bindSiteSection(c *gin.Context) error {
+	var body *struct {
+		site.Site
+		DisableUserSubmission *bool `json:"disableUserSubmission"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		return err
+	}
+
+	if body == nil {
+		return h.siteCfg.UpdateSite(nil, nil)
+	}
+
+	return h.siteCfg.UpdateSite(&body.Site, body.DisableUserSubmission)
 }

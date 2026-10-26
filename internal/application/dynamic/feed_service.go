@@ -2,10 +2,11 @@ package dynamic
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -213,47 +214,7 @@ func (s *FeedService) buildFeedMetrics(ctx context.Context, viewerID uint, rows 
 		})
 	}
 
-	if len(dynamicIDs) > 0 {
-		for _, row := range rows {
-			if enum.WorkType(row.WorkType) != enum.WorkTypeDynamic {
-				continue
-			}
-
-			metrics.dynamicLikeCounts[row.WorkID] = row.DynLikeCount
-		}
-
-		group.Go(func() error {
-			dynamicComments = s.dynamicCommentsBestEffort(groupCtx, dynamicIDs)
-
-			return nil
-		})
-
-		if viewerID > 0 {
-			group.Go(func() error {
-				likedDynamicIDs = s.likedDynamicIDsBestEffort(groupCtx, viewerID, dynamicIDs)
-
-				return nil
-			})
-		}
-	}
-
-	if err := group.Wait(); err != nil {
-		return nil, err
-	}
-
-	if dynamicComments != nil {
-		metrics.dynamicComments = dynamicComments
-	}
-
-	if likedVideoIDs != nil {
-		metrics.likedVideoIDs = likedVideoIDs
-	}
-
-	if likedDynamicIDs != nil {
-		metrics.likedDynamicIDs = likedDynamicIDs
-	}
-
-	return metrics, nil
+	return finishFeedServiceBuildFeedMetrics(groupCtx, s, viewerID, rows, metrics, dynamicIDs, &dynamicComments, &likedVideoIDs, &likedDynamicIDs, group)
 }
 
 // collectFeedIDs 从联合查询结果中按作品类型去重收集作品 ID。
@@ -294,6 +255,7 @@ func resolveFeedTotal(
 			total, err := countFn(ctx)
 			return total, []FeedRow{}, err
 		}
+
 		return 0, []FeedRow{}, nil
 	}
 
@@ -314,42 +276,31 @@ func resolveFeedTotal(
 	return total, rows, nil
 }
 
-func (s *FeedService) likedVideoIDsBestEffort(ctx context.Context, viewerID uint, videoIDs []uint) map[uint]bool {
-	result := map[uint]bool{}
-	if viewerID == 0 || len(videoIDs) == 0 {
-		return result
-	}
-
-	queryCtx, cancel := context.WithTimeout(ctx, feedMetricTimeout)
-	defer cancel()
-
-	ids, err := s.feed.LikedVideoIDs(queryCtx, viewerID, videoIDs)
-	if err != nil {
-		s.logger.Warn("load liked video ids failed", zap.Uint("viewerId", viewerID), zap.Error(err))
-
-		return result
-	}
-
-	return ids
+func (s *FeedService) likedVideoIDsBestEffort(ctx context.Context, viewerID uint, ids []uint) map[uint]bool {
+	return s.loadLikedIDsBestEffort(ctx, viewerID, ids, s.feed.LikedVideoIDs, "video")
 }
 
-func (s *FeedService) likedDynamicIDsBestEffort(ctx context.Context, viewerID uint, dynamicIDs []uint) map[uint]bool {
-	result := map[uint]bool{}
-	if viewerID == 0 || len(dynamicIDs) == 0 {
-		return result
+func (s *FeedService) likedDynamicIDsBestEffort(ctx context.Context, viewerID uint, ids []uint) map[uint]bool {
+	return s.loadLikedIDsBestEffort(ctx, viewerID, ids, s.feed.LikedDynamicIDs, "dynamic")
+}
+
+func (s *FeedService) loadLikedIDsBestEffort(ctx context.Context, viewerID uint, ids []uint, query func(context.Context, uint, []uint) (map[uint]bool, error), workType string) map[uint]bool {
+	if viewerID == 0 || len(ids) == 0 {
+		return map[uint]bool{}
 	}
 
 	queryCtx, cancel := context.WithTimeout(ctx, feedMetricTimeout)
 	defer cancel()
 
-	ids, err := s.feed.LikedDynamicIDs(queryCtx, viewerID, dynamicIDs)
+	flags, err := query(queryCtx, viewerID, ids)
 	if err != nil {
-		s.logger.Warn("load liked dynamic ids failed", zap.Uint("viewerId", viewerID), zap.Error(err))
+		operation := "dynamic.feed_service.liked_" + workType + "_i_ds_best_effort"
+		logctx.With(ctx, s.logger).Warn("load liked "+workType+" ids failed", zap.String("event", operation+".degraded"), zap.String("operation", operation), zap.Uint("viewer_id", viewerID), zap.Error(err))
 
-		return result
+		return map[uint]bool{}
 	}
 
-	return ids
+	return flags
 }
 
 func (s *FeedService) dynamicCommentsBestEffort(ctx context.Context, dynamicIDs []uint) map[uint]int64 {
@@ -363,7 +314,7 @@ func (s *FeedService) dynamicCommentsBestEffort(ctx context.Context, dynamicIDs 
 
 	counts, err := s.feed.CommentCountsByDynamic(queryCtx, dynamicIDs)
 	if err != nil {
-		s.logger.Warn("load dynamic comment counts failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("load dynamic comment counts failed", zap.String("event", "dynamic.feed_service.dynamic_comments_best_effort.degraded"), zap.String("operation", "dynamic.feed_service.dynamic_comments_best_effort"), zap.Error(err))
 
 		return result
 	}
@@ -413,4 +364,48 @@ func rowToFeedItem(r FeedRow, metrics *feedMetrics) WorkFeedItem {
 	}
 
 	return item
+}
+
+func finishFeedServiceBuildFeedMetrics(groupCtx context.Context, s *FeedService, viewerID uint, rows []FeedRow, metrics *feedMetrics, dynamicIDs []uint, dynamicComments *map[uint]int64, likedVideoIDs, likedDynamicIDs *map[uint]bool, group *errgroup.Group) (*feedMetrics, error) {
+	if len(dynamicIDs) > 0 {
+		for _, row := range rows {
+			if enum.WorkType(row.WorkType) != enum.WorkTypeDynamic {
+				continue
+			}
+
+			metrics.dynamicLikeCounts[row.WorkID] = row.DynLikeCount
+		}
+
+		group.Go(func() error {
+			(*dynamicComments) = s.dynamicCommentsBestEffort(groupCtx, dynamicIDs)
+
+			return nil
+		})
+
+		if viewerID > 0 {
+			group.Go(func() error {
+				(*likedDynamicIDs) = s.likedDynamicIDsBestEffort(groupCtx, viewerID, dynamicIDs)
+
+				return nil
+			})
+		}
+	}
+
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
+	if (*dynamicComments) != nil {
+		metrics.dynamicComments = (*dynamicComments)
+	}
+
+	if (*likedVideoIDs) != nil {
+		metrics.likedVideoIDs = (*likedVideoIDs)
+	}
+
+	if (*likedDynamicIDs) != nil {
+		metrics.likedDynamicIDs = (*likedDynamicIDs)
+	}
+
+	return metrics, nil
 }

@@ -10,11 +10,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"strconv"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/dynamic"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -68,7 +68,7 @@ func (c *UnreadFollowCountCache) Load(userID uint) (int64, bool, bool) {
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+			c.logger.Warn("get unread follow count cache failed", zap.String("event", "cache.unread_follow_cache.load.degraded"), zap.String("operation", "cache.unread_follow_cache.load"), zap.Uint("user_id", userID), zap.Error(err))
 		}
 
 		return 0, false, false
@@ -76,7 +76,7 @@ func (c *UnreadFollowCountCache) Load(userID uint) (int64, bool, bool) {
 
 	var payload redisValue
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		c.logger.Warn("unmarshal unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("unmarshal unread follow count cache failed", zap.String("event", "cache.unread_follow_cache.load.degraded"), zap.String("operation", "cache.unread_follow_cache.load"), zap.Uint("user_id", userID), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
 
 		return 0, false, false
@@ -107,7 +107,7 @@ func (c *UnreadFollowCountCache) Store(userID uint, count int64) {
 
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		c.logger.Warn("marshal unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("marshal unread follow count cache failed", zap.String("event", "cache.unread_follow_cache.store.degraded"), zap.String("operation", "cache.unread_follow_cache.store"), zap.Uint("user_id", userID), zap.Error(err))
 
 		return
 	}
@@ -116,7 +116,7 @@ func (c *UnreadFollowCountCache) Store(userID uint, count int64) {
 	defer cancel()
 
 	if err := c.redis.Set(cacheCtx, cacheKey(userID), raw, unreadFollowCountCacheStaleTTL).Err(); err != nil {
-		c.logger.Warn("set unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("set unread follow count cache failed", zap.String("event", "cache.unread_follow_cache.store.degraded"), zap.String("operation", "cache.unread_follow_cache.store"), zap.Uint("user_id", userID), zap.Error(err))
 	}
 }
 
@@ -130,6 +130,6 @@ func (c *UnreadFollowCountCache) Invalidate(userID uint) {
 	defer cancel()
 
 	if err := c.redis.Del(cacheCtx, cacheKey(userID)).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("invalidate unread follow count cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("invalidate unread follow count cache failed", zap.String("event", "cache.unread_follow_cache.invalidate.degraded"), zap.String("operation", "cache.unread_follow_cache.invalidate"), zap.Uint("user_id", userID), zap.Error(err))
 	}
 }

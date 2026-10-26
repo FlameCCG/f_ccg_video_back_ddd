@@ -3,10 +3,11 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
@@ -48,13 +49,7 @@ func (s *InteractionService) ToggleLike(ctx context.Context, videoID, userID uin
 	if err != nil {
 		// Redis/DB stats 与关系表非同一事务：失败时回滚关系，避免 likes 漂移。
 		if compErr := s.compensateLikeFlip(ctx, videoID, userID, delta); compErr != nil {
-			s.logger.Error("compensate video like flip failed",
-				zap.Uint("videoId", videoID),
-				zap.Uint("userId", userID),
-				zap.Int64("delta", delta),
-				zap.Error(compErr),
-				zap.NamedError("statsErr", err),
-			)
+			err = errors.Join(err, compErr)
 		}
 
 		return nil, err
@@ -111,7 +106,7 @@ func (s *InteractionService) awardLikeExpAsync(parent context.Context, userID ui
 
 	s.tasks.Go(parent, likeActionAsyncGrace, func(expCtx context.Context) {
 		if err := s.exp.LikeExp(expCtx, userID); err != nil {
-			s.logger.Warn("apply like exp failed", zap.Uint("userId", userID), zap.Error(err))
+			logctx.With(expCtx, s.logger).Warn("apply like exp failed", zap.String("event", "video.like_service.award_like_exp_async.degraded"), zap.String("operation", "video.like_service.award_like_exp_async"), zap.Uint("user_id", userID), zap.Error(err))
 		}
 	})
 }

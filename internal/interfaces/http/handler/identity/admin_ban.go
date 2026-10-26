@@ -37,7 +37,7 @@ func (h *AdminHandler) AdminBanView(c *gin.Context) {
 		OperatorID: operatorID,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

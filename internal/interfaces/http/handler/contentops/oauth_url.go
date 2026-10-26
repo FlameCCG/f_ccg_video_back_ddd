@@ -31,17 +31,18 @@ type XURLReq struct {
 func (h *Handler) QQUrlView(c *gin.Context) {
 	authURL, err := h.oauthURL.QQURL(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg("OAuth authorization unavailable", c)
+		res.FailWithCause(err, "OAuth authorization unavailable", c)
 		return
 	}
+
 	res.OkWithData(authURL, c)
 }
 
-// GoogleUrlView 处理对应 HTTP 请求.
-func (h *Handler) GoogleUrlView(c *gin.Context) {
+// GoogleURLView 处理对应 HTTP 请求.
+func (h *Handler) GoogleURLView(c *gin.Context) {
 	authURL, err := h.oauthURL.GoogleURL(c.Request.Context(), c.Query("state"))
 	if err != nil {
-		res.FailWithMsg("生成授权链接失败", c)
+		res.FailWithCause(err, "生成授权链接失败", c)
 
 		return
 	}
@@ -49,8 +50,8 @@ func (h *Handler) GoogleUrlView(c *gin.Context) {
 	res.OkWithData(authURL, c)
 }
 
-// GitHubUrlView 处理对应 HTTP 请求.
-func (h *Handler) GitHubUrlView(c *gin.Context) {
+// GitHubURLView 处理对应 HTTP 请求.
+func (h *Handler) GitHubURLView(c *gin.Context) {
 	req := middlewares.GetBound[GitHubURLReq](c)
 
 	authURL, err := h.oauthURL.GitHubURL(c.Request.Context(), app.GitHubURLParams{
@@ -59,7 +60,7 @@ func (h *Handler) GitHubUrlView(c *gin.Context) {
 		CodeChallengeMethod: req.CodeChallengeMethod,
 	})
 	if err != nil {
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}
@@ -67,13 +68,13 @@ func (h *Handler) GitHubUrlView(c *gin.Context) {
 	res.OkWithData(authURL, c)
 }
 
-// LinuxDoUrlView 处理对应 HTTP 请求.
-func (h *Handler) LinuxDoUrlView(c *gin.Context) {
+// LinuxDoURLView 处理对应 HTTP 请求.
+func (h *Handler) LinuxDoURLView(c *gin.Context) {
 	req := middlewares.GetBound[LinuxDoURLReq](c)
 
 	authURL, err := h.oauthURL.LinuxDoURL(c.Request.Context(), req.State)
 	if err != nil {
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}
@@ -91,7 +92,7 @@ func (h *Handler) XUrlView(c *gin.Context) {
 		CodeChallengeMethod: req.CodeChallengeMethod,
 	})
 	if err != nil {
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}

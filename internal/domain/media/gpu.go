@@ -105,28 +105,7 @@ func ClassifyInterruptReason(taskCtx context.Context, err error, sessionCanceled
 		return taskCtx != nil && errors.Is(context.Cause(taskCtx), target)
 	}
 
-	errIs := func(target error) bool {
-		return taskCtx != nil && errors.Is(taskCtx.Err(), target)
-	}
-
-	switch {
-	case errors.Is(err, ErrTranscodeProgressStalled) || causeIs(ErrTranscodeProgressStalled):
-		return "progress_stalled"
-	case errors.Is(err, ErrTranscodeEncodeTimeout) || causeIs(ErrTranscodeEncodeTimeout):
-		return "encode_timeout"
-	case errors.Is(err, ErrTranscodeUploadTimeout) || causeIs(ErrTranscodeUploadTimeout):
-		return "upload_timeout"
-	case errors.Is(err, ErrVideoDeleted) || causeIs(ErrVideoDeleted):
-		return "video_deleted"
-	case sessionCanceled:
-		return "kafka_session_canceled"
-	case errors.Is(err, context.Canceled) || errIs(context.Canceled):
-		return "context_canceled"
-	case errors.Is(err, context.DeadlineExceeded) || errIs(context.DeadlineExceeded):
-		return "deadline_exceeded"
-	default:
-		return "process_error"
-	}
+	return finishClassifyInterruptReason(taskCtx, err, sessionCanceled, causeIs)
 }
 
 // TaskWasDeleted 报告任务是否因视频被删除而作废。
@@ -136,4 +115,32 @@ func TaskWasDeleted(ctx context.Context, err error) bool {
 	}
 
 	return errors.Is(err, ErrVideoDeleted)
+}
+
+func finishClassifyInterruptReason(taskCtx context.Context, err error, sessionCanceled bool, causeIs func(error) bool) string {
+	for _, rule := range []struct {
+		target error
+		reason string
+	}{
+		{ErrTranscodeProgressStalled, "progress_stalled"}, {ErrTranscodeEncodeTimeout, "encode_timeout"}, {ErrTranscodeUploadTimeout, "upload_timeout"}, {ErrVideoDeleted, "video_deleted"},
+	} {
+		if errors.Is(err, rule.target) || causeIs(rule.target) {
+			return rule.reason
+		}
+	}
+
+	if sessionCanceled {
+		return "kafka_session_canceled"
+	}
+
+	for _, rule := range []struct {
+		target error
+		reason string
+	}{{context.Canceled, "context_canceled"}, {context.DeadlineExceeded, "deadline_exceeded"}} {
+		if errors.Is(err, rule.target) || (taskCtx != nil && errors.Is(taskCtx.Err(), rule.target)) {
+			return rule.reason
+		}
+	}
+
+	return "process_error"
 }

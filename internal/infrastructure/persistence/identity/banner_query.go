@@ -3,13 +3,17 @@ package identity
 import (
 	"context"
 	"errors"
-
-	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
+	app "f_ccg_video_back_ddd/internal/application/identity"
+
 	"gorm.io/gorm"
+)
+
+const (
+	sqlLockUpdate = "UPDATE"
 )
 
 // UserBannerQuery 用户主页横幅目录查询的 GORM 实现。

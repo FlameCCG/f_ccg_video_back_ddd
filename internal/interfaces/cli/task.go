@@ -65,6 +65,8 @@ func NeedsDBOnly(task Task) bool {
 	switch task {
 	case TaskMigrateDB, TaskVideoPartitions:
 		return true
+	case TaskServe, TaskBanner, TaskSuperUser, TaskESIndex, TaskResourceSync, TaskRBACInit, TaskInitAll:
+		fallthrough
 	default:
 		return false
 	}
@@ -96,6 +98,8 @@ func NeedsFullInfra(task Task) bool {
 	switch task {
 	case TaskResourceSync, TaskRBACInit:
 		return true
+	case TaskServe, TaskMigrateDB, TaskVideoPartitions, TaskBanner, TaskSuperUser, TaskESIndex, TaskInitAll:
+		fallthrough
 	default:
 		return false
 	}

@@ -30,7 +30,7 @@ func (h *CaptchaHandler) EmailCaptchaView(c *gin.Context) {
 		ClientIP: c.ClientIP(),
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

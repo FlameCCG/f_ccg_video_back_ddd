@@ -14,10 +14,12 @@ type UploadQuotaExemption struct {
 
 var _ videoapp.UploadQuotaExemption = (*UploadQuotaExemption)(nil)
 
+// NewUploadQuotaExemption constructs the identity adapter for upload quota exemptions.
 func NewUploadQuotaExemption(roles identityapp.UserRoleQuery) *UploadQuotaExemption {
 	return &UploadQuotaExemption{roles: roles}
 }
 
+// IsUploadQuotaExempt checks whether the user is exempt from the daily quota.
 func (a *UploadQuotaExemption) IsUploadQuotaExempt(ctx context.Context, userID uint) (bool, error) {
 	return identityapp.IsAdminUser(ctx, a.roles, userID)
 }

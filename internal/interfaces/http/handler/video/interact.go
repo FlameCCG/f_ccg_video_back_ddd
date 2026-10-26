@@ -2,13 +2,13 @@ package video
 
 import (
 	"errors"
-
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 
+	domain "f_ccg_video_back_ddd/internal/domain/video"
+
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // ViewReq 指定需要增加播放计数的作品，当前实现的播放计数不按用户去重。
@@ -28,13 +28,13 @@ func (h *Handler) ViewView(c *gin.Context) {
 	stats, err := h.interact.View(c.Request.Context(), req.VideoID, uid)
 	if err != nil {
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在或未发布", c)
+			res.FailWithCause(err, "视频不存在或未发布", c)
 
 			return
 		}
 
-		h.log().Error("view video failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
-		res.FailWithMsg("增加播放量失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/interact", nil, err), c)
+		res.FailWithCause(err, "增加播放量失败", c)
 
 		return
 	}
@@ -61,13 +61,13 @@ func (h *Handler) LikeView(c *gin.Context) {
 	stats, err := h.interact.ToggleLike(c.Request.Context(), req.VideoID, uid)
 	if err != nil {
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在或未发布", c)
+			res.FailWithCause(err, "视频不存在或未发布", c)
 
 			return
 		}
 
-		h.log().Error("like toggle failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
-		res.FailWithMsg("操作失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/interact", nil, err), c)
+		res.FailWithCause(err, "操作失败", c)
 
 		return
 	}
@@ -102,25 +102,25 @@ func (h *Handler) CoinView(c *gin.Context) {
 	stats, err := h.interact.Coin(c.Request.Context(), req.VideoID, uid, int64(req.Coins))
 	if err != nil {
 		if errors.Is(err, domain.ErrCoinLimit) {
-			res.FailWithMsg("对本稿件的投币次数已用完", c)
+			res.FailWithCause(err, "对本稿件的投币次数已用完", c)
 
 			return
 		}
 
 		if h.interact.IsCoinInsufficient(err) {
-			res.FailWithMsg("硬币余额不足", c)
+			res.FailWithCause(err, "硬币余额不足", c)
 
 			return
 		}
 
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在或未发布", c)
+			res.FailWithCause(err, "视频不存在或未发布", c)
 
 			return
 		}
 
-		h.log().Error("coin video failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
-		res.FailWithMsg("投币失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/interact", nil, err), c)
+		res.FailWithCause(err, "投币失败", c)
 
 		return
 	}
@@ -150,13 +150,13 @@ func (h *Handler) FavoriteView(c *gin.Context) {
 	stats, err := h.interact.ToggleFavorite(c.Request.Context(), req.VideoID, uid, req.FolderID)
 	if err != nil {
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在或收藏夹不存在", c)
+			res.FailWithCause(err, "视频不存在或收藏夹不存在", c)
 
 			return
 		}
 
-		h.log().Error("favorite toggle failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
-		res.FailWithMsg("收藏操作失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/interact", nil, err), c)
+		res.FailWithCause(err, "收藏操作失败", c)
 
 		return
 	}
@@ -187,19 +187,19 @@ func (h *Handler) TripleView(c *gin.Context) {
 	result, err := h.interact.Triple(c.Request.Context(), req.VideoID, uid, req.FolderID, int64(req.Coins))
 	if err != nil {
 		if h.interact.IsCoinInsufficient(err) {
-			res.FailWithMsg("硬币余额不足", c)
+			res.FailWithCause(err, "硬币余额不足", c)
 
 			return
 		}
 
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在或未发布", c)
+			res.FailWithCause(err, "视频不存在或未发布", c)
 
 			return
 		}
 
-		h.log().Error("triple failed", zap.Error(err), zap.Uint("videoId", req.VideoID))
-		res.FailWithMsg("操作失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/interact", nil, err), c)
+		res.FailWithCause(err, "操作失败", c)
 
 		return
 	}

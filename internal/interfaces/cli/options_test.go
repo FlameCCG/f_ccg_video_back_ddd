@@ -4,10 +4,14 @@ import (
 	"flag"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
+//nolint:paralleltest // Parsing temporarily replaces flag.CommandLine and os.Args.
 func TestParseOptionsAll(t *testing.T) {
 	originalFlags, originalArgs := flag.CommandLine, os.Args
+
 	t.Cleanup(func() {
 		flag.CommandLine, os.Args = originalFlags, originalArgs
 	})
@@ -23,22 +27,27 @@ func TestParseOptionsAll(t *testing.T) {
 		{"all disabled", []string{"-all=false"}, TaskServe},
 		{"all with individual flag", []string{"-all", "-db"}, TaskInitAll},
 	} {
+		//nolint:paralleltest // Each case replaces the same process flag set and argument vector.
 		t.Run(tt.name, func(t *testing.T) {
 			flag.CommandLine = flag.NewFlagSet("server", flag.ContinueOnError)
+
 			os.Args = append([]string{"server", "-f", "custom.yaml"}, tt.args...)
+
 			opts := ParseOptions()
-			if opts.File != "custom.yaml" {
-				t.Fatalf("config path = %q, want custom.yaml", opts.File)
-			}
-			if got := ResolveTask(opts); got != tt.want {
-				t.Fatalf("resolved task = %v, want %v", got, tt.want)
+			require.Equal(t, "custom.yaml", opts.File, "config path = %q, want custom.yaml", opts.File)
+
+			{
+				got := ResolveTask(opts)
+				require.Equal(t, tt.want, got, "resolved task = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
+//nolint:paralleltest // Parsing temporarily replaces flag.CommandLine and os.Args.
 func TestParseOptionsDefaultConfig(t *testing.T) {
 	originalFlags, originalArgs := flag.CommandLine, os.Args
+
 	t.Cleanup(func() {
 		flag.CommandLine, os.Args = originalFlags, originalArgs
 	})
@@ -51,19 +60,22 @@ func TestParseOptionsDefaultConfig(t *testing.T) {
 		{"serve uses development config", nil, TaskServe},
 		{"all uses development config", []string{"-all", "test-admin", "test-password"}, TaskInitAll},
 	} {
+		//nolint:paralleltest // Each case replaces the same process flag set and argument vector.
 		t.Run(tt.name, func(t *testing.T) {
 			flag.CommandLine = flag.NewFlagSet("server", flag.ContinueOnError)
+
 			os.Args = append([]string{"server"}, tt.args...)
+
 			opts := ParseOptions()
-			if opts.File != "config_dev.yaml" || ProvideConfigPath(opts) != "config_dev.yaml" {
-				t.Fatalf("default config path = %q, want config_dev.yaml", opts.File)
+			require.Equal(t, "config_dev.yaml", opts.File, "default config path = %q, want config_dev.yaml", opts.File)
+			require.Equal(t, "config_dev.yaml", ProvideConfigPath(opts), "default config path = %q, want config_dev.yaml", opts.File)
+
+			{
+				got := ResolveTask(opts)
+				require.Equal(t, tt.want, got, "resolved task = %v, want %v", got, tt.want)
 			}
-			if got := ResolveTask(opts); got != tt.want {
-				t.Fatalf("resolved task = %v, want %v", got, tt.want)
-			}
-			if opts.All && (len(opts.Args) != 2 || opts.Args[0] != "test-admin" || opts.Args[1] != "test-password") {
-				t.Fatal("all must preserve super user arguments")
-			}
+
+			require.False(t, opts.All && (len(opts.Args) != 2 || opts.Args[0] != "test-admin" || opts.Args[1] != "test-password"), "all must preserve super user arguments")
 		})
 	}
 }

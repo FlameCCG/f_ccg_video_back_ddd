@@ -3,16 +3,16 @@ package identity
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
-	"f_ccg_video_back_ddd/pkg/res"
-
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -34,18 +34,15 @@ func openTestDB(t *testing.T, models ...any) *gorm.DB {
 		TranslateError:         true,
 		SkipDefaultTransaction: true,
 	})
-	if err != nil {
-		t.Fatalf("open sqlite failed: %v", err)
-	}
+	require.NoError(t, err, "open sqlite failed: %v", err)
 
-	if err = db.AutoMigrate(models...); err != nil {
-		t.Fatalf("migrate failed: %v", err)
+	{
+		err = db.AutoMigrate(models...)
+		require.NoError(t, err, "migrate failed: %v", err)
 	}
 
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("db.DB: %v", err)
-	}
+	require.NoError(t, err, "db.DB: %v", err)
 
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
@@ -66,8 +63,9 @@ func decodeResponse(t *testing.T, recorder *httptest.ResponseRecorder) res.Respo
 	t.Helper()
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response failed: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "unmarshal response failed: %v", err)
 	}
 
 	return response
@@ -78,40 +76,21 @@ func decodeResponseData(t *testing.T, response res.Response, out any) {
 	t.Helper()
 
 	payload, err := json.Marshal(response.Data)
-	if err != nil {
-		t.Fatalf("marshal response data failed: %v", err)
+	require.NoError(t, err, "marshal response data failed: %v", err)
+
+	{
+		err = json.Unmarshal(payload, out)
+		require.NoError(t, err, "unmarshal response data failed: %v", err)
 	}
-
-	if err = json.Unmarshal(payload, out); err != nil {
-		t.Fatalf("unmarshal response data failed: %v", err)
-	}
-}
-
-// stubTxManager 用真实 sqlite 事务实现 tx.Manager，把事务句柄放进 context。
-//
-// 语义与 gormx.TxManager 一致（仓储经 gormx.DB(ctx, root) 取库）；
-// db 为 nil 时退化为直接执行，供不需要事务的用例复用。
-type stubTxManager struct {
-	db *gorm.DB
-}
-
-// Do 在事务内执行 fn。
-func (m stubTxManager) Do(ctx context.Context, fn func(context.Context) error) error {
-	if m.db == nil {
-		return fn(ctx)
-	}
-
-	return m.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return fn(gormx.WithTx(ctx, tx))
-	})
 }
 
 // seedUserConf 直接写入用户配置行（跳过 GORM 钩子）。
 func seedUserConf(t *testing.T, db *gorm.DB, conf po.UserConf) {
 	t.Helper()
 
-	if err := db.Session(&gorm.Session{SkipHooks: true}).Create(&conf).Error; err != nil {
-		t.Fatalf("seed user conf failed: %v", err)
+	{
+		err := db.Session(&gorm.Session{SkipHooks: true}).Create(&conf).Error
+		require.NoError(t, err, "seed user conf failed: %v", err)
 	}
 }
 
@@ -119,9 +98,15 @@ func seedUserConf(t *testing.T, db *gorm.DB, conf po.UserConf) {
 func seedBanner(t *testing.T, db *gorm.DB, banner *po.Banner) uint {
 	t.Helper()
 
-	if err := db.Create(banner).Error; err != nil {
-		t.Fatalf("seed banner failed: %v", err)
+	{
+		err := db.Create(banner).Error
+		require.NoError(t, err, "seed banner failed: %v", err)
 	}
 
 	return banner.ID
+}
+
+func seedVisibleUserBanner(t *testing.T, db *gorm.DB, cover string) uint {
+	t.Helper()
+	return seedBanner(t, db, &po.Banner{Cover: cover, Show: true, Type: enum.BannerTypeUser})
 }

@@ -5,28 +5,35 @@
 package computerUtils
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/mem"
-	"github.com/sirupsen/logrus"
 )
 
-// GetCpuUsage 等待 interval 前后采样总 CPU 时间，计算 0～100 的使用百分比；采样失败返回 0。
-func GetCpuUsage(interval time.Duration) float64 {
+// GetCPUUsage 等待 interval 前后采样总 CPU 时间，计算 0～100 的使用百分比；采样失败返回 0。
+func GetCPUUsage(interval time.Duration) (float64, error) {
 	t1, err := cpu.Times(false)
 	if err != nil || len(t1) == 0 {
-		logrus.Warnf("获取 CPU 时间失败（第一次采样）：%v", err)
-		return 0
+		if err == nil {
+			err = errors.New("no CPU samples")
+		}
+
+		return 0, fmt.Errorf("first CPU sample: %w", err)
 	}
 
 	time.Sleep(interval)
 
 	t2, err := cpu.Times(false)
 	if err != nil || len(t2) == 0 {
-		logrus.Warnf("获取 CPU 时间失败（第二次采样）：%v", err)
-		return 0
+		if err == nil {
+			err = errors.New("no CPU samples")
+		}
+
+		return 0, fmt.Errorf("second CPU sample: %w", err)
 	}
 	// 取第一个元素（false 表示汇总所有核心）
 	cpu1 := t1[0]
@@ -41,42 +48,41 @@ func GetCpuUsage(interval time.Duration) float64 {
 	idleDelta := idle2 - idle1
 
 	if totalDelta == 0 {
-		return 0
+		return 0, nil
 	}
 
 	cpuPercent := (1.0 - idleDelta/totalDelta) * 100.0
 
-	return cpuPercent
+	return cpuPercent, nil
 }
 
 // GetMemoryUsage 返回当前物理内存已用百分比，采集失败记录日志并返回 0。
-func GetMemoryUsage() float64 {
+func GetMemoryUsage() (float64, error) {
 	vmStat, err := mem.VirtualMemory()
 	if err != nil {
-		logrus.Warnf("获取内存使用情况失败：%v", err)
-		return 0
+		return 0, err
 	}
 
-	return vmStat.UsedPercent
+	return vmStat.UsedPercent, nil
 }
 
 // GetDiskUsage 按可读取挂载点汇总已用/总容量计算百分比；无法读取的分区跳过。
-func GetDiskUsage() float64 {
+func GetDiskUsage() (float64, error) {
 	partitions, err := disk.Partitions(true)
 	if err != nil {
-		logrus.Warnf("获取磁盘分区失败：%v", err)
-		return 0
+		return 0, err
 	}
 
 	var (
-		totalUsed uint64
-		totalSize uint64
+		partialErr error
+		totalUsed  uint64
+		totalSize  uint64
 	)
 
 	for _, p := range partitions {
 		usageStat, err := disk.Usage(p.Mountpoint)
 		if err != nil {
-			logrus.Warnf("获取 %s 磁盘使用情况失败：%v", p.Mountpoint, err)
+			partialErr = errors.Join(partialErr, err)
 			continue
 		}
 
@@ -87,10 +93,10 @@ func GetDiskUsage() float64 {
 	}
 
 	if totalSize == 0 {
-		return 0
+		return 0, partialErr
 	}
 
 	usedPercent := (float64(totalUsed) / float64(totalSize)) * 100
 
-	return usedPercent
+	return usedPercent, partialErr
 }

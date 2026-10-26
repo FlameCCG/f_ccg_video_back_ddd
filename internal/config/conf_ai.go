@@ -1,5 +1,9 @@
 package config
 
+const (
+	testAdmin = "admin"
+)
+
 // AI 分别配置聊天、图片、视频和嵌入能力；各上游使用自己的模型标识与凭据。
 // 豆包图/视频/向量 Embedding 走 Eino Ark SDK（默认方舟 BaseURL），无需配置 doubaoBaseURL / embeddingModelBaseURL.
 // 聊天走 Eino Claude ChatModel 适配 Anthropic Messages 协议，

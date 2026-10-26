@@ -18,8 +18,8 @@ const maxCoverImageBytes = 8 << 20
 var errCoverUnavailable = errors.New("cover image unavailable for embedding")
 
 func resolveCoverEmbedSource(
-	ctx context.Context,
-	client *http.Client,
+	_ context.Context,
+	_ *http.Client,
 	cover string,
 	assetBaseURL string,
 	localStorageRoot string,
@@ -70,6 +70,7 @@ func isPubliclyReachableHost(host string) bool {
 	if host == "" {
 		return false
 	}
+
 	if !strings.Contains(host, ".") || strings.HasSuffix(host, ".local") ||
 		strings.HasSuffix(host, ".internal") {
 		return false
@@ -95,10 +96,12 @@ func readLocalImageAsDataURI(root, cover string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", fmt.Errorf("%w: stat cover failed: %w", errCoverUnavailable, err)
 	}
+
 	if info.Size() > maxCoverImageBytes {
 		return "", fmt.Errorf(
 			"%w: cover is %d bytes, over the %d limit",
@@ -108,7 +111,7 @@ func readLocalImageAsDataURI(root, cover string) (string, error) {
 		)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- The cover path has passed safeJoinUnderRoot containment validation.
 	if err != nil {
 		return "", fmt.Errorf("%w: read cover failed: %w", errCoverUnavailable, err)
 	}
@@ -127,6 +130,7 @@ func safeJoinUnderRoot(root, relative string) (string, error) {
 	))
 	if !filepath.IsAbs(candidate) {
 		rootBase := filepath.Base(cleanedRoot)
+
 		first, rest, found := strings.Cut(filepath.ToSlash(candidate), "/")
 		if found && first == rootBase {
 			candidate = filepath.Join(cleanedRoot, rest)
@@ -139,6 +143,7 @@ func safeJoinUnderRoot(root, relative string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: resolve cover path failed: %w", errCoverUnavailable, err)
 	}
+
 	relativePath, err := filepath.Rel(cleanedRoot, absolute)
 	if err != nil || relativePath == ".." ||
 		strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
@@ -152,6 +157,7 @@ func buildImageDataURI(data []byte, declaredContentType string) (string, error) 
 	if len(data) == 0 {
 		return "", fmt.Errorf("%w: cover is empty", errCoverUnavailable)
 	}
+
 	if len(data) > maxCoverImageBytes {
 		return "", fmt.Errorf(
 			"%w: cover is over the %d bytes limit",
@@ -164,6 +170,7 @@ func buildImageDataURI(data []byte, declaredContentType string) (string, error) 
 	if !strings.HasPrefix(contentType, "image/") {
 		contentType = strings.Split(http.DetectContentType(data), ";")[0]
 	}
+
 	if !strings.HasPrefix(contentType, "image/") {
 		return "", fmt.Errorf(
 			"%w: cover is not an image (%s)",

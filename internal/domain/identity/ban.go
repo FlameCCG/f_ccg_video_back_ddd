@@ -2,10 +2,9 @@ package identity
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"strings"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // BanAction 封禁/解封指令（值对象）。

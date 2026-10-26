@@ -4,16 +4,14 @@ import (
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
-// JsonBindParams 以 JSON 绑定并校验 T，成功后将值保存到 request 上下文键，失败写参数错误并 Abort。
-func JsonBindParams[T any](c *gin.Context) {
+// JSONBindParams 以 JSON 绑定并校验 T，成功后将值保存到 request 上下文键，失败写参数错误并 Abort。
+func JSONBindParams[T any](c *gin.Context) {
 	LimitRequestBody(c, DefaultJSONBodyLimit)
 
 	var cr T
 	if err := c.ShouldBindJSON(&cr); err != nil {
-		loggerFromContext(c).Error("JsonBindParams error", zap.Error(err))
 		res.FailWithError(err, c)
 		c.Abort()
 
@@ -27,9 +25,9 @@ func JsonBindParams[T any](c *gin.Context) {
 // BindParams 由 Gin 根据请求方式与 Content-Type 选择绑定器，成功后保存 T 供处理器读取。
 func BindParams[T any](c *gin.Context) {
 	LimitRequestBody(c, 52<<20)
+
 	var cr T
 	if err := c.ShouldBind(&cr); err != nil {
-		loggerFromContext(c).Error("BindParams error", zap.Error(err))
 		res.FailWithError(err, c)
 		c.Abort()
 
@@ -44,7 +42,6 @@ func BindParams[T any](c *gin.Context) {
 func BindQueryParams[T any](c *gin.Context) {
 	var cr T
 	if err := c.ShouldBindQuery(&cr); err != nil {
-		loggerFromContext(c).Error("BindQueryParams error", zap.Error(err))
 		res.FailWithError(err, c)
 		c.Abort()
 

@@ -4,14 +4,13 @@ import (
 	"crypto/sha1" //nolint:gosec // 仅用于生成断点目录名，非安全用途
 	"encoding/hex"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"fmt"
 	"net/url"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // TranscodeTask 是一次转码任务的领域实体（原 pkg/mq.TranscodePayload 的业务视图）。
@@ -136,6 +135,7 @@ func SanitizeCheckpointToken(raw string, maxLen int) string {
 // StagedSourceCheckpointName 返回远程源在断点目录中的确定性暂存文件名。
 func StagedSourceCheckpointName(sourceURL string) string {
 	name := "staged-source"
+
 	if u, err := url.Parse(sourceURL); err == nil {
 		if ext := filepath.Ext(u.Path); ext != "" && len(ext) <= 10 {
 			name += ext

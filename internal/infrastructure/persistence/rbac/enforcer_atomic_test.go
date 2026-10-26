@@ -1,16 +1,27 @@
 package rbac
 
 import (
-	"github.com/casbin/casbin/v2"
-	"github.com/casbin/casbin/v2/model"
-	"github.com/casbin/casbin/v2/persist/file-adapter"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/casbin/casbin/v2"
+	"github.com/casbin/casbin/v2/model"
+	"github.com/stretchr/testify/require"
+
+	fileadapter "github.com/casbin/casbin/v2/persist/file-adapter"
+)
+
+const (
+	testV1AdminBanner = "/v1/admin/banner"
+	testV1Common      = "/v1/common/**"
+	testGET           = "GET"
 )
 
 func TestPolicyMutationHidesIntermediateState(t *testing.T) {
+	t.Parallel()
+
 	m, err := model.NewModelFromString(`[request_definition]
 r = sub, obj, act
 [policy_definition]
@@ -21,31 +32,37 @@ g = _, _
 e = some(where (p.eft == allow))
 [matchers]
 m = g(r.sub,p.sub) && r.obj == p.obj && r.act == p.act`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	path := filepath.Join(t.TempDir(), "policy.csv")
-	if err := os.WriteFile(path, nil, 0600); err != nil {
-		t.Fatal(err)
+	{
+		err := os.WriteFile(path, nil, 0o600)
+		require.NoError(t, err)
 	}
+
 	enforcer, err := casbin.NewSyncedEnforcer(m, fileadapter.NewAdapter(path))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	adapter := NewCasbinEnforcer(enforcer)
+
 	scoped, end := adapter.BeginPolicyMutation()
-	if _, err := scoped.AddPolicy("subject", "/private", "GET"); err != nil {
+	if _, err := scoped.AddPolicy("subject", "/private", testGET); err != nil {
 		end()
 		t.Fatal(err)
 	}
-	if data, err := os.ReadFile(path); err != nil || len(data) != 0 {
+
+	if data, err := os.ReadFile(path); err != nil || len(data) != 0 { // #nosec G304 -- Reads a fixture created inside this test's private temporary directory.
 		end()
 		t.Fatalf("partial change reached storage: %q %v", data, err)
 	}
+
 	result := make(chan bool, 1)
+
 	started := make(chan struct{})
-	go func() { close(started); allow, _ := enforcer.Enforce("subject", "/private", "GET"); result <- allow }()
+	go func() { close(started); allow, _ := enforcer.Enforce("subject", "/private", testGET); result <- allow }()
+
 	<-started
+
 	select {
 	case <-result:
 		end()
@@ -53,16 +70,22 @@ m = g(r.sub,p.sub) && r.obj == p.obj && r.act == p.act`)
 	case <-time.After(30 * time.Millisecond):
 	}
 	// A failed operation restores the old model before releasing authorization.
-	if err := scoped.(*CasbinEnforcer).RestorePolicy(nil, nil); err != nil {
+	scopedAdapter, ok := scoped.(*CasbinEnforcer)
+	if !ok {
+		end()
+		t.Fatal("unexpected scoped enforcer type")
+	}
+
+	if err := scopedAdapter.RestorePolicy(nil, nil); err != nil {
 		end()
 		t.Fatal(err)
 	}
+
 	end()
+
 	select {
 	case allow := <-result:
-		if allow {
-			t.Fatal("rolled-back grant remained effective")
-		}
+		require.False(t, allow, "rolled-back grant remained effective")
 	case <-time.After(time.Second):
 		t.Fatal("authorization did not resume")
 	}

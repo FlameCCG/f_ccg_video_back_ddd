@@ -1,13 +1,12 @@
 package middlewares
 
 import (
-	"strings"
-
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/casbins"
 	"f_ccg_video_back_ddd/pkg/res"
+	"strings"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // CasbinAuth Casbin 权限验证中间件.
@@ -30,31 +29,27 @@ func (m *Middlewares) CasbinAuth() gin.HandlerFunc {
 		if obj == "" {
 			obj = realPath
 		}
+
 		if obj == "" {
-			m.log().Warn("Casbin 鉴权时路径为空",
-				zap.String("uid", uid),
-				zap.String("method", act))
 			res.FailWithMsg("无权限访问", c)
 			c.Abort()
+
 			return
 		}
 
 		ok, err := m.enforcePath(sub, obj, act)
 		if err != nil {
-			m.log().Error("Casbin 权限验证失败", zap.Error(err))
-			res.FailWithMsg("权限验证失败", c)
+			res.RecordFailure(apperr.Wrap("middlewares/casbin_auth", nil, err), c)
+			res.FailWithCause(err, "权限验证失败", c)
 			c.Abort()
+
 			return
 		}
 
 		if !ok {
-			m.log().Warn("用户无权限访问",
-				zap.String("uid", uid),
-				zap.String("path", realPath),
-				zap.String("fullPath", fullPath),
-				zap.String("method", act))
 			res.FailWithMsg("无权限访问", c)
 			c.Abort()
+
 			return
 		}
 

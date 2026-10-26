@@ -10,11 +10,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"strconv"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/notification"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -73,7 +73,7 @@ func (c *CountCache) Load(receiverID int) (*app.CountSummary, bool, bool) {
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+			c.logger.Warn("get notification count cache failed", zap.String("event", "cache.count_cache.load.degraded"), zap.String("operation", "cache.count_cache.load"), zap.Int("receiver_id", receiverID), zap.Error(err))
 		}
 
 		return nil, false, false
@@ -81,7 +81,7 @@ func (c *CountCache) Load(receiverID int) (*app.CountSummary, bool, bool) {
 
 	var payload redisValue
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		c.logger.Warn("unmarshal notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("unmarshal notification count cache failed", zap.String("event", "cache.count_cache.load.degraded"), zap.String("operation", "cache.count_cache.load"), zap.Int("receiver_id", receiverID), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
 
 		return nil, false, false
@@ -113,7 +113,7 @@ func (c *CountCache) Store(receiverID int, data app.CountSummary) {
 
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		c.logger.Warn("marshal notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("marshal notification count cache failed", zap.String("event", "cache.count_cache.store.degraded"), zap.String("operation", "cache.count_cache.store"), zap.Int("receiver_id", receiverID), zap.Error(err))
 
 		return
 	}
@@ -122,7 +122,7 @@ func (c *CountCache) Store(receiverID int, data app.CountSummary) {
 	defer cancel()
 
 	if err := c.redis.Set(cacheCtx, cacheKey(receiverID), raw, notificationCountCacheStaleTTL).Err(); err != nil {
-		c.logger.Warn("set notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("set notification count cache failed", zap.String("event", "cache.count_cache.store.degraded"), zap.String("operation", "cache.count_cache.store"), zap.Int("receiver_id", receiverID), zap.Error(err))
 	}
 }
 
@@ -136,7 +136,7 @@ func (c *CountCache) Invalidate(receiverID int) {
 	defer cancel()
 
 	if err := c.redis.Del(cacheCtx, cacheKey(receiverID)).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("invalidate notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+		c.logger.Warn("invalidate notification count cache failed", zap.String("event", "cache.count_cache.invalidate.degraded"), zap.String("operation", "cache.count_cache.invalidate"), zap.Int("receiver_id", receiverID), zap.Error(err))
 	}
 }
 
@@ -150,7 +150,7 @@ func (c *CountCache) InvalidateAll() {
 	defer cancel()
 
 	if err := c.deleteKeysByPrefix(cacheCtx, constants.NotificationCountCacheKeyPrefix); err != nil {
-		c.logger.Warn("invalidate all notification count cache failed", zap.Error(err))
+		c.logger.Warn("invalidate all notification count cache failed", zap.String("event", "cache.count_cache.invalidate_all.degraded"), zap.String("operation", "cache.count_cache.invalidate_all"), zap.Error(err))
 	}
 }
 

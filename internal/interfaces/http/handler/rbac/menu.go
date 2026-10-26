@@ -3,13 +3,13 @@ package rbac
 import (
 	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-	"strconv"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"strings"
 
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -67,7 +67,7 @@ type AssignMenuReq struct {
 func (h *Handler) GetMenuListView(c *gin.Context) {
 	menuTree, err := h.menus.Tree(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -77,6 +77,7 @@ func (h *Handler) GetMenuListView(c *gin.Context) {
 // CreateMenuView 创建菜单.
 func (h *Handler) CreateMenuView(c *gin.Context) {
 	req := middlewares.GetBound[CreateMenuReq](c)
+
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		res.FailWithMsg("菜单标题不能为空", c)
@@ -193,7 +194,7 @@ func (h *Handler) GenerateMenuView(c *gin.Context) {
 }
 
 // DeleteMenuView 删除菜单.
-// Query: id
+// Query: id.
 func (h *Handler) DeleteMenuView(c *gin.Context) {
 	id := strings.TrimSpace(c.Query("id"))
 	if id == "" {
@@ -208,7 +209,7 @@ func (h *Handler) DeleteMenuView(c *gin.Context) {
 	}
 
 	if err := h.menus.Delete(c.Request.Context(), menuID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -220,7 +221,7 @@ func (h *Handler) AssignMenuView(c *gin.Context) {
 	req := middlewares.GetBound[AssignMenuReq](c)
 
 	if err := h.menus.AssignRoleMenus(c.Request.Context(), req.RoleID, req.MenuIDs); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -232,7 +233,7 @@ func (h *Handler) RemoveRoleMenuView(c *gin.Context) {
 	req := middlewares.GetBound[AssignMenuReq](c)
 
 	if err := h.menus.RemoveRoleMenus(c.Request.Context(), req.RoleID, req.MenuIDs); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -240,28 +241,8 @@ func (h *Handler) RemoveRoleMenuView(c *gin.Context) {
 }
 
 // RoleMenusView 根据角色获取菜单列表.
-// Query: roleId
-func (h *Handler) RoleMenusView(c *gin.Context) {
-	roleIDStr := c.Query("roleId")
-	if roleIDStr == "" {
-		res.FailWithMsg("roleId 不能为空", c)
-		return
-	}
-
-	roleID, err := strconv.Atoi(roleIDStr)
-	if err != nil || roleID <= 0 {
-		res.FailWithMsg("roleId 非法", c)
-		return
-	}
-
-	resp, err := h.menus.RoleMenus(c.Request.Context(), uint(roleID))
-	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
-		return
-	}
-
-	res.OkWithData(resp, c)
-}
+// Query: roleId.
+func (h *Handler) RoleMenusView(c *gin.Context) { serveIDLookup(c, "roleId", h.menus.RoleMenus) }
 
 // GetUserMenusView 获取当前用户菜单.
 func (h *Handler) GetUserMenusView(c *gin.Context) {
@@ -273,7 +254,7 @@ func (h *Handler) GetUserMenusView(c *gin.Context) {
 
 	menuTree, err := h.menus.UserMenus(c.Request.Context(), uid)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -285,7 +266,7 @@ func (h *Handler) respondMenuMutationError(
 	operation string,
 	err error,
 	fallback error,
-	fields ...zap.Field,
+	_ ...zap.Field,
 ) {
 	for _, businessErr := range []error{
 		domain.ErrNoUpdatableFields,
@@ -301,27 +282,22 @@ func (h *Handler) respondMenuMutationError(
 		domain.ErrMenuIconTooLong,
 	} {
 		if errors.Is(err, businessErr) {
-			res.FailWithMsg(clienterror.Message(businessErr), c)
+			res.FailWithCause(err, clienterror.Message(businessErr), c)
 
 			return
 		}
 	}
 
-	logFields := make([]zap.Field, 0, len(fields)+2)
-	logFields = append(logFields, zap.String("operation", operation))
-	logFields = append(logFields, fields...)
-	logFields = append(logFields, zap.Error(err))
-	h.log().Error("menu mutation failed", logFields...)
-	res.FailWithMsg(clienterror.Message(fallback), c)
+	res.FailWithCause(apperr.Wrap(operation, fallback, err), clienterror.Message(fallback), c)
 }
 
-func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID *uint) {
+func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, _ *uint) {
 	for _, businessErr := range []error{
 		domain.ErrMenuGenerationTitleEmpty,
 		domain.ErrParentMenuNotFound,
 	} {
 		if errors.Is(err, businessErr) {
-			res.FailWithMsg(clienterror.Message(businessErr), c)
+			res.FailWithCause(err, clienterror.Message(businessErr), c)
 
 			return
 		}
@@ -341,13 +317,7 @@ func (h *Handler) respondMenuGenerationError(c *gin.Context, err error, parentID
 		}
 	}
 
-	fields := []zap.Field{
-		zap.String("operation", "generate"),
-		optionalMenuIDField("parentMenuId", parentID),
-		zap.Error(err),
-	}
-	h.log().Error("menu generation failed", fields...)
-	res.FailWithMsg(clienterror.Message(publicErr), c)
+	res.FailWithCause(err, clienterror.Message(publicErr), c)
 }
 
 func optionalMenuIDField(key string, value *uint) zap.Field {

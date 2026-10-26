@@ -2,9 +2,8 @@ package identity
 
 import (
 	"context"
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // UserRepository 用户聚合的写侧仓储（接口所有权归领域层）。

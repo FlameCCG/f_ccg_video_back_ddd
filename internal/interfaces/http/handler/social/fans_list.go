@@ -1,13 +1,14 @@
 package social
 
 import (
+	"context"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/pkg/res"
+	"f_ccg_video_back_ddd/pkg/utils"
 	"strconv"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/social"
-	"f_ccg_video_back_ddd/pkg/res"
-	"f_ccg_video_back_ddd/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,8 +23,12 @@ type FansUserInfo struct {
 }
 
 // FansListView 获取粉丝列表（分页）.
-// Query: id
+// Query: id.
 func (h *Handler) FansListView(c *gin.Context) {
+	relationList(c, h.relations.FansList)
+}
+
+func relationList(c *gin.Context, query func(context.Context, app.ListParams) ([]app.ListUser, int64, error)) {
 	userID := strings.TrimSpace(c.Query("id"))
 	if userID == "" {
 		res.FailWithMsg("用户ID不能为空", c)
@@ -40,7 +45,7 @@ func (h *Handler) FansListView(c *gin.Context) {
 	page, pageSize := utils.GetPageInfo(c)
 	keyword := strings.TrimSpace(c.Query("keyword"))
 
-	listRows, total, err := h.relations.FansList(c.Request.Context(), app.ListParams{
+	listRows, total, err := query(c.Request.Context(), app.ListParams{
 		OwnerID:  uid,
 		ViewerID: viewerID(c),
 		Page:     page,
@@ -48,7 +53,7 @@ func (h *Handler) FansListView(c *gin.Context) {
 		Keyword:  keyword,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

@@ -2,10 +2,10 @@ package identity
 
 import (
 	"context"
-
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/pkg/coinutil"
+
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
 )
 
 // CoinRecordService 硬币流水用例服务（原 service/user_service/coin_record_service.go）。

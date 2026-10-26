@@ -48,12 +48,12 @@ func IsResourceMethod(method string) bool {
 	}
 }
 
-// BuildApiResources 把引擎路由清单转换为待落库的资源列表。
+// BuildAPIResources 把引擎路由清单转换为待落库的资源列表。
 //
 // 语义与原 service/rbac_service/resource_sync.go 一致：
 // 过滤非资源方法与 /uploads 静态目录、按 method+path 去重、
 // summary 缺省为「METHOD path」、tags 序列化失败时留空，最后按 path→method 排序。
-func BuildApiResources(routes []RouteInfo, meta map[string]ResourceMeta) []*APIResource {
+func BuildAPIResources(routes []RouteInfo, meta map[string]ResourceMeta) []*APIResource {
 	items := make([]*APIResource, 0, len(routes))
 	seen := make(map[string]struct{})
 
@@ -192,6 +192,7 @@ func DecodeResourceTags(raw []byte) []string {
 	}
 
 	var tags []string
+
 	_ = json.Unmarshal(raw, &tags)
 
 	return tags

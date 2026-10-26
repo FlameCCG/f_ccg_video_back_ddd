@@ -2,21 +2,20 @@ package ai
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/pkg/res"
-
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // assetProxyRoute 本站 AI 资源代理路由（与 router 中注册的路径一致）。
 const assetProxyRoute = "/v1/common/ai/assets"
 
-func (h *Handler) failWithAIError(c *gin.Context, action string, err error) {
-	h.log().Error(action, zap.Error(err))
+func (h *Handler) failWithAIError(c *gin.Context, _ string, err error) {
+	res.RecordFailure(apperr.Wrap("handler/ai/helpers", nil, err), c)
 	res.FailWithMsg(userFacingAIError(err), c)
 }
 

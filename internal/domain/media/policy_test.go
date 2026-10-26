@@ -52,11 +52,7 @@ func TestOutputBitrateForTargetHighUsesConfig(t *testing.T) {
 	want4kHigh := CalcReducedBitrate(src, 12)
 
 	if floor := ResolutionQualityFloorKbps(2160); want4kHigh < floor {
-		if src > floor {
-			want4kHigh = floor
-		} else {
-			want4kHigh = src
-		}
+		want4kHigh = min(src, floor)
 	}
 
 	if high4k != want4kHigh {

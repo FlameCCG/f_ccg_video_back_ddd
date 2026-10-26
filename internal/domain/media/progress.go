@@ -2,14 +2,13 @@ package media
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"f_ccg_video_back_ddd/pkg/constants"
 )
 
 // 转码任务在 Redis 中的状态取值（外部契约，逐字保持）。
@@ -88,7 +87,7 @@ type TranscodeProgress struct {
 	OutTimeSec   float64                     `json:"outTimeSec,omitempty"`
 	Error        string                      `json:"error,omitempty"`
 	UpdatedAt    time.Time                   `json:"updatedAt"`
-	StartedAt    time.Time                   `json:"startedAt,omitempty"`
+	StartedAt    time.Time                   `json:"startedAt"`
 	Pipelines    []TranscodePipelineProgress `json:"pipelines,omitempty"`
 }
 
@@ -700,6 +699,39 @@ func (t *TranscodeProgressTracker) calcPercentLocked() float64 {
 	}
 
 	// 已完成且不是当前阶段的算满权重；当前阶段按 stagePercent 折算。
+	return finishTranscodeProgressTrackerCalcPercentLocked(t, totalWeight)
+}
+
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+
+	return v
+}
+
+// TruncateErr 截断错误文本，超长追加省略号。
+func TruncateErr(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	if maxLen <= 0 || len(s) <= maxLen {
+		return s
+	}
+
+	return s[:maxLen] + "..."
+}
+
+// ProgressFingerprint 生成进度快照指纹，供 SSE 变化检测使用。
+func ProgressFingerprint(p TranscodeProgress) string {
+	return fmt.Sprintf("%d:%d:%s:%.1f:%s:%.0f:%s",
+		p.VideoID, p.PartID, p.Status, p.Percent, p.Stage, p.StagePercent, p.Message)
+}
+
+// PartFieldKey 返回分P 进度在哈希中的字段名。
+func PartFieldKey(partID uint) string {
+	return strconv.FormatUint(uint64(partID), 10)
+}
+
+func finishTranscodeProgressTrackerCalcPercentLocked(t *TranscodeProgressTracker, totalWeight float64) float64 {
 	var (
 		doneWeight    float64
 		currentWeight float64
@@ -732,33 +764,4 @@ func (t *TranscodeProgressTracker) calcPercentLocked() float64 {
 	}
 
 	return pct
-}
-
-func absFloat(v float64) float64 {
-	if v < 0 {
-		return -v
-	}
-
-	return v
-}
-
-// TruncateErr 截断错误文本，超长追加省略号。
-func TruncateErr(s string, maxLen int) string {
-	s = strings.TrimSpace(s)
-	if maxLen <= 0 || len(s) <= maxLen {
-		return s
-	}
-
-	return s[:maxLen] + "..."
-}
-
-// ProgressFingerprint 生成进度快照指纹，供 SSE 变化检测使用。
-func ProgressFingerprint(p TranscodeProgress) string {
-	return fmt.Sprintf("%d:%d:%s:%.1f:%s:%.0f:%s",
-		p.VideoID, p.PartID, p.Status, p.Percent, p.Stage, p.StagePercent, p.Message)
-}
-
-// PartFieldKey 返回分P 进度在哈希中的字段名。
-func PartFieldKey(partID uint) string {
-	return strconv.FormatUint(uint64(partID), 10)
 }

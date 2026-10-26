@@ -2,14 +2,16 @@ package scheduler
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/platform"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"github.com/glebarez/sqlite"
 	"go.uber.org/zap"
@@ -38,9 +40,7 @@ func openAutoUnbanTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "cron-unban-test.db")), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
-	if err != nil {
-		t.Fatalf("open sqlite failed: %v", err)
-	}
+	require.NoError(t, err, "open sqlite failed: %v", err)
 
 	statements := []string{
 		`CREATE TABLE users (
@@ -64,15 +64,14 @@ func openAutoUnbanTestDB(t *testing.T) *gorm.DB {
 		)`,
 	}
 	for _, stmt := range statements {
-		if err := db.Exec(stmt).Error; err != nil {
-			t.Fatalf("create test tables failed: %v", err)
+		{
+			err := db.Exec(stmt).Error
+			require.NoError(t, err, "create test tables failed: %v", err)
 		}
 	}
 
 	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sql db failed: %v", err)
-	}
+	require.NoError(t, err, "get sql db failed: %v", err)
 
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
@@ -82,6 +81,8 @@ func openAutoUnbanTestDB(t *testing.T) *gorm.DB {
 }
 
 func TestAutoUnbanReleasesOnlyExpiredBans(t *testing.T) {
+	t.Parallel()
+
 	db := openAutoUnbanTestDB(t)
 	now := time.Now()
 
@@ -104,44 +105,50 @@ func TestAutoUnbanReleasesOnlyExpiredBans(t *testing.T) {
 
 	service.Run(context.Background())
 
-	if got := userStatus(t, db, 1); got != enum.UserStatusActive {
-		t.Fatalf("expected user 1 active, got %d", got)
+	{
+		got := userStatus(t, db, 1)
+		require.Equal(t, enum.UserStatusActive, got, "expected user 1 active, got %d", got)
 	}
 
-	if got := userStatus(t, db, 2); got != enum.UserStatusBanned {
-		t.Fatalf("expected user 2 still banned, got %d", got)
+	{
+		got := userStatus(t, db, 2)
+		require.EqualValues(t, enum.UserStatusBanned, got, "expected user 2 still banned, got %d", got)
 	}
 
-	if got := userStatus(t, db, 3); got != enum.UserStatusPermanentlyBanned {
-		t.Fatalf("expected user 3 still permanently banned, got %d", got)
+	{
+		got := userStatus(t, db, 3)
+		require.EqualValues(t, enum.UserStatusPermanentlyBanned, got, "expected user 3 still permanently banned, got %d", got)
 	}
 
 	// 自动解封只标记原封禁记录，不补写 Active 记录。
 	var records []po.UserBanRecord
-	if err := db.Where("user_id = ?", 1).Find(&records).Error; err != nil {
-		t.Fatalf("load ban records failed: %v", err)
+	{
+		err := db.Where("user_id = ?", 1).Find(&records).Error
+		require.NoError(t, err, "load ban records failed: %v", err)
 	}
 
-	if len(records) != 1 || records[0].Status != enum.UserStatusBanned || !records[0].IsUnbanned {
-		t.Fatalf("unexpected released original record: %+v", records)
-	}
+	require.Len(t, records, 1, "unexpected released original record: %+v", records)
+	require.EqualValues(t, enum.UserStatusBanned, records[0].Status, "unexpected released original record: %+v", records)
+	require.True(t, records[0].IsUnbanned, "unexpected released original record: %+v", records)
 
 	// 再跑一轮不得重复处理已解封记录。
 	service.Run(context.Background())
-	if err := db.Where("user_id = ?", 1).Find(&records).Error; err != nil {
-		t.Fatalf("reload ban records failed: %v", err)
-	}
-	if len(records) != 1 {
-		t.Fatalf("expected no duplicate records, got %d", len(records))
+
+	{
+		err := db.Where("user_id = ?", 1).Find(&records).Error
+		require.NoError(t, err, "reload ban records failed: %v", err)
 	}
 
+	require.Len(t, records, 1, "expected no duplicate records, got %d", len(records))
+
 	// 解封后必须 write-through Active，且只写到期用户。
-	if len(recorder.writes) != 1 || recorder.writes[1] != enum.UserStatusActive {
-		t.Fatalf("unexpected status cache writes: %v", recorder.writes)
-	}
+	require.Len(t, recorder.writes, 1, "unexpected status cache writes: %v", recorder.writes)
+	require.Equal(t, enum.UserStatusActive, recorder.writes[1], "unexpected status cache writes: %v", recorder.writes)
 }
 
 func TestAutoUnbanNoopWhenNothingExpired(t *testing.T) {
+	t.Parallel()
+
 	db := openAutoUnbanTestDB(t)
 
 	seedBanUser(t, db, 5, enum.UserStatusBanned, ptrTime(time.Now().Add(time.Hour)))
@@ -156,20 +163,20 @@ func TestAutoUnbanNoopWhenNothingExpired(t *testing.T) {
 
 	service.Run(context.Background())
 
-	if got := userStatus(t, db, 5); got != enum.UserStatusBanned {
-		t.Fatalf("expected user 5 still banned, got %d", got)
+	{
+		got := userStatus(t, db, 5)
+		require.EqualValues(t, enum.UserStatusBanned, got, "expected user 5 still banned, got %d", got)
 	}
 
-	if len(recorder.writes) != 0 {
-		t.Fatalf("expected no status cache writes, got %v", recorder.writes)
-	}
+	require.Empty(t, recorder.writes, "expected no status cache writes, got %v", recorder.writes)
 }
 
 func seedBanUser(t *testing.T, db *gorm.DB, userID uint, status enum.UserStatus, endAt *time.Time) {
 	t.Helper()
 
-	if err := db.Exec(`INSERT INTO users (id, status) VALUES (?, ?)`, userID, status).Error; err != nil {
-		t.Fatalf("seed user %d failed: %v", userID, err)
+	{
+		err := db.Exec(`INSERT INTO users (id, status) VALUES (?, ?)`, userID, status).Error
+		require.NoError(t, err, "seed user %d failed: %v", userID, err)
 	}
 
 	record := po.UserBanRecord{
@@ -182,8 +189,9 @@ func seedBanUser(t *testing.T, db *gorm.DB, userID uint, status enum.UserStatus,
 		OperatorID: 99,
 	}
 
-	if err := db.Create(&record).Error; err != nil {
-		t.Fatalf("seed ban record for user %d failed: %v", userID, err)
+	{
+		err := db.Create(&record).Error
+		require.NoError(t, err, "seed ban record for user %d failed: %v", userID, err)
 	}
 }
 
@@ -191,8 +199,9 @@ func userStatus(t *testing.T, db *gorm.DB, userID uint) enum.UserStatus {
 	t.Helper()
 
 	var status enum.UserStatus
-	if err := db.Table("users").Select("status").Where("id = ?", userID).Scan(&status).Error; err != nil {
-		t.Fatalf("load user %d status failed: %v", userID, err)
+	{
+		err := db.Table("users").Select("status").Where("id = ?", userID).Scan(&status).Error
+		require.NoError(t, err, "load user %d status failed: %v", userID, err)
 	}
 
 	return status

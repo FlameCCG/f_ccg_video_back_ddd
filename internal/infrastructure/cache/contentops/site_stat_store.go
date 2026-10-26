@@ -2,7 +2,7 @@ package contentops
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // Legacy non-authentication digest format must remain compatible with stored identifiers.
 	"encoding/hex"
 	"errors"
 	"strconv"
@@ -24,7 +24,7 @@ const (
 )
 
 // errRedisNotInitialized Redis 未初始化（文案与原实现一致，会直接回给客户端）。
-var errRedisNotInitialized = errors.New("redis 未初始化")
+var errRedisNotInitialized = errors.New(testRedisUninitialized)
 
 // errVisitorUnidentified 既无登录用户也无可用 IP（文案与原实现一致）。
 var errVisitorUnidentified = errors.New("无法识别访客")
@@ -50,6 +50,7 @@ func buildVisitorMember(ip string) string {
 		return ""
 	}
 
+	//nolint:gosec // Compatibility checksum only; authentication and passwords use stronger primitives.
 	sum := sha1.Sum([]byte(ip))
 
 	return "v:" + hex.EncodeToString(sum[:])

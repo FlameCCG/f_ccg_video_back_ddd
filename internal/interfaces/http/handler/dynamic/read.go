@@ -27,7 +27,7 @@ func (h *Handler) ReadView(c *gin.Context) {
 
 	list, total, err := h.reads.ReadLatestAndList(c.Request.Context(), uid, req.AuthorID, req.Page, req.PageSize)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

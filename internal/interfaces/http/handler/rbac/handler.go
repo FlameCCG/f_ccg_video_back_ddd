@@ -23,7 +23,6 @@ type Handler struct {
 	menus       *rbacapp.MenuService
 	permissions *rbacapp.PermissionService
 	inherits    *rbacapp.InheritService
-	logger      *zap.Logger
 }
 
 // NewHandler 构造 RBAC HTTP 处理器。
@@ -32,31 +31,14 @@ func NewHandler(
 	menus *rbacapp.MenuService,
 	permissions *rbacapp.PermissionService,
 	inherits *rbacapp.InheritService,
-	logger *zap.Logger,
+	_ *zap.Logger,
 ) *Handler {
 	return &Handler{
 		roles:       roles,
 		menus:       menus,
 		permissions: permissions,
 		inherits:    inherits,
-		logger:      loggerOrNop(logger),
 	}
-}
-
-func (h *Handler) log() *zap.Logger {
-	if h == nil {
-		return zap.NewNop()
-	}
-
-	return loggerOrNop(h.logger)
-}
-
-func loggerOrNop(logger *zap.Logger) *zap.Logger {
-	if logger == nil {
-		return zap.NewNop()
-	}
-
-	return logger
 }
 
 // PermissionItem 权限项（资源路径 + 操作方法），请求体中使用。

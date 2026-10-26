@@ -18,10 +18,10 @@ import (
 	rbachandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/rbac"
 	socialhandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/social"
 	videohandler "f_ccg_video_back_ddd/internal/interfaces/http/handler/video"
-
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/validate"
+
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/gin-gonic/gin"
 )
@@ -97,18 +97,17 @@ func New(
 }
 
 // BuildEngine 构建并返回配置完毕的 gin 引擎。
-// 语义与原 router.buildEngine 一致（gin.Default + 代理信任配置 + Cors + 静态目录 + 路由分组）。
+// 使用显式请求上下文、日志和恢复链，再装配代理信任、Cors、静态目录与业务路由。
 func (r *Router) BuildEngine() *gin.Engine {
 	cfg := r.cfgProvider.Get()
 	if cfg != nil && cfg.Server != nil && cfg.Server.Mode != "" {
 		gin.SetMode(cfg.Server.Mode)
 	}
 
-	engine := gin.Default()
+	engine := gin.New()
+	engine.Use(middlewares.RequestContext(), r.mw.RequestLogger(), r.mw.Recovery())
+
 	engine.ContextWithFallback = true
-	if r.mw != nil {
-		engine.Use(r.mw.InjectLogger())
-	}
 	if r.validator != nil {
 		engine.Use(r.validator.Middleware())
 	}

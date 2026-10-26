@@ -3,10 +3,11 @@ package video
 import (
 	"context"
 	"errors"
-
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/coinutil"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
+
+	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -63,9 +64,9 @@ func (s *InteractionService) Triple(
 
 	stats, statsErr := s.stats.ApplyCommittedDelta(ctx, videoID, statsDelta)
 	if statsErr != nil {
-		s.logger.Error("triple committed but stats update failed",
-			zap.Uint("videoId", videoID),
-			zap.Uint("userId", userID),
+		logctx.With(ctx, s.logger).Warn("triple committed but stats update failed", zap.String("event", "video.triple_service.triple.failed"), zap.String("operation", "video.triple_service.triple"),
+			zap.Uint("video_id", videoID),
+			zap.Uint("user_id", userID),
 			zap.Error(statsErr),
 		)
 
@@ -79,47 +80,7 @@ func (s *InteractionService) Triple(
 	}
 
 	// 副作用：热度 / 分析 / 经验 / 通知（失败不影响三连成功）
-	if applied.LikeDelta != 0 {
-		s.recordLikeHotScoreAsync(ctx, videoID, applied.LikeDelta)
-	}
-
-	if applied.FavDelta != 0 {
-		s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreFavoriteWeight, applied.FavDelta)
-
-		if applied.AuthorID > 0 {
-			_ = s.creators.IncrFavorites(ctx, applied.AuthorID, applied.FavDelta)
-		}
-	}
-
-	if applied.CoinDelta > 0 {
-		s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreCoinWeight, applied.CoinDelta)
-
-		if applied.AuthorID > 0 {
-			_ = s.creators.IncrCoins(ctx, applied.AuthorID, applied.CoinDelta)
-		}
-
-		_ = s.exp.CoinExpForVideo(ctx, userID, videoID, applied.CoinDelta)
-	}
-
-	if applied.NewlyLiked {
-		s.awardLikeExpAsync(ctx, userID)
-		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(notifyCtx context.Context) {
-			s.sendVideoLikeNotification(notifyCtx, userID, videoID)
-		})
-	}
-
-	if applied.NewlyFaved || applied.FavDelta != 0 {
-		s.folderC.Invalidate(userID)
-	}
-
-	return &TripleResult{
-		Likes:         stats.Likes,
-		CoinCount:     stats.CoinCount,
-		FavoriteCount: stats.FavoriteCount,
-		IsLiked:       true, // ensure 语义：成功后必为已赞（原本已赞或本次新赞）
-		IsFavorited:   true,
-		IsCoined:      applied.NewlyCoined || applied.CoinDelta > 0 || s.HasCoined(ctx, videoID, userID),
-	}, nil
+	return finishInteractionServiceTriple(ctx, s, videoID, userID, &applied, stats)
 }
 
 // applyTriple 在同一事务内 ensure 赞/藏/币。
@@ -164,6 +125,84 @@ func (s *InteractionService) applyTriple(
 	}
 
 	// 首次被该用户收藏：涨 favorite_count + 作者奖励
+	return finishInteractionServiceApplyTriple(ctx, s, videoID, userID, coins, out, authorID, existsAny, created)
+}
+
+// applyCoinWithoutRelock 假定 user/author 已在事务内锁定。
+func (s *InteractionService) applyCoinWithoutRelock(
+	ctx context.Context,
+	videoID, userID, authorID uint,
+	coins int64,
+) (int64, error) {
+	add, err := domain.ClampCoins(coins)
+	if err != nil {
+		return 0, err
+	}
+
+	if createErr := s.coins.Create(ctx, videoID, userID, add); createErr != nil {
+		if errors.Is(createErr, domain.ErrDuplicateCoin) {
+			return 0, nil
+		}
+
+		return 0, createErr
+	}
+
+	if err := s.chargeCoins(ctx, videoID, userID, authorID, add); err != nil {
+		return 0, err
+	}
+
+	return add, nil
+}
+
+func interactionServiceTripleCondition(ctx context.Context, s *InteractionService, videoID, userID uint, applied domain.TripleOutcome) bool {
+	return applied.NewlyCoined || applied.CoinDelta > 0 || s.HasCoined(ctx, videoID, userID)
+}
+
+func finishInteractionServiceTriple(ctx context.Context, s *InteractionService, videoID, userID uint, applied *domain.TripleOutcome, stats *domain.Stats) (*TripleResult, error) {
+	if applied.LikeDelta != 0 {
+		s.recordLikeHotScoreAsync(ctx, videoID, applied.LikeDelta)
+	}
+
+	if applied.FavDelta != 0 {
+		s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreFavoriteWeight, applied.FavDelta)
+
+		if applied.AuthorID > 0 {
+			_ = s.creators.IncrFavorites(ctx, applied.AuthorID, applied.FavDelta)
+		}
+	}
+
+	if applied.CoinDelta > 0 {
+		s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreCoinWeight, applied.CoinDelta)
+
+		if applied.AuthorID > 0 {
+			_ = s.creators.IncrCoins(ctx, applied.AuthorID, applied.CoinDelta)
+		}
+
+		_ = s.exp.CoinExpForVideo(ctx, userID, videoID, applied.CoinDelta)
+	}
+
+	if applied.NewlyLiked {
+		s.awardLikeExpAsync(ctx, userID)
+		s.tasks.Go(ctx, ctxutil.AsyncDefaultTimeout, func(notifyCtx context.Context) {
+			s.sendVideoLikeNotification(notifyCtx, userID, videoID)
+		})
+	}
+
+	if applied.NewlyFaved || applied.FavDelta != 0 {
+		s.folderC.Invalidate(userID)
+	}
+
+	return &TripleResult{
+		Likes:         stats.Likes,
+		CoinCount:     stats.CoinCount,
+		FavoriteCount: stats.FavoriteCount,
+		IsLiked:       true, // ensure 语义：成功后必为已赞（原本已赞或本次新赞）
+		IsFavorited:   true,
+		IsCoined:      interactionServiceTripleCondition(ctx, s, videoID, userID, (*applied)),
+	}, nil
+}
+
+func finishInteractionServiceApplyTriple(ctx context.Context, s *InteractionService, videoID, userID uint, coins int64, out *domain.TripleOutcome, authorID uint, existsAny, created bool) (*domain.TripleOutcome, error) {
 	if created && !existsAny {
 		out.FavDelta = 1
 		out.NewlyFaved = true
@@ -203,30 +242,4 @@ func (s *InteractionService) applyTriple(
 	}
 
 	return out, nil
-}
-
-// applyCoinWithoutRelock 假定 user/author 已在事务内锁定。
-func (s *InteractionService) applyCoinWithoutRelock(
-	ctx context.Context,
-	videoID, userID, authorID uint,
-	coins int64,
-) (int64, error) {
-	add, err := domain.ClampCoins(coins)
-	if err != nil {
-		return 0, err
-	}
-
-	if createErr := s.coins.Create(ctx, videoID, userID, add); createErr != nil {
-		if errors.Is(createErr, domain.ErrDuplicateCoin) {
-			return 0, nil
-		}
-
-		return 0, createErr
-	}
-
-	if err := s.chargeCoins(ctx, videoID, userID, authorID, add); err != nil {
-		return 0, err
-	}
-
-	return add, nil
 }

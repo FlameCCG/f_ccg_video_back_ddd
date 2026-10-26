@@ -25,7 +25,7 @@ func (h *AdminHandler) SwitchRoleView(c *gin.Context) {
 	}
 
 	if err := h.accounts.SwitchRole(c.Request.Context(), uid, req.RoleID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

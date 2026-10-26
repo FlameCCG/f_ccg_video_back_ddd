@@ -23,7 +23,7 @@ func (h *Handler) CountsView(c *gin.Context) {
 
 	count, err := h.follows.UnreadFollowCount(c.Request.Context(), uid)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

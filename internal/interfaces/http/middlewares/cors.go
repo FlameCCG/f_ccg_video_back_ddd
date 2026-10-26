@@ -1,12 +1,12 @@
 package middlewares
 
 import (
+	"f_ccg_video_back_ddd/internal/config"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/config"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +26,7 @@ func Cors(cfgProvider *infraconfig.Provider) gin.HandlerFunc {
 			if allowed, allowCreds := corsOriginAllowed(cfgProvider.Get(), origin, c.Request.Host); allowed {
 				c.Header("Access-Control-Allow-Origin", origin)
 				c.Header("Vary", "Origin")
+
 				if allowCreds {
 					c.Header("Access-Control-Allow-Credentials", "true")
 				} else {
@@ -50,6 +51,7 @@ func Cors(cfgProvider *infraconfig.Provider) gin.HandlerFunc {
 			}
 
 			c.AbortWithStatus(http.StatusNoContent)
+
 			return
 		}
 
@@ -57,7 +59,7 @@ func Cors(cfgProvider *infraconfig.Provider) gin.HandlerFunc {
 	}
 }
 
-func corsOriginAllowed(cfg *config.Config, origin, requestHost string) (allowed bool, allowCredentials bool) {
+func corsOriginAllowed(cfg *config.Config, origin, requestHost string) (allowed, allowCredentials bool) {
 	parsed, err := url.Parse(origin)
 	if err != nil || parsed.Host == "" {
 		return false, false
@@ -72,47 +74,7 @@ func corsOriginAllowed(cfg *config.Config, origin, requestHost string) (allowed 
 		return true, true
 	}
 
-	if cfg != nil && cfg.Server != nil {
-		for _, raw := range cfg.Server.CorsOrigins {
-			raw = strings.TrimSpace(raw)
-			if raw == "" {
-				continue
-			}
-
-			if raw == "*" {
-				// 显式配置 * 时放开（不带 credentials）。
-				return true, false
-			}
-
-			allowedURL, err := url.Parse(raw)
-			if err != nil || allowedURL.Host == "" {
-				// 允许只写 host:port
-				if strings.EqualFold(raw, parsed.Host) || strings.EqualFold(raw, parsed.Hostname()) {
-					return true, true
-				}
-
-				continue
-			}
-
-			if strings.EqualFold(allowedURL.Scheme, parsed.Scheme) && sameHost(allowedURL.Host, parsed.Host) {
-				return true, true
-			}
-
-			if allowedURL.Scheme == "" && sameHost(allowedURL.Host, parsed.Host) {
-				return true, true
-			}
-		}
-
-		// debug/test 模式：未配置白名单时允许 loopback 前端跨端口联调。
-		mode := strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
-		if (mode == "debug" || mode == "test" || mode == "dev") &&
-			len(cfg.Server.CorsOrigins) == 0 &&
-			isLoopbackHost(parsed.Hostname()) {
-			return true, true
-		}
-	}
-
-	return false, false
+	return finishCorsOriginAllowed(cfg, parsed)
 }
 
 func sameHost(a, b string) bool {
@@ -150,4 +112,52 @@ func isLoopbackHost(host string) bool {
 	ip := net.ParseIP(host)
 
 	return ip != nil && ip.IsLoopback()
+}
+
+func corsOriginAllowedCondition(cfg *config.Config, parsed *url.URL, mode string) bool {
+	return (mode == "debug" || mode == "test" || mode == "dev") &&
+		len(cfg.Server.CorsOrigins) == 0 &&
+		isLoopbackHost(parsed.Hostname())
+}
+
+func finishCorsOriginAllowed(cfg *config.Config, parsed *url.URL) (bool, bool) {
+	if cfg == nil || cfg.Server == nil {
+		return false, false
+	}
+
+	for _, raw := range cfg.Server.CorsOrigins {
+		if match, credentials := matchConfiguredOrigin(raw, parsed); match {
+			return true, credentials
+		}
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
+	if corsOriginAllowedCondition(cfg, parsed, mode) {
+		return true, true
+	}
+
+	return false, false
+}
+
+func matchConfiguredOrigin(raw string, origin *url.URL) (bool, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return false, false
+	}
+
+	if raw == "*" {
+		return true, false
+	}
+
+	allowed, err := url.Parse(raw)
+	if err != nil || allowed.Host == "" {
+		match := strings.EqualFold(raw, origin.Host) || strings.EqualFold(raw, origin.Hostname())
+		return match, match
+	}
+
+	if (allowed.Scheme == "" || strings.EqualFold(allowed.Scheme, origin.Scheme)) && sameHost(allowed.Host, origin.Host) {
+		return true, true
+	}
+
+	return false, false
 }

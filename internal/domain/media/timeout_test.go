@@ -11,14 +11,14 @@ func TestCalcPipelineEncodeTimeout(t *testing.T) {
 	t.Parallel()
 
 	// 未知时长 → 兜底时长 * 倍率，且不低于下限。
-	if got := CalcPipelineEncodeTimeout(0, 4, false, 0); got < EncodeTimeoutMin {
-		t.Fatalf("zero duration cpu: %v < min %v", got, EncodeTimeoutMin)
+	if got := CalcPipelineEncodeTimeout(0, 4, false, 0); got < MinEncodeTimeout {
+		t.Fatalf("zero duration cpu: %v < min %v", got, MinEncodeTimeout)
 	}
 
 	// 23 分钟片源、4 路、CPU：1380s * mult(~24) 约数小时，应在上下限内。
 	got := CalcPipelineEncodeTimeout(23*60, 4, false, 1024*1024*1024)
-	if got < EncodeTimeoutMin || got > EncodeTimeoutMax {
-		t.Fatalf("23m 4k cpu: got %v, want in [%v,%v]", got, EncodeTimeoutMin, EncodeTimeoutMax)
+	if got < MinEncodeTimeout || got > EncodeTimeoutMax {
+		t.Fatalf("23m 4k cpu: got %v, want in [%v,%v]", got, MinEncodeTimeout, EncodeTimeoutMax)
 	}
 
 	gpu := CalcPipelineEncodeTimeout(23*60, 4, true, 1024*1024*1024)
@@ -38,16 +38,16 @@ func TestCalcPipelineEncodeTimeout(t *testing.T) {
 func TestCalcProgressStallTimeout(t *testing.T) {
 	t.Parallel()
 
-	if got := CalcProgressStallTimeout(0); got != ProgressStallMin {
-		t.Fatalf("zero duration: got %v want %v", got, ProgressStallMin)
+	if got := CalcProgressStallTimeout(0); got != MinProgressStall {
+		t.Fatalf("zero duration: got %v want %v", got, MinProgressStall)
 	}
 	// 很长片：duration/3 很大 → 钳到上限。
 	if got := CalcProgressStallTimeout(6 * 3600); got != ProgressStallMax {
 		t.Fatalf("long media: got %v want %v", got, ProgressStallMax)
 	}
 	// 25 分钟片源 → duration/3 ≈ 8 分钟 → 抬到下限 20 分钟。
-	if got := CalcProgressStallTimeout(25 * 60); got != ProgressStallMin {
-		t.Fatalf("25m media stall: got %v want min %v", got, ProgressStallMin)
+	if got := CalcProgressStallTimeout(25 * 60); got != MinProgressStall {
+		t.Fatalf("25m media stall: got %v want min %v", got, MinProgressStall)
 	}
 }
 
@@ -58,12 +58,12 @@ func TestCalcUploadTimeout(t *testing.T) {
 		t.Fatalf("unknown size: got %v", got)
 	}
 	// 10MiB 应钳到下限。
-	if got := CalcUploadTimeout(10 * 1024 * 1024); got != UploadTimeoutMin {
-		t.Fatalf("small file: got %v want %v", got, UploadTimeoutMin)
+	if got := CalcUploadTimeout(10 * 1024 * 1024); got != MinUploadTimeout {
+		t.Fatalf("small file: got %v want %v", got, MinUploadTimeout)
 	}
 	// 约 1GiB @ 512KiB/s ≈ 2048s + base → 数分钟，低于上限。
 	got := CalcUploadTimeout(1024 * 1024 * 1024)
-	if got < UploadTimeoutMin || got > UploadTimeoutMax {
+	if got < MinUploadTimeout || got > UploadTimeoutMax {
 		t.Fatalf("1GiB upload: got %v out of range", got)
 	}
 }
@@ -188,20 +188,20 @@ func TestClassifyFFmpegCtxError(t *testing.T) {
 func TestCalcAssembleAndAudioTimeouts(t *testing.T) {
 	t.Parallel()
 
-	if got := CalcAssembleTimeout(0); got != AssembleTimeoutMin {
-		t.Fatalf("zero bytes assemble timeout = %v, want min %v", got, AssembleTimeoutMin)
+	if got := CalcAssembleTimeout(0); got != MinAssembleTimeout {
+		t.Fatalf("zero bytes assemble timeout = %v, want min %v", got, MinAssembleTimeout)
 	}
 
 	if got := CalcAssembleTimeout(100 * 1024 * 1024 * 1024); got != AssembleTimeoutMax {
 		t.Fatalf("huge assemble timeout = %v, want max %v", got, AssembleTimeoutMax)
 	}
 
-	if got := CalcAssembleTimeout(10 * 1024 * 1024 * 1024); got <= AssembleTimeoutMin || got >= AssembleTimeoutMax {
+	if got := CalcAssembleTimeout(10 * 1024 * 1024 * 1024); got <= MinAssembleTimeout || got >= AssembleTimeoutMax {
 		t.Fatalf("mid-size assemble timeout out of range: %v", got)
 	}
 
-	if got := CalcAudioEncodeTimeout(0); got != AudioEncodeTimeoutMin {
-		t.Fatalf("default audio timeout = %v, want min %v", got, AudioEncodeTimeoutMin)
+	if got := CalcAudioEncodeTimeout(0); got != MinAudioEncodeTimeout {
+		t.Fatalf("default audio timeout = %v, want min %v", got, MinAudioEncodeTimeout)
 	}
 
 	if got := CalcAudioEncodeTimeout(100000); got != AudioEncodeTimeoutMax {

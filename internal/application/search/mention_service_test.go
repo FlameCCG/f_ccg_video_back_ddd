@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/search"
 
 	"go.uber.org/zap"
@@ -33,9 +35,7 @@ func TestSortMentionUsers(t *testing.T) {
 	got := []uint{users[0].ID, users[1].ID, users[2].ID, users[3].ID}
 
 	want := []uint{1, 2, 3, 4}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("sorted ids = %v, want %v", got, want)
-	}
+	require.True(t, reflect.DeepEqual(got, want), "sorted ids = %v, want %v", got, want)
 }
 
 func TestPaginateMentionUsers(t *testing.T) {
@@ -47,13 +47,13 @@ func TestPaginateMentionUsers(t *testing.T) {
 	got := []uint{page[0].ID, page[1].ID}
 
 	want := []uint{3, 4}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("page ids = %v, want %v", got, want)
-	}
+	require.True(t, reflect.DeepEqual(got, want), "page ids = %v, want %v", got, want)
 
 	// 越界页返回空切片（而非 nil），保证响应里是 [] 。
-	if out := paginateMentionUsers(users, mentionPage(9, 2)); out == nil || len(out) != 0 {
-		t.Fatalf("out-of-range page = %v", out)
+	{
+		out := paginateMentionUsers(users, mentionPage(9, 2))
+		require.NotNil(t, out, "out-of-range page = %v", out)
+		require.Empty(t, out, "out-of-range page = %v", out)
 	}
 }
 
@@ -62,19 +62,18 @@ func TestFilterByKeywordFallsBackToLocalMatch(t *testing.T) {
 	t.Parallel()
 
 	users := []MentionUser{
-		{ID: 1, Username: "Alice"},
+		{ID: 1, Username: testAlice},
 		{ID: 2, Username: "Bob"},
 		{ID: 3, Username: "Alicia"},
 	}
 	svc := NewMentionService(&fakeMentionRelations{users: users}, &fakeMentionSearch{available: false}, zap.NewNop())
 
 	got, err := svc.filterByKeyword(context.Background(), users, "ali")
-	if err != nil {
-		t.Fatalf("filterByKeyword returned error: %v", err)
-	}
+	require.NoError(t, err, "filterByKeyword returned error: %v", err)
 
-	if ids := mentionIDs(got); !reflect.DeepEqual(ids, []uint{1, 3}) {
-		t.Fatalf("matched ids = %v, want [1 3]", ids)
+	{
+		ids := mentionIDs(got)
+		require.True(t, reflect.DeepEqual(ids, []uint{1, 3}), "matched ids = %v, want [1 3]", ids)
 	}
 }
 
@@ -84,19 +83,18 @@ func TestFilterByKeywordIgnoresESError(t *testing.T) {
 	t.Parallel()
 
 	users := []MentionUser{
-		{ID: 1, Username: "Alice"},
+		{ID: 1, Username: testAlice},
 		{ID: 2, Username: "Bob"},
 	}
 	index := &fakeMentionSearch{available: true, err: errors.New("es down")}
 	svc := NewMentionService(&fakeMentionRelations{users: users}, index, zap.NewNop())
 
 	got, err := svc.filterByKeyword(context.Background(), users, "ali")
-	if err != nil {
-		t.Fatalf("filterByKeyword returned error: %v", err)
-	}
+	require.NoError(t, err, "filterByKeyword returned error: %v", err)
 
-	if ids := mentionIDs(got); !reflect.DeepEqual(ids, []uint{1}) {
-		t.Fatalf("matched ids = %v, want [1]", ids)
+	{
+		ids := mentionIDs(got)
+		require.True(t, reflect.DeepEqual(ids, []uint{1}), "matched ids = %v, want [1]", ids)
 	}
 }
 
@@ -113,12 +111,11 @@ func TestFilterByKeywordMergesESHits(t *testing.T) {
 	svc := NewMentionService(&fakeMentionRelations{users: users}, index, zap.NewNop())
 
 	got, err := svc.filterByKeyword(context.Background(), users, "mao")
-	if err != nil {
-		t.Fatalf("filterByKeyword returned error: %v", err)
-	}
+	require.NoError(t, err, "filterByKeyword returned error: %v", err)
 
-	if ids := mentionIDs(got); !reflect.DeepEqual(ids, []uint{1}) {
-		t.Fatalf("matched ids = %v, want [1]", ids)
+	{
+		ids := mentionIDs(got)
+		require.True(t, reflect.DeepEqual(ids, []uint{1}), "matched ids = %v, want [1]", ids)
 	}
 }
 
@@ -127,8 +124,9 @@ func TestSuggestFollowUsersRejectsAnonymous(t *testing.T) {
 
 	svc := NewMentionService(&fakeMentionRelations{}, &fakeMentionSearch{}, zap.NewNop())
 
-	if _, _, err := svc.SuggestFollowUsers(context.Background(), 0, "", 1, 20); !errors.Is(err, ErrInvalidMentionUserID) {
-		t.Fatalf("err = %v, want ErrInvalidMentionUserID", err)
+	{
+		_, _, err := svc.SuggestFollowUsers(context.Background(), 0, "", 1, 20)
+		require.ErrorIs(t, err, ErrInvalidMentionUserID, "err = %v, want ErrInvalidMentionUserID", err)
 	}
 }
 
@@ -144,16 +142,13 @@ func TestSuggestFollowUsersWithoutKeywordReturnsWholeFollowList(t *testing.T) {
 	svc := NewMentionService(relations, &fakeMentionSearch{available: false}, zap.NewNop())
 
 	list, total, err := svc.SuggestFollowUsers(context.Background(), 7, "  ", 1, 2)
-	if err != nil {
-		t.Fatalf("SuggestFollowUsers: %v", err)
-	}
+	require.NoError(t, err, "SuggestFollowUsers: %v", err)
 
-	if total != 3 {
-		t.Fatalf("total = %d, want 3", total)
-	}
+	require.EqualValues(t, 3, total, "total = %d, want 3", total)
 
-	if ids := mentionIDs(list); !reflect.DeepEqual(ids, []uint{1, 2}) {
-		t.Fatalf("page ids = %v, want [1 2]", ids)
+	{
+		ids := mentionIDs(list)
+		require.True(t, reflect.DeepEqual(ids, []uint{1, 2}), "page ids = %v, want [1 2]", ids)
 	}
 }
 
@@ -165,13 +160,11 @@ func TestSuggestFollowUsersWithoutFollowingReturnsEmpty(t *testing.T) {
 	svc := NewMentionService(&fakeMentionRelations{}, &fakeMentionSearch{available: true}, zap.NewNop())
 
 	list, total, err := svc.SuggestFollowUsers(context.Background(), 7, "ali", 1, 20)
-	if err != nil {
-		t.Fatalf("SuggestFollowUsers: %v", err)
-	}
+	require.NoError(t, err, "SuggestFollowUsers: %v", err)
 
-	if total != 0 || list == nil || len(list) != 0 {
-		t.Fatalf("list = %v, total = %d", list, total)
-	}
+	require.EqualValues(t, 0, total, "list = %v, total = %d", list, total)
+	require.NotNil(t, list, "list = %v, total = %d", list, total)
+	require.Empty(t, list, "list = %v, total = %d", list, total)
 }
 
 func TestSuggestFollowUsersPropagatesRelationError(t *testing.T) {
@@ -180,8 +173,9 @@ func TestSuggestFollowUsersPropagatesRelationError(t *testing.T) {
 	wantErr := errors.New("db down")
 	svc := NewMentionService(&fakeMentionRelations{err: wantErr}, &fakeMentionSearch{}, zap.NewNop())
 
-	if _, _, err := svc.SuggestFollowUsers(context.Background(), 7, "", 1, 20); !errors.Is(err, wantErr) {
-		t.Fatalf("err = %v, want %v", err, wantErr)
+	{
+		_, _, err := svc.SuggestFollowUsers(context.Background(), 7, "", 1, 20)
+		require.ErrorIs(t, err, wantErr, "err = %v, want %v", err, wantErr)
 	}
 }
 

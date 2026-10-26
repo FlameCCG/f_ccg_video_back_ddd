@@ -33,7 +33,7 @@ func (h *Handler) LikeView(c *gin.Context) {
 
 	result, err := h.likes.ToggleLike(ctx, uid, req.DynamicID)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

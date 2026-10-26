@@ -19,7 +19,7 @@ var TranscodeWorkerProviderSet = wire.NewSet(
 	cache.ProviderSet,
 	gormx.NewTxManager,
 	wire.Bind(new(tx.Manager), new(*gormx.TxManager)),
-	ctxutil.NewDetachedTaskGroup,
+	ctxutil.NewLoggedDetachedTaskGroup,
 	MediaProviderSet,
 	NewTranscodeWorker,
 )

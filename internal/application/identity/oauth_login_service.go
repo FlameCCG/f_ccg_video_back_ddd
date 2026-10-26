@@ -2,14 +2,17 @@ package identity
 
 import (
 	"context"
-	"fmt"
-
+	"errors"
 	"f_ccg_video_back_ddd/internal/application/shared"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"fmt"
+
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
+
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 
 	"go.uber.org/zap"
@@ -127,13 +130,9 @@ func (s *OAuthLoginService) ProviderEnabled(provider string) bool {
 // 换取用户信息与查找/创建账号的失败都返回 ErrOAuthProviderFailed，
 // 由接口层翻译成「xxx登录失败」；封禁与签发失败按原文案透出。
 func (s *OAuthLoginService) Login(ctx context.Context, in OAuthLoginInput) (*jwts.JwtToken, error) {
-	label := oauthLogLabel(in.Provider)
-
 	info, err := s.fetchUser(ctx, in)
 	if err != nil {
-		s.logger.Error(label+" Login Error", zap.Error(err))
-
-		return nil, ErrOAuthProviderFailed
+		return nil, apperr.Wrap("application/identity/oauth_login_service", ErrOAuthProviderFailed, err)
 	}
 
 	user, err := s.findOrCreateUser(ctx, domain.OAuthProfile{
@@ -147,9 +146,7 @@ func (s *OAuthLoginService) Login(ctx context.Context, in OAuthLoginInput) (*jwt
 		RegisterAddr:   in.Addr,
 	})
 	if err != nil {
-		s.logger.Error(label+" Login Find Or Create User Failed", zap.Error(err))
-
-		return nil, ErrOAuthProviderFailed
+		return nil, apperr.Wrap("application/identity/oauth_login_service", ErrOAuthProviderFailed, err)
 	}
 
 	return s.completeLogin(ctx, user, in)
@@ -203,6 +200,7 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain
 		if !profile.EmailVerified || profile.Email == "" {
 			return nil, ErrOAuthAccountBindingRequired
 		}
+
 		return user, nil
 	}
 
@@ -241,11 +239,7 @@ func (s *OAuthLoginService) findOrCreateUser(ctx context.Context, profile domain
 	if err = s.binder.AddRoleForUser(created.ID, constants.CommonUserRole); err != nil {
 		// 补偿删除已提交用户，避免无 Casbin 角色的半成品账号。
 		if delErr := s.users.DeleteByID(ctx, created.ID); delErr != nil {
-			s.logger.Error("compensate delete oauth user failed",
-				zap.Error(delErr),
-				zap.Uint("userId", created.ID),
-				zap.NamedError("casbinErr", err),
-			)
+			err = errors.Join(err, delErr)
 		}
 
 		return nil, fmt.Errorf("bind oauth casbin role failed: %w", err)
@@ -267,9 +261,7 @@ func (s *OAuthLoginService) completeLogin(
 	// 原实现在此处 Association("Roles").Find(&roles) 但从不使用结果，
 	// 唯一作用是「角色关联不可读时拒绝登录」。保留该校验以维持错误分支 1:1，
 	if _, err := s.roles.LoadRoles(ctx, user.ID); err != nil {
-		s.logger.Error("获取用户角色失败", zap.Error(err))
-
-		return nil, ErrLoginFailed
+		return nil, apperr.Wrap("application/identity/oauth_login_service", ErrLoginFailed, err)
 	}
 
 	recordLoginAsync(
@@ -286,28 +278,8 @@ func (s *OAuthLoginService) completeLogin(
 
 	token, err := s.tokens.IssueForUser(ctx, user, s.users)
 	if err != nil {
-		s.logger.Error("create jwt token failed", zap.Error(err))
-
-		return nil, ErrLoginFailed
+		return nil, apperr.Wrap("application/identity/oauth_login_service", ErrLoginFailed, err)
 	}
 
 	return token, nil
-}
-
-// oauthLogLabel 返回日志中使用的提供商显示名（与原各 handler 的日志文案一致）。
-func oauthLogLabel(provider string) string {
-	switch provider {
-	case OAuthProviderQQ:
-		return "QQ"
-	case OAuthProviderGoogle:
-		return "Google"
-	case OAuthProviderGitHub:
-		return "GitHub"
-	case OAuthProviderLinuxDo:
-		return "LinuxDo"
-	case OAuthProviderX:
-		return "X"
-	default:
-		return provider
-	}
 }

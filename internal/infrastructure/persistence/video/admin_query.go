@@ -2,10 +2,10 @@ package video
 
 import (
 	"context"
-
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/video"
 
 	"gorm.io/gorm"
 )
@@ -60,6 +60,43 @@ func (q *AdminVideoQuery) List(
 		return []app.AdminVideoItem{}, 0, nil
 	}
 
+	return finishAdminVideoQueryList(ctx, q, params, query, total)
+}
+
+// userByUsername 兜底解析作者 ID / 用户名（与原 fetchUserByUsername 一致）。
+func (q *AdminVideoQuery) userByUsername(ctx context.Context, username string) (uint, string) {
+	if username == "" {
+		return 0, ""
+	}
+
+	var user po.User
+	if err := gormx.DB(ctx, q.db).
+		Select("id", "username").
+		Where("username = ?", username).
+		First(&user).Error; err != nil {
+		return 0, username
+	}
+
+	return user.ID, user.Username
+}
+
+// adminVideoOrderSQL 管理端列表排序表达式（与原 switch 分支逐字一致）。
+func adminVideoOrderSQL(sort string) string {
+	switch sort {
+	case "oldest":
+		return "created_at ASC, id ASC"
+	case "views":
+		return "views DESC, created_at DESC, id DESC"
+	case "likes":
+		return "likes DESC, created_at DESC, id DESC"
+	case "duration":
+		return "duration DESC, created_at DESC, id DESC"
+	default:
+		return "created_at DESC, id DESC"
+	}
+}
+
+func finishAdminVideoQueryList(ctx context.Context, q *AdminVideoQuery, params app.AdminVideoListParams, query *gorm.DB, total int64) ([]app.AdminVideoItem, int64, error) {
 	var rows []po.Video
 	if err := query.Session(&gorm.Session{}).
 		Select("id", "title", "description", "cover", "duration", "views", "likes",
@@ -131,37 +168,4 @@ func (q *AdminVideoQuery) List(
 	}
 
 	return items, total, nil
-}
-
-// userByUsername 兜底解析作者 ID / 用户名（与原 fetchUserByUsername 一致）。
-func (q *AdminVideoQuery) userByUsername(ctx context.Context, username string) (uint, string) {
-	if username == "" {
-		return 0, ""
-	}
-
-	var user po.User
-	if err := gormx.DB(ctx, q.db).
-		Select("id", "username").
-		Where("username = ?", username).
-		First(&user).Error; err != nil {
-		return 0, username
-	}
-
-	return user.ID, user.Username
-}
-
-// adminVideoOrderSQL 管理端列表排序表达式（与原 switch 分支逐字一致）。
-func adminVideoOrderSQL(sort string) string {
-	switch sort {
-	case "oldest":
-		return "created_at ASC, id ASC"
-	case "views":
-		return "views DESC, created_at DESC, id DESC"
-	case "likes":
-		return "likes DESC, created_at DESC, id DESC"
-	case "duration":
-		return "duration DESC, created_at DESC, id DESC"
-	default:
-		return "created_at DESC, id DESC"
-	}
 }

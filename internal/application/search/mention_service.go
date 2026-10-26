@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"sort"
 
 	domain "f_ccg_video_back_ddd/internal/domain/search"
@@ -87,7 +88,7 @@ func (s *MentionService) filterByKeyword(
 
 		matchedIDs, err := s.index.MatchUserIDs(ctx, ids, keyword)
 		if err != nil {
-			s.logger.Warn("mention suggest fallback to local match", zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("mention suggest fallback to local match", zap.String("event", "search.mention_service.filter_by_keyword.degraded"), zap.String("operation", "search.mention_service.filter_by_keyword"), zap.Error(err))
 		} else {
 			for _, id := range matchedIDs {
 				if user, ok := userMap[id]; ok {

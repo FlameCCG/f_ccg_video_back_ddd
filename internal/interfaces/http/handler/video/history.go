@@ -3,10 +3,10 @@ package video
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // SaveHistoryReq 记录作品播放进度与总时长，当前用户从认证上下文取得，单位为秒。
@@ -28,7 +28,7 @@ func (h *Handler) SaveHistoryView(c *gin.Context) {
 	}
 
 	if err := h.history.SavePlayHistory(c.Request.Context(), uid, req.VideoID, req.Progress, req.Duration); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -101,7 +101,7 @@ func (h *Handler) GetVideoHistoryView(c *gin.Context) {
 
 	list, total, err := h.history.ListUserHistory(c.Request.Context(), uid, req.Page, req.PageSize, req.Keyword)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -121,8 +121,8 @@ func (h *Handler) DeleteHistoryView(c *gin.Context) {
 	}
 
 	if err := h.history.DeleteHistory(c.Request.Context(), uid, req.VideoIDs); err != nil {
-		h.log().Error("delete history failed", zap.Error(err), zap.Uint("userId", uid))
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.RecordFailure(apperr.Wrap("handler/video/history", nil, err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

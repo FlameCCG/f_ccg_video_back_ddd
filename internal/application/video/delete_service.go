@@ -2,9 +2,10 @@ package video
 
 import (
 	"context"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/logctx"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
@@ -95,16 +96,16 @@ func (s *DeleteService) DeleteVideo(ctx context.Context, videoID, userID uint) e
 	}
 
 	if err := s.canceller.NotifyVideoDeleted(ctx, []uint{videoID}); err != nil {
-		s.logger.Warn("notify transcode cancellation failed",
-			zap.Uint("videoId", videoID),
+		logctx.With(ctx, s.logger).Warn("notify transcode cancellation failed", zap.String("event", "video.delete_service.delete_video.degraded"), zap.String("operation", "video.delete_service.delete_video"),
+			zap.Uint("video_id", videoID),
 			zap.Error(err),
 		)
 	}
 
-	s.logger.Info("delete video ok",
-		zap.Uint("videoId", videoID),
-		zap.Int64("commentDeleted", deletedComments),
-		zap.Int64("commentLikeDeleted", deletedCommentLikes),
+	logctx.With(ctx, s.logger).Info("delete video ok", zap.String("event", "video.delete_service.delete_video.diagnostic"), zap.String("operation", "video.delete_service.delete_video"),
+		zap.Uint("video_id", videoID),
+		zap.Int64("comment_deleted", deletedComments),
+		zap.Int64("comment_like_deleted", deletedCommentLikes),
 	)
 	s.authors.InvalidateVideoAuthorCache(ctx, videoID)
 

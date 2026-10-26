@@ -2,11 +2,11 @@ package identity
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/res"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,14 +19,14 @@ func (h *Handler) UploadBannerView(c *gin.Context) {
 	// 与原实现一致：fileHash 校验在读取 multipart 文件之前，
 	// 保证非法 hash 回该错误文案而不是「请上传横幅文件」。
 	if err := h.banners.ValidateUploadID(fileHash); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
 
 	file, header, err := c.Request.FormFile("banner")
 	if err != nil {
-		res.FailWithMsg("请上传横幅文件", c)
+		res.FailWithCause(err, "请上传横幅文件", c)
 
 		return
 	}
@@ -40,7 +40,7 @@ func (h *Handler) UploadBannerView(c *gin.Context) {
 		Size:     header.Size,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

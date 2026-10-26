@@ -2,10 +2,12 @@ package chat
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
+	"f_ccg_video_back_ddd/pkg/apperr"
 
 	app "f_ccg_video_back_ddd/internal/application/chat"
+
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/mongopo"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -173,7 +175,7 @@ func (s *Store) ListMessagesBefore(
 	if before != "" {
 		oid, err := primitive.ObjectIDFromHex(before)
 		if err != nil {
-			return nil, domain.ErrInvalidCursor
+			return nil, apperr.Wrap("infrastructure/persistence/chat/query", domain.ErrInvalidCursor, err)
 		}
 
 		filter[fieldID] = bson.M{"$lt": oid}

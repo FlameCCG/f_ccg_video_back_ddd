@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strconv"
 
 	app "f_ccg_video_back_ddd/internal/application/platform"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -15,7 +16,7 @@ import (
 
 // loadVideoStatsSnapshotScript 对每个 video 原子读取 stats + version，避免 MGET 交叉快照。
 // KEYS 布局：[statsKey1, versionKey1, statsKey2, versionKey2, ...]
-// 返回扁平数组：[stats1, version1, stats2, version2, ...]
+// 返回扁平数组：[stats1, version1, stats2, version2, ...].
 var loadVideoStatsSnapshotScript = redis.NewScript(`
 local result = {}
 for i = 1, #KEYS, 2 do
@@ -115,7 +116,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 	for i, memberID := range ids {
 		videoID, parseErr := parseDirtyVideoID(memberID)
 		if parseErr != nil {
-			c.logger.Warn("invalid dirty video id", zap.String("member", memberID), zap.Error(parseErr))
+			logctx.With(ctx, c.logger).Warn("invalid dirty video id", zap.String("event", "scheduler.video_stats_cache.load_snapshots.degraded"), zap.String("operation", "scheduler.video_stats_cache.load_snapshots"), zap.String("member", memberID), zap.Error(parseErr))
 			c.clearDirtyMember(ctx, memberID)
 
 			continue
@@ -125,7 +126,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 		versionIdx := statsIdx + 1
 
 		if versionIdx >= len(rawResult) {
-			c.logger.Warn("load dirty video stats snapshot incomplete", zap.String("member", memberID))
+			logctx.With(ctx, c.logger).Warn("load dirty video stats snapshot incomplete", zap.String("event", "scheduler.video_stats_cache.load_snapshots.degraded"), zap.String("operation", "scheduler.video_stats_cache.load_snapshots"), zap.String("member", memberID))
 
 			continue
 		}
@@ -139,7 +140,7 @@ func (c *VideoStatsCache) LoadSnapshots(ctx context.Context, ids []string) ([]ap
 
 		var payload videoStatsPayload
 		if err := json.Unmarshal(raw, &payload); err != nil {
-			c.logger.Warn("unmarshal dirty video stats failed", zap.Uint("videoId", videoID), zap.Error(err))
+			logctx.With(ctx, c.logger).Warn("unmarshal dirty video stats failed", zap.String("event", "scheduler.video_stats_cache.load_snapshots.degraded"), zap.String("operation", "scheduler.video_stats_cache.load_snapshots"), zap.Uint("video_id", videoID), zap.Error(err))
 
 			continue
 		}

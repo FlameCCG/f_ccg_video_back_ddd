@@ -3,10 +3,10 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 )

@@ -27,7 +27,7 @@ func (h *Handler) CreateFolderView(c *gin.Context) {
 
 	folder, err := h.folders.CreateFolder(c.Request.Context(), uid, req.Name)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -59,7 +59,7 @@ func (h *Handler) UpdateFolderView(c *gin.Context) {
 
 	folder, err := h.folders.UpdateFolder(c.Request.Context(), uid, req.FolderID, req.Name)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -89,7 +89,7 @@ func (h *Handler) DeleteFolderView(c *gin.Context) {
 	}
 
 	if err := h.folders.DeleteFolder(c.Request.Context(), uid, req.FolderID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -115,7 +115,7 @@ func (h *Handler) FolderListView(c *gin.Context) {
 
 	list, err := h.folders.ListFolders(c.Request.Context(), uid, req.VideoID)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -147,12 +147,12 @@ func (h *Handler) FolderVideosView(c *gin.Context) {
 	)
 	if err != nil {
 		if isRecordNotFound(err) {
-			res.FailWithMsg("收藏夹不存在", c)
+			res.FailWithCause(err, "收藏夹不存在", c)
 
 			return
 		}
 
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

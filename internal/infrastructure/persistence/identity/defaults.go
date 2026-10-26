@@ -12,5 +12,6 @@ func (r *UserRepository) InitializeDefaults(ctx context.Context, userID uint) er
 	if err := db.Create(&po.UserConf{UserID: userID, BannerID: r.defaultUserBannerID()}).Error; err != nil {
 		return err
 	}
+
 	return db.Create(&po.FavoriteFolder{UserID: userID, Name: "默认收藏夹", IsDefault: true}).Error
 }

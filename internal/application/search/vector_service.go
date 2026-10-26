@@ -3,12 +3,13 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strings"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"go.uber.org/zap"
 )
@@ -79,6 +80,7 @@ func (s *VideoVectorService) SearchVideoVectorIDsMultiModal(
 	limit int,
 ) ([]uint, error) {
 	input.Text = strings.TrimSpace(input.Text)
+
 	input.ImageURL = strings.TrimSpace(input.ImageURL)
 	if input.IsZero() {
 		return nil, nil
@@ -92,6 +94,7 @@ func (s *VideoVectorService) SearchVideoVectorIDsMultiModal(
 	if err != nil {
 		return nil, err
 	}
+
 	if limit <= 0 {
 		limit = cfg.TopK
 	}
@@ -132,7 +135,6 @@ func (s *VideoVectorService) indexVideoVectorWithConfig(
 	cfg VectorConfig,
 	videoID uint,
 ) error {
-
 	source, err := s.source.Load(ctx, videoID)
 	if err != nil {
 		if errors.Is(err, ErrVectorSourceNotFound) {
@@ -179,14 +181,14 @@ func (s *VideoVectorService) DeleteVideoVector(ctx context.Context, videoID uint
 // IndexVideoVectorBestEffort 尽力同步向量索引，失败仅记日志.
 func (s *VideoVectorService) IndexVideoVectorBestEffort(ctx context.Context, videoID uint) {
 	if err := s.IndexVideoVector(ctx, videoID); err != nil {
-		s.logger.Warn("sync video vector index failed", zap.Uint("videoId", videoID), zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("sync video vector index failed", zap.String("event", "search.vector_service.index_video_vector_best_effort.degraded"), zap.String("operation", "search.vector_service.index_video_vector_best_effort"), zap.Uint("video_id", videoID), zap.Error(err))
 	}
 }
 
 // DeleteVideoVectorBestEffort 尽力删除向量索引文档，失败仅记日志.
 func (s *VideoVectorService) DeleteVideoVectorBestEffort(ctx context.Context, videoID uint) {
 	if err := s.DeleteVideoVector(ctx, videoID); err != nil {
-		s.logger.Warn("delete video vector index failed", zap.Uint("videoId", videoID), zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("delete video vector index failed", zap.String("event", "search.vector_service.delete_video_vector_best_effort.degraded"), zap.String("operation", "search.vector_service.delete_video_vector_best_effort"), zap.Uint("video_id", videoID), zap.Error(err))
 	}
 }
 
@@ -213,6 +215,7 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 	if dimensions <= 0 {
 		dimensions = defaultVideoEmbeddingDims
 	}
+
 	if dimensions != 1024 && dimensions != defaultVideoEmbeddingDims {
 		return VectorConfig{}, fmt.Errorf(
 			"embeddingDimensions 只支持 1024 或 2048，当前为 %d", dimensions,
@@ -235,8 +238,7 @@ func (s *VideoVectorService) vectorConfig() (VectorConfig, error) {
 	}
 
 	localStorageRoot := ""
-	if snapshot.Site != nil && snapshot.Site.Storage != nil && snapshot.Site.Storage.Local != nil &&
-		snapshot.Site.Storage.Local.Enable {
+	if videoVectorServicevectorConfigCondition(snapshot) {
 		localStorageRoot = strings.TrimSpace(snapshot.Site.Storage.Local.Path)
 	}
 
@@ -264,4 +266,9 @@ func normalizeEmbeddingImageMode(value string) string {
 	default:
 		return embeddingImageModeAuto
 	}
+}
+
+func videoVectorServicevectorConfigCondition(snapshot *config.Config) bool {
+	return snapshot.Site != nil && snapshot.Site.Storage != nil && snapshot.Site.Storage.Local != nil &&
+		snapshot.Site.Storage.Local.Enable
 }

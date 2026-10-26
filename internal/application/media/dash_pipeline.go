@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"os"
 	"path"
@@ -44,7 +45,7 @@ func (s *TranscodeService) runDASHPipeline(ctx context.Context, req dashPipeline
 		if until, active := s.gpuCooldown.Active(); active {
 			useGPU = false
 
-			s.logger.Warn("skip GPU dash during cooldown", zap.Time("retryAfter", until))
+			logctx.With(ctx, s.logger).Warn("skip GPU dash during cooldown", zap.String("event", "media.dash_pipeline.run_dash_pipeline.degraded"), zap.String("operation", "media.dash_pipeline.run_dash_pipeline"), zap.Time("retry_after", until))
 		}
 	}
 
@@ -58,8 +59,8 @@ func (s *TranscodeService) runDASHPipeline(ctx context.Context, req dashPipeline
 			return mpdURL, size, err
 		}
 
-		s.noteGPUFailure(err)
-		s.logger.Warn("dash GPU failed, fallback to CPU", zap.Error(err))
+		s.noteGPUFailure(ctx, err)
+		logctx.With(ctx, s.logger).Warn("dash GPU failed, fallback to CPU", zap.String("event", "media.dash_pipeline.run_dash_pipeline.degraded"), zap.String("operation", "media.dash_pipeline.run_dash_pipeline"), zap.Error(err))
 	}
 
 	return s.runDASHAttempt(ctx, req, false)

@@ -3,13 +3,12 @@ package migration
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -46,7 +45,7 @@ func initVideoPartitionsFromSQL(ctx context.Context, db *gorm.DB, sqlPath string
 		return 0, 0, "", err
 	}
 
-	content, err := os.ReadFile(seedPath)
+	content, err := os.ReadFile(seedPath) // #nosec G304 -- The SQL seed path is an explicit trusted CLI input, resolved before reading.
 	if err != nil {
 		return 0, 0, "", fmt.Errorf("读取分区 SQL 文件失败: %w", err)
 	}
@@ -66,101 +65,7 @@ func initVideoPartitionsFromSQL(ctx context.Context, db *gorm.DB, sqlPath string
 	)
 
 	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		tempTable := fmt.Sprintf("tmp_video_partition_seed_%d", time.Now().UnixNano())
-		defer func() {
-			_ = tx.Exec(dropVideoPartitionSeedTableSQL(tx.Name(), tempTable)).Error
-		}()
-
-		createTableSQL, err := createVideoPartitionSeedTableSQL(tx.Name(), tempTable)
-		if err != nil {
-			return err
-		}
-
-		if err := tx.Exec(createTableSQL).Error; err != nil {
-			return fmt.Errorf("创建分区种子临时表失败: %w", err)
-		}
-
-		for _, stmt := range statements {
-			rewritten, err := rewriteVideoPartitionSeedStatement(stmt, tempTable)
-			if err != nil {
-				return err
-			}
-
-			if err := tx.Exec(rewritten).Error; err != nil {
-				return fmt.Errorf("执行分区种子 SQL 失败: %w", err)
-			}
-		}
-
-		var seeds []videoPartitionSeedRow
-		if err := tx.Table(tempTable).
-			Order("seed_order ASC").
-			Find(&seeds).Error; err != nil {
-			return fmt.Errorf("读取分区种子数据失败: %w", err)
-		}
-
-		if len(seeds) == 0 {
-			return errors.New("未解析到任何分区种子数据")
-		}
-
-		now := time.Now()
-		partitionRows := make([]map[string]any, 0, len(seeds))
-
-		seedIDs := make([]uint, 0, len(seeds))
-		for idx, seed := range seeds {
-			partitionRows = append(partitionRows, map[string]any{
-				"id":             seed.ID,
-				"created_at":     now,
-				"updated_at":     now,
-				"name":           seed.Name,
-				"icon":           seed.Icon,
-				"sort_order":     idx + 1,
-				"is_active":      seed.IsActive != 0,
-				"is_submittable": seed.IsSubmittable != 0,
-			})
-			seedIDs = append(seedIDs, seed.ID)
-		}
-
-		if err := tx.
-			Table((&po.VideoPartition{}).TableName()).
-			Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "id"}},
-				DoUpdates: clause.AssignmentColumns([]string{
-					"name",
-					"icon",
-					"sort_order",
-					"is_active",
-					"is_submittable",
-					"updated_at",
-				}),
-			}).
-			Create(&partitionRows).Error; err != nil {
-			return fmt.Errorf("写入分区数据失败: %w", err)
-		}
-
-		imported = len(partitionRows)
-
-		var extraPartitions []po.VideoPartition
-		if err := tx.
-			Where("id NOT IN ?", seedIDs).
-			Order("sort_order ASC, id ASC").
-			Find(&extraPartitions).Error; err != nil {
-			return fmt.Errorf("查询额外分区失败: %w", err)
-		}
-
-		nextSortOrder := imported + 1
-		for _, partition := range extraPartitions {
-			if err := tx.Model(&po.VideoPartition{}).
-				Where("id = ?", partition.ID).
-				Update("sort_order", nextSortOrder).Error; err != nil {
-				return fmt.Errorf("重排额外分区排序失败: %w", err)
-			}
-
-			nextSortOrder++
-		}
-
-		normalizedExtras = len(extraPartitions)
-
-		return nil
+		return initVideoPartitionsFromSQLTransaction(tx, statements, &imported, &normalizedExtras)
 	})
 	if err != nil {
 		return 0, 0, "", err
@@ -263,4 +168,102 @@ func dropVideoPartitionSeedTableSQL(dialect, table string) string {
 
 func quoteIdentifier(name string) string {
 	return "`" + name + "`"
+}
+
+func initVideoPartitionsFromSQLTransaction(tx *gorm.DB, statements []string, imported, normalizedExtras *int) error {
+	tempTable := fmt.Sprintf("tmp_video_partition_seed_%d", time.Now().UnixNano())
+	defer func() {
+		_ = tx.Exec(dropVideoPartitionSeedTableSQL(tx.Name(), tempTable)).Error
+	}()
+
+	createTableSQL, err := createVideoPartitionSeedTableSQL(tx.Name(), tempTable)
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Exec(createTableSQL).Error; err != nil {
+		return fmt.Errorf("创建分区种子临时表失败: %w", err)
+	}
+
+	for _, stmt := range statements {
+		rewritten, err := rewriteVideoPartitionSeedStatement(stmt, tempTable)
+		if err != nil {
+			return err
+		}
+
+		if err := tx.Exec(rewritten).Error; err != nil {
+			return fmt.Errorf("执行分区种子 SQL 失败: %w", err)
+		}
+	}
+
+	var seeds []videoPartitionSeedRow
+	if err := tx.Table(tempTable).
+		Order("seed_order ASC").
+		Find(&seeds).Error; err != nil {
+		return fmt.Errorf("读取分区种子数据失败: %w", err)
+	}
+
+	if len(seeds) == 0 {
+		return errors.New("未解析到任何分区种子数据")
+	}
+
+	now := time.Now()
+	partitionRows := make([]map[string]any, 0, len(seeds))
+
+	seedIDs := make([]uint, 0, len(seeds))
+	for idx, seed := range seeds {
+		partitionRows = append(partitionRows, map[string]any{
+			"id":             seed.ID,
+			"created_at":     now,
+			"updated_at":     now,
+			"name":           seed.Name,
+			"icon":           seed.Icon,
+			"sort_order":     idx + 1,
+			"is_active":      seed.IsActive != 0,
+			"is_submittable": seed.IsSubmittable != 0,
+		})
+		seedIDs = append(seedIDs, seed.ID)
+	}
+
+	if err := tx.
+		Table((&po.VideoPartition{}).TableName()).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"name",
+				"icon",
+				"sort_order",
+				"is_active",
+				"is_submittable",
+				"updated_at",
+			}),
+		}).
+		Create(&partitionRows).Error; err != nil {
+		return fmt.Errorf("写入分区数据失败: %w", err)
+	}
+
+	(*imported) = len(partitionRows)
+
+	var extraPartitions []po.VideoPartition
+	if err := tx.
+		Where("id NOT IN ?", seedIDs).
+		Order("sort_order ASC, id ASC").
+		Find(&extraPartitions).Error; err != nil {
+		return fmt.Errorf("查询额外分区失败: %w", err)
+	}
+
+	nextSortOrder := (*imported) + 1
+	for _, partition := range extraPartitions {
+		if err := tx.Model(&po.VideoPartition{}).
+			Where("id = ?", partition.ID).
+			Update("sort_order", nextSortOrder).Error; err != nil {
+			return fmt.Errorf("重排额外分区排序失败: %w", err)
+		}
+
+		nextSortOrder++
+	}
+
+	(*normalizedExtras) = len(extraPartitions)
+
+	return nil
 }

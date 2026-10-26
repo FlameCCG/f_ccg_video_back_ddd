@@ -3,12 +3,12 @@ package dynamic
 import (
 	"context"
 	"errors"
-	"time"
-
-	app "f_ccg_video_back_ddd/internal/application/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"time"
+
+	app "f_ccg_video_back_ddd/internal/application/dynamic"
 
 	"gorm.io/gorm"
 )

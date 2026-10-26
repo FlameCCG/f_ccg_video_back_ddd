@@ -83,7 +83,7 @@ func (s *ProgressQueryService) Subscribe(ctx context.Context) (*ProgressSubscrip
 
 // ProgressSubscription 是进度变更订阅句柄，把领域快照映射为读模型事件。
 type ProgressSubscription struct {
-	ctx       context.Context
+	ctx       context.Context //nolint:containedctx // Owns the lifetime of a subscription pump and is canceled when that subscription ends.
 	done      chan struct{}
 	closeOnce sync.Once
 	closeErr  error
@@ -108,8 +108,10 @@ func newProgressSubscription(ctx context.Context, inner domain.ProgressSubscript
 // pump 把领域事件通道转成读模型事件通道；上游关闭时随之关闭。
 func (s *ProgressSubscription) pump() {
 	defer close(s.events)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
+
 	input := s.inner.Events()
+
 	for {
 		select {
 		case <-s.done:

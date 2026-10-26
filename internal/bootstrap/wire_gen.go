@@ -116,11 +116,32 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 		return nil, nil, err
 	}
 	es := config.ProvideESConf(provider)
-	searchES, cleanup4 := search.Provide(es, zapLogger)
+	searchES, cleanup4, err := search.Provide(es, zapLogger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup5 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup5, err := cache.Provide(redis, zapLogger)
+	if err != nil {
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup6 := mongodb.Provide(mongo, zapLogger)
+	mongodbMongo, cleanup6, err := mongodb.Provide(mongo, zapLogger)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	searcher, cleanup7 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
@@ -147,7 +168,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	database := mongodb.ProvideDatabase(mongodbMongo)
 	store := chat.NewStore(database)
 	actorQuery := notification.NewActorQuery(gormDB)
-	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
+	detachedTaskGroup := ctxutil.NewLoggedDetachedTaskGroup(zapLogger)
 	service := notification3.NewService(repository, countCache, store, actorQuery, detachedTaskGroup, zapLogger)
 	banService := identity3.NewBanService(txManager, userRepository, banRecordRepository, userStatusService, service)
 	banRecordQuery := identity2.NewBanRecordQuery(gormDB)
@@ -374,7 +395,7 @@ func InitializeApp(opts *cli.Options) (*App, func(), error) {
 	roleService := rbac2.NewRoleService(txManager, roleRepository, menuRepository, userRoleRepository, casbinEnforcer, zapLogger)
 	roleMenuRepository := rbac.NewRoleMenuRepository(gormDB)
 	menuService := rbac2.NewMenuService(txManager, roleRepository, menuRepository, roleMenuRepository, userRoleRepository, aiService, zapLogger)
-	apiResourceRepository := rbac.NewApiResourceRepository(gormDB)
+	apiResourceRepository := rbac.NewAPIResourceRepository(gormDB)
 	roleGraph := rbac2.NewRoleGraph(casbinEnforcer)
 	permissionEvaluator := rbac.NewPermissionEvaluator()
 	permissionService := rbac2.NewPermissionService(roleRepository, roleMenuRepository, apiResourceRepository, casbinEnforcer, roleGraph, permissionEvaluator, zapLogger)
@@ -443,10 +464,16 @@ func InitializeTranscodeWorker(opts *cli.Options) (*TranscodeWorker, func(), err
 	txManager := gormx.NewTxManager(gormDB)
 	transcodeResourceRepository := media3.NewTranscodeResourceRepository(gormDB, txManager)
 	minIOClientPool := storage.NewMinIOClientPool(zapLogger)
-	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
+	detachedTaskGroup := ctxutil.NewLoggedDetachedTaskGroup(zapLogger)
 	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup4 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup4, err := cache.Provide(redis, zapLogger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	client := cache.ProvideClient(cacheRedis)
 	progressCache := media2.NewProgressCache(client, zapLogger)
 	videoDetailCache := media2.NewVideoDetailCache(client, zapLogger)
@@ -550,7 +577,7 @@ func InitializeBannerTask(opts *cli.Options) (*cli.Executor, func(), error) {
 	}
 	zapLogger := logger.ProvideZap(loggerLogger)
 	minIOClientPool := storage.NewMinIOClientPool(zapLogger)
-	detachedTaskGroup := ctxutil.NewDetachedTaskGroup()
+	detachedTaskGroup := ctxutil.NewLoggedDetachedTaskGroup(zapLogger)
 	resolver := storage.NewResolver(provider, minIOClientPool, detachedTaskGroup, zapLogger)
 	bannerStorageResolverAdapter := NewBannerStorageResolverAdapter(resolver)
 	configMysql := config.ProvideMysqlConf(provider)
@@ -634,7 +661,13 @@ func InitializeESIndexTask(opts *cli.Options) (*cli.Executor, func(), error) {
 		return nil, nil, err
 	}
 	es := config.ProvideESConf(provider)
-	searchES, cleanup4 := search.Provide(es, zapLogger)
+	searchES, cleanup4, err := search.Provide(es, zapLogger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	client := search.ProvideV7(searchES)
 	indexManager := search.NewIndexManager(client, zapLogger)
 	executor := NewESCLIExecutor(db, indexManager, zapLogger)
@@ -668,11 +701,32 @@ func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error
 		return nil, nil, err
 	}
 	es := config.ProvideESConf(provider)
-	searchES, cleanup4 := search.Provide(es, zapLogger)
+	searchES, cleanup4, err := search.Provide(es, zapLogger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup5 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup5, err := cache.Provide(redis, zapLogger)
+	if err != nil {
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup6 := mongodb.Provide(mongo, zapLogger)
+	mongodbMongo, cleanup6, err := mongodb.Provide(mongo, zapLogger)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	searcher, cleanup7 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)
@@ -687,7 +741,7 @@ func InitializeResourceSyncTask(opts *cli.Options) (*cli.Executor, func(), error
 		return nil, nil, err
 	}
 	infrastructure := NewInfrastructure(loggerLogger, db, searchES, cacheRedis, mongodbMongo, searcher, syncedEnforcer)
-	apiResourceRepository := rbac.NewApiResourceRepository(gormDB)
+	apiResourceRepository := rbac.NewAPIResourceRepository(gormDB)
 	translator := validate.New()
 	routerRouter := NewCLIRouter(provider, syncedEnforcer, zapLogger, translator)
 	routerRouteLister := NewRouterRouteLister(routerRouter)
@@ -727,11 +781,32 @@ func InitializeRBACInitTask(opts *cli.Options) (*cli.Executor, func(), error) {
 		return nil, nil, err
 	}
 	es := config.ProvideESConf(provider)
-	searchES, cleanup4 := search.Provide(es, zapLogger)
+	searchES, cleanup4, err := search.Provide(es, zapLogger)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	redis := config.ProvideRedisConf(provider)
-	cacheRedis, cleanup5 := cache.Provide(redis, zapLogger)
+	cacheRedis, cleanup5, err := cache.Provide(redis, zapLogger)
+	if err != nil {
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	mongo := config.ProvideMongoConf(provider)
-	mongodbMongo, cleanup6 := mongodb.Provide(mongo, zapLogger)
+	mongodbMongo, cleanup6, err := mongodb.Provide(mongo, zapLogger)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	searcher, cleanup7 := ipregion.Provide(zapLogger)
 	gormDB := mysql.ProvideGorm(db)
 	syncedEnforcer, err := auth.NewEnforcer(gormDB, zapLogger)

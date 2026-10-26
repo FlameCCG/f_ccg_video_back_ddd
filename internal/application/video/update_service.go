@@ -3,11 +3,11 @@ package video
 import (
 	"context"
 	"errors"
-	"time"
-
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"time"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
@@ -62,6 +62,7 @@ func (s *UpdateService) UpdateVideo(
 		tags      []domain.Tag
 		partition *domain.Partition
 	)
+
 	now := time.Now()
 	change := domain.Revision{
 		Title: opts.Title, Description: opts.Description, Cover: opts.CoverURL,
@@ -72,61 +73,7 @@ func (s *UpdateService) UpdateVideo(
 	// 锁定、领域校验、主体与标签保存共用同一事务。锁在读取快照前取得，
 	// 避免作者改稿按旧状态覆盖管理端的删除或审核结果。
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		var err error
-		video, err = s.videos.FindByIDAndAuthorForUpdate(txCtx, opts.VideoID, username)
-		if err != nil {
-			return err
-		}
-		if err := video.Revise(username, change, now, s.contentReviewEnabled()); err != nil {
-			return err
-		}
-
-		if opts.PartitionID != nil {
-			partition, err = s.partitions.FindByID(txCtx, *opts.PartitionID)
-			if err != nil {
-				return errPartitionMissing
-			}
-			if err := partition.EnsureSubmittable(); err != nil {
-				switch {
-				case errors.Is(err, domain.ErrPartitionNotFound):
-					return errPartitionMissing
-				case errors.Is(err, domain.ErrPartitionInactive):
-					return errPartitionDisabled
-				default:
-					return err
-				}
-			}
-		}
-
-		if opts.TagIDs != nil {
-			tags, err = s.videos.FindTagsByIDs(txCtx, opts.TagIDs)
-			if err != nil {
-				return errQueryTagsFailed
-			}
-		} else {
-			tags, err = s.videos.TagsByVideoID(txCtx, video.ID)
-			if err != nil {
-				return err
-			}
-		}
-
-		if err := s.videos.SaveRevision(txCtx, video); err != nil {
-			return err
-		}
-		// 计划与状态同库提交；失败会一起回滚，不留下无发布任务的 Scheduled 视频。
-		if opts.IsPrivate != nil || opts.PublishTime != nil {
-			if opts.PublishTime != nil && domain.ShouldScheduleVideoPublish(now, *opts.PublishTime, video.Status == enum.VideoStatusPrivate) {
-				if err := s.schedule.Add(txCtx, video.ID, *opts.PublishTime); err != nil {
-					return err
-				}
-			} else if err := s.schedule.Remove(txCtx, video.ID); err != nil {
-				return err
-			}
-		}
-		if opts.TagIDs != nil {
-			return s.videos.ReplaceTags(txCtx, video.ID, tags)
-		}
-		return nil
+		return updateServiceUpdateVideoTransaction(txCtx, s, username, opts, &video, &tags, &partition, now, change)
 	}); err != nil {
 		return nil, err
 	}
@@ -195,4 +142,71 @@ func contentReviewEnabled(cfgProvider shared.ConfigReader) bool {
 		cfg.Site != nil &&
 		cfg.Site.ContentReview != nil &&
 		cfg.Site.ContentReview.Enable
+}
+
+func updateServiceUpdateVideoTransaction(txCtx context.Context, s *UpdateService, username string, opts UpdateVideoOpts, video **domain.Video, tags *[]domain.Tag, partition **domain.Partition, now time.Time, change domain.Revision) error {
+	var err error
+
+	(*video), err = s.videos.FindByIDAndAuthorForUpdate(txCtx, opts.VideoID, username)
+	if err != nil {
+		return err
+	}
+
+	if err := (*video).Revise(username, change, now, s.contentReviewEnabled()); err != nil {
+		return err
+	}
+
+	if opts.PartitionID != nil {
+		(*partition), err = s.partitions.FindByID(txCtx, *opts.PartitionID)
+		if err != nil {
+			return errPartitionMissing
+		}
+
+		if err := (*partition).EnsureSubmittable(); err != nil {
+			switch {
+			case errors.Is(err, domain.ErrPartitionNotFound):
+				return errPartitionMissing
+			case errors.Is(err, domain.ErrPartitionInactive):
+				return errPartitionDisabled
+			default:
+				return err
+			}
+		}
+	}
+
+	if opts.TagIDs != nil {
+		(*tags), err = s.videos.FindTagsByIDs(txCtx, opts.TagIDs)
+		if err != nil {
+			return errQueryTagsFailed
+		}
+	} else {
+		(*tags), err = s.videos.TagsByVideoID(txCtx, (*video).ID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return finishUpdateServiceUpdateVideoTransaction(txCtx, s, opts, video, tags, now)
+}
+
+func finishUpdateServiceUpdateVideoTransaction(txCtx context.Context, s *UpdateService, opts UpdateVideoOpts, video **domain.Video, tags *[]domain.Tag, now time.Time) error {
+	if err := s.videos.SaveRevision(txCtx, (*video)); err != nil {
+		return err
+	}
+	// 计划与状态同库提交；失败会一起回滚，不留下无发布任务的 Scheduled 视频。
+	if opts.IsPrivate != nil || opts.PublishTime != nil {
+		if opts.PublishTime != nil && domain.ShouldScheduleVideoPublish(now, *opts.PublishTime, (*video).Status == enum.VideoStatusPrivate) {
+			if err := s.schedule.Add(txCtx, (*video).ID, *opts.PublishTime); err != nil {
+				return err
+			}
+		} else if err := s.schedule.Remove(txCtx, (*video).ID); err != nil {
+			return err
+		}
+	}
+
+	if opts.TagIDs != nil {
+		return s.videos.ReplaceTags(txCtx, (*video).ID, (*tags))
+	}
+
+	return nil
 }

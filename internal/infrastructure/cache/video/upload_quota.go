@@ -36,6 +36,7 @@ type UploadQuotaStore struct {
 
 var _ app.UploadQuotaStore = (*UploadQuotaStore)(nil)
 
+// NewUploadQuotaStore constructs the atomic Redis upload quota store.
 func NewUploadQuotaStore(client *redis.Client) *UploadQuotaStore {
 	return &UploadQuotaStore{redis: client}
 }
@@ -46,13 +47,17 @@ func (s *UploadQuotaStore) Claim(ctx context.Context, userID uint, fileHash stri
 	if s == nil || s.redis == nil {
 		return false, errors.New("redis unavailable")
 	}
+
 	if userID == 0 || fileHash == "" || limit <= 0 {
 		return false, errors.New("invalid upload quota request")
 	}
+
 	key := fmt.Sprintf("video:upload:daily:%d", userID)
+
 	result, err := claimDailyUploadScript.Run(ctx, s.redis, []string{key}, fileHash, strconv.Itoa(limit)).Int()
 	if err != nil {
 		return false, err
 	}
+
 	return result == 1, nil
 }

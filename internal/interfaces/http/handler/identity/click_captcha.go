@@ -1,11 +1,10 @@
 package identity
 
 import (
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-
-	"go.uber.org/zap"
 )
 
 // ClickCaptchaResponse 请求/响应结构体.
@@ -22,10 +21,11 @@ func (h *CaptchaHandler) ClickCaptchaView(c *gin.Context) {
 		res.FailWithMsg("invalid captcha scene", c)
 		return
 	}
+
 	data, err := h.captcha.GenerateClick(c.Request.Context(), scene)
 	if err != nil {
-		h.log().Error("generate click captcha failed", zap.Error(err))
-		res.FailWithMsg("生成验证码失败", c)
+		res.RecordFailure(apperr.Wrap("handler/identity/click_captcha", nil, err), c)
+		res.FailWithCause(err, "生成验证码失败", c)
 
 		return
 	}

@@ -32,7 +32,7 @@ func (h *AdminHandler) AdminUpdateUserInfoView(c *gin.Context) {
 		Gender:      req.Gender,
 		Birthday:    req.Birthday,
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

@@ -3,13 +3,16 @@ package social
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/social"
+
 	domain "f_ccg_video_back_ddd/internal/domain/social"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -51,6 +54,7 @@ func performSocialList(
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+
 	ctx.Request = httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/?id=1", nil)
 	if viewerID != "" {
 		ctx.Set("uid", viewerID)
@@ -59,15 +63,17 @@ func performSocialList(
 	handler(ctx)
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode response: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "decode response: %v", err)
 	}
 
 	return response
 }
 
 func TestSocialListOwnerBypassesClosedPrivacy(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
+
 	relations := app.NewRelationService(socialListQueryStub{})
 	handler := NewHandler(nil, relations)
 
@@ -80,22 +86,18 @@ func TestSocialListOwnerBypassesClosedPrivacy(t *testing.T) {
 		{name: "fans list", handler: handler.FansListView, blockedMsg: "用户未公开粉丝"},
 	}
 
+	//nolint:paralleltest // Cases share parent fixtures or must finish before their parent resource cleanup.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ownerResponse := performSocialList(t, "1", test.handler)
-			if ownerResponse.Code != 0 {
-				t.Fatalf("owner response code=%d msg=%q", ownerResponse.Code, ownerResponse.Msg)
-			}
+			require.EqualValues(t, 0, ownerResponse.Code, "owner response code=%d msg=%q", ownerResponse.Code, ownerResponse.Msg)
 
 			otherResponse := performSocialList(t, "2", test.handler)
-			if otherResponse.Code == 0 || otherResponse.Msg != test.blockedMsg {
-				t.Fatalf("other response code=%d msg=%q, want %q", otherResponse.Code, otherResponse.Msg, test.blockedMsg)
-			}
+			require.NotEqualValues(t, 0, otherResponse.Code, "other response code=%d msg=%q, want %q", otherResponse.Code, otherResponse.Msg, test.blockedMsg)
+			require.Equal(t, otherResponse.Msg, test.blockedMsg, "other response code=%d msg=%q, want %q", otherResponse.Code, otherResponse.Msg, test.blockedMsg)
 
 			anonymousResponse := performSocialList(t, "", test.handler)
-			if anonymousResponse.Code == 0 {
-				t.Fatal("anonymous viewer should be blocked by privacy")
-			}
+			require.NotEqualValues(t, 0, anonymousResponse.Code, "anonymous viewer should be blocked by privacy")
 		})
 	}
 }

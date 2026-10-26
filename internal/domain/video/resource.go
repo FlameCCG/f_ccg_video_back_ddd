@@ -1,11 +1,10 @@
 package video
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"net/url"
 	"sort"
 	"strings"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // ResourceBrief 视频资源摘要（读模型与领域共用的值对象）。

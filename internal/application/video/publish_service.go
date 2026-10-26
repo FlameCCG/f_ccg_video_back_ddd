@@ -2,13 +2,16 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
@@ -16,7 +19,7 @@ import (
 // PublishService 投稿用例服务（原 api/video_api/publish.go 的业务部分）。
 //
 // 原实现把投稿编排写在 handler 里（直接用 global.DB 建事务、直接读全局配置、
-// 直接 new MQService）；新架构把编排上移到应用层，落库交给仓储，
+// 直接 new Service）；新架构把编排上移到应用层，落库交给仓储，
 // 转码投递与向量索引经端口，异步任务经注入的 DetachedTaskGroup。
 type PublishService struct {
 	videos      domain.Repository
@@ -72,6 +75,7 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 
 	// 应用层提供时钟与审核事实，领域只裁定初始状态；待审稿件也可以保留未来发布时间。
 	initialStatus := domain.ResolvePublishVideoStatus(now, &publishTime, cmd.IsPrivate, contentReviewEnabled(s.cfgProvider))
+
 	var scheduledAt *time.Time
 	if domain.ShouldScheduleVideoPublish(now, publishTime, cmd.IsPrivate) {
 		scheduledAt = &publishTime
@@ -80,12 +84,14 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	isMultiPart := len(cmd.Parts) > 0
 	if isMultiPart {
 		maxParts := 10
-		if cfg := s.cfgProvider.Get(); cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.MaxUploadNum > 0 {
+		if cfg := s.cfgProvider.Get(); publishServicePublishVideoCondition(cfg) {
 			maxParts = cfg.Site.Storage.MaxUploadNum
 		}
+
 		if len(cmd.Parts) > maxParts {
 			return nil, fmt.Errorf("单个作品最多上传 %d 个分P", maxParts)
 		}
+
 		for _, part := range cmd.Parts {
 			if trimSpace(part.FileName) == "" || trimSpace(part.FileHash) == "" {
 				return nil, errUploadAllPartsFirst
@@ -94,82 +100,8 @@ func (s *PublishService) PublishVideo(ctx context.Context, cmd PublishVideoComma
 	} else if trimSpace(cmd.FileName) == "" || trimSpace(cmd.FileHash) == "" {
 		return nil, errUploadVideoFirst
 	}
-	var parts []domain.Part
-	var video *domain.Video
-	hashes := []string{cmd.FileHash}
-	if isMultiPart {
-		hashes = make([]string, 0, len(cmd.Parts))
-		for _, part := range cmd.Parts {
-			hashes = append(hashes, part.FileHash)
-		}
-	}
-	// 投稿入库之前持有全部源文件的哈希锁，清理任务无法在验证后、入库前删除源文件。
-	persistCtx, cancel := ctxutil.WithDetachedTimeout(ctx, ctxutil.RequestLongTimeout)
-	defer cancel()
-	if err := s.uploads.WithPublishUploads(persistCtx, cmd.AuthorID, hashes,
-		func(guardCtx context.Context) error { return s.preparePublishUploads(guardCtx, &cmd) },
-		func(guardCtx context.Context) error {
-			if isMultiPart {
-				parts = make([]domain.Part, 0, len(cmd.Parts))
-				for i, p := range cmd.Parts {
-					title := trimSpace(p.Title)
-					if title == "" {
-						title = domain.DefaultPartTitleFromFileName(p.FileName)
-					}
-					parts = append(parts, domain.Part{
-						Title: title, SortOrder: i, Duration: 0, StorageType: storageType,
-					})
-				}
-			}
-			video = &domain.Video{
-				Title: cmd.Title, Description: cmd.Description, Cover: cmd.CoverURL,
-				AuthorUsername: cmd.AuthorUsername, PartitionID: cmd.PartitionID,
-				IsOriginal: cmd.IsOriginal, Status: initialStatus, IsScheduled: scheduledAt != nil, Duration: 0, StorageType: storageType,
-			}
-			return s.persistVideo(guardCtx, video, cmd, parts, scheduledAt)
-		}); err != nil {
-		return nil, err
-	}
 
-	// 定时计划已随投稿提交；只有向量同步和转码投递在提交后异步执行。
-	// 这是进程内提交后任务，数据库与 Kafka 之间没有持久化投递意图。
-	// 若提交后进程退出或任务被拒绝/取消，不能靠本地事务自动补投；派发失败只记录日志。
-	s.tasks.Go(ctx, ctxutil.RequestLongTimeout, func(asyncCtx context.Context) {
-		s.vectors.SyncAsync(asyncCtx, video.ID, video.Status)
-
-		// 派发转码任务
-		if isMultiPart {
-			for idx := range parts {
-				order := parts[idx].SortOrder
-				if order < 0 || order >= len(cmd.Parts) {
-					continue
-				}
-
-				input := cmd.Parts[order]
-				if err := s.dispatchTranscodeTaskForPart(
-					asyncCtx, video.ID, parts[idx].ID,
-					input.FilePath, input.FileName, input.FileHash, storageType,
-				); err != nil {
-					s.logger.Error("dispatch transcode task failed",
-						zap.Error(err), zap.Uint("videoId", video.ID), zap.Uint("partId", parts[idx].ID))
-				}
-			}
-
-			return
-		}
-
-		if err := s.dispatchTranscodeTask(asyncCtx, video, cmd, storageType); err != nil {
-			s.logger.Error("dispatch transcode task failed", zap.Error(err))
-		}
-	})
-
-	// 同步结果只描述稿件已保存；媒体就绪情况由转码进度与详情资源另行查询。
-	return &PublishVideoResult{
-		VideoID:     video.ID,
-		Status:      video.Status,
-		PublishTime: publishTime,
-		Cover:       video.Cover,
-	}, nil
+	return finishPublishServicePublishVideo(ctx, s, &cmd, publishTime, storageType, initialStatus, scheduledAt, isMultiPart)
 }
 
 // preparePublishUploads 校验源文件名并把已完成上传的对象路径回填到命令里。
@@ -249,15 +181,13 @@ func (s *PublishService) persistVideo(
 				}
 			}
 
-			s.logger.Error("标签ID不存在", zap.Uints("missing", missing))
-
-			return fmt.Errorf("标签ID不存在: %v", missing)
+			return apperr.Wrap("video.tags", nil, fmt.Errorf("标签ID不存在: %v", missing), apperr.Validation)
 		}
 	}
 
 	partition, err := s.partitions.FindByID(ctx, cmd.PartitionID)
 	if err != nil {
-		return domain.ErrPartitionNotFound
+		return apperr.Wrap("application/video/publish_service", domain.ErrPartitionNotFound, err)
 	}
 
 	if err := partition.EnsureSubmittable(); err != nil {
@@ -360,6 +290,8 @@ func (s *PublishService) transcodeOutputPath(storage enum.VideoStorageType, file
 		}
 
 		return ""
+	case enum.StorageTypeQiniu, enum.StorageTypeTencent, enum.StorageTypeOss:
+		fallthrough
 	default:
 		return joinObjectPath("videos", fileHash)
 	}
@@ -399,4 +331,98 @@ func tagIDsOf(tags []domain.Tag) []uint {
 	}
 
 	return ids
+}
+
+func publishServicePublishVideoCondition(cfg *config.Config) bool {
+	return cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.MaxUploadNum > 0
+}
+
+func publishServicePublishVideoLoad(asyncCtx context.Context, s *PublishService, cmd PublishVideoCommand, storageType enum.VideoStorageType, isMultiPart bool, parts []domain.Part, video *domain.Video) {
+	s.vectors.SyncAsync(asyncCtx, video.ID, video.Status)
+
+	// 派发转码任务
+	if isMultiPart {
+		for idx := range parts {
+			order := parts[idx].SortOrder
+			if order < 0 || order >= len(cmd.Parts) {
+				continue
+			}
+
+			input := cmd.Parts[order]
+			if err := s.dispatchTranscodeTaskForPart(
+				asyncCtx, video.ID, parts[idx].ID,
+				input.FilePath, input.FileName, input.FileHash, storageType,
+			); err != nil {
+				logctx.With(asyncCtx, s.logger).Error("dispatch transcode task failed", zap.String("event", "video.publish_service.publish_video.failed"), zap.String("operation", "video.publish_service.publish_video"),
+					zap.Error(err), zap.Uint("video_id", video.ID), zap.Uint("part_id", parts[idx].ID))
+			}
+		}
+
+		return
+	}
+
+	if err := s.dispatchTranscodeTask(asyncCtx, video, cmd, storageType); err != nil {
+		logctx.With(asyncCtx, s.logger).Error("dispatch transcode task failed", zap.String("event", "video.publish_service.publish_video.failed"), zap.String("operation", "video.publish_service.publish_video"), zap.Error(err))
+	}
+}
+
+func finishPublishServicePublishVideo(ctx context.Context, s *PublishService, cmd *PublishVideoCommand, publishTime time.Time, storageType enum.VideoStorageType, initialStatus enum.VideoStatus, scheduledAt *time.Time, isMultiPart bool) (*PublishVideoResult, error) {
+	var (
+		parts []domain.Part
+		video *domain.Video
+	)
+
+	hashes := []string{cmd.FileHash}
+	if isMultiPart {
+		hashes = make([]string, 0, len(cmd.Parts))
+		for _, part := range cmd.Parts {
+			hashes = append(hashes, part.FileHash)
+		}
+	}
+	// 投稿入库之前持有全部源文件的哈希锁，清理任务无法在验证后、入库前删除源文件。
+	persistCtx, cancel := ctxutil.WithDetachedTimeout(ctx, ctxutil.RequestLongTimeout)
+	defer cancel()
+
+	if err := s.uploads.WithPublishUploads(persistCtx, cmd.AuthorID, hashes,
+		func(guardCtx context.Context) error { return s.preparePublishUploads(guardCtx, cmd) },
+		func(guardCtx context.Context) error {
+			if isMultiPart {
+				parts = make([]domain.Part, 0, len(cmd.Parts))
+				for i, p := range cmd.Parts {
+					title := trimSpace(p.Title)
+					if title == "" {
+						title = domain.DefaultPartTitleFromFileName(p.FileName)
+					}
+
+					parts = append(parts, domain.Part{
+						Title: title, SortOrder: i, Duration: 0, StorageType: storageType,
+					})
+				}
+			}
+
+			video = &domain.Video{
+				Title: cmd.Title, Description: cmd.Description, Cover: cmd.CoverURL,
+				AuthorUsername: cmd.AuthorUsername, PartitionID: cmd.PartitionID,
+				IsOriginal: cmd.IsOriginal, Status: initialStatus, IsScheduled: scheduledAt != nil, Duration: 0, StorageType: storageType,
+			}
+
+			return s.persistVideo(guardCtx, video, (*cmd), parts, scheduledAt)
+		}); err != nil {
+		return nil, err
+	}
+
+	// 定时计划已随投稿提交；只有向量同步和转码投递在提交后异步执行。
+	// 这是进程内提交后任务，数据库与 Kafka 之间没有持久化投递意图。
+	// 若提交后进程退出或任务被拒绝/取消，不能靠本地事务自动补投；派发失败只记录日志。
+	s.tasks.Go(ctx, ctxutil.RequestLongTimeout, func(asyncCtx context.Context) {
+		publishServicePublishVideoLoad(asyncCtx, s, (*cmd), storageType, isMultiPart, parts, video)
+	})
+
+	// 同步结果只描述稿件已保存；媒体就绪情况由转码进度与详情资源另行查询。
+	return &PublishVideoResult{
+		VideoID:     video.ID,
+		Status:      video.Status,
+		PublishTime: publishTime,
+		Cover:       video.Cover,
+	}, nil
 }

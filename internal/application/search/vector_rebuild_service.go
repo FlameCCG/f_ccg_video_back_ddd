@@ -3,12 +3,12 @@ package search
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
@@ -32,8 +32,8 @@ type RebuildStatus struct {
 	Total      int64     `json:"total"`
 	Succeeded  int64     `json:"succeeded"`
 	Failed     int64     `json:"failed"`
-	StartedAt  time.Time `json:"startedAt,omitempty"`
-	FinishedAt time.Time `json:"finishedAt,omitempty"`
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
 	LastError  string    `json:"lastError,omitempty"`
 }
 
@@ -77,7 +77,7 @@ func NewVideoVectorRebuildService(
 }
 
 // StartRebuild 异步启动全量回填；已有任务在运行时返回 (false, nil)。
-func (s *VideoVectorRebuildService) StartRebuild(options RebuildOptions) (bool, error) {
+func (s *VideoVectorRebuildService) StartRebuild(parent context.Context, options RebuildOptions) (bool, error) {
 	if s == nil || s.source == nil || s.index == nil || !s.source.Available() || !s.index.Available() {
 		return false, errors.New("数据库或 ES 未初始化")
 	}
@@ -103,18 +103,19 @@ func (s *VideoVectorRebuildService) StartRebuild(options RebuildOptions) (bool, 
 	s.failed.Store(0)
 	s.mu.Unlock()
 
-	accepted := s.tasks.Go(context.Background(), vectorRebuildTimeout, func(ctx context.Context) {
+	accepted := s.tasks.Go(parent, vectorRebuildTimeout, func(ctx context.Context) {
 		runErr := s.run(ctx, cfg, options)
 
 		s.mu.Lock()
 		s.running = false
+
 		s.finishedAt = time.Now()
 		if runErr != nil {
 			s.lastError = runErr.Error()
 		}
 		s.mu.Unlock()
 
-		s.logger.Info("video vector rebuild finished",
+		logctx.With(ctx, s.logger).Info("video vector rebuild finished", zap.String("event", "search.vector_rebuild_service.start_rebuild.diagnostic"), zap.String("operation", "search.vector_rebuild_service.start_rebuild"),
 			zap.Int64("succeeded", s.succeeded.Load()),
 			zap.Int64("failed", s.failed.Load()),
 			zap.Error(runErr),
@@ -166,30 +167,35 @@ func (s *VideoVectorRebuildService) run(
 	if err != nil {
 		return fmt.Errorf("统计待重建视频失败: %w", err)
 	}
+
 	s.total.Store(total)
 
 	workers := options.Workers
 	if workers <= 0 {
 		workers = vectorRebuildDefaultWorkers
 	}
+
 	workers = min(workers, vectorRebuildMaxWorkers)
 
 	jobs := make(chan VideoVectorSource)
+
 	var wait sync.WaitGroup
 	for range workers {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
+
 			for source := range jobs {
 				if err := s.vectors.indexVideoVectorSourceWithConfig(ctx, cfg, source); err != nil {
 					s.failed.Add(1)
-					s.logger.Warn("rebuild video vector failed",
-						zap.Uint("videoId", source.ID),
+					logctx.With(ctx, s.logger).Warn("rebuild video vector failed", zap.String("event", "search.vector_rebuild_service.run.degraded"), zap.String("operation", "search.vector_rebuild_service.run"),
+						zap.Uint("video_id", source.ID),
 						zap.Error(err),
 					)
 
 					continue
 				}
+
 				s.succeeded.Add(1)
 			}
 		}()
@@ -204,6 +210,7 @@ func (s *VideoVectorRebuildService) run(
 
 			return fmt.Errorf("读取待重建视频失败: %w", loadErr)
 		}
+
 		if len(sources) == 0 {
 			break
 		}

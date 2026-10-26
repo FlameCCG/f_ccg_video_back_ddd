@@ -3,12 +3,12 @@ package video
 import (
 	"context"
 	"errors"
-
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/video"
+	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"gorm.io/gorm"
 )

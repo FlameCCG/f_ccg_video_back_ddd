@@ -9,6 +9,7 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,7 +21,6 @@ import (
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/storage"
 
 	"go.uber.org/zap"
 )
@@ -51,6 +51,7 @@ func NewHTTPDASHVariantResolver(logger *zap.Logger) *HTTPDASHVariantResolver {
 			if len(via) >= 10 || req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme {
 				return errors.New("DASH redirect origin mismatch")
 			}
+
 			return nil
 		}},
 		logger: logger,
@@ -63,23 +64,18 @@ func NewHTTPDASHVariantResolver(logger *zap.Logger) *HTTPDASHVariantResolver {
 func NewStoredDASHVariantResolver(stored *storage.Resolver, logger *zap.Logger) *HTTPDASHVariantResolver {
 	r := NewHTTPDASHVariantResolver(logger)
 	r.stored = stored
+
 	return r
 }
 
 // Variants 拉取并解析 MPD。
 func (r *HTTPDASHVariantResolver) Variants(
 	ctx context.Context,
-	resourceID uint,
+	_ uint,
 	mpdURL string,
 ) ([]domain.DASHVariant, error) {
 	variants, err := r.fetch(ctx, mpdURL)
 	if err != nil {
-		r.logger.Warn("parse DASH mpd variants failed",
-			zap.Uint("resourceId", resourceID),
-			zap.String("url", mpdURL),
-			zap.Error(err),
-		)
-
 		return nil, err
 	}
 
@@ -96,28 +92,12 @@ func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]d
 	if ctx == nil {
 		ctx = context.TODO()
 	}
+
 	reqCtx, cancel := context.WithTimeout(ctx, dashMPDFetchTimeout)
 	defer cancel()
+
 	if r.stored != nil {
-		body, sizes, err := r.stored.ReadDASHManifest(reqCtx, mpdURL, dashMPDMaxBytes)
-		if err != nil {
-			return nil, err
-		}
-		variants, err := domain.ParseMPDVariants(body)
-		if err != nil {
-			return nil, err
-		}
-		for i := range variants {
-			for _, file := range variants[i].Files {
-				name := path.Clean(path.Join(variants[i].BaseURL, file))
-				size, ok := sizes[name]
-				if !ok {
-					return nil, fmt.Errorf("DASH segment size unavailable: %s", name)
-				}
-				variants[i].FileSize += size
-			}
-		}
-		return variants, nil
+		return r.fetchStoredVariants(reqCtx, mpdURL)
 	}
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, mpdURL, nil)
@@ -142,6 +122,7 @@ func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]d
 	if err != nil {
 		return nil, err
 	}
+
 	if len(body) > dashMPDMaxBytes {
 		return nil, errors.New("DASH manifest exceeds size limit")
 	}
@@ -150,80 +131,139 @@ func (r *HTTPDASHVariantResolver) fetch(ctx context.Context, mpdURL string) ([]d
 	if err != nil {
 		return nil, err
 	}
+
 	base, err := url.Parse(mpdURL)
 	if err != nil {
 		return nil, err
 	}
+
+	return finishHTTPDASHVariantResolverFetch(reqCtx, r, variants, base)
+}
+
+var errEmptyMPDURL = errors.New("empty mpd url")
+
+func hTTPDASHVariantResolverfetchCondition(response *http.Response) bool {
+	return response.StatusCode < 200 || response.StatusCode >= 300 || response.ContentLength < 0
+}
+
+func finishHTTPDASHVariantResolverFetch(reqCtx context.Context, r *HTTPDASHVariantResolver, variants []domain.DASHVariant, base *url.URL) ([]domain.DASHVariant, error) {
 	for i := range variants {
 		if len(variants[i].Files) == 0 {
 			continue
 		}
-		var total int64
-		var firstErr error
-		var mu sync.Mutex
-		var wg sync.WaitGroup
+
+		var (
+			total    int64
+			firstErr error
+			mu       sync.Mutex
+			wg       sync.WaitGroup
+		)
+
 		jobs := make(chan string)
-		for worker := 0; worker < 8; worker++ {
+
+		for range 8 {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+
 				for name := range jobs {
-					ref, err := url.Parse(name)
-					if err == nil {
-						objectURL := base.ResolveReference(ref)
-						// Segments are generated beside the manifest; never probe arbitrary hosts.
-						if objectURL.Host != base.Host || objectURL.Scheme != base.Scheme {
-							err = errors.New("DASH segment origin mismatch")
-						} else {
-							var head *http.Request
-							head, err = http.NewRequestWithContext(reqCtx, http.MethodHead, objectURL.String(), nil)
-							if err == nil {
-								var response *http.Response
-								response, err = r.client.Do(head)
-								if err == nil {
-									_ = response.Body.Close()
-									if response.StatusCode < 200 || response.StatusCode >= 300 || response.ContentLength < 0 {
-										err = errors.New("DASH segment size unavailable")
-									} else {
-										mu.Lock()
-										total += response.ContentLength
-										mu.Unlock()
-									}
-								}
-							}
-						}
-					}
+					size, err := r.segmentSize(reqCtx, base, name)
+
+					mu.Lock()
 					if err != nil {
-						mu.Lock()
 						if firstErr == nil {
 							firstErr = err
 						}
-						mu.Unlock()
+					} else {
+						total += size
 					}
+					mu.Unlock()
 				}
 			}()
 		}
+
 		for _, name := range variants[i].Files {
 			ref := name
 			if variants[i].BaseURL != "" {
 				ref = variants[i].BaseURL + name
 			}
+
 			select {
 			case jobs <- ref:
 			case <-reqCtx.Done():
 			}
 		}
+
 		close(jobs)
 		wg.Wait()
+
 		if firstErr != nil {
 			return nil, firstErr
 		}
+
 		if err := reqCtx.Err(); err != nil {
 			return nil, err
 		}
+
 		variants[i].FileSize = total
 	}
+
 	return variants, nil
 }
 
-var errEmptyMPDURL = errors.New("empty mpd url")
+func (r *HTTPDASHVariantResolver) segmentSize(ctx context.Context, base *url.URL, name string) (int64, error) {
+	ref, err := url.Parse(name)
+	if err != nil {
+		return 0, err
+	}
+
+	objectURL := base.ResolveReference(ref)
+	if objectURL.Host != base.Host || objectURL.Scheme != base.Scheme {
+		return 0, errors.New("DASH segment origin mismatch")
+	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodHead, objectURL.String(), nil)
+	if err != nil {
+		return 0, err
+	}
+
+	response, err := r.client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+
+	defer func() { _ = response.Body.Close() }()
+
+	if hTTPDASHVariantResolverfetchCondition(response) {
+		return 0, errors.New("DASH segment size unavailable")
+	}
+
+	return response.ContentLength, nil
+}
+
+func (r *HTTPDASHVariantResolver) fetchStoredVariants(ctx context.Context, mpdURL string) ([]domain.DASHVariant, error) {
+	body, sizes, err := r.stored.ReadDASHManifest(ctx, mpdURL, dashMPDMaxBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	variants, err := domain.ParseMPDVariants(body)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range variants {
+		for _, file := range variants[i].Files {
+			name := path.Clean(path.Join(variants[i].BaseURL, file))
+
+			size, ok := sizes[name]
+			if !ok {
+				return nil, fmt.Errorf("DASH segment size unavailable: %s", name)
+			}
+
+			variants[i].FileSize += size
+		}
+	}
+
+	return variants, nil
+}

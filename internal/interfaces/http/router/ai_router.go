@@ -39,25 +39,25 @@ func registerAIRoutes(g *gin.RouterGroup, mw *middlewares.Middlewares, h *aihand
 		aiGroup.POST(
 			"responses",
 			mw.UserBanCheck(), mw.AIGenerationLimit(),
-			middlewares.JsonBindParams[aiapp.ResponsesRequest],
+			middlewares.JSONBindParams[aiapp.ResponsesRequest],
 			h.ResponsesView,
 		)
 		aiGroup.POST(
 			"images/generations",
 			mw.UserBanCheck(), mw.AIGenerationLimit(),
-			middlewares.JsonBindParams[aiapp.ImageGenerationRequest],
+			middlewares.JSONBindParams[aiapp.ImageGenerationRequest],
 			h.GenerateImageView,
 		)
 		aiGroup.POST(
 			"images/edits",
 			mw.UserBanCheck(), mw.AIGenerationLimit(),
-			middlewares.JsonBindParams[aiapp.ImageEditRequest],
+			middlewares.JSONBindParams[aiapp.ImageEditRequest],
 			h.EditImageView,
 		)
 		aiGroup.POST(
 			"videos/generations",
 			mw.UserBanCheck(), mw.AIGenerationLimit(),
-			middlewares.JsonBindParams[aiapp.VideoGenerationRequest],
+			middlewares.JSONBindParams[aiapp.VideoGenerationRequest],
 			h.GenerateVideoView,
 		)
 		aiGroup.GET("videos/status", h.VideoStatusView) // ?requestID=

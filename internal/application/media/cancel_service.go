@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 
 	domain "f_ccg_video_back_ddd/internal/domain/media"
 
@@ -37,9 +38,9 @@ func (s *CancelService) NotifyVideoDeleted(ctx context.Context, videoIDs []uint)
 	localCanceled := s.registry.CancelVideos(ids)
 
 	if s.broadcaster == nil || !s.broadcaster.Available() {
-		s.logger.Info("transcode tasks canceled locally",
+		logctx.With(ctx, s.logger).Info("transcode tasks canceled locally", zap.String("event", "media.cancel_service.notify_video_deleted.diagnostic"), zap.String("operation", "media.cancel_service.notify_video_deleted"),
 			zap.Int("tasks", localCanceled),
-			zap.Ints("videoIds", uintsToInts(ids)),
+			zap.Ints("video_ids", uintsToInts(ids)),
 		)
 
 		return nil
@@ -49,9 +50,9 @@ func (s *CancelService) NotifyVideoDeleted(ctx context.Context, videoIDs []uint)
 		return err
 	}
 
-	s.logger.Info("transcode cancellation broadcast",
-		zap.Int("localTasks", localCanceled),
-		zap.Ints("videoIds", uintsToInts(ids)),
+	logctx.With(ctx, s.logger).Info("transcode cancellation broadcast", zap.String("event", "media.cancel_service.notify_video_deleted.diagnostic"), zap.String("operation", "media.cancel_service.notify_video_deleted"),
+		zap.Int("local_tasks", localCanceled),
+		zap.Ints("video_ids", uintsToInts(ids)),
 	)
 
 	return nil

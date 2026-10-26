@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 
 	"go.uber.org/zap"
 )
@@ -31,7 +32,7 @@ func NewVideoStatSyncService(
 // （与原实现一致：loadErr 不中断本批同步）。
 func (s *VideoStatSyncService) Run(ctx context.Context) {
 	if !s.cache.Available() {
-		s.logger.Warn("skip SyncVideoStat: redis not configured")
+		logctx.With(ctx, s.logger).Warn("skip SyncVideoStat: redis not configured", zap.String("event", "platform.video_stat_sync_service.run.degraded"), zap.String("operation", "platform.video_stat_sync_service.run"))
 
 		return
 	}
@@ -46,7 +47,7 @@ func (s *VideoStatSyncService) Run(ctx context.Context) {
 	for {
 		ids, nextCursor, err := s.cache.ScanDirty(ctx, cursor, videoStatsSyncBatchSize)
 		if err != nil {
-			s.logger.Warn("scan dirty video stats failed", zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("scan dirty video stats failed", zap.String("event", "platform.video_stat_sync_service.run.degraded"), zap.String("operation", "platform.video_stat_sync_service.run"), zap.Error(err))
 
 			return
 		}
@@ -54,7 +55,7 @@ func (s *VideoStatSyncService) Run(ctx context.Context) {
 		if len(ids) > 0 {
 			snapshots, loadErr := s.cache.LoadSnapshots(ctx, ids)
 			if loadErr != nil {
-				s.logger.Warn("load dirty video stats failed", zap.Error(loadErr))
+				logctx.With(ctx, s.logger).Warn("load dirty video stats failed", zap.String("event", "platform.video_stat_sync_service.run.degraded"), zap.String("operation", "platform.video_stat_sync_service.run"), zap.Error(loadErr))
 			}
 
 			s.syncSnapshots(ctx, snapshots)
@@ -78,13 +79,13 @@ func (s *VideoStatSyncService) syncSnapshots(ctx context.Context, snapshots []Vi
 		}
 
 		if err := s.projection.PersistStats(ctx, snapshot.VideoID, *snapshot.Stats); err != nil {
-			s.logger.Error("persist video stats failed", zap.Uint("videoId", snapshot.VideoID), zap.Error(err))
+			logctx.With(ctx, s.logger).Error("persist video stats failed", zap.String("event", "platform.video_stat_sync_service.sync_snapshots.failed"), zap.String("operation", "platform.video_stat_sync_service.sync_snapshots"), zap.Uint("video_id", snapshot.VideoID), zap.Error(err))
 
 			continue
 		}
 
 		if err := s.cache.AckVersion(ctx, snapshot.MemberID, snapshot.Version); err != nil {
-			s.logger.Warn("ack dirty video stats version failed", zap.Uint("videoId", snapshot.VideoID), zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("ack dirty video stats version failed", zap.String("event", "platform.video_stat_sync_service.sync_snapshots.degraded"), zap.String("operation", "platform.video_stat_sync_service.sync_snapshots"), zap.Uint("video_id", snapshot.VideoID), zap.Error(err))
 		}
 	}
 }

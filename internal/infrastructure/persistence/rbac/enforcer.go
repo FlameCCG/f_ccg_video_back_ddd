@@ -30,6 +30,7 @@ func (e *CasbinEnforcer) GetPermissionsForUser(user string) ([][]string, error) 
 	if e.locked {
 		return e.enforcer.Enforcer.GetPermissionsForUser(user)
 	}
+
 	return e.enforcer.GetPermissionsForUser(user)
 }
 
@@ -38,6 +39,7 @@ func (e *CasbinEnforcer) GetImplicitPermissionsForUser(user string) ([][]string,
 	if e.locked {
 		return e.enforcer.Enforcer.GetImplicitPermissionsForUser(user)
 	}
+
 	return e.enforcer.GetImplicitPermissionsForUser(user)
 }
 
@@ -46,6 +48,7 @@ func (e *CasbinEnforcer) GetPolicy() ([][]string, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.GetPolicy()
 	}
+
 	return e.enforcer.GetPolicy()
 }
 
@@ -54,6 +57,7 @@ func (e *CasbinEnforcer) GetNamedGroupingPolicy(ptype string) ([][]string, error
 	if e.locked {
 		return e.enforcer.Enforcer.GetNamedGroupingPolicy(ptype)
 	}
+
 	return e.enforcer.GetNamedGroupingPolicy(ptype)
 }
 
@@ -62,6 +66,7 @@ func (e *CasbinEnforcer) GetRolesForUser(name string) ([]string, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.GetRolesForUser(name)
 	}
+
 	return e.enforcer.GetRolesForUser(name)
 }
 
@@ -70,6 +75,7 @@ func (e *CasbinEnforcer) GetImplicitRolesForUser(name string) ([]string, error) 
 	if e.locked {
 		return e.enforcer.Enforcer.GetImplicitRolesForUser(name)
 	}
+
 	return e.enforcer.GetImplicitRolesForUser(name)
 }
 
@@ -78,6 +84,7 @@ func (e *CasbinEnforcer) GetUsersForRole(name string) ([]string, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.GetUsersForRole(name)
 	}
+
 	return e.enforcer.GetUsersForRole(name)
 }
 
@@ -86,6 +93,7 @@ func (e *CasbinEnforcer) AddPolicy(sub, obj, act string) (bool, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.AddPolicy(sub, obj, act)
 	}
+
 	return e.enforcer.AddPolicy(sub, obj, act)
 }
 
@@ -94,6 +102,7 @@ func (e *CasbinEnforcer) RemovePolicy(sub, obj, act string) (bool, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.RemovePolicy(sub, obj, act)
 	}
+
 	return e.enforcer.RemovePolicy(sub, obj, act)
 }
 
@@ -102,6 +111,7 @@ func (e *CasbinEnforcer) RemoveFilteredPolicy(fieldIndex int, fieldValues ...str
 	if e.locked {
 		return e.enforcer.Enforcer.RemoveFilteredPolicy(fieldIndex, fieldValues...)
 	}
+
 	return e.enforcer.RemoveFilteredPolicy(fieldIndex, fieldValues...)
 }
 
@@ -110,6 +120,7 @@ func (e *CasbinEnforcer) AddRoleForUser(user, role string) (bool, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.AddRoleForUser(user, role)
 	}
+
 	return e.enforcer.AddRoleForUser(user, role)
 }
 
@@ -118,6 +129,7 @@ func (e *CasbinEnforcer) DeleteRoleForUser(user, role string) (bool, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.DeleteRoleForUser(user, role)
 	}
+
 	return e.enforcer.DeleteRoleForUser(user, role)
 }
 
@@ -126,6 +138,7 @@ func (e *CasbinEnforcer) DeleteRole(role string) (bool, error) {
 	if e.locked {
 		return e.enforcer.Enforcer.DeleteRole(role)
 	}
+
 	return e.enforcer.DeleteRole(role)
 }
 
@@ -134,6 +147,7 @@ func (e *CasbinEnforcer) SavePolicy() error {
 	if e.locked {
 		return e.enforcer.Enforcer.SavePolicy()
 	}
+
 	return e.enforcer.SavePolicy()
 }
 
@@ -168,22 +182,28 @@ func (e *CasbinEnforcer) RestorePolicy(p, g [][]string) error {
 		e.enforcer.GetLock().Lock()
 		defer e.enforcer.GetLock().Unlock()
 	}
+
 	engine := e.enforcer.Enforcer
 	engine.EnableAutoSave(false)
+
 	if !e.locked {
 		defer engine.EnableAutoSave(true)
 	}
+
 	engine.ClearPolicy()
+
 	if len(p) > 0 {
 		if _, err := engine.AddPolicies(p); err != nil {
 			return err
 		}
 	}
+
 	if len(g) > 0 {
 		if _, err := engine.AddGroupingPolicies(g); err != nil {
 			return err
 		}
 	}
+
 	return engine.SavePolicy()
 }
 
@@ -191,6 +211,7 @@ func (e *CasbinEnforcer) RestorePolicy(p, g [][]string) error {
 // The returned adapter is private to the current operation and avoids reentrant locks.
 func (e *CasbinEnforcer) BeginPolicyMutation() (app.Enforcer, func()) {
 	e.enforcer.GetLock().Lock()
-	e.enforcer.Enforcer.EnableAutoSave(false)
-	return &CasbinEnforcer{enforcer: e.enforcer, locked: true}, func() { e.enforcer.Enforcer.EnableAutoSave(true); e.enforcer.GetLock().Unlock() }
+	e.enforcer.EnableAutoSave(false)
+
+	return &CasbinEnforcer{enforcer: e.enforcer, locked: true}, func() { e.enforcer.EnableAutoSave(true); e.enforcer.GetLock().Unlock() }
 }

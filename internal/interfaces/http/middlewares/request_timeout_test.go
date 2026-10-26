@@ -9,20 +9,21 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRequestTimeoutAddsDeadline(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	engine := gin.New()
 	engine.GET("/ping", RequestTimeout(ctxutil.RequestFastTimeout), func(c *gin.Context) {
 		deadline, ok := c.Request.Context().Deadline()
-		if !ok {
-			t.Fatal("expected request ctx deadline")
-		}
+		require.True(t, ok, "expected request ctx deadline")
 
-		if remaining := time.Until(deadline); remaining <= 0 || remaining > ctxutil.RequestFastTimeout {
-			t.Fatalf("unexpected remaining timeout: %v", remaining)
+		{
+			remaining := time.Until(deadline)
+			require.Positive(t, remaining, "unexpected remaining timeout: %v", remaining)
+			require.LessOrEqual(t, remaining, ctxutil.RequestFastTimeout, "unexpected remaining timeout: %v", remaining)
 		}
 
 		c.Status(http.StatusNoContent)
@@ -32,7 +33,5 @@ func TestRequestTimeoutAddsDeadline(t *testing.T) {
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/ping", nil)
 	engine.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("unexpected status code: %d", recorder.Code)
-	}
+	require.Equal(t, http.StatusNoContent, recorder.Code, "unexpected status code: %d", recorder.Code)
 }

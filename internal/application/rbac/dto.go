@@ -83,13 +83,13 @@ type RoleMenusResp struct {
 type RolePermissionSource string
 
 const (
-	// RolePermissionSourceDirect 角色自身直接绑定的策略
+	// RolePermissionSourceDirect 角色自身直接绑定的策略.
 	RolePermissionSourceDirect RolePermissionSource = "direct"
-	// RolePermissionSourceInheritDirect 来自直接父角色
+	// RolePermissionSourceInheritDirect 来自直接父角色.
 	RolePermissionSourceInheritDirect RolePermissionSource = "inherit_direct"
-	// RolePermissionSourceInheritIndirect 来自间接祖先角色
+	// RolePermissionSourceInheritIndirect 来自间接祖先角色.
 	RolePermissionSourceInheritIndirect RolePermissionSource = "inherit_indirect"
-	// RolePermissionSourceInherited 兼容旧值（等同 inherit 类）
+	// RolePermissionSourceInherited 兼容旧值（等同 inherit 类）.
 	RolePermissionSourceInherited RolePermissionSource = "inherited"
 )
 

@@ -3,11 +3,11 @@ package search
 import (
 	"context"
 	"errors"
-
-	app "f_ccg_video_back_ddd/internal/application/search"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/search"
 
 	"gorm.io/gorm"
 )
@@ -17,8 +17,10 @@ type VectorSourceQuery struct {
 	db *gorm.DB
 }
 
-var _ app.VideoVectorSourceQuery = (*VectorSourceQuery)(nil)
-var _ app.VideoVectorRebuildSource = (*VectorSourceQuery)(nil)
+var (
+	_ app.VideoVectorSourceQuery   = (*VectorSourceQuery)(nil)
+	_ app.VideoVectorRebuildSource = (*VectorSourceQuery)(nil)
+)
 
 // NewVectorSourceQuery 构造向量索引源数据查询（db 允许为 nil）。
 func NewVectorSourceQuery(db *gorm.DB) *VectorSourceQuery {
@@ -80,6 +82,7 @@ func (q *VectorSourceQuery) CountPublished(ctx context.Context) (int64, error) {
 	}
 
 	var total int64
+
 	err := gormx.DB(ctx, q.db).
 		Model(&po.Video{}).
 		Where("status = ?", enum.VideoStatusPublished).
@@ -97,11 +100,13 @@ func (q *VectorSourceQuery) PublishedAfter(
 	if !q.Available() {
 		return nil, app.ErrVectorSourceNotFound
 	}
+
 	if limit <= 0 {
 		return []app.VideoVectorSource{}, nil
 	}
 
 	var videos []po.Video
+
 	err := gormx.DB(ctx, q.db).
 		Model(&po.Video{}).
 		Select("id", "title", "description", "cover", "partition_id", "status", "created_at").

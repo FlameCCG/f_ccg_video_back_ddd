@@ -1,11 +1,10 @@
 package media
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"fmt"
 	"path"
 	"slices"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // 转码管线名称（进度上报与断点目录命名空间共用）。
@@ -176,6 +175,7 @@ func BuildMP4SuperTargets(
 	}
 
 	seen := make(map[uint16]struct{}, len(resolutions)+1)
+
 	sourceClassHeight := CanonicalResolutionHeight(sourceResolution)
 	if sourceClassHeight > 0 {
 		// 原文件已承担其归属档位：例如可播 496p 源直接作为 360p，不再重复编码 360p MP4。
@@ -188,38 +188,7 @@ func BuildMP4SuperTargets(
 		}
 	}
 
-	for _, resolution := range resolutions {
-		if resolution == 0 {
-			continue
-		}
-		// 禁止上采样：目标高度不得大于源像素高。
-		if pixelHeight > 0 && resolution > pixelHeight {
-			continue
-		}
-
-		if _, ok := seen[resolution]; ok {
-			continue
-		}
-
-		seen[resolution] = struct{}{}
-		// 与源同高：KeepSource，避免无意义的 scale 损伤。
-		keep := pixelHeight > 0 && resolution == pixelHeight
-		fileName := fmt.Sprintf("%s_%dp.mp4", task.FileHash, resolution)
-		targets = append(targets, NewMP4Target(
-			fmt.Sprintf("mp4:%d:standard", resolution),
-			resolution,
-			QualityModeNone,
-			"derived",
-			fileName,
-			MapResolutionEnumByHeight(int(resolution)),
-			resolution >= 1600 || resolution == 2160,
-			false,
-			keep,
-			task,
-		))
-	}
-
-	return targets
+	return finishBuildMP4SuperTargets(task, pixelHeight, resolutions, &targets, seen)
 }
 
 // BuildDashResolutions 计算 DASH 阶梯：非标准源高度向下归入站点支持的标准档位。
@@ -331,7 +300,7 @@ func BuildDashTargets(dashRes []uint16, pixelHeight, classHeight uint16, isHighB
 		}
 
 		isNativeTop := shouldKeepDASHSourcePixels(r, pixelHeight, classHeight)
-		if pixelHeight > 0 && r > pixelHeight && !isNativeTop {
+		if buildDashTargetsCondition3(pixelHeight, r, isNativeTop) {
 			continue
 		}
 
@@ -347,19 +316,20 @@ func BuildDashTargets(dashRes []uint16, pixelHeight, classHeight uint16, isHighB
 		}
 
 		switch {
-		case isNativeTop && isHighBitrateSource && (r >= 1600 || qualityHeight >= 2160):
+		case buildDashTargetsCondition(isHighBitrateSource, qualityHeight, r, isNativeTop):
 			target.ID = "dash:2160:high"
 			target.Quality = QualityModeHigh
-		case r == 1080 && isHighBitrateSource && !isNativeTop:
+		case buildDashTargetsCondition4(isHighBitrateSource, r, isNativeTop):
 			target.ID = "dash:1080:medium"
 			target.Quality = QualityModeMedium
 			has1080 = true
-		case isNativeTop && !isHighBitrateSource:
-			// 非高码率顶档：按分类高度选 CRF 档 + remux maxrate（HEVC 抬升）
-			target.Quality = QualityForNonHighSourceHeight(qualityHeight)
-			target.MaxrateUseSource = true
-		case isNativeTop && isHighBitrateSource:
-			target.Quality = QualityModeHigh
+		case isNativeTop:
+			if isHighBitrateSource {
+				target.Quality = QualityModeHigh
+			} else {
+				target.Quality = QualityForNonHighSourceHeight(qualityHeight)
+				target.MaxrateUseSource = true
+			}
 		}
 
 		if r == 1080 && isHighBitrateSource {
@@ -369,31 +339,7 @@ func BuildDashTargets(dashRes []uint16, pixelHeight, classHeight uint16, isHighB
 		targets = append(targets, target)
 	}
 
-	if isHighBitrateSource && has1080 && (pixelHeight == 0 || 1080 < pixelHeight) {
-		// 追加 1080p 高码率 representation（QualityModeHigh），与标准 1080P 并存于同一 MPD。
-		// 仅当源高于 1080 时追加，避免与原生 1080 顶档重复。
-		dup := false
-
-		for _, t := range targets {
-			if t.ID == "dash:1080:high" {
-				dup = true
-
-				break
-			}
-		}
-
-		if !dup {
-			targets = append(targets, TranscodeTarget{
-				ID:         "dash:1080:high",
-				Format:     TranscodePipelineDASH,
-				Role:       "derived",
-				Resolution: 1080,
-				Quality:    QualityModeHigh,
-			})
-		}
-	}
-
-	return targets
+	return finishBuildDashTargets(pixelHeight, isHighBitrateSource, &targets, has1080)
 }
 
 // ValidateSourceTargetIsolation 拒绝会覆盖输入源对象的规范化目标。
@@ -451,4 +397,83 @@ func UniqueResolutions(resolutions []uint16) []uint16 {
 	}
 
 	return out
+}
+
+func buildDashTargetsCondition(isHighBitrateSource bool, qualityHeight, r uint16, isNativeTop bool) bool {
+	return isNativeTop && isHighBitrateSource && (r >= 1600 || qualityHeight >= 2160)
+}
+
+func buildDashTargetsCondition2(pixelHeight uint16, isHighBitrateSource, has1080 bool) bool {
+	return isHighBitrateSource && has1080 && (pixelHeight == 0 || 1080 < pixelHeight)
+}
+
+func buildDashTargetsCondition3(pixelHeight, r uint16, isNativeTop bool) bool {
+	return pixelHeight > 0 && r > pixelHeight && !isNativeTop
+}
+
+func buildDashTargetsCondition4(isHighBitrateSource bool, r uint16, isNativeTop bool) bool {
+	return r == 1080 && isHighBitrateSource && !isNativeTop
+}
+
+func finishBuildMP4SuperTargets(task TranscodeTask, pixelHeight uint16, resolutions []uint16, targets *[]TranscodeTarget, seen map[uint16]struct{}) []TranscodeTarget {
+	for _, resolution := range resolutions {
+		if resolution == 0 {
+			continue
+		}
+		// 禁止上采样：目标高度不得大于源像素高。
+		if pixelHeight > 0 && resolution > pixelHeight {
+			continue
+		}
+
+		if _, ok := seen[resolution]; ok {
+			continue
+		}
+
+		seen[resolution] = struct{}{}
+		// 与源同高：KeepSource，避免无意义的 scale 损伤。
+		keep := pixelHeight > 0 && resolution == pixelHeight
+		fileName := fmt.Sprintf("%s_%dp.mp4", task.FileHash, resolution)
+		(*targets) = append((*targets), NewMP4Target(
+			fmt.Sprintf("mp4:%d:standard", resolution),
+			resolution,
+			QualityModeNone,
+			"derived",
+			fileName,
+			MapResolutionEnumByHeight(int(resolution)),
+			resolution >= 1600 || resolution == 2160,
+			false,
+			keep,
+			task,
+		))
+	}
+
+	return (*targets)
+}
+
+func finishBuildDashTargets(pixelHeight uint16, isHighBitrateSource bool, targets *[]TranscodeTarget, has1080 bool) []TranscodeTarget {
+	if buildDashTargetsCondition2(pixelHeight, isHighBitrateSource, has1080) {
+		// 追加 1080p 高码率 representation（QualityModeHigh），与标准 1080P 并存于同一 MPD。
+		// 仅当源高于 1080 时追加，避免与原生 1080 顶档重复。
+		dup := false
+
+		for _, t := range *targets {
+			if t.ID == "dash:1080:high" {
+				dup = true
+
+				break
+			}
+		}
+
+		if !dup {
+			(*targets) = append((*targets), TranscodeTarget{
+				ID:         "dash:1080:high",
+				Format:     TranscodePipelineDASH,
+				Role:       "derived",
+				Resolution: 1080,
+				Quality:    QualityModeHigh,
+			})
+		}
+	}
+
+	return (*targets)
 }

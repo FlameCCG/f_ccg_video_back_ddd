@@ -2,11 +2,13 @@ package identity
 
 import (
 	"context"
-	jwts "f_ccg_video_back_ddd/pkg/jwt"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"strconv"
 
+	jwts "f_ccg_video_back_ddd/pkg/jwt"
+
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -100,22 +102,28 @@ func (s *UserStatusService) ValidateAccessToken(ctx context.Context, token, secr
 	if err != nil {
 		return nil, err
 	}
+
 	id, err := strconv.ParseUint(uid, 10, 64)
 	if err != nil || id == 0 {
-		return nil, domain.ErrUserNotLogin
+		return nil, apperr.Wrap("application/identity/user_status_service", domain.ErrUserNotLogin, err)
 	}
+
 	user, err := s.users.FindByID(ctx, uint(id))
 	if err != nil {
 		return nil, err
 	}
+
 	if user == nil {
 		return nil, domain.ErrUserNotFound
 	}
+
 	if err := jwts.CheckPasswordVersion(token, secret, user.Password, "access"); err != nil {
-		return nil, err
+		return nil, apperr.Wrap("auth.password_version", nil, err, apperr.Rejected)
 	}
+
 	if user.IsBanned() {
 		return nil, domain.ErrAccountBanned
 	}
+
 	return user, nil
 }

@@ -86,6 +86,7 @@ func TestInspectDASHManifestRejectsUnsafeOrMissingRepresentations(t *testing.T) 
 
 			dir := t.TempDir()
 			writeDASHFixtureFile(t, dir, media.DashManifestName, tt.manifest)
+
 			if tt.createFile != "" {
 				writeDASHFixtureFile(t, dir, tt.createFile, "fixture")
 			}
@@ -157,6 +158,7 @@ func TestBuildFilterComplexKeepsCinematic4KSourcePixels(t *testing.T) {
 	t.Parallel()
 
 	targets := media.BuildDashTargets([]uint16{2160}, 1632, 2160, false)
+
 	filter := buildFilterComplex(targets, false, false)
 	if strings.Contains(filter, "scale=") || !strings.Contains(filter, "null") {
 		t.Fatalf("cinematic 4K filter must not upscale source: %q", filter)

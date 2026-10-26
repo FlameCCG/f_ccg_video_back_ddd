@@ -2,12 +2,12 @@ package storage
 
 import (
 	"errors"
-
 	"f_ccg_video_back_ddd/internal/config/site"
-	media "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+
+	media "f_ccg_video_back_ddd/internal/domain/media"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
 )
@@ -90,6 +90,8 @@ func (r *Resolver) ResolveByType(storageType enum.VideoStorageType) (media.Stora
 		}
 
 		return NewMinIOStorage(cfg, r.clients, r.detached, r.logger)
+	case enum.StorageTypeQiniu, enum.StorageTypeTencent, enum.StorageTypeOss:
+		fallthrough
 	default:
 		return r.Resolve()
 	}

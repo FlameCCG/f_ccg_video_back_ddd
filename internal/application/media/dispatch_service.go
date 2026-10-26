@@ -7,7 +7,7 @@ import (
 )
 
 // TranscodeDispatchService 投递转码任务并标记「已入队」进度
-// （原 mq_service.MQService.PublishTranscodeTask + MarkTranscodeQueued 的调用组合）。
+// （原 mq_service.Service.PublishTranscodeTask + MarkTranscodeQueued 的调用组合）。
 //
 // video 上下文的投稿流程经此服务把任务丢进 Kafka；
 // Kafka topic 名与消息 JSON 结构由 infrastructure/mq 的 TranscodePayload 保证 1:1。

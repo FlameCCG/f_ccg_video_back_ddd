@@ -2,14 +2,14 @@ package bootstrap
 
 import (
 	"context"
-
-	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/mq"
 	"f_ccg_video_back_ddd/internal/infrastructure/river"
 	"f_ccg_video_back_ddd/internal/infrastructure/scheduler"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
+
+	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	chatws "f_ccg_video_back_ddd/internal/interfaces/ws/chat"
 	danmuws "f_ccg_video_back_ddd/internal/interfaces/ws/danmu"
-	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
 
 	"go.uber.org/zap"
 )
@@ -74,6 +74,7 @@ func (c *RuntimeComponents) Start(ctx context.Context) {
 		if item.component == nil {
 			continue
 		}
+
 		if err := item.component.Start(ctx); err != nil {
 			c.log().Error("start runtime component failed",
 				zap.String("component", item.name),
@@ -89,6 +90,7 @@ func (c *RuntimeComponents) Stop(ctx context.Context) {
 		if item.component == nil {
 			continue
 		}
+
 		if err := item.component.Stop(ctx); err != nil {
 			c.log().Warn("stop runtime component failed",
 				zap.String("component", item.name),

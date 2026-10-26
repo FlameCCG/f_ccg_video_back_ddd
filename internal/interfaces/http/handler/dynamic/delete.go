@@ -24,7 +24,7 @@ func (h *Handler) DeleteView(c *gin.Context) {
 	}
 
 	if err := h.dynamics.Delete(c.Request.Context(), uid, req.DynamicID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

@@ -1,8 +1,14 @@
 package video
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/res"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,12 +16,8 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 const (
@@ -49,15 +51,15 @@ func (h *AdminHandler) AdminTranscodeProgressView(c *gin.Context) {
 
 	ids, err := parseVideoIDList(req.VideoIDs)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(apperr.Wrap("transcode.progress.parameters", nil, err, apperr.Validation), clienterror.Message(err), c)
 
 		return
 	}
 
 	items, err := h.progress.MGetByVideoIDs(c.Request.Context(), ids)
 	if err != nil {
-		h.log().Error("MGetTranscodeProgressByVideoIDs failed", zap.Error(err))
-		res.FailWithMsg("读取转码进度失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/admin_transcode", nil, err), c)
+		res.FailWithCause(err, "读取转码进度失败", c)
 
 		return
 	}
@@ -71,7 +73,7 @@ func (h *AdminHandler) AdminTranscodeProgressStreamView(c *gin.Context) {
 
 	ids, err := parseVideoIDList(req.VideoIDs)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(apperr.Wrap("transcode.progress.parameters", nil, err, apperr.Validation), clienterror.Message(err), c)
 
 		return
 	}
@@ -85,11 +87,13 @@ func (h *AdminHandler) AdminTranscodeProgressStreamView(c *gin.Context) {
 
 	// Gin wraps the original writer; ResponseController needs its unwrapped writer.
 	deadline := time.Now().Add(ctxutil.RequestTranscodeProgressSSETimeout)
-	if err := http.NewResponseController(c.Writer).SetWriteDeadline(deadline); err != nil && err != http.ErrNotSupported {
-		h.log().Warn("set SSE write deadline failed", zap.Error(err))
+	if err := http.NewResponseController(c.Writer).SetWriteDeadline(deadline); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		res.RecordFailure(apperr.Wrap("handler/video/admin_transcode", nil, err), c)
 		res.FailWithMsg("启动进度流失败", c)
+
 		return
 	}
+
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -101,6 +105,7 @@ func (h *AdminHandler) AdminTranscodeProgressStreamView(c *gin.Context) {
 
 	subscription, err := h.progress.Subscribe(ctx)
 	if err != nil {
+		res.RecordFailure(err, c)
 		writeSSE(c, flusher, sseEventError, gin.H{"message": "订阅转码进度失败"})
 
 		return
@@ -113,6 +118,7 @@ func (h *AdminHandler) AdminTranscodeProgressStreamView(c *gin.Context) {
 	// Initial snapshot.
 	items, err := h.progress.MGetByVideoIDs(ctx, ids)
 	if err != nil {
+		res.RecordFailure(err, c)
 		writeSSE(c, flusher, sseEventError, gin.H{"message": "读取转码进度失败"})
 
 		return
@@ -125,38 +131,7 @@ func (h *AdminHandler) AdminTranscodeProgressStreamView(c *gin.Context) {
 		allowed[id] = struct{}{}
 	}
 
-	heartbeat := time.NewTicker(sseHeartbeatInterval)
-	defer heartbeat.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-heartbeat.C:
-			writeSSE(c, flusher, sseEventHeartbet, gin.H{"ts": time.Now().Unix()})
-		case item, ok := <-events:
-			if !ok {
-				return
-			}
-
-			if _, allowedID := allowed[item.VideoID]; !allowedID {
-				continue
-			}
-
-			writeSSE(c, flusher, sseEventProgress, item)
-
-			if !h.progress.IsTerminalStatus(item.Status) {
-				continue
-			}
-
-			writeSSE(c, flusher, sseEventDone, item)
-
-			current, curErr := h.progress.MGetByVideoIDs(ctx, ids)
-			if curErr == nil && h.allProgressTerminal(current, ids) {
-				writeSSE(c, flusher, sseEventComplete, gin.H{"ok": true})
-			}
-		}
-	}
+	finishAdminHandlerAdminTranscodeProgressStreamView(ctx, h, c, ids, flusher, events, allowed)
 }
 
 // allProgressTerminal 判断给定视频的进度是否全部到达终态且无缺失。
@@ -188,7 +163,7 @@ func (h *AdminHandler) allProgressTerminal(items []app.TranscodeProgressItem, id
 func parseVideoIDList(raw string) ([]uint, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, fmt.Errorf("videoIds 不能为空")
+		return nil, errors.New("videoIds 不能为空")
 	}
 
 	parts := strings.Split(raw, ",")
@@ -216,7 +191,7 @@ func parseVideoIDList(raw string) ([]uint, error) {
 	}
 
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("videoIds 不能为空")
+		return nil, errors.New("videoIds 不能为空")
 	}
 
 	if len(ids) > maxTranscodeProgressIDs {
@@ -230,13 +205,81 @@ func parseVideoIDList(raw string) ([]uint, error) {
 func writeSSE(c *gin.Context, flusher http.Flusher, event string, payload any) {
 	data, err := json.Marshal(payload)
 	if err != nil {
+		res.RecordFailure(err, c)
+		c.Abort()
+
 		return
 	}
 
 	if event != "" {
-		_, _ = fmt.Fprintf(c.Writer, "event: %s\n", event)
+		if _, err := fmt.Fprintf(c.Writer, "event: %s\n", event); err != nil {
+			res.RecordFailure(err, c)
+			c.Abort()
+
+			return
+		}
 	}
 
-	_, _ = fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
+		res.RecordFailure(err, c)
+		c.Abort()
+
+		return
+	}
+
 	flusher.Flush()
+}
+
+func finishAdminHandlerAdminTranscodeProgressStreamView(ctx context.Context, h *AdminHandler, c *gin.Context, ids []uint, flusher http.Flusher, events <-chan app.TranscodeProgressItem, allowed map[uint]struct{}) {
+	heartbeat := time.NewTicker(sseHeartbeatInterval)
+	defer heartbeat.Stop()
+
+	for {
+		if c.IsAborted() {
+			return
+		}
+
+		select {
+		case <-ctx.Done():
+			res.RecordFailure(ctx.Err(), c)
+			return
+		case <-heartbeat.C:
+			writeSSE(c, flusher, sseEventHeartbet, gin.H{"ts": time.Now().Unix()})
+		case item, ok := <-events:
+			if !ok {
+				res.RecordFailure(errors.New("transcode progress subscription closed"), c)
+				return
+			}
+
+			if _, allowedID := allowed[item.VideoID]; !allowedID {
+				continue
+			}
+
+			writeSSE(c, flusher, sseEventProgress, item)
+
+			if !h.progress.IsTerminalStatus(item.Status) {
+				continue
+			}
+
+			writeSSE(c, flusher, sseEventDone, item)
+
+			current, curErr := h.progress.MGetByVideoIDs(ctx, ids)
+			if curErr != nil {
+				res.RecordFailure(curErr, c)
+				writeSSE(c, flusher, sseEventError, gin.H{"message": "读取转码进度失败"})
+
+				return
+			}
+
+			if h.allProgressTerminal(current, ids) {
+				writeSSE(c, flusher, sseEventComplete, gin.H{"ok": true})
+
+				if !c.IsAborted() {
+					res.SetSuccess(c, true)
+				}
+
+				return
+			}
+		}
+	}
 }

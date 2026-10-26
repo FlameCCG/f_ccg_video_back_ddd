@@ -2,10 +2,10 @@ package platform
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/platform"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // 端口阅读：周期维护通过队列/快照输入、数据库投影和确认端口进行。

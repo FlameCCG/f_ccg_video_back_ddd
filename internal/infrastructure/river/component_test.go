@@ -2,9 +2,8 @@ package river
 
 import (
 	"context"
-	"testing"
-
 	"f_ccg_video_back_ddd/internal/config"
+	"testing"
 
 	"go.uber.org/zap"
 )

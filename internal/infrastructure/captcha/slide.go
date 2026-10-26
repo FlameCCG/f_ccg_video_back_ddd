@@ -3,13 +3,13 @@ package captcha
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"sync"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/config/site"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/google/uuid"                                 // 生成随机 token
 	"github.com/redis/go-redis/v9"                           // Redis 客户端
@@ -58,7 +58,7 @@ func NewSlideCaptcha(
 
 // Generate 生成滑块验证码，并把答案写入 Redis。
 func (c *SlideCaptcha) Generate(ctx context.Context, scenes ...string) (*app.SlideCaptchaResult, error) {
-	scene := "register"
+	scene := captchaRegister
 	if len(scenes) > 0 {
 		scene = site.ResolveCaptchaScene(scenes[0], scene)
 	}
@@ -105,7 +105,7 @@ func (c *SlideCaptcha) Generate(ctx context.Context, scenes ...string) (*app.Sli
 
 // Verify 校验拖动落点是否在容错范围内（答案一次性消费）。
 func (c *SlideCaptcha) Verify(ctx context.Context, req app.SlideCaptchaVerifyReq, scenes ...string) (bool, error) {
-	scene := "register"
+	scene := captchaRegister
 	if len(scenes) > 0 {
 		scene = site.ResolveCaptchaScene(scenes[0], scene)
 	}
@@ -171,25 +171,29 @@ func (c *SlideCaptcha) ensure() error {
 }
 
 func (c *SlideCaptcha) ttl(scenes ...string) time.Duration {
-	scene := "register"
+	scene := captchaRegister
 	if len(scenes) > 0 {
 		scene = scenes[0]
 	}
+
 	cfg := c.cfgProvider.Get()
 	if cfg == nil {
 		return defaultSlideCaptchaTTL
 	}
+
 	return time.Duration(cfg.Site.CaptchaSettings(scene, "slide").TTLSeconds) * time.Second
 }
 
 func (c *SlideCaptcha) padding(scenes ...string) int {
-	scene := "register"
+	scene := captchaRegister
 	if len(scenes) > 0 {
 		scene = scenes[0]
 	}
+
 	cfg := c.cfgProvider.Get()
 	if cfg == nil {
 		return defaultSlideCaptchaPadding
 	}
+
 	return cfg.Site.CaptchaSettings(scene, "slide").Padding
 }

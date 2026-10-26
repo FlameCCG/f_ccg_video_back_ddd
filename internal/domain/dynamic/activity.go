@@ -1,9 +1,8 @@
 package dynamic
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // WorkRef 作品引用（作品 ID + 发布时间），ID 为 0 表示不存在。

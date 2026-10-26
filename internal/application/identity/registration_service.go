@@ -2,12 +2,15 @@ package identity
 
 import (
 	"context"
-
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	"errors"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/encrypt"
+	"f_ccg_video_back_ddd/pkg/logctx"
+
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
 
 	"go.uber.org/zap"
 )
@@ -44,7 +47,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	if err != nil {
 		// 原实现只在「查到记录」时拦截，查询报错会继续走注册流程
 		// （唯一索引兜底 → 落库失败回「注册失败」）。此处保持同样语义。
-		s.logger.Warn("查询用户名/邮箱占用失败", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("查询用户名/邮箱占用失败", zap.String("event", "identity.registration_service.email_register.degraded"), zap.String("operation", "identity.registration_service.email_register"), zap.Error(err))
 	}
 
 	if exists {
@@ -54,9 +57,7 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	// bcrypt 放在事务外，避免长时间占用连接。
 	passwordHash, err := encrypt.GenPasswordHash([]byte(in.Password))
 	if err != nil {
-		s.logger.Error("密码加密失败", zap.Error(err))
-
-		return domain.ErrPasswordHashFailed
+		return apperr.Wrap("application/identity/registration_service", domain.ErrPasswordHashFailed, err)
 	}
 
 	user := &domain.User{
@@ -75,33 +76,28 @@ func (s *RegistrationService) EmailRegister(ctx context.Context, in EmailRegiste
 	if err = s.txm.Do(createCtx, func(txCtx context.Context) error {
 		roleID, roleErr := s.roles.RoleIDByName(txCtx, constants.CommonUserRole)
 		if roleErr != nil {
-			s.logger.Error("查找默认角色失败", zap.Error(roleErr))
-
 			return roleErr
 		}
 
 		user.CurrentRoleID = roleID
 
 		if createErr := s.users.Create(txCtx, user, roleID); createErr != nil {
-			s.logger.Error("创建用户失败", zap.Error(createErr))
-
 			return createErr
 		}
 
 		return s.users.InitializeDefaults(txCtx, user.ID)
 	}); err != nil {
-		return ErrRegisterFailed
+		return apperr.Wrap("application/identity/registration_service", ErrRegisterFailed, err)
 	}
 
 	// Casbin 在 Commit 之后写入，避免 Commit 失败留下幽灵权限。
 	if err = s.binder.AddRoleForUser(user.ID, constants.CommonUserRole); err != nil {
-		s.logger.Error("添加 Casbin 角色关联失败，尝试补偿删除用户", zap.Error(err), zap.Uint("userId", user.ID))
 		// 补偿：清理已提交用户，避免无角色半成品账号。
 		if delErr := s.users.DeleteByID(ctx, user.ID); delErr != nil {
-			s.logger.Error("补偿删除注册用户失败", zap.Error(delErr), zap.Uint("userId", user.ID))
+			err = errors.Join(err, delErr)
 		}
 
-		return ErrRegisterFailed
+		return apperr.Wrap("application/identity/registration_service", ErrRegisterFailed, err)
 	}
 
 	return nil

@@ -47,6 +47,7 @@ func (p *AssetProxy) Open(
 
 	client := httpClientFor(runtime, false)
 	client.CheckRedirect = validateAssetRedirect
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("请求 AI 资源失败: %w", err)
@@ -71,9 +72,11 @@ func validateAssetRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return errors.New("AI 资源重定向次数过多")
 	}
+
 	if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 		return domain.ErrUnsupportedAssetScheme
 	}
+
 	if !domain.IsAllowedAssetHost(req.URL.Hostname()) {
 		return domain.ErrAssetHostNotAllowed
 	}

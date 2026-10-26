@@ -3,10 +3,11 @@ package platform
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 
 	domain "f_ccg_video_back_ddd/internal/domain/platform"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
 )
@@ -43,7 +44,7 @@ func NewCommentLikeSyncService(
 //   - 确认失败：记录警告并结束本轮。
 func (s *CommentLikeSyncService) Run(ctx context.Context) {
 	if !s.queue.Available() {
-		s.logger.Warn("skip SyncCommentLike: redis not configured")
+		logctx.With(ctx, s.logger).Warn("skip SyncCommentLike: redis not configured", zap.String("event", "platform.comment_like_sync_service.run.degraded"), zap.String("operation", "platform.comment_like_sync_service.run"))
 
 		return
 	}
@@ -56,7 +57,7 @@ func (s *CommentLikeSyncService) Run(ctx context.Context) {
 	for {
 		items, err := s.queue.NextBatch(ctx)
 		if err != nil {
-			s.logger.Warn("load comment like batch failed", zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("load comment like batch failed", zap.String("event", "platform.comment_like_sync_service.run.degraded"), zap.String("operation", "platform.comment_like_sync_service.run"), zap.Error(err))
 
 			return
 		}
@@ -69,20 +70,20 @@ func (s *CommentLikeSyncService) Run(ctx context.Context) {
 		if !decodeOK {
 			// 整批都是坏消息：直接 ack 丢掉，避免堵死
 			if err := s.queue.Ack(ctx, len(items)); err != nil {
-				s.logger.Warn("ack comment like batch failed", zap.Error(err))
+				logctx.With(ctx, s.logger).Warn("ack comment like batch failed", zap.String("event", "platform.comment_like_sync_service.run.degraded"), zap.String("operation", "platform.comment_like_sync_service.run"), zap.Error(err))
 			}
 
 			continue
 		}
 
 		if err := s.applyIntents(ctx, intents); err != nil {
-			s.logger.Warn("apply comment like intents failed", zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("apply comment like intents failed", zap.String("event", "platform.comment_like_sync_service.run.degraded"), zap.String("operation", "platform.comment_like_sync_service.run"), zap.Error(err))
 			// 不 ack：processing 保留，下次整批重试（apply 相对行状态幂等）
 			return
 		}
 
 		if err := s.queue.Ack(ctx, len(items)); err != nil {
-			s.logger.Warn("ack comment like batch failed", zap.Int("batchSize", len(items)), zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("ack comment like batch failed", zap.String("event", "platform.comment_like_sync_service.run.degraded"), zap.String("operation", "platform.comment_like_sync_service.run"), zap.Int("batch_size", len(items)), zap.Error(err))
 
 			return
 		}
@@ -96,7 +97,7 @@ func (s *CommentLikeSyncService) decodeCommentLikeEvents(items []string) []domai
 	for _, raw := range items {
 		var evt domain.CommentLikeEvent
 		if err := json.Unmarshal([]byte(raw), &evt); err != nil {
-			s.logger.Warn("unmarshal comment like event failed", zap.Error(err))
+			s.logger.Warn("unmarshal comment like event failed", zap.String("event", "platform.comment_like_sync_service.decode_comment_like_events.degraded"), zap.String("operation", "platform.comment_like_sync_service.decode_comment_like_events"), zap.Error(err))
 
 			continue
 		}

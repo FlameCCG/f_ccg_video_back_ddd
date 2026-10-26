@@ -3,6 +3,9 @@ package mq
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/config"
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
@@ -118,7 +120,7 @@ func (m *checkpointManager) open(task media.TranscodeTask) (*transcodeCheckpoint
 	}
 
 	root := filepath.Join(m.base(), task.CheckpointKey())
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, fmt.Errorf("create transcode checkpoint dir: %w", err)
 	}
 
@@ -214,7 +216,7 @@ func (c *transcodeCheckpoint) CommittedDirPath(name string) (string, bool) {
 func (c *transcodeCheckpoint) DiscardCommitted(name string) {
 	dest := filepath.Join(c.root, filepath.Base(name))
 	if err := os.RemoveAll(dest); err != nil {
-		c.logger.Warn("discard invalid transcode checkpoint artifact failed",
+		c.logger.Warn("discard invalid transcode checkpoint artifact failed", zap.String("event", "mq.transcode_checkpoint.discard_committed.degraded"), zap.String("operation", "mq.transcode_checkpoint.discard_committed"),
 			zap.String("path", dest),
 			zap.Error(err),
 		)
@@ -228,7 +230,7 @@ func (c *transcodeCheckpoint) Remove() {
 	}
 
 	if err := os.RemoveAll(c.root); err != nil {
-		c.logger.Warn("remove transcode checkpoint dir failed",
+		c.logger.Warn("remove transcode checkpoint dir failed", zap.String("event", "mq.transcode_checkpoint.remove.degraded"), zap.String("operation", "mq.transcode_checkpoint.remove"),
 			zap.String("dir", c.root),
 			zap.Error(err),
 		)
@@ -287,8 +289,8 @@ func reusableCommittedOutput(
 
 	if validate != nil {
 		if err := validate(ctx, committedPath); err != nil {
-			ckpt.logger.Warn("committed transcode output invalid, will re-encode",
-				zap.String("targetId", target.ID),
+			logctx.With(ctx, ckpt.logger).Warn("committed transcode output invalid, will re-encode", zap.String("event", "mq.transcode_checkpoint.reusable_committed_output.degraded"), zap.String("operation", "mq.transcode_checkpoint.reusable_committed_output"),
+				zap.String("target_id", target.ID),
 				zap.String("path", committedPath),
 				zap.Error(err),
 			)
@@ -314,7 +316,7 @@ func reusableCommittedDashDir(ctx context.Context, ckpt *transcodeCheckpoint, so
 	}
 
 	if err := validateDASHOutput(ctx, dir, sourceDuration, ckpt.logger); err != nil {
-		ckpt.logger.Warn("committed dash checkpoint invalid, will re-encode",
+		logctx.With(ctx, ckpt.logger).Warn("committed dash checkpoint invalid, will re-encode", zap.String("event", "mq.transcode_checkpoint.reusable_committed_dash_dir.degraded"), zap.String("operation", "mq.transcode_checkpoint.reusable_committed_dash_dir"),
 			zap.String("dir", dir),
 			zap.Error(err),
 		)
@@ -358,8 +360,8 @@ func transcodeTargetPersisted(
 
 	urls, err := resources.PersistedResourceURLs(ctx, task, resolution, target.IsSource)
 	if err != nil {
-		logger.Debug("lookup persisted transcode resource failed",
-			zap.String("targetId", target.ID),
+		logctx.With(ctx, logger).Debug("lookup persisted transcode resource failed", zap.String("event", "mq.transcode_checkpoint.transcode_target_persisted.diagnostic"), zap.String("operation", "mq.transcode_checkpoint.transcode_target_persisted"),
+			zap.String("target_id", target.ID),
 			zap.Error(err),
 		)
 
@@ -373,9 +375,9 @@ func transcodeTargetPersisted(
 
 		size, statErr := driver.StatStoredFile(ctx, storedURL)
 		if statErr != nil || size <= 0 {
-			logger.Warn("persisted transcode output missing in storage, will redo",
-				zap.String("targetId", target.ID),
-				zap.String("fileUrl", storedURL),
+			logctx.With(ctx, logger).Warn("persisted transcode output missing in storage, will redo", zap.String("event", "mq.transcode_checkpoint.transcode_target_persisted.degraded"), zap.String("operation", "mq.transcode_checkpoint.transcode_target_persisted"),
+				zap.String("target_id", target.ID),
+				zap.String("file_url", storedURL),
 				zap.Error(statErr),
 			)
 
@@ -410,8 +412,8 @@ func dashOutputPersisted(
 
 	urls, err := resources.PersistedResourceURLs(ctx, task, enum.ResolutionAuto, false)
 	if err != nil {
-		logger.Debug("lookup persisted dash resource failed",
-			zap.Uint("videoId", task.VideoID),
+		logctx.With(ctx, logger).Debug("lookup persisted dash resource failed", zap.String("event", "mq.transcode_checkpoint.dash_output_persisted.diagnostic"), zap.String("operation", "mq.transcode_checkpoint.dash_output_persisted"),
+			zap.Uint("video_id", task.VideoID),
 			zap.Error(err),
 		)
 
@@ -425,9 +427,9 @@ func dashOutputPersisted(
 
 		size, statErr := driver.StatStoredFile(ctx, storedURL)
 		if statErr != nil || size <= 0 {
-			logger.Warn("persisted dash manifest missing in storage, will redo",
-				zap.Uint("videoId", task.VideoID),
-				zap.String("fileUrl", storedURL),
+			logctx.With(ctx, logger).Warn("persisted dash manifest missing in storage, will redo", zap.String("event", "mq.transcode_checkpoint.dash_output_persisted.degraded"), zap.String("operation", "mq.transcode_checkpoint.dash_output_persisted"),
+				zap.Uint("video_id", task.VideoID),
+				zap.String("file_url", storedURL),
 				zap.Error(statErr),
 			)
 
@@ -453,7 +455,7 @@ func removeExpiredTranscodeCheckpoints(base string, maxAge time.Duration, logger
 	entries, err := os.ReadDir(base)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			logger.Warn("read transcode checkpoint base failed", zap.String("dir", base), zap.Error(err))
+			logger.Warn("read transcode checkpoint base failed", zap.String("event", "mq.transcode_checkpoint.remove_expired_transcode_checkpoints.degraded"), zap.String("operation", "mq.transcode_checkpoint.remove_expired_transcode_checkpoints"), zap.String("dir", base), zap.Error(err))
 		}
 
 		return 0
@@ -474,16 +476,16 @@ func removeExpiredTranscodeCheckpoints(base string, maxAge time.Duration, logger
 
 		full := filepath.Join(base, entry.Name())
 		if err := os.RemoveAll(full); err != nil {
-			logger.Warn("remove expired transcode checkpoint failed", zap.String("dir", full), zap.Error(err))
+			logger.Warn("remove expired transcode checkpoint failed", zap.String("event", "mq.transcode_checkpoint.remove_expired_transcode_checkpoints.degraded"), zap.String("operation", "mq.transcode_checkpoint.remove_expired_transcode_checkpoints"), zap.String("dir", full), zap.Error(err))
 
 			continue
 		}
 
 		removed++
 
-		logger.Info("expired transcode checkpoint removed",
+		logger.Info("expired transcode checkpoint removed", zap.String("event", "mq.transcode_checkpoint.remove_expired_transcode_checkpoints.diagnostic"), zap.String("operation", "mq.transcode_checkpoint.remove_expired_transcode_checkpoints"),
 			zap.String("dir", full),
-			zap.Time("modTime", info.ModTime()),
+			zap.Time("mod_time", info.ModTime()),
 		)
 	}
 
@@ -498,6 +500,7 @@ func ensureTranscodeCheckpoint(
 	if ckpt != nil {
 		return ckpt, func() {}, nil
 	}
+
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -554,7 +557,7 @@ func discardTranscodeChunks(ckpt *transcodeCheckpoint, pipeline string) {
 		}
 
 		if err := os.RemoveAll(filepath.Join(ckpt.root, entry.Name())); err != nil {
-			ckpt.logger.Warn("discard transcode chunk dir failed",
+			ckpt.logger.Warn("discard transcode chunk dir failed", zap.String("event", "mq.transcode_checkpoint.discard_transcode_chunks.degraded"), zap.String("operation", "mq.transcode_checkpoint.discard_transcode_chunks"),
 				zap.String("dir", entry.Name()),
 				zap.Error(err),
 			)

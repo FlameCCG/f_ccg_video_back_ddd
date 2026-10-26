@@ -3,11 +3,11 @@ package comment
 import (
 	"context"
 	"errors"
-
-	app "f_ccg_video_back_ddd/internal/application/comment"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/comment"
 
 	"gorm.io/gorm"
 )
@@ -149,8 +149,8 @@ func (q *RelatedQuery) VideoAuthorRef(ctx context.Context, videoID uint) (*app.V
 	return &app.VideoAuthorRef{VideoID: row.ID, AuthorUserID: row.Author.ID}, nil
 }
 
-// DynamicBrief 读取动态 id/user_id；不存在时返回 (nil, nil)。
-func (q *RelatedQuery) DynamicBrief(ctx context.Context, dynamicID uint) (*app.Brief, error) {
+// Brief 读取动态 id/user_id；不存在时返回 (nil, nil)。
+func (q *RelatedQuery) Brief(ctx context.Context, dynamicID uint) (*app.Brief, error) {
 	var row po.Dynamic
 	if err := gormx.DB(ctx, q.db).
 		Model(&po.Dynamic{}).

@@ -2,9 +2,8 @@ package mq
 
 import (
 	"errors"
-	"testing"
-
 	"f_ccg_video_back_ddd/internal/config"
+	"testing"
 
 	"github.com/IBM/sarama"
 	"go.uber.org/zap"
@@ -129,11 +128,11 @@ func TestKafkaDriverPublishValidatesInput(t *testing.T) {
 		t.Fatal("empty topic must be rejected")
 	}
 
-	if err := driver.Publish(t.Context(), "transcode", nil); err == nil {
+	if err := driver.Publish(t.Context(), TopicTranscode, nil); err == nil {
 		t.Fatal("empty payload must be rejected")
 	}
 
-	if err := driver.Publish(t.Context(), "transcode", []byte("x")); err != nil {
+	if err := driver.Publish(t.Context(), TopicTranscode, []byte("x")); err != nil {
 		t.Fatalf("valid publish failed: %v", err)
 	}
 }

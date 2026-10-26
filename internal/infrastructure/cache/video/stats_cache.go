@@ -12,6 +12,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strconv"
 	"strings"
@@ -20,7 +22,6 @@ import (
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -163,7 +164,7 @@ func (c *StatsCache) Load(ctx context.Context, videoID uint) (*domain.Stats, boo
 	data, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get video stats cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+			logctx.With(ctx, c.logger).Warn("get video stats cache failed", zap.String("event", "cache.stats_cache.load.degraded"), zap.String("operation", "cache.stats_cache.load"), zap.Error(err), zap.Uint("video_id", videoID))
 		}
 
 		return nil, false
@@ -171,7 +172,7 @@ func (c *StatsCache) Load(ctx context.Context, videoID uint) (*domain.Stats, boo
 
 	var stats domain.Stats
 	if err := json.Unmarshal(data, &stats); err != nil {
-		c.logger.Warn("unmarshal video stats cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, c.logger).Warn("unmarshal video stats cache failed", zap.String("event", "cache.stats_cache.load.degraded"), zap.String("operation", "cache.stats_cache.load"), zap.Error(err), zap.Uint("video_id", videoID))
 
 		_ = c.redis.Del(cacheCtx, key).Err()
 
@@ -212,38 +213,7 @@ func (c *StatsCache) LoadBatch(ctx context.Context, videoIDs []uint) map[uint]*d
 		keys = append(keys, statsKey(id))
 	}
 
-	values, err := c.redis.MGet(orTODO(ctx), keys...).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return nil
-	}
-
-	out := make(map[uint]*domain.Stats, len(uniqueIDs))
-
-	for i, raw := range values {
-		if raw == nil {
-			continue
-		}
-
-		var data []byte
-
-		switch v := raw.(type) {
-		case string:
-			data = []byte(v)
-		case []byte:
-			data = v
-		default:
-			continue
-		}
-
-		var stats domain.Stats
-		if err := json.Unmarshal(data, &stats); err != nil {
-			continue
-		}
-
-		out[uniqueIDs[i]] = &stats
-	}
-
-	return out
+	return finishStatsCacheLoadBatch(ctx, c, uniqueIDs, keys)
 }
 
 // Seed 仅在缺失时回填计数（SETNX + TTL）。
@@ -257,14 +227,14 @@ func (c *StatsCache) Seed(ctx context.Context, videoID uint, stats *domain.Stats
 
 	data, err := json.Marshal(stats)
 	if err != nil {
-		c.logger.Warn("marshal video stats cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, c.logger).Warn("marshal video stats cache failed", zap.String("event", "cache.stats_cache.seed.degraded"), zap.String("operation", "cache.stats_cache.seed"), zap.Error(err), zap.Uint("video_id", videoID))
 
 		return
 	}
 
 	// 数字信息优先由增量脚本维护，这里只在缺失时回填；必须带 TTL，避免永久 key 堆积。
 	if err := c.redis.SetNX(cacheCtx, statsKey(videoID), data, videoStatsCacheTTL).Err(); err != nil {
-		c.logger.Warn("seed video stats cache failed", zap.Error(err), zap.Uint("videoId", videoID))
+		logctx.With(ctx, c.logger).Warn("seed video stats cache failed", zap.String("event", "cache.stats_cache.seed.degraded"), zap.String("operation", "cache.stats_cache.seed"), zap.Error(err), zap.Uint("video_id", videoID))
 	}
 }
 
@@ -298,8 +268,7 @@ func (c *StatsCache) ApplyDelta(
 
 	var stats domain.Stats
 	if unmarshalErr := json.Unmarshal([]byte(res), &stats); unmarshalErr != nil {
-		// 返回 (nil, nil) 让应用层按「Lua 返回值无法解析」重试。
-		return nil, nil
+		return nil, fmt.Errorf("decode stats script result: %w", unmarshalErr)
 	}
 
 	return &stats, nil
@@ -339,7 +308,7 @@ func (c *StatsCache) ApplyDeltaIfExists(
 
 	var stats domain.Stats
 	if unmarshalErr := json.Unmarshal([]byte(res), &stats); unmarshalErr != nil {
-		return nil, true, nil
+		return nil, true, fmt.Errorf("decode stats script result: %w", unmarshalErr)
 	}
 
 	return &stats, true, nil
@@ -451,4 +420,39 @@ func orBackground(ctx context.Context) context.Context {
 	}
 
 	return ctx
+}
+
+func finishStatsCacheLoadBatch(ctx context.Context, c *StatsCache, uniqueIDs []uint, keys []string) map[uint]*domain.Stats {
+	values, err := c.redis.MGet(orTODO(ctx), keys...).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return nil
+	}
+
+	out := make(map[uint]*domain.Stats, len(uniqueIDs))
+
+	for i, raw := range values {
+		if raw == nil {
+			continue
+		}
+
+		var data []byte
+
+		switch v := raw.(type) {
+		case string:
+			data = []byte(v)
+		case []byte:
+			data = v
+		default:
+			continue
+		}
+
+		var stats domain.Stats
+		if err := json.Unmarshal(data, &stats); err != nil {
+			continue
+		}
+
+		out[uniqueIDs[i]] = &stats
+	}
+
+	return out
 }

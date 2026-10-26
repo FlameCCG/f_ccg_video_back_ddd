@@ -1,10 +1,9 @@
 package video
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"strings"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // Video 视频实体（视频上下文的聚合根）。

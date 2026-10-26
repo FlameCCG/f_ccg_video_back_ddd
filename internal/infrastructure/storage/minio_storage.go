@@ -3,6 +3,10 @@ package storage
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/uploadscope"
 	"fmt"
 	"io"
 	"net/url"
@@ -11,13 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-	"f_ccg_video_back_ddd/pkg/uploadscope"
+
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
-
 	"go.uber.org/zap"
 )
 
@@ -110,15 +111,6 @@ func (m *MinIOStorage) SaveChunk(
 	})
 	if err != nil {
 		// AccessDenied 也可能来自存储服务器的文件系统错误；保留请求 ID 以便关联服务端追踪。
-		resp := minio.ToErrorResponse(err)
-		m.logger.Error("minio chunk write failed",
-			zap.Error(err),
-			zap.String("bucket", m.bucket),
-			zap.String("key", objectName),
-			zap.Int64("size", size),
-			zap.String("storageCode", resp.Code),
-			zap.Int("storageStatus", resp.StatusCode),
-			zap.String("requestID", resp.RequestID))
 		return fmt.Errorf("上传分片失败: %w", err)
 	}
 
@@ -226,8 +218,8 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 		return "", fmt.Errorf("检查最终文件失败: %w", err)
 	} else if exists {
 		m.cleanupChunksAsync(ctx, fileHash)
-		m.logger.Info("complete upload reused existing minio object",
-			zap.String("fileHash", fileHash),
+		logctx.With(ctx, m.logger).Info("complete upload reused existing minio object", zap.String("event", "storage.minio_storage.merge_chunks.diagnostic"), zap.String("operation", "storage.minio_storage.merge_chunks"),
+			zap.String("file_hash", fileHash),
 			zap.String("key", finalKey))
 
 		return m.publicPath(finalKey), nil
@@ -237,12 +229,16 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 	if err != nil {
 		return "", err
 	}
+
 	stagingKey := finalKey + ".merging-" + uuid.NewString()
+
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
+
 		_ = m.client.RemoveObject(cleanupCtx, m.bucket, stagingKey, minio.RemoveObjectOptions{})
 	}()
+
 	if ok, err := m.composeChunks(ctx, stagingKey, fileHash, fileName, totalChunks); err != nil {
 		return "", err
 	} else if !ok {
@@ -250,20 +246,26 @@ func (m *MinIOStorage) MergeChunks(ctx context.Context, fileHash, fileName strin
 			return "", err
 		}
 	}
+
 	object, err := m.client.GetObject(ctx, m.bucket, stagingKey, minio.GetObjectOptions{})
 	if err != nil {
 		return "", err
 	}
+
 	_, readErr := io.Copy(verifier, object)
+
 	closeErr := object.Close()
 	if err := errors.Join(readErr, closeErr, verifier.verify()); err != nil {
 		return "", err
 	}
+
 	_, err = m.client.CopyObject(ctx, minio.CopyDestOptions{Bucket: m.bucket, Object: finalKey}, minio.CopySrcOptions{Bucket: m.bucket, Object: stagingKey})
 	if err != nil {
 		return "", fmt.Errorf("commit verified upload: %w", err)
 	}
+
 	m.cleanupChunksAsync(ctx, fileHash)
+
 	return m.publicPath(finalKey), nil
 }
 
@@ -321,10 +323,13 @@ func (m *MinIOStorage) streamMergeChunks(
 	ctx, cancel := context.WithCancel(ctx)
 	pr, pw := io.Pipe()
 	writerDone := make(chan struct{})
+
 	defer func() {
 		cancel()
+
 		_ = pr.Close()
 		_ = pw.Close()
+
 		<-writerDone
 	}() // Pipe 允许边读边写，节省磁盘空间
 
@@ -442,7 +447,7 @@ func (m *MinIOStorage) SaveTranscodeVideo(
 
 	if info.Size <= 0 {
 		if removeErr := m.client.RemoveObject(ctx, m.bucket, key, minio.RemoveObjectOptions{}); removeErr != nil {
-			m.logger.Warn("remove empty transcode object failed", zap.Error(removeErr), zap.String("key", key))
+			logctx.With(ctx, m.logger).Warn("remove empty transcode object failed", zap.String("event", "storage.minio_storage.save_transcode_video.degraded"), zap.String("operation", "storage.minio_storage.save_transcode_video"), zap.Error(removeErr), zap.String("key", key))
 		}
 
 		return "", 0, errors.New("转码输出为空，已拒绝提交")
@@ -579,7 +584,7 @@ func (m *MinIOStorage) cleanupChunksAsync(parent context.Context, fileHash strin
 	if !m.detached.Go(parent, ctxutil.AsyncLongTimeout, func(ctx context.Context) {
 		m.cleanupChunks(ctx, fileHash)
 	}) {
-		m.logger.Warn("skip minio chunk cleanup: process is shutting down", zap.String("fileHash", fileHash))
+		logctx.With(parent, m.logger).Warn("skip minio chunk cleanup: process is shutting down", zap.String("event", "storage.minio_storage.cleanup_chunks_async.degraded"), zap.String("operation", "storage.minio_storage.cleanup_chunks_async"), zap.String("file_hash", fileHash))
 	}
 }
 
@@ -587,7 +592,7 @@ func (m *MinIOStorage) cleanupChunksAsync(parent context.Context, fileHash strin
 func (m *MinIOStorage) cleanupChunks(ctx context.Context, fileHash string) {
 	fileHash = uploadscope.ChunkNamespace(ctx, fileHash)
 	if err := ValidateUploadID(fileHash); err != nil {
-		m.logger.Warn("skip cleanup chunks with invalid fileHash", zap.Error(err))
+		logctx.With(ctx, m.logger).Warn("skip cleanup chunks with invalid fileHash", zap.String("event", "storage.minio_storage.cleanup_chunks.degraded"), zap.String("operation", "storage.minio_storage.cleanup_chunks"), zap.Error(err))
 
 		return
 	}
@@ -598,13 +603,13 @@ func (m *MinIOStorage) cleanupChunks(ctx context.Context, fileHash string) {
 		Recursive: true,
 	}) {
 		if object.Err != nil { // 如果列举失败，记录日志并结束
-			m.logger.Warn("list chunk objects failed", zap.Error(object.Err))
+			logctx.With(ctx, m.logger).Warn("list chunk objects failed", zap.String("event", "storage.minio_storage.cleanup_chunks.degraded"), zap.String("operation", "storage.minio_storage.cleanup_chunks"), zap.Error(object.Err))
 
 			return
 		}
 
 		if err := m.client.RemoveObject(ctx, m.bucket, object.Key, minio.RemoveObjectOptions{}); err != nil {
-			m.logger.Warn("remove chunk object failed", zap.Error(err), zap.String("key", object.Key))
+			logctx.With(ctx, m.logger).Warn("remove chunk object failed", zap.String("event", "storage.minio_storage.cleanup_chunks.degraded"), zap.String("operation", "storage.minio_storage.cleanup_chunks"), zap.Error(err), zap.String("key", object.Key))
 		}
 	}
 }

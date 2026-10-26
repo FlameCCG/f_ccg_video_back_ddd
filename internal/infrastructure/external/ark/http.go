@@ -1,10 +1,11 @@
 package ark
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,134 +15,12 @@ import (
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
 	domain "f_ccg_video_back_ddd/internal/domain/ai"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	arkrtmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 // errorBodyLimit 读取上游错误响应体的上限。
 const errorBodyLimit = 4096
-
-// doProviderJSONRequest 发送 JSON 请求并读取完整响应体，非 2xx 转成 APIError。
-func doProviderJSONRequest(
-	ctx context.Context,
-	runtime aiapp.RuntimeConfig,
-	baseURL string,
-	apiKey string,
-	method string,
-	path string,
-	payload any,
-	accept string,
-	headers map[string]string,
-) (json.RawMessage, error) {
-	resp, err := doProviderRequest(ctx, runtime, baseURL, apiKey, method, path, payload, accept, headers, false)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取 AI 响应失败: %w", err)
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, parseAPIError(resp.StatusCode, body)
-	}
-
-	return body, nil
-}
-
-// openProviderJSONStream 打开 SSE 流；非 2xx 时读干错误体并转成 APIError。
-func openProviderJSONStream(
-	ctx context.Context,
-	runtime aiapp.RuntimeConfig,
-	baseURL string,
-	apiKey string,
-	method string,
-	path string,
-	payload any,
-	headers map[string]string,
-) (*http.Response, error) {
-	resp, err := doProviderRequest(
-		ctx,
-		runtime,
-		baseURL,
-		apiKey,
-		method,
-		path,
-		payload,
-		"text/event-stream",
-		headers,
-		true,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-
-		if readErr != nil {
-			return nil, fmt.Errorf("读取 AI 流式错误响应失败: %w", readErr)
-		}
-
-		return nil, parseAPIError(resp.StatusCode, body)
-	}
-
-	return resp, nil
-}
-
-// doProviderRequest 构建并发送上游请求。
-func doProviderRequest(
-	ctx context.Context,
-	runtime aiapp.RuntimeConfig,
-	baseURL string,
-	apiKey string,
-	method string,
-	path string,
-	payload any,
-	accept string,
-	headers map[string]string,
-	stream bool,
-) (*http.Response, error) {
-	var body io.Reader
-
-	if payload != nil {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			return nil, fmt.Errorf("序列化 AI 请求失败: %w", err)
-		}
-
-		body = bytes.NewReader(raw)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, domain.JoinURL(baseURL, path), body)
-	if err != nil {
-		return nil, fmt.Errorf("构建 AI 请求失败: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	req.Header.Set("Accept", domain.FirstNonEmpty(accept, "application/json"))
-
-	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	for key, value := range headers {
-		if strings.TrimSpace(value) != "" {
-			req.Header.Set(key, value)
-		}
-	}
-
-	resp, err := httpClientFor(runtime, stream).Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求 AI 失败: %w", err)
-	}
-
-	return resp, nil
-}
 
 // httpClientFor 流式请求不设整体超时（由 context 控制），非流式取配置与 AI 基线的较大值。
 func httpClientFor(runtime aiapp.RuntimeConfig, stream bool) *http.Client {
@@ -164,7 +43,9 @@ func httpClientFor(runtime aiapp.RuntimeConfig, stream bool) *http.Client {
 // 既不缓存响应体，也不改变后续流式读取和取消语义。
 func gatedStreamHTTPClient() (*http.Client, func()) {
 	ready := make(chan struct{})
+
 	var once sync.Once
+
 	release := func() {
 		once.Do(func() {
 			close(ready)
@@ -205,7 +86,7 @@ func (t *responseReadGateTransport) RoundTrip(request *http.Request) (*http.Resp
 
 type responseReadGate struct {
 	io.ReadCloser
-	ctx   context.Context
+	ctx   context.Context //nolint:containedctx // The response body must retain its request cancellation context until Close.
 	ready <-chan struct{}
 }
 
@@ -256,21 +137,21 @@ func wrapArkError(err error) error {
 
 	var apiErr *arkrtmodel.APIError
 	if errors.As(err, &apiErr) && apiErr != nil {
-		return &domain.APIError{
+		return apperr.Wrap("ai.provider", &domain.APIError{
 			StatusCode: apiErr.HTTPStatusCode,
 			Code:       apiErr.Code,
 			Message:    apiErr.Message,
 			Body:       err.Error(),
-		}
+		}, err, apperr.Dependency)
 	}
 
 	var reqErr *arkrtmodel.RequestError
 	if errors.As(err, &reqErr) && reqErr != nil {
-		return &domain.APIError{
+		return apperr.Wrap("ai.provider", &domain.APIError{
 			StatusCode: reqErr.HTTPStatusCode,
 			Message:    reqErr.Error(),
 			Body:       reqErr.Error(),
-		}
+		}, err, apperr.Dependency)
 	}
 
 	return err

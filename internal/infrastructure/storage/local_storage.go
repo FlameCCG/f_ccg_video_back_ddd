@@ -11,6 +11,9 @@ package storage
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/uploadscope"
 	"fmt"
 	"io"
 	"net/url"
@@ -20,9 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/config/site"
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/pkg/uploadscope"
 
 	"go.uber.org/zap"
 )
@@ -69,58 +70,18 @@ func (l *LocalStorage) SaveChunk(
 		return err
 	}
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("创建分块目录失败: %w", err)
 	}
 
 	chunkPath := filepath.Join(dir, index+".part")
+
 	out, err := os.CreateTemp(dir, index+".part.*.uploading")
 	if err != nil {
 		return fmt.Errorf("create chunk: %w", err)
 	}
-	tmpPath := out.Name()
 
-	closed := false
-	defer func() {
-		if !closed {
-			if err := out.Close(); err != nil {
-				l.logger.Warn("close temp chunk file failed", zap.Error(err), zap.String("path", tmpPath))
-			}
-		}
-		_ = os.Remove(tmpPath)
-	}()
-
-	written, err := io.Copy(out, reader)
-	if err == nil && size >= 0 && written != size {
-		err = fmt.Errorf("chunk size mismatch: expected %d, got %d", size, written)
-	}
-	if err != nil {
-		// 如果写入失败（例如客户端断开连接、磁盘已满），
-		// 必须删除这个刚创建的、不完整的临时文件，防止留下垃圾数据。
-		_ = os.Remove(tmpPath)
-
-		return fmt.Errorf("写入分块数据失败: %w", err)
-	}
-
-	if err = out.Sync(); err != nil {
-		_ = os.Remove(tmpPath)
-
-		return fmt.Errorf("同步分块数据失败: %w", err)
-	}
-	closeErr := out.Close()
-	closed = true
-	if closeErr != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("关闭分块文件失败: %w", closeErr)
-	}
-
-	if err = atomicRename(tmpPath, chunkPath); err != nil {
-		_ = os.Remove(tmpPath)
-
-		return fmt.Errorf("保存分块失败: %w", err)
-	}
-
-	return nil
+	return finishLocalStorageSaveChunk(ctx, l, size, reader, chunkPath, out)
 }
 
 // ListUploadedChunks 列出指定文件 hash 已上传的分片索引。
@@ -231,7 +192,7 @@ func (l *LocalStorage) GetCompletedFile(_ context.Context, fileHash string) (str
 		return "", false, err
 	}
 
-	rel := path.Join("videos", fileHash, "_source_"+fileHash+".mp4")
+	rel := path.Join(testVideos, fileHash, "_source_"+fileHash+".mp4")
 
 	finalPath, err := safeJoinLocal(l.cfg.Local.Path, rel)
 	if err != nil {
@@ -269,14 +230,14 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 		return "", errors.New("未配置本地文件存储路径")
 	}
 
-	rel := path.Join("videos", fileHash, "_source_"+fileHash+".mp4")
+	rel := path.Join(testVideos, fileHash, "_source_"+fileHash+".mp4")
 
-	finalDir, err := safeJoinLocal(l.cfg.Local.Path, "videos", fileHash)
+	finalDir, err := safeJoinLocal(l.cfg.Local.Path, testVideos, fileHash)
 	if err != nil {
 		return "", err
 	}
 
-	if err := os.MkdirAll(finalDir, 0o755); err != nil {
+	if err := os.MkdirAll(finalDir, 0o750); err != nil {
 		return "", fmt.Errorf("创建文件目录失败: %w", err)
 	}
 
@@ -287,7 +248,7 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 	if _, err := os.Stat(finalPath); err == nil {
 		go func() {
 			if err := os.RemoveAll(chunkDir); err != nil {
-				l.logger.Warn("clean chunk dir failed", zap.Error(err), zap.String("dir", chunkDir))
+				logctx.With(ctx, l.logger).Warn("clean chunk dir failed", zap.String("event", "storage.local_storage.merge_chunks.degraded"), zap.String("operation", "storage.local_storage.merge_chunks"), zap.Error(err), zap.String("dir", chunkDir))
 			}
 		}()
 
@@ -300,82 +261,16 @@ func (l *LocalStorage) MergeChunks(ctx context.Context, fileHash, _ string, tota
 	}
 
 	tmpFinalPath := out.Name()
+
 	verifier, err := newUploadHashVerifier(ctx, fileHash)
 	if err != nil {
 		_ = out.Close()
 		_ = os.Remove(tmpFinalPath)
+
 		return "", err
 	}
 
-	closed := false
-	defer func() {
-		if !closed {
-			if err := out.Close(); err != nil {
-				l.logger.Warn("close final file failed", zap.Error(err), zap.String("path", tmpFinalPath))
-			}
-		}
-		_ = os.Remove(tmpFinalPath)
-	}()
-
-	for i := range totalChunks {
-		if err := ctx.Err(); err != nil {
-			_ = os.Remove(tmpFinalPath)
-
-			return "", err
-		}
-
-		indexStr := strconv.Itoa(i)
-		chunkPath := filepath.Join(chunkDir, indexStr+".part")
-
-		chunkFile, err := os.Open(chunkPath)
-		if err != nil {
-			_ = os.Remove(tmpFinalPath)
-
-			return "", fmt.Errorf("打开分片文件失败: %w", err)
-		}
-
-		if _, err = io.Copy(io.MultiWriter(out, verifier), chunkFile); err != nil {
-			_ = chunkFile.Close()
-			_ = os.Remove(tmpFinalPath)
-
-			return "", fmt.Errorf("写入分片数据失败: %w", err)
-		}
-
-		if err := chunkFile.Close(); err != nil {
-			_ = os.Remove(tmpFinalPath)
-
-			return "", fmt.Errorf("关闭分片文件失败: %w", err)
-		}
-	}
-	// 数据落盘
-	if err := verifier.verify(); err != nil {
-		return "", err
-	}
-	if err = out.Sync(); err != nil {
-		_ = os.Remove(tmpFinalPath)
-
-		return "", fmt.Errorf("合并最终文件落盘失败%w", err)
-	}
-	closeErr := out.Close()
-	closed = true
-	if closeErr != nil {
-		_ = os.Remove(tmpFinalPath)
-		return "", fmt.Errorf("关闭最终文件失败: %w", closeErr)
-	}
-
-	if err = atomicRename(tmpFinalPath, finalPath); err != nil {
-		_ = os.Remove(tmpFinalPath)
-
-		return "", fmt.Errorf("提交最终文件失败: %w", err)
-	}
-
-	go func() {
-		if cleanErr := os.RemoveAll(chunkDir); cleanErr != nil {
-			l.logger.Warn("clean chunk dir failed", zap.Error(cleanErr), zap.String("dir", chunkDir))
-		}
-	}()
-
-	return l.publicPath(rel), nil
+	return finishLocalStorageMergeChunks(ctx, l, totalChunks, chunkDir, rel, finalPath, out, tmpFinalPath, verifier)
 }
 
 // SaveFile 将任意文件写入本地存储。
@@ -395,7 +290,7 @@ func (l *LocalStorage) SaveFile(
 		return "", err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
@@ -426,13 +321,14 @@ func (l *LocalStorage) SaveTranscodeVideo(
 	}
 
 	// 确保目录存在
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
 		return "", 0, fmt.Errorf("创建目录失败: %w", err)
 	}
 
 	// 创建目标文件
 	progress := newProgressLogger(size, label, l.logger)
 	defer progress.finish()
+
 	written, err := atomicWriteFile(destPath, io.TeeReader(reader, progress), true)
 	if err != nil {
 		return "", 0, err
@@ -449,11 +345,11 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 		return "", nil
 	}
 
-	if l.cfg == nil || l.cfg.Local == nil || l.cfg.Local.Path == "" {
+	if localStorageresolveStoredFilePathCondition2(l) {
 		return "", errors.New("local storage not configured")
 	}
 	// 如果是 URL，提取 path 部分
-	if u, err := url.Parse(trimmed); err == nil && u.Scheme != "" && u.Host != "" {
+	if u, err := url.Parse(trimmed); localStorageresolveStoredFilePathCondition3(u, err) {
 		trimmed = u.Path
 	}
 	// 去掉开头的 /
@@ -489,7 +385,7 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 	}
 	// 防止目录穿越：fullPath 必须在 base 之内
 	rel, err := filepath.Rel(base, fullPath)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if localStorageresolveStoredFilePathCondition(err, rel) {
 		return "", fmt.Errorf("invalid storedPath %q: outside of base dir", storedPath)
 	}
 
@@ -584,12 +480,12 @@ func (l *LocalStorage) DeleteByPrefix(_ context.Context, prefix string) (int64, 
 		return 0, nil
 	}
 
-	if l.cfg == nil || l.cfg.Local == nil || l.cfg.Local.Path == "" {
+	if localStorageDeleteByPrefixCondition2(l) {
 		return 0, errors.New("local storage not configured")
 	}
 	// 解析为本地路径
 	cleaned := prefix
-	if u, err := url.Parse(prefix); err == nil && u.Scheme != "" && u.Host != "" {
+	if u, err := url.Parse(prefix); localStorageDeleteByPrefixCondition3(u, err) {
 		cleaned = u.Path
 	}
 
@@ -610,17 +506,181 @@ func (l *LocalStorage) DeleteByPrefix(_ context.Context, prefix string) (int64, 
 		dirPath = filepath.Join(base, cleaned)
 	}
 
-	dirPath, err = filepath.Abs(dirPath)
+	return finishLocalStorageDeleteByPrefix(prefix, base, &dirPath)
+}
+
+func localStorageSaveChunkCondition(size int64, err error, written int64) bool {
+	return err == nil && size >= 0 && written != size
+}
+
+func localStorageresolveStoredFilePathCondition(err error, rel string) bool {
+	return err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func localStorageresolveStoredFilePathCondition2(l *LocalStorage) bool {
+	return l.cfg == nil || l.cfg.Local == nil || l.cfg.Local.Path == ""
+}
+
+func localStorageresolveStoredFilePathCondition3(u *url.URL, err error) bool {
+	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+func localStorageDeleteByPrefixCondition(err error, rel string) bool {
+	return err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func localStorageDeleteByPrefixCondition2(l *LocalStorage) bool {
+	return l.cfg == nil || l.cfg.Local == nil || l.cfg.Local.Path == ""
+}
+
+func localStorageDeleteByPrefixCondition3(u *url.URL, err error) bool {
+	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+func finishLocalStorageSaveChunk(ctx context.Context, l *LocalStorage, size int64, reader media.ChunkReader, chunkPath string, out *os.File) error {
+	var err error
+
+	tmpPath := out.Name()
+
+	closed := false
+	defer func() {
+		if !closed {
+			if errLocal := out.Close(); errLocal != nil {
+				logctx.With(ctx, l.logger).Warn("close temp chunk file failed", zap.String("event", "storage.local_storage.save_chunk.degraded"), zap.String("operation", "storage.local_storage.save_chunk"), zap.Error(errLocal), zap.String("path", tmpPath))
+			}
+		}
+
+		_ = os.Remove(tmpPath)
+	}()
+
+	written, err := io.Copy(out, reader)
+	if localStorageSaveChunkCondition(size, err, written) {
+		err = fmt.Errorf("chunk size mismatch: expected %d, got %d", size, written)
+	}
+
+	if err != nil {
+		// 如果写入失败（例如客户端断开连接、磁盘已满），
+		// 必须删除这个刚创建的、不完整的临时文件，防止留下垃圾数据。
+		_ = os.Remove(tmpPath)
+
+		return fmt.Errorf("写入分块数据失败: %w", err)
+	}
+
+	if err = out.Sync(); err != nil {
+		_ = os.Remove(tmpPath)
+
+		return fmt.Errorf("同步分块数据失败: %w", err)
+	}
+
+	closeErr := out.Close()
+	closed = true
+
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("关闭分块文件失败: %w", closeErr)
+	}
+
+	if err = atomicRename(tmpPath, chunkPath); err != nil {
+		_ = os.Remove(tmpPath)
+
+		return fmt.Errorf("保存分块失败: %w", err)
+	}
+
+	return nil
+}
+
+func finishLocalStorageMergeChunks(ctx context.Context, l *LocalStorage, totalChunks int, chunkDir, rel, finalPath string, out *os.File, tmpFinalPath string, verifier *uploadHashVerifier) (string, error) {
+	var err error
+
+	closed := false
+	defer func() {
+		if !closed {
+			if errLocal := out.Close(); errLocal != nil {
+				logctx.With(ctx, l.logger).Warn("close final file failed", zap.String("event", "storage.local_storage.merge_chunks.degraded"), zap.String("operation", "storage.local_storage.merge_chunks"), zap.Error(errLocal), zap.String("path", tmpFinalPath))
+			}
+		}
+
+		_ = os.Remove(tmpFinalPath)
+	}()
+
+	for i := range totalChunks {
+		if errLocal := ctx.Err(); errLocal != nil {
+			_ = os.Remove(tmpFinalPath)
+
+			return "", errLocal
+		}
+
+		indexStr := strconv.Itoa(i)
+		chunkPath := filepath.Join(chunkDir, indexStr+".part")
+
+		chunkFile, errLocal := os.Open(chunkPath) // #nosec G304 -- Chunk paths use validated upload IDs and numeric indexes within the configured root.
+		if errLocal != nil {
+			_ = os.Remove(tmpFinalPath)
+
+			return "", fmt.Errorf("打开分片文件失败: %w", errLocal)
+		}
+
+		if _, errLocal = io.Copy(io.MultiWriter(out, verifier), chunkFile); errLocal != nil {
+			_ = chunkFile.Close()
+			_ = os.Remove(tmpFinalPath)
+
+			return "", fmt.Errorf("写入分片数据失败: %w", errLocal)
+		}
+
+		if errLocal := chunkFile.Close(); errLocal != nil {
+			_ = os.Remove(tmpFinalPath)
+
+			return "", fmt.Errorf("关闭分片文件失败: %w", errLocal)
+		}
+	}
+	// 数据落盘
+	if errLocal := verifier.verify(); errLocal != nil {
+		return "", errLocal
+	}
+
+	if err = out.Sync(); err != nil {
+		_ = os.Remove(tmpFinalPath)
+
+		return "", fmt.Errorf("合并最终文件落盘失败%w", err)
+	}
+
+	closeErr := out.Close()
+	closed = true
+
+	if closeErr != nil {
+		_ = os.Remove(tmpFinalPath)
+		return "", fmt.Errorf("关闭最终文件失败: %w", closeErr)
+	}
+
+	if err = atomicRename(tmpFinalPath, finalPath); err != nil {
+		_ = os.Remove(tmpFinalPath)
+
+		return "", fmt.Errorf("提交最终文件失败: %w", err)
+	}
+
+	go func() {
+		if cleanErr := os.RemoveAll(chunkDir); cleanErr != nil {
+			logctx.With(ctx, l.logger).Warn("clean chunk dir failed", zap.String("event", "storage.local_storage.merge_chunks.degraded"), zap.String("operation", "storage.local_storage.merge_chunks"), zap.Error(cleanErr), zap.String("dir", chunkDir))
+		}
+	}()
+
+	return l.publicPath(rel), nil
+}
+
+func finishLocalStorageDeleteByPrefix(prefix, base string, dirPath *string) (int64, error) {
+	var err error
+
+	(*dirPath), err = filepath.Abs((*dirPath))
 	if err != nil {
 		return 0, err
 	}
 	// 防止目录穿越
-	rel, err := filepath.Rel(base, dirPath)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	rel, err := filepath.Rel(base, (*dirPath))
+	if localStorageDeleteByPrefixCondition(err, rel) {
 		return 0, fmt.Errorf("invalid prefix %q: outside of base dir", prefix)
 	}
 
-	entries, err := os.ReadDir(dirPath)
+	entries, err := os.ReadDir((*dirPath))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return 0, nil
@@ -636,15 +696,15 @@ func (l *LocalStorage) DeleteByPrefix(_ context.Context, prefix string) (int64, 
 			continue
 		}
 
-		fullPath := filepath.Join(dirPath, entry.Name())
-		if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return deleted, err
+		fullPath := filepath.Join((*dirPath), entry.Name())
+		if errLocal := os.Remove(fullPath); errLocal != nil && !errors.Is(errLocal, os.ErrNotExist) {
+			return deleted, errLocal
 		}
 
 		deleted++
 	}
 	// 删除目录本身（已空）
-	_ = os.Remove(dirPath)
+	_ = os.Remove((*dirPath))
 
 	return deleted, nil
 }

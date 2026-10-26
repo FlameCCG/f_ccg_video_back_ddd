@@ -8,9 +8,10 @@ package cache
 
 import (
 	"context"
-
+	"errors"
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"fmt"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -31,8 +32,16 @@ func (r *Redis) Client() *redis.Client {
 	return r.client
 }
 
-// New 连接 Redis 并 Ping 探活；失败时 zap.Panic（与原 core.InitRedis 一致）。
-func New(cfg *config.Redis, logger *zap.Logger) *Redis {
+// New 连接 Redis 并 Ping 探活；失败返回错误，由入口记录并退出。
+func New(cfg *config.Redis, logger *zap.Logger) (*Redis, error) {
+	if cfg == nil {
+		return nil, errors.New("redis config required")
+	}
+
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Host + ":" + cfg.Port,
 		Password: cfg.Password,
@@ -51,12 +60,13 @@ func New(cfg *config.Redis, logger *zap.Logger) *Redis {
 
 	res, err := rdb.Ping(ctx).Result()
 	if err != nil {
-		logger.Panic("redis连接失败", zap.Error(err))
+		_ = rdb.Close()
+		return nil, fmt.Errorf("connect redis: %w", err)
 	}
 
-	logger.Info("redis连接成功", zap.String("res", res))
+	logger.Info("redis连接成功", zap.String("event", "cache.redis.new.diagnostic"), zap.String("operation", "cache.redis.new"), zap.String("res", res))
 
-	return &Redis{client: rdb, logger: logger}
+	return &Redis{client: rdb, logger: logger}, nil
 }
 
 // Stop 关闭 Redis 客户端连接池。
@@ -66,12 +76,12 @@ func (r *Redis) Stop() {
 	}
 
 	if err := r.client.Close(); err != nil {
-		r.logger.Warn("redis close failed", zap.Error(err))
+		r.logger.Warn("redis close failed", zap.String("event", "cache.redis.stop.degraded"), zap.String("operation", "cache.redis.stop"), zap.Error(err))
 	}
 
 	r.client = nil
 
-	r.logger.Info("redis连接已关闭")
+	r.logger.Info("redis连接已关闭", zap.String("event", "cache.redis.stop.diagnostic"), zap.String("operation", "cache.redis.stop"))
 }
 
 // ProvideClient 从 Redis 包装中取出 *redis.Client 供仓储与限流器注入。
@@ -80,8 +90,11 @@ func ProvideClient(r *Redis) *redis.Client {
 }
 
 // Provide 供 wire 使用的 provider：返回 Redis 客户端与其资源关闭函数。
-func Provide(cfg *config.Redis, logger *zap.Logger) (*Redis, func()) {
-	client := New(cfg, logger)
+func Provide(cfg *config.Redis, logger *zap.Logger) (*Redis, func(), error) {
+	client, err := New(cfg, logger)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return client, client.Stop
+	return client, client.Stop, nil
 }

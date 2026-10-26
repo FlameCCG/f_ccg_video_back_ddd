@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"time"
 
@@ -99,64 +100,7 @@ func (s *StatsService) ApplyDelta(ctx context.Context, videoID uint, delta domai
 		ctx = context.TODO()
 	}
 
-	var lastErr error
-
-	for attempt := 0; attempt <= applyVideoStatsDeltaMaxRetry; attempt++ {
-		if attempt > 0 {
-			time.Sleep(applyVideoStatsDeltaRetryDelay)
-		}
-
-		basePayload, err := s.loadBasePayload(ctx, videoID)
-		if err != nil {
-			lastErr = err
-			// 读 base 失败可能是瞬时 Redis 问题，优先重试而不是用 DB 覆盖权威值。
-			if s.cache.IsTransientError(err) {
-				continue
-			}
-			// 无法安全写 Redis：落 DB 增量并失效 Redis，避免陈旧 key 长期遮挡/脏同步盖回 DB。
-			stats, dbErr := s.applyDeltaToDB(ctx, videoID, delta)
-			if dbErr != nil {
-				return nil, fmt.Errorf("stats base load failed: %w; db fallback: %v", err, dbErr)
-			}
-
-			s.logger.Warn("apply video stats delta: base load failed, wrote DB and invalidated redis",
-				zap.Uint("videoId", videoID), zap.Error(err))
-			s.cache.Clear(ctx, videoID)
-
-			return stats, nil
-		}
-
-		stats, err := s.cache.ApplyDelta(ctx, videoID, delta, basePayload)
-		if err == nil {
-			if stats != nil {
-				return stats, nil
-			}
-
-			// Lua 返回值无法解析：视为一次可重试失败（原实现此处误包装了 nil error，已修正）。
-			lastErr = errStatsLuaResultUnparsable
-
-			continue
-		}
-
-		lastErr = err
-		if s.cache.IsTransientError(err) {
-			continue
-		}
-
-		break
-	}
-
-	// 禁止 Lua 失败后 clear Redis、禁止用 DB 增量回填覆盖权威计数。
-	// 仅记录错误，让调用方感知；权威值仍以 Redis 为准（若 key 仍在）。
-	s.logger.Error("apply video stats delta via redis failed; leave redis intact (no clear, no db overwrite)",
-		zap.Uint("videoId", videoID), zap.Error(lastErr))
-
-	// 尽量返回当前 Redis 值，便于接口继续响应。
-	if stats, ok := s.cache.Load(ctx, videoID); ok && stats != nil {
-		return stats, lastErr
-	}
-
-	return nil, lastErr
+	return finishStatsServiceApplyDelta(ctx, s, videoID, delta)
 }
 
 // ApplyCommittedDelta 在 MySQL 业务已提交后更新展示计数。
@@ -188,24 +132,18 @@ func (s *StatsService) ApplyCommittedDelta(
 
 	dbStats, dbErr := s.applyDeltaToDB(ctx, videoID, delta)
 	if dbErr != nil {
-		s.logger.Error("committed video stats: redis and db both failed",
-			zap.Uint("videoId", videoID),
-			zap.Error(err),
-			zap.NamedError("dbErr", dbErr),
-		)
-
 		// 尽量失效陈旧 Redis，降低长期错误展示概率。
 		s.cache.Clear(ctx, videoID)
 
 		if err != nil {
-			return nil, fmt.Errorf("stats redis: %w; db: %v", err, dbErr)
+			return nil, fmt.Errorf("stats redis: %w; db: %w", err, dbErr)
 		}
 
 		return nil, dbErr
 	}
 
-	s.logger.Error("committed video stats: redis failed, applied db delta and invalidated redis",
-		zap.Uint("videoId", videoID),
+	logctx.With(ctx, s.logger).Warn("committed video stats: redis failed, applied db delta and invalidated redis", zap.String("event", "video.stats_service.apply_committed_delta.failed"), zap.String("operation", "video.stats_service.apply_committed_delta"),
+		zap.Uint("video_id", videoID),
 		zap.Error(err),
 	)
 	s.cache.Clear(ctx, videoID)
@@ -244,7 +182,7 @@ func (s *StatsService) ApplyDeltaIfCached(
 
 	stats, existed, err := s.cache.ApplyDeltaIfExists(ctx, videoID, delta)
 	if err != nil {
-		s.logger.Warn("apply video stats delta if-cached failed", zap.Uint("videoId", videoID), zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("apply video stats delta if-cached failed", zap.String("event", "video.stats_service.apply_delta_if_cached.degraded"), zap.String("operation", "video.stats_service.apply_delta_if_cached"), zap.Uint("video_id", videoID), zap.Error(err))
 
 		return s.Load(ctx, videoID)
 	}
@@ -293,9 +231,9 @@ func (s *StatsService) RecordHotScoreForComment(ctx context.Context, videoID uin
 func (s *StatsService) UpdateCommentCount(ctx context.Context, videoID uint, delta int64) {
 	if _, err := s.ApplyDelta(ctx, videoID, domain.StatsDelta{CommentCount: delta}); err != nil {
 		// 仅记录错误，不 clear redis，避免丢失并发增量。
-		s.logger.Warn("update comment count failed",
+		logctx.With(ctx, s.logger).Warn("update comment count failed", zap.String("event", "video.stats_service.update_comment_count.degraded"), zap.String("operation", "video.stats_service.update_comment_count"),
 			zap.Error(err),
-			zap.Uint("videoId", videoID),
+			zap.Uint("video_id", videoID),
 			zap.Int64("delta", delta),
 		)
 
@@ -346,3 +284,62 @@ func (s *StatsService) applyDeltaToDB(ctx context.Context, videoID uint, delta d
 
 // errStatsLuaResultUnparsable Lua 返回值无法解析为 Stats。
 var errStatsLuaResultUnparsable = errors.New("unmarshal stats lua result")
+
+func finishStatsServiceApplyDelta(ctx context.Context, s *StatsService, videoID uint, delta domain.StatsDelta) (*domain.Stats, error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= applyVideoStatsDeltaMaxRetry; attempt++ {
+		if attempt > 0 {
+			time.Sleep(applyVideoStatsDeltaRetryDelay)
+		}
+
+		basePayload, err := s.loadBasePayload(ctx, videoID)
+		if err != nil {
+			lastErr = err
+			// 读 base 失败可能是瞬时 Redis 问题，优先重试而不是用 DB 覆盖权威值。
+			if s.cache.IsTransientError(err) {
+				continue
+			}
+			// 无法安全写 Redis：落 DB 增量并失效 Redis，避免陈旧 key 长期遮挡/脏同步盖回 DB。
+			stats, dbErr := s.applyDeltaToDB(ctx, videoID, delta)
+			if dbErr != nil {
+				return nil, fmt.Errorf("stats base load failed: %w; db fallback: %w", err, dbErr)
+			}
+
+			logctx.With(ctx, s.logger).Warn("apply video stats delta: base load failed, wrote DB and invalidated redis", zap.String("event", "video.stats_service.apply_delta.degraded"), zap.String("operation", "video.stats_service.apply_delta"),
+				zap.Uint("video_id", videoID), zap.Error(err))
+			s.cache.Clear(ctx, videoID)
+
+			return stats, nil
+		}
+
+		stats, err := s.cache.ApplyDelta(ctx, videoID, delta, basePayload)
+		if err == nil {
+			if stats != nil {
+				return stats, nil
+			}
+
+			// Lua 返回值无法解析：视为一次可重试失败（原实现此处误包装了 nil error，已修正）。
+			lastErr = errStatsLuaResultUnparsable
+
+			continue
+		}
+
+		lastErr = err
+		if s.cache.IsTransientError(err) {
+			continue
+		}
+
+		break
+	}
+
+	// 禁止 Lua 失败后 clear Redis、禁止用 DB 增量回填覆盖权威计数。
+	// 仅记录错误，让调用方感知；权威值仍以 Redis 为准（若 key 仍在）。
+
+	// 尽量返回当前 Redis 值，便于接口继续响应。
+	if stats, ok := s.cache.Load(ctx, videoID); ok && stats != nil {
+		return stats, lastErr
+	}
+
+	return nil, lastErr
+}

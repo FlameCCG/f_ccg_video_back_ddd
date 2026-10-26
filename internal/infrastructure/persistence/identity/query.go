@@ -2,13 +2,13 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"strings"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )
@@ -70,57 +70,7 @@ func (q *AdminUserQuery) List(
 		countQuery = countQuery.Distinct("users.id")
 	}
 
-	if err := countQuery.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	if total == 0 {
-		return []app.AdminUserListItem{}, 0, nil
-	}
-
-	var users []po.User
-	if err := query.
-		Preload("Roles").
-		Order("created_at DESC, id DESC").
-		Offset((params.Page - 1) * params.PageSize).
-		Limit(params.PageSize).
-		Find(&users).Error; err != nil {
-		return nil, 0, err
-	}
-
-	items := make([]app.AdminUserListItem, 0, len(users))
-
-	for _, u := range users {
-		item := app.AdminUserListItem{
-			ID:             u.ID,
-			Username:       u.Username,
-			Email:          u.Email,
-			Avatar:         u.Avatar,
-			Status:         u.Status,
-			Level:          u.Level,
-			Exp:            u.Exp,
-			CoinCount:      u.CoinCount,
-			CurrentRoleID:  u.CurrentRoleID,
-			RegisterSource: u.RegisterSource,
-			CreatedAt:      u.CreatedAt,
-		}
-
-		if len(u.Roles) > 0 {
-			roleNames := make([]string, 0, len(u.Roles))
-
-			for _, role := range u.Roles {
-				if role != nil && role.Name != "" {
-					roleNames = append(roleNames, role.Name)
-				}
-			}
-
-			item.RoleNames = roleNames
-		}
-
-		items = append(items, item)
-	}
-
-	return items, total, nil
+	return finishAdminUserQueryList(params, query, &total, countQuery)
 }
 
 // BanRecordQuery 管理端封禁记录查询的 GORM 实现。
@@ -418,4 +368,58 @@ func normalizeRecordPaging(page, pageSize int) (int, int) {
 	}
 
 	return page, pageSize
+}
+
+func finishAdminUserQueryList(params app.AdminUserListParams, query *gorm.DB, total *int64, countQuery *gorm.DB) ([]app.AdminUserListItem, int64, error) {
+	if err := countQuery.Count(total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if (*total) == 0 {
+		return []app.AdminUserListItem{}, 0, nil
+	}
+
+	var users []po.User
+	if err := query.
+		Preload("Roles").
+		Order("created_at DESC, id DESC").
+		Offset((params.Page - 1) * params.PageSize).
+		Limit(params.PageSize).
+		Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]app.AdminUserListItem, 0, len(users))
+
+	for _, u := range users {
+		item := app.AdminUserListItem{
+			ID:             u.ID,
+			Username:       u.Username,
+			Email:          u.Email,
+			Avatar:         u.Avatar,
+			Status:         u.Status,
+			Level:          u.Level,
+			Exp:            u.Exp,
+			CoinCount:      u.CoinCount,
+			CurrentRoleID:  u.CurrentRoleID,
+			RegisterSource: u.RegisterSource,
+			CreatedAt:      u.CreatedAt,
+		}
+
+		if len(u.Roles) > 0 {
+			roleNames := make([]string, 0, len(u.Roles))
+
+			for _, role := range u.Roles {
+				if role != nil && role.Name != "" {
+					roleNames = append(roleNames, role.Name)
+				}
+			}
+
+			item.RoleNames = roleNames
+		}
+
+		items = append(items, item)
+	}
+
+	return items, (*total), nil
 }

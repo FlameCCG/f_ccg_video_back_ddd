@@ -24,12 +24,12 @@ func registerChatRoutes(g *gin.RouterGroup, mw *middlewares.Middlewares, h *chat
 		authGroup.GET("/conversations",
 			middlewares.BindQueryParams[chathandler.ConversationListReq], h.ConversationListView)
 		authGroup.POST("/conversations",
-			middlewares.JsonBindParams[chathandler.CreateConversationReq], h.CreateConversationView)
+			middlewares.JSONBindParams[chathandler.CreateConversationReq], h.CreateConversationView)
 		authGroup.DELETE("/conversations",
-			middlewares.JsonBindParams[chathandler.DeleteConversationReq], h.DeleteConversationView)
+			middlewares.JSONBindParams[chathandler.DeleteConversationReq], h.DeleteConversationView)
 		authGroup.GET("/messages",
 			middlewares.BindQueryParams[chathandler.MessageListReq], h.MessageListView)
 		authGroup.PUT("/read",
-			middlewares.JsonBindParams[chathandler.MarkReadReq], h.MarkReadView)
+			middlewares.JSONBindParams[chathandler.MarkReadReq], h.MarkReadView)
 	}
 }

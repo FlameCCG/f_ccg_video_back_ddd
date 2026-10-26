@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
+//nolint:gosec // These constants are public OAuth endpoint URLs, not credentials.
 const (
 	githubAuthorizeTokenURL = "https://github.com/login/oauth/access_token"
 	githubUserInfoURL       = "https://api.github.com/user"
@@ -104,7 +106,7 @@ func (c *GitHubClient) GetUserInfo(ctx context.Context, code, codeVerifier strin
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("github userinfo request failed, status=%d body=%s", resp.StatusCode, string(body))
+		return nil, apperr.Private("oauth.provider", fmt.Errorf("github userinfo request failed, status=%d body=%s", resp.StatusCode, string(body)))
 	}
 
 	var userInfo UserGitHubInfo
@@ -165,7 +167,7 @@ func (c *GitHubClient) accessToken(ctx context.Context, code, codeVerifier strin
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("github token request failed, status=%d body=%s", resp.StatusCode, string(body))
+		return nil, apperr.Private("oauth.provider", fmt.Errorf("github token request failed, status=%d body=%s", resp.StatusCode, string(body)))
 	}
 
 	var accessToken GitHubAccessToken
@@ -200,7 +202,7 @@ func (c *GitHubClient) primaryEmail(ctx context.Context, accessToken string) (st
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("github emails request failed, status=%d body=%s", resp.StatusCode, string(body))
+		return "", apperr.Private("oauth.provider", fmt.Errorf("github emails request failed, status=%d body=%s", resp.StatusCode, string(body)))
 	}
 
 	var emails []UserEmail

@@ -18,7 +18,7 @@ func (h *AdminHandler) AdminSetUserBannerView(c *gin.Context) {
 	req := middlewares.GetBound[AdminSetUserBannerReq](c)
 
 	if err := h.banners.AdminSetDefault(c.Request.Context(), req.BannerID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

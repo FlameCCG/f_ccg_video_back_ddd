@@ -2,11 +2,10 @@ package ipregion
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 	"fmt"
 	"strings"
 	"sync"
-
-	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 
 	"github.com/lionsoul2014/ip2region/binding/golang/xdb"
 	"go.uber.org/zap"
@@ -44,15 +43,14 @@ func (r *Resolver) Region(ip string) string {
 	r.mu.Lock()
 	region, err := r.searcher.SearchByStr(ip)
 	r.mu.Unlock()
-	if err != nil {
-		r.logger.Warn("ipUtils.GetIpAddr failed", zap.Error(err))
 
+	if err != nil {
 		return "异常地址"
 	}
 
 	addrList := strings.Split(region, "|")
 	if len(addrList) != regionFieldCount {
-		r.logger.Warn("ipUtils.GetIpAddr failed", zap.Error(errors.New("addrList len != 5")))
+		r.logger.Warn("ipUtils.GetIpAddr failed", zap.String("event", "ipregion.resolver.region.degraded"), zap.String("operation", "ipregion.resolver.region"), zap.Error(errors.New("addrList len != 5")))
 
 		return "未知地址"
 	}

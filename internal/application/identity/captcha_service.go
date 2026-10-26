@@ -2,7 +2,6 @@ package identity
 
 import (
 	"context"
-
 	"f_ccg_video_back_ddd/internal/application/shared"
 	"f_ccg_video_back_ddd/internal/config/site"
 )
@@ -54,9 +53,9 @@ type SlideCaptchaPort interface {
 // base64Captcha.NewCaptcha 使用；实现由 infrastructure/captcha 提供，
 // 取代原 global.CaptchaStore 包级单例。
 type GraphicCaptchaStore interface {
-	Set(id string, value string) error
-	Get(id string, clear bool) string
-	Verify(id, answer string, clear bool) bool
+	Set(id, value string) error
+	Get(id string, remove bool) string
+	Verify(id, answer string, remove bool) bool
 }
 
 // CaptchaService 验证码用例服务（原 service/captcha_service 的对外入口）。
@@ -123,6 +122,7 @@ func (s *CaptchaService) InteractiveCaptchaOptions(scene string) site.CaptchaOpt
 	if cfg == nil {
 		return site.CaptchaOptions{}
 	}
+
 	return cfg.Site.InteractiveCaptchaOptions(scene)
 }
 

@@ -100,7 +100,6 @@ func ValidateCompleteUpload(fileName string, totalChunks int) error {
 //
 // validateIndex 由调用方注入（分片索引格式校验属存储端口能力）。
 func ValidateChunkSet(chunks []string, totalChunks int, validateIndex func(string) error) error {
-
 	seen := make(map[string]struct{}, len(chunks))
 
 	for _, chunk := range chunks {
@@ -190,10 +189,7 @@ func ExtractSourceUploadHash(storedPath string, validateHash func(string) error)
 		}
 
 		next := parts[i+1]
-		if next == "" || next == "dash" || strings.HasPrefix(next, "_source_") ||
-			strings.Contains(next, part) ||
-			strings.HasSuffix(strings.ToLower(next), ".mp4") ||
-			strings.HasSuffix(strings.ToLower(next), ".mpd") {
+		if extractSourceUploadHashCondition(part, next) {
 			return part
 		}
 	}
@@ -215,4 +211,11 @@ func IsContentFileHash(s string) bool {
 	}
 
 	return true
+}
+
+func extractSourceUploadHashCondition(part, next string) bool {
+	return next == "" || next == "dash" || strings.HasPrefix(next, "_source_") ||
+		strings.Contains(next, part) ||
+		strings.HasSuffix(strings.ToLower(next), ".mp4") ||
+		strings.HasSuffix(strings.ToLower(next), ".mpd")
 }

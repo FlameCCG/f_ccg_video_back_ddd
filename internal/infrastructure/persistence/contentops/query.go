@@ -2,12 +2,12 @@ package contentops
 
 import (
 	"context"
-	"time"
-
-	app "f_ccg_video_back_ddd/internal/application/contentops"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"time"
+
+	app "f_ccg_video_back_ddd/internal/application/contentops"
 
 	"gorm.io/gorm"
 )
@@ -59,6 +59,7 @@ func NewAdminStatsQuery(db *gorm.DB) *AdminStatsQuery {
 // CountUsers 统计用户总数。
 func (q *AdminStatsQuery) CountUsers(ctx context.Context) (int64, error) {
 	var total int64
+
 	err := gormx.DB(ctx, q.db).Model(&po.User{}).Count(&total).Error
 
 	return total, err
@@ -67,6 +68,7 @@ func (q *AdminStatsQuery) CountUsers(ctx context.Context) (int64, error) {
 // CountPublishedVideos 统计已发布视频总数。
 func (q *AdminStatsQuery) CountPublishedVideos(ctx context.Context) (int64, error) {
 	var total int64
+
 	err := gormx.DB(ctx, q.db).
 		Model(&po.Video{}).
 		Where("status = ?", enum.VideoStatusPublished).
@@ -78,6 +80,7 @@ func (q *AdminStatsQuery) CountPublishedVideos(ctx context.Context) (int64, erro
 // CountComments 统计评论总数。
 func (q *AdminStatsQuery) CountComments(ctx context.Context) (int64, error) {
 	var total int64
+
 	err := gormx.DB(ctx, q.db).Model(&po.Comment{}).Count(&total).Error
 
 	return total, err
@@ -89,6 +92,7 @@ func (q *AdminStatsQuery) CountUsersCreatedBetween(
 	start, end time.Time,
 ) (int64, error) {
 	var total int64
+
 	err := gormx.DB(ctx, q.db).
 		Model(&po.User{}).
 		Where("created_at >= ? AND created_at < ?", start, end).
@@ -103,6 +107,7 @@ func (q *AdminStatsQuery) CountDistinctLoginUsersBetween(
 	start, end time.Time,
 ) (int64, error) {
 	var total int64
+
 	err := gormx.DB(ctx, q.db).
 		Model(&po.UserLoginRecord{}).
 		Distinct("user_id").
@@ -118,6 +123,7 @@ func (q *AdminStatsQuery) CountPublishedVideosCreatedBetween(
 	start, end time.Time,
 ) (int64, error) {
 	var total int64
+
 	err := gormx.DB(ctx, q.db).
 		Model(&po.Video{}).
 		Where("status = ? AND created_at >= ? AND created_at < ?", enum.VideoStatusPublished, start, end).

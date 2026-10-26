@@ -2,10 +2,10 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"

@@ -2,18 +2,26 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
 
-type UploadGarbageKind string
-type UploadGarbageLocation string
+type (
+	// UploadGarbageKind identifies the kind of temporary upload artifact.
+	UploadGarbageKind string
+	// UploadGarbageLocation identifies the storage backend containing an upload artifact.
+	UploadGarbageLocation string
+)
 
+// Upload garbage kinds and locations distinguish independently expiring artifacts.
 const (
+	// UploadGarbageChunks identifies an abandoned chunk directory.
 	UploadGarbageChunks UploadGarbageKind     = "chunks"
 	UploadGarbageSource UploadGarbageKind     = "source"
 	UploadGarbageLocal  UploadGarbageLocation = "local"
@@ -48,6 +56,7 @@ type UploadCleanupService struct {
 	logger  *zap.Logger
 }
 
+// NewUploadCleanupService constructs cleanup with a scanner and a storage reference guard.
 func NewUploadCleanupService(scanner UploadGarbageScanner, videos domain.Repository, guard UploadHashGuard, cfg shared.ConfigReader, logger *zap.Logger) *UploadCleanupService {
 	return &UploadCleanupService{scanner: scanner, videos: videos, guard: guard, cfg: cfg, logger: logger}
 }
@@ -55,60 +64,95 @@ func NewUploadCleanupService(scanner UploadGarbageScanner, videos domain.Reposit
 // Run 用配置保留期扫描候选，并以非等待锁跳过正在上传或投稿的哈希。
 // 源文件删除前检查现有视频资源引用；扫描和单项错误记日志，不阻止本轮处理其他候选。
 func (s *UploadCleanupService) Run(ctx context.Context) {
-	if s == nil || s.scanner == nil || s.guard == nil {
+	if uploadCleanupServiceRunCondition(s) {
 		return
 	}
-	chunkHours, sourceHours := 2, 1
-	if s.cfg != nil {
-		if cfg := s.cfg.Get(); cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil {
-			if n := cfg.Site.Storage.UnmergedChunkRetentionHours; n > 0 {
-				chunkHours = n
-			}
-			if n := cfg.Site.Storage.UnpublishedSourceRetentionHours; n > 0 {
-				sourceHours = n
-			}
-		}
-	}
-	now := time.Now()
-	chunkBefore := now.Add(-time.Duration(chunkHours) * time.Hour)
-	sourceBefore := now.Add(-time.Duration(sourceHours) * time.Hour)
-	items, scanErr := s.scanner.List(ctx, chunkBefore, sourceBefore)
-	if scanErr != nil {
-		s.log().Warn("scan expired uploads failed", zap.Error(scanErr))
-	}
-	for _, item := range items {
-		if ctx.Err() != nil {
-			return
-		}
-		before := chunkBefore
-		if item.Kind == UploadGarbageSource {
-			before = sourceBefore
-		}
-		_, err := s.guard.TryRun(ctx, item.FileHash, func(guardCtx context.Context) error {
-			if item.Kind == UploadGarbageSource {
-				referenced, queryErr := s.videos.StoragePathStillReferenced(guardCtx, item.SourcePath)
-				if queryErr != nil {
-					return queryErr
-				}
-				if referenced {
-					return nil
-				}
-			}
-			deleted, deleteErr := s.scanner.DeleteIfExpired(guardCtx, item, before)
-			if deleted {
-				s.log().Info("expired upload removed", zap.String("hash", item.FileHash), zap.String("key", item.Key))
-			}
-			return deleteErr
-		})
-		if err != nil {
-			s.log().Warn("skip expired upload deletion", zap.String("hash", item.FileHash), zap.Error(err))
-		}
-	}
+
+	chunkHours, sourceHours := s.retentionHours()
+
+	finishUploadCleanupServiceRun(ctx, s, chunkHours, sourceHours)
 }
 
 func (s *UploadCleanupService) log() *zap.Logger {
 	if s.logger != nil {
 		return s.logger
 	}
+
 	return zap.NewNop()
+}
+
+func uploadCleanupServiceRunCondition(s *UploadCleanupService) bool {
+	return s == nil || s.scanner == nil || s.guard == nil
+}
+
+func uploadCleanupServiceRunCondition2(cfg *config.Config) bool {
+	return cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil
+}
+
+func finishUploadCleanupServiceRun(ctx context.Context, s *UploadCleanupService, chunkHours, sourceHours int) {
+	now := time.Now()
+	chunkBefore := now.Add(-time.Duration(chunkHours) * time.Hour)
+	sourceBefore := now.Add(-time.Duration(sourceHours) * time.Hour)
+
+	items, scanErr := s.scanner.List(ctx, chunkBefore, sourceBefore)
+	if scanErr != nil {
+		logctx.With(ctx, s.log()).Warn("scan expired uploads failed", zap.String("event", "video.upload_cleanup.run.degraded"), zap.String("operation", "video.upload_cleanup.run"), zap.Error(scanErr))
+	}
+
+	for _, item := range items {
+		if ctx.Err() != nil {
+			return
+		}
+
+		before := chunkBefore
+		if item.Kind == UploadGarbageSource {
+			before = sourceBefore
+		}
+
+		_, err := s.guard.TryRun(ctx, item.FileHash, func(guardCtx context.Context) error {
+			if item.Kind == UploadGarbageSource {
+				referenced, queryErr := s.videos.StoragePathStillReferenced(guardCtx, item.SourcePath)
+				if queryErr != nil {
+					return queryErr
+				}
+
+				if referenced {
+					return nil
+				}
+			}
+
+			deleted, deleteErr := s.scanner.DeleteIfExpired(guardCtx, item, before)
+			if deleted {
+				logctx.With(guardCtx, s.log()).Info("expired upload removed", zap.String("event", "video.upload_cleanup.run.diagnostic"), zap.String("operation", "video.upload_cleanup.run"), zap.String("hash", item.FileHash), zap.String("key", item.Key))
+			}
+
+			return deleteErr
+		})
+		if err != nil {
+			logctx.With(ctx, s.log()).Warn("skip expired upload deletion", zap.String("event", "video.upload_cleanup.run.degraded"), zap.String("operation", "video.upload_cleanup.run"), zap.String("hash", item.FileHash), zap.Error(err))
+		}
+	}
+}
+
+func (s *UploadCleanupService) retentionHours() (chunkHours, sourceHours int) {
+	chunkHours, sourceHours = 2, 1
+
+	if s.cfg == nil {
+		return chunkHours, sourceHours
+	}
+
+	cfg := s.cfg.Get()
+	if !uploadCleanupServiceRunCondition2(cfg) {
+		return chunkHours, sourceHours
+	}
+
+	if n := cfg.Site.Storage.UnmergedChunkRetentionHours; n > 0 {
+		chunkHours = n
+	}
+
+	if n := cfg.Site.Storage.UnpublishedSourceRetentionHours; n > 0 {
+		sourceHours = n
+	}
+
+	return chunkHours, sourceHours
 }

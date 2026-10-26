@@ -3,12 +3,14 @@ package search
 import (
 	"context"
 	"errors"
-	"reflect"
-	"testing"
-
 	"f_ccg_video_back_ddd/internal/config"
 	"f_ccg_video_back_ddd/internal/config/site"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"reflect"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"go.uber.org/zap"
@@ -36,28 +38,20 @@ func TestVectorConfigAppliesDefaults(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		&fakeVectorIndex{available: true},
-		&fakeVectorSource{available: true}, zap.NewNop())
+		&fakeVectorSource{available: true}, zap.NewNop(),
+	)
 
 	cfg, err := svc.vectorConfig()
-	if err != nil {
-		t.Fatalf("vectorConfig: %v", err)
-	}
+	require.NoError(t, err, "vectorConfig: %v", err)
 
-	if cfg.Index != defaultVideoVectorIndex {
-		t.Fatalf("index = %q, want %q", cfg.Index, defaultVideoVectorIndex)
-	}
+	require.Equal(t, defaultVideoVectorIndex, cfg.Index, "index = %q, want %q", cfg.Index, defaultVideoVectorIndex)
 
-	if cfg.TopK != defaultVideoVectorTopK {
-		t.Fatalf("topK = %d, want %d", cfg.TopK, defaultVideoVectorTopK)
-	}
+	require.Equal(t, defaultVideoVectorTopK, cfg.TopK, "topK = %d, want %d", cfg.TopK, defaultVideoVectorTopK)
 
-	if cfg.EmbeddingDimensions != defaultVideoEmbeddingDims {
-		t.Fatalf("dims = %d, want %d", cfg.EmbeddingDimensions, defaultVideoEmbeddingDims)
-	}
+	require.Equal(t, defaultVideoEmbeddingDims, cfg.EmbeddingDimensions, "dims = %d, want %d", cfg.EmbeddingDimensions, defaultVideoEmbeddingDims)
 
-	if cfg.ImageMode != embeddingImageModeAuto || cfg.RRFRankConstant != defaultVectorRRFRankConstant {
-		t.Fatalf("defaults = image:%q rrf:%d", cfg.ImageMode, cfg.RRFRankConstant)
-	}
+	require.Equal(t, embeddingImageModeAuto, cfg.ImageMode, "defaults = image:%q rrf:%d", cfg.ImageMode, cfg.RRFRankConstant)
+	require.Equal(t, defaultVectorRRFRankConstant, cfg.RRFRankConstant, "defaults = image:%q rrf:%d", cfg.ImageMode, cfg.RRFRankConstant)
 }
 
 // TestVectorConfigKeepsConfiguredValues 显式配置优先于默认值。
@@ -84,9 +78,7 @@ func TestVectorConfigKeepsConfiguredValues(t *testing.T) {
 	svc := NewVideoVectorService(provider, &fakeVectorIndex{}, &fakeVectorSource{}, zap.NewNop())
 
 	cfg, err := svc.vectorConfig()
-	if err != nil {
-		t.Fatalf("vectorConfig: %v", err)
-	}
+	require.NoError(t, err, "vectorConfig: %v", err)
 
 	want := VectorConfig{
 		Index:               "custom_vector",
@@ -101,9 +93,7 @@ func TestVectorConfigKeepsConfiguredValues(t *testing.T) {
 		RRFRankConstant:     42,
 		MinSimilarity:       0.35,
 	}
-	if cfg != want {
-		t.Fatalf("cfg = %+v, want %+v", cfg, want)
-	}
+	require.Equal(t, want, cfg, "cfg = %+v, want %+v", cfg, want)
 }
 
 func TestVectorConfigRejectsMissingSettings(t *testing.T) {
@@ -133,8 +123,9 @@ func TestVectorConfigRejectsMissingSettings(t *testing.T) {
 			t.Parallel()
 
 			svc := NewVideoVectorService(infraconfig.NewProvider(tt.cfg), &fakeVectorIndex{}, &fakeVectorSource{}, zap.NewNop())
-			if _, err := svc.vectorConfig(); !errors.Is(err, tt.wantErr) {
-				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			{
+				_, err := svc.vectorConfig()
+				require.ErrorIs(t, err, tt.wantErr, "err = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -148,17 +139,11 @@ func TestSearchVideoVectorIDsSkipsBlankQuery(t *testing.T) {
 	svc := NewVideoVectorService(newVectorConfigProvider(validVectorAIConfig()), index, &fakeVectorSource{}, zap.NewNop())
 
 	ids, err := svc.SearchVideoVectorIDs(context.Background(), "   ", 5)
-	if err != nil {
-		t.Fatalf("SearchVideoVectorIDs: %v", err)
-	}
+	require.NoError(t, err, "SearchVideoVectorIDs: %v", err)
 
-	if ids != nil {
-		t.Fatalf("ids = %v, want nil", ids)
-	}
+	require.Nil(t, ids, "ids = %v, want nil", ids)
 
-	if len(index.searchCalls) != 0 {
-		t.Fatalf("blank query must not reach the index: %v", index.searchCalls)
-	}
+	require.Empty(t, index.searchCalls, "blank query must not reach the index: %v", index.searchCalls)
 }
 
 func TestSearchVideoVectorIDsRequiresES8(t *testing.T) {
@@ -167,10 +152,12 @@ func TestSearchVideoVectorIDsRequiresES8(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		&fakeVectorIndex{available: false},
-		&fakeVectorSource{available: true}, zap.NewNop())
+		&fakeVectorSource{available: true}, zap.NewNop(),
+	)
 
-	if _, err := svc.SearchVideoVectorIDs(context.Background(), "教程", 5); !errors.Is(err, ErrES8Unavailable) {
-		t.Fatalf("err = %v, want ErrES8Unavailable", err)
+	{
+		_, err := svc.SearchVideoVectorIDs(context.Background(), "教程", 5)
+		require.ErrorIs(t, err, ErrES8Unavailable, "err = %v, want ErrES8Unavailable", err)
 	}
 }
 
@@ -185,31 +172,22 @@ func TestSearchVideoVectorIDsClampsLimitToTopK(t *testing.T) {
 	svc := NewVideoVectorService(newVectorConfigProvider(ai), index, &fakeVectorSource{available: true}, zap.NewNop())
 
 	ids, err := svc.SearchVideoVectorIDs(context.Background(), "  教程  ", 50)
-	if err != nil {
-		t.Fatalf("SearchVideoVectorIDs: %v", err)
-	}
+	require.NoError(t, err, "SearchVideoVectorIDs: %v", err)
 
-	if !reflect.DeepEqual(ids, []uint{1, 2}) {
-		t.Fatalf("ids = %v", ids)
-	}
+	require.True(t, reflect.DeepEqual(ids, []uint{1, 2}), "ids = %v", ids)
 
-	if index.searchLimit != 3 {
-		t.Fatalf("limit = %d, want 3 (clamped to TopK)", index.searchLimit)
-	}
+	require.Equal(t, 3, index.searchLimit, "limit = %d, want 3 (clamped to TopK)", index.searchLimit)
 
 	// query 传给索引前已 TrimSpace。
-	if !reflect.DeepEqual(index.searchCalls, []EmbedInput{{Text: "教程"}}) {
-		t.Fatalf("queries = %v", index.searchCalls)
-	}
+	require.True(t, reflect.DeepEqual(index.searchCalls, []EmbedInput{{Text: "教程"}}), "queries = %v", index.searchCalls)
 
 	// limit<=0 时直接使用配置 TopK。
-	if _, err := svc.SearchVideoVectorIDs(context.Background(), "教程", 0); err != nil {
-		t.Fatalf("SearchVideoVectorIDs: %v", err)
+	{
+		_, err := svc.SearchVideoVectorIDs(context.Background(), "教程", 0)
+		require.NoError(t, err, "SearchVideoVectorIDs: %v", err)
 	}
 
-	if index.searchLimit != 3 {
-		t.Fatalf("default limit = %d, want 3", index.searchLimit)
-	}
+	require.Equal(t, 3, index.searchLimit, "default limit = %d, want 3", index.searchLimit)
 }
 
 func TestSearchVideoVectorIDsUsesConfiguredTopKAboveDefault(t *testing.T) {
@@ -225,27 +203,29 @@ func TestSearchVideoVectorIDsUsesConfiguredTopKAboveDefault(t *testing.T) {
 		zap.NewNop(),
 	)
 
-	if _, err := svc.SearchVideoVectorIDs(context.Background(), "教程", 0); err != nil {
-		t.Fatalf("SearchVideoVectorIDs: %v", err)
+	{
+		_, err := svc.SearchVideoVectorIDs(context.Background(), "教程", 0)
+		require.NoError(t, err, "SearchVideoVectorIDs: %v", err)
 	}
-	if index.searchLimit != 12 {
-		t.Fatalf("limit = %d, want configured TopK 12", index.searchLimit)
-	}
+
+	require.Equal(t, 12, index.searchLimit, "limit = %d, want configured TopK 12", index.searchLimit)
 }
 
 func TestNormalizeEmbeddingImageMode(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]string{
-		"":        embeddingImageModeAuto,
-		"AUTO":    embeddingImageModeAuto,
+		"":     embeddingImageModeAuto,
+		"AUTO": embeddingImageModeAuto,
+		//nolint:gocritic // Whitespace deliberately tests input normalization.
 		" on ":    embeddingImageModeOn,
 		"off":     embeddingImageModeOff,
 		"unknown": embeddingImageModeAuto,
 	}
 	for input, want := range tests {
-		if got := normalizeEmbeddingImageMode(input); got != want {
-			t.Fatalf("normalizeEmbeddingImageMode(%q) = %q, want %q", input, got, want)
+		{
+			got := normalizeEmbeddingImageMode(input)
+			require.Equal(t, want, got, "normalizeEmbeddingImageMode(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
@@ -257,23 +237,19 @@ func TestSearchVideoVectorIDsMultiModalForwardsImage(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		index,
-		&fakeVectorSource{available: true}, zap.NewNop())
+		&fakeVectorSource{available: true}, zap.NewNop(),
+	)
 
 	ids, err := svc.SearchVideoVectorIDsMultiModal(context.Background(), EmbedInput{
 		Text:     "  红色跑车 ",
 		ImageURL: " https://cdn.example.com/query.jpg ",
 	}, 2)
-	if err != nil {
-		t.Fatalf("SearchVideoVectorIDsMultiModal: %v", err)
-	}
-	if !reflect.DeepEqual(ids, []uint{7}) {
-		t.Fatalf("ids = %v", ids)
-	}
+	require.NoError(t, err, "SearchVideoVectorIDsMultiModal: %v", err)
+
+	require.True(t, reflect.DeepEqual(ids, []uint{7}), "ids = %v", ids)
 
 	want := []EmbedInput{{Text: "红色跑车", ImageURL: "https://cdn.example.com/query.jpg"}}
-	if !reflect.DeepEqual(index.searchCalls, want) {
-		t.Fatalf("inputs = %+v, want %+v", index.searchCalls, want)
-	}
+	require.True(t, reflect.DeepEqual(index.searchCalls, want), "inputs = %+v, want %+v", index.searchCalls, want)
 }
 
 // TestIndexVideoVectorSkipsWhenDependenciesMissing videoID 为 0、DB 或 ES8 缺失时
@@ -297,13 +273,13 @@ func TestIndexVideoVectorSkipsWhenDependenciesMissing(t *testing.T) {
 			t.Parallel()
 
 			svc := NewVideoVectorService(newVectorConfigProvider(validVectorAIConfig()), tt.index, tt.source, zap.NewNop())
-			if err := svc.IndexVideoVector(context.Background(), tt.videoID); err != nil {
-				t.Fatalf("IndexVideoVector: %v", err)
+			{
+				err := svc.IndexVideoVector(context.Background(), tt.videoID)
+				require.NoError(t, err, "IndexVideoVector: %v", err)
 			}
 
-			if len(tt.index.stored) != 0 || len(tt.index.deleted) != 0 {
-				t.Fatalf("index touched: stored=%v deleted=%v", tt.index.stored, tt.index.deleted)
-			}
+			require.Empty(t, tt.index.stored, "index touched: stored=%v deleted=%v", tt.index.stored, tt.index.deleted)
+			require.Empty(t, tt.index.deleted, "index touched: stored=%v deleted=%v", tt.index.stored, tt.index.deleted)
 		})
 	}
 }
@@ -317,19 +293,17 @@ func TestIndexVideoVectorStoresPublishedVideo(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		index,
-		&fakeVectorSource{available: true, source: source}, zap.NewNop())
+		&fakeVectorSource{available: true, source: source}, zap.NewNop(),
+	)
 
-	if err := svc.IndexVideoVector(context.Background(), 9); err != nil {
-		t.Fatalf("IndexVideoVector: %v", err)
+	{
+		err := svc.IndexVideoVector(context.Background(), 9)
+		require.NoError(t, err, "IndexVideoVector: %v", err)
 	}
 
-	if !reflect.DeepEqual(index.stored, []VideoVectorSource{source}) {
-		t.Fatalf("stored = %+v", index.stored)
-	}
+	require.True(t, reflect.DeepEqual(index.stored, []VideoVectorSource{source}), "stored = %+v", index.stored)
 
-	if len(index.deleted) != 0 {
-		t.Fatalf("published video must not be deleted: %v", index.deleted)
-	}
+	require.Empty(t, index.deleted, "published video must not be deleted: %v", index.deleted)
 }
 
 // TestIndexVideoVectorDeletesWhenNotPublished 非「已发布」状态改为删除文档
@@ -341,19 +315,17 @@ func TestIndexVideoVectorDeletesWhenNotPublished(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		index,
-		&fakeVectorSource{available: true, source: VideoVectorSource{ID: 9, Status: enum.VideoStatusPrivate}}, zap.NewNop())
+		&fakeVectorSource{available: true, source: VideoVectorSource{ID: 9, Status: enum.VideoStatusPrivate}}, zap.NewNop(),
+	)
 
-	if err := svc.IndexVideoVector(context.Background(), 9); err != nil {
-		t.Fatalf("IndexVideoVector: %v", err)
+	{
+		err := svc.IndexVideoVector(context.Background(), 9)
+		require.NoError(t, err, "IndexVideoVector: %v", err)
 	}
 
-	if !reflect.DeepEqual(index.deleted, []uint{9}) {
-		t.Fatalf("deleted = %v, want [9]", index.deleted)
-	}
+	require.True(t, reflect.DeepEqual(index.deleted, []uint{9}), "deleted = %v, want [9]", index.deleted)
 
-	if len(index.stored) != 0 {
-		t.Fatalf("unpublished video must not be stored: %+v", index.stored)
-	}
+	require.Empty(t, index.stored, "unpublished video must not be stored: %+v", index.stored)
 }
 
 // TestIndexVideoVectorDeletesWhenSourceMissing 源视频已被物理删除时删除向量文档。
@@ -364,15 +336,15 @@ func TestIndexVideoVectorDeletesWhenSourceMissing(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		index,
-		&fakeVectorSource{available: true, err: ErrVectorSourceNotFound}, zap.NewNop())
+		&fakeVectorSource{available: true, err: ErrVectorSourceNotFound}, zap.NewNop(),
+	)
 
-	if err := svc.IndexVideoVector(context.Background(), 9); err != nil {
-		t.Fatalf("IndexVideoVector: %v", err)
+	{
+		err := svc.IndexVideoVector(context.Background(), 9)
+		require.NoError(t, err, "IndexVideoVector: %v", err)
 	}
 
-	if !reflect.DeepEqual(index.deleted, []uint{9}) {
-		t.Fatalf("deleted = %v, want [9]", index.deleted)
-	}
+	require.True(t, reflect.DeepEqual(index.deleted, []uint{9}), "deleted = %v, want [9]", index.deleted)
 }
 
 func TestIndexVideoVectorPropagatesSourceError(t *testing.T) {
@@ -382,10 +354,12 @@ func TestIndexVideoVectorPropagatesSourceError(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		&fakeVectorIndex{available: true},
-		&fakeVectorSource{available: true, err: wantErr}, zap.NewNop())
+		&fakeVectorSource{available: true, err: wantErr}, zap.NewNop(),
+	)
 
-	if err := svc.IndexVideoVector(context.Background(), 9); !errors.Is(err, wantErr) {
-		t.Fatalf("err = %v, want %v", err, wantErr)
+	{
+		err := svc.IndexVideoVector(context.Background(), 9)
+		require.ErrorIs(t, err, wantErr, "err = %v, want %v", err, wantErr)
 	}
 }
 
@@ -397,15 +371,16 @@ func TestIndexVideoVectorPropagatesConfigError(t *testing.T) {
 	svc := NewVideoVectorService(
 		infraconfig.NewProvider(&config.Config{}),
 		index,
-		&fakeVectorSource{available: true}, zap.NewNop())
+		&fakeVectorSource{available: true}, zap.NewNop(),
+	)
 
-	if err := svc.IndexVideoVector(context.Background(), 9); !errors.Is(err, ErrAIConfigMissing) {
-		t.Fatalf("err = %v, want ErrAIConfigMissing", err)
+	{
+		err := svc.IndexVideoVector(context.Background(), 9)
+		require.ErrorIs(t, err, ErrAIConfigMissing, "err = %v, want ErrAIConfigMissing", err)
 	}
 
-	if len(index.stored) != 0 || len(index.deleted) != 0 {
-		t.Fatalf("index touched: stored=%v deleted=%v", index.stored, index.deleted)
-	}
+	require.Empty(t, index.stored, "index touched: stored=%v deleted=%v", index.stored, index.deleted)
+	require.Empty(t, index.deleted, "index touched: stored=%v deleted=%v", index.stored, index.deleted)
 }
 
 // TestDeleteVideoVectorSkipsWhenUnavailable videoID 为 0 或 ES8 缺失时静默跳过。
@@ -415,20 +390,21 @@ func TestDeleteVideoVectorSkipsWhenUnavailable(t *testing.T) {
 	index := &fakeVectorIndex{available: true}
 	svc := NewVideoVectorService(newVectorConfigProvider(validVectorAIConfig()), index, &fakeVectorSource{}, zap.NewNop())
 
-	if err := svc.DeleteVideoVector(context.Background(), 0); err != nil {
-		t.Fatalf("DeleteVideoVector: %v", err)
+	{
+		err := svc.DeleteVideoVector(context.Background(), 0)
+		require.NoError(t, err, "DeleteVideoVector: %v", err)
 	}
 
 	offline := &fakeVectorIndex{available: false}
 	svc = NewVideoVectorService(newVectorConfigProvider(validVectorAIConfig()), offline, &fakeVectorSource{}, zap.NewNop())
 
-	if err := svc.DeleteVideoVector(context.Background(), 9); err != nil {
-		t.Fatalf("DeleteVideoVector: %v", err)
+	{
+		err := svc.DeleteVideoVector(context.Background(), 9)
+		require.NoError(t, err, "DeleteVideoVector: %v", err)
 	}
 
-	if len(index.deleted) != 0 || len(offline.deleted) != 0 {
-		t.Fatalf("delete must be skipped: %v %v", index.deleted, offline.deleted)
-	}
+	require.Empty(t, index.deleted, "delete must be skipped: %v %v", index.deleted, offline.deleted)
+	require.Empty(t, offline.deleted, "delete must be skipped: %v %v", index.deleted, offline.deleted)
 }
 
 func TestDeleteVideoVectorForwardsToIndex(t *testing.T) {
@@ -437,13 +413,12 @@ func TestDeleteVideoVectorForwardsToIndex(t *testing.T) {
 	index := &fakeVectorIndex{available: true}
 	svc := NewVideoVectorService(newVectorConfigProvider(validVectorAIConfig()), index, &fakeVectorSource{}, zap.NewNop())
 
-	if err := svc.DeleteVideoVector(context.Background(), 9); err != nil {
-		t.Fatalf("DeleteVideoVector: %v", err)
+	{
+		err := svc.DeleteVideoVector(context.Background(), 9)
+		require.NoError(t, err, "DeleteVideoVector: %v", err)
 	}
 
-	if !reflect.DeepEqual(index.deleted, []uint{9}) {
-		t.Fatalf("deleted = %v, want [9]", index.deleted)
-	}
+	require.True(t, reflect.DeepEqual(index.deleted, []uint{9}), "deleted = %v, want [9]", index.deleted)
 }
 
 // TestBestEffortVariantsSwallowErrors BestEffort 版本只记日志，不向调用方传播错误
@@ -454,7 +429,8 @@ func TestBestEffortVariantsSwallowErrors(t *testing.T) {
 	svc := NewVideoVectorService(
 		newVectorConfigProvider(validVectorAIConfig()),
 		&fakeVectorIndex{available: true, storeErr: errors.New("store failed"), deleteErr: errors.New("delete failed")},
-		&fakeVectorSource{available: true, source: VideoVectorSource{ID: 9, Status: enum.VideoStatusPublished}}, zap.NewNop())
+		&fakeVectorSource{available: true, source: VideoVectorSource{ID: 9, Status: enum.VideoStatusPublished}}, zap.NewNop(),
+	)
 
 	svc.IndexVideoVectorBestEffort(context.Background(), 9)
 	svc.DeleteVideoVectorBestEffort(context.Background(), 9)

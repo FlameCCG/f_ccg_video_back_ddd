@@ -145,7 +145,7 @@ func NormalizeVideoResolution(value string) string {
 func NormalizeVideoRatio(value string) string {
 	value = strings.TrimSpace(value)
 	switch value {
-	case "adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9":
+	case "adaptive", test169, "4:3", "1:1", "3:4", "9:16", "21:9":
 		return value
 	default:
 		return ""

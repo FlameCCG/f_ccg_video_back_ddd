@@ -3,6 +3,8 @@ package rbac
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"sort"
 	"strings"
 
@@ -50,10 +52,12 @@ func (s *PermissionService) Assign(ctx context.Context, params AssignPermissionP
 		return err
 	}
 	defer finish(&result)
+
 	service := *s
 	service.enforcer = scoped
 	s = &service
 	s.graph = NewRoleGraph(scoped)
+
 	perms, err := domain.CollectPermissions(params.Permissions)
 	if err != nil {
 		return err
@@ -62,7 +66,7 @@ func (s *PermissionService) Assign(ctx context.Context, params AssignPermissionP
 	// 验证角色是否存在
 	role, err := s.roles.FindByName(ctx, params.RoleName)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrRoleNotFound, err)
 	}
 
 	// 列表内部冗余（如同时含 path * 与 path GET）
@@ -73,7 +77,7 @@ func (s *PermissionService) Assign(ctx context.Context, params AssignPermissionP
 	// 已有有效权限（直接 + 继承）覆盖则拒绝
 	effective, err := s.graph.EffectivePermissionItems(params.RoleName)
 	if err != nil {
-		return domain.ErrQueryPermissionFailed
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrQueryPermissionFailed, err)
 	}
 
 	if err := s.evaluator.CheckAlreadyOwned(effective, perms); err != nil {
@@ -82,12 +86,12 @@ func (s *PermissionService) Assign(ctx context.Context, params AssignPermissionP
 
 	for _, p := range perms {
 		if _, err := s.enforcer.AddPolicy(params.RoleName, p.Resource, p.Action); err != nil {
-			return domain.ErrAddFailed
+			return apperr.Wrap("application/rbac/permission_service", domain.ErrAddFailed, err)
 		}
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
-		return domain.ErrSaveFailed
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrSaveFailed, err)
 	}
 
 	return nil
@@ -100,10 +104,12 @@ func (s *PermissionService) Remove(ctx context.Context, params AssignPermissionP
 		return err
 	}
 	defer finish(&result)
+
 	service := *s
 	service.enforcer = scoped
 	s = &service
 	s.graph = NewRoleGraph(scoped)
+
 	perms, err := domain.CollectPermissions(params.Permissions)
 	if err != nil {
 		return err
@@ -112,21 +118,17 @@ func (s *PermissionService) Remove(ctx context.Context, params AssignPermissionP
 	// 验证角色是否存在
 	role, err := s.roles.FindByName(ctx, params.RoleName)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrRoleNotFound, err)
 	}
 
 	for _, p := range perms {
 		if _, err := s.enforcer.RemovePolicy(params.RoleName, p.Resource, p.Action); err != nil {
-			s.logger.Error("移除失败", zap.Error(err))
-
-			return domain.ErrRemoveFailed
+			return apperr.Wrap("application/rbac/permission_service", domain.ErrRemoveFailed, err)
 		}
 	}
 
 	if err := s.enforcer.SavePolicy(); err != nil {
-		s.logger.Error("保存失败", zap.Error(err))
-
-		return domain.ErrSaveFailed
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrSaveFailed, err)
 	}
 
 	return nil
@@ -136,30 +138,24 @@ func (s *PermissionService) Remove(ctx context.Context, params AssignPermissionP
 func (s *PermissionService) RolePermissions(ctx context.Context, roleName string) (RolePermissionsResp, error) {
 	role, err := s.roles.FindByName(ctx, roleName)
 	if err != nil || role == nil {
-		return RolePermissionsResp{}, domain.ErrRoleNotFound
+		return RolePermissionsResp{}, apperr.Wrap("application/rbac/permission_service", domain.ErrRoleNotFound, err)
 	}
 
 	directRows, err := s.enforcer.GetPermissionsForUser(roleName)
 	if err != nil {
-		s.logger.Error("获取角色直接权限失败", zap.Error(err))
-
-		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
+		return RolePermissionsResp{}, apperr.Wrap("application/rbac/permission_service", domain.ErrGetPermissionFailed, err)
 	}
 
 	effectiveRows, err := s.enforcer.GetImplicitPermissionsForUser(roleName)
 	if err != nil {
-		s.logger.Error("获取角色有效权限失败", zap.Error(err))
-
-		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
+		return RolePermissionsResp{}, apperr.Wrap("application/rbac/permission_service", domain.ErrGetPermissionFailed, err)
 	}
 
 	directItems := domain.NormalizeCasbinPolicyRows(directRows)
 
 	directParents, err := s.graph.DirectParents(roleName)
 	if err != nil {
-		s.logger.Error("获取直接父角色失败", zap.Error(err))
-
-		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
+		return RolePermissionsResp{}, apperr.Wrap("application/rbac/permission_service", domain.ErrGetPermissionFailed, err)
 	}
 
 	directParentSet := make(map[string]struct{}, len(directParents))
@@ -200,87 +196,20 @@ func (s *PermissionService) RolePermissions(ctx context.Context, roleName string
 			Owner:    owner,
 		}
 
-		// 按策略持有者判定来源，不能因为当前角色也有同 path 就把继承策略标成 direct
-		if owner == "" || owner == roleName {
-			item.Source = RolePermissionSourceDirect
-		} else if _, ok := directParentSet[owner]; ok {
-			item.Source = RolePermissionSourceInheritDirect
-			item.TopParent = owner
-		} else {
-			top, kind, ferr := s.graph.FindTopParentForOwner(roleName, owner)
-			if ferr != nil {
-				s.logger.Warn("解析继承顶层父角色失败", zap.Error(ferr), zap.String("owner", owner))
-			}
-
-			if kind == domain.InheritKindDirect {
-				item.Source = RolePermissionSourceInheritDirect
-				item.TopParent = top
-			} else {
-				item.Source = RolePermissionSourceInheritIndirect
-				item.TopParent = top
-			}
-		}
+		item = s.resolvePermissionSource(ctx, roleName, directParentSet, item)
 
 		effective = append(effective, item)
 
 		pathKey := resource + "\x00" + strings.ToUpper(action)
 		if _, ok := seenPathAction[pathKey]; !ok {
 			seenPathAction[pathKey] = struct{}{}
+
 			effectiveItems = append(effectiveItems, domain.PermissionItem{Resource: resource, Action: action})
 		}
 	}
 
 	// 补上直接策略里可能未被 implicit 返回的项（极少见）
-	for _, p := range directItems {
-		pathKey := p.Resource + "\x00" + strings.ToUpper(p.Action)
-
-		ownerKey := roleName + "\x00" + pathKey
-		if _, ok := seenOwnerPolicy[ownerKey]; ok {
-			continue
-		}
-
-		seenOwnerPolicy[ownerKey] = struct{}{}
-		effective = append(effective, EffectivePermissionItem{
-			Resource: p.Resource,
-			Action:   p.Action,
-			Owner:    roleName,
-			Source:   RolePermissionSourceDirect,
-		})
-
-		if _, ok := seenPathAction[pathKey]; !ok {
-			seenPathAction[pathKey] = struct{}{}
-			effectiveItems = append(effectiveItems, p)
-		}
-	}
-
-	// 计算资源表中被有效权限覆盖的具体 API
-	resources, err := s.resources.ListPathMethod(ctx)
-	if err != nil {
-		s.logger.Error("读取资源表失败", zap.Error(err))
-
-		return RolePermissionsResp{}, domain.ErrGetPermissionFailed
-	}
-
-	covered := make([]string, 0)
-
-	for _, r := range resources {
-		path := strings.TrimSpace(r.Path)
-
-		method := strings.TrimSpace(r.Method)
-		if path == "" || method == "" {
-			continue
-		}
-
-		if s.evaluator.IsCoveredBy(effectiveItems, path, method) {
-			covered = append(covered, strings.ToUpper(method)+":"+path)
-		}
-	}
-
-	return RolePermissionsResp{
-		Direct:    directRows,
-		Effective: effective,
-		Covered:   covered,
-	}, nil
+	return finishPermissionServiceRolePermissions(ctx, s, roleName, directRows, directItems, &effective, seenOwnerPolicy, seenPathAction, &effectiveItems)
 }
 
 // UpdateRolePermissions 用给定列表整体替换角色的直接权限。
@@ -293,13 +222,15 @@ func (s *PermissionService) UpdateRolePermissions(ctx context.Context, params Up
 		return err
 	}
 	defer finish(&result)
+
 	service := *s
 	service.enforcer = scoped
 	s = &service
 	s.graph = NewRoleGraph(scoped)
+
 	role, err := s.roles.FindByID(ctx, params.RoleID)
 	if err != nil || role == nil {
-		return domain.ErrRoleNotFound
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrRoleNotFound, err)
 	}
 
 	perms, err := domain.NormalizeReplacementPermissions(params.Permissions)
@@ -312,90 +243,24 @@ func (s *PermissionService) UpdateRolePermissions(ctx context.Context, params Up
 		return err
 	}
 
-	if params.BreakInheritance {
-		previousMenus, err := s.roleMenus.InheritedMenuIDs(ctx, role.ID)
-		if err != nil {
-			return domain.ErrBreakInheritanceFailed
-		}
-		defer func() {
-			if result == nil {
-				return
-			}
-			ids := make([]uint, 0, len(previousMenus))
-			for id := range previousMenus {
-				ids = append(ids, id)
-			}
-			if err := s.roleMenus.CreateIgnoreConflict(context.WithoutCancel(ctx), domain.NewInheritedRoleMenus(role.ID, ids)); err != nil {
-				s.logger.Error("RBAC inherited menu compensation failed", zap.Error(err))
-				result = errors.Join(result, err)
-			}
-		}()
-		if err := s.clearRoleInheritance(ctx, role); err != nil {
-			return err
-		}
-	} else {
-		// 未解除继承时：新写入的直接权限不得已被继承权限覆盖
-		direct, err := s.graph.DirectPermissionItems(role.Name)
-		if err != nil {
-			return domain.ErrQueryPermissionFailed
-		}
-
-		effective, err := s.graph.EffectivePermissionItems(role.Name)
-		if err != nil {
-			return domain.ErrQueryPermissionFailed
-		}
-
-		inherited := domain.FilterInheritedPermissions(direct, effective)
-		if err := s.evaluator.CheckAlreadyOwned(inherited, perms); err != nil {
-			return err
-		}
-	}
-
-	// 清空原有直接权限
-	if _, err := s.enforcer.RemoveFilteredPolicy(0, role.Name); err != nil {
-		s.logger.Error("清理角色权限失败", zap.Error(err))
-
-		return domain.ErrUpdateFailed
-	}
-
-	for _, p := range perms {
-		if _, err := s.enforcer.AddPolicy(role.Name, p.Resource, p.Action); err != nil {
-			s.logger.Error("添加角色权限失败", zap.Error(err))
-
-			return domain.ErrUpdateFailed
-		}
-	}
-
-	if err := s.enforcer.SavePolicy(); err != nil {
-		s.logger.Error("保存角色权限失败", zap.Error(err))
-
-		return domain.ErrUpdateFailed
-	}
-
-	return nil
+	return finishPermissionServiceUpdateRolePermissions(ctx, s, params, role, perms)
 }
 
 // clearRoleInheritance 清除角色的全部 Casbin 继承关系与继承菜单。
 func (s *PermissionService) clearRoleInheritance(ctx context.Context, role *domain.Role) error {
 	parents, err := s.enforcer.GetRolesForUser(role.Name)
 	if err != nil {
-		s.logger.Error("读取角色继承失败", zap.Error(err))
-
-		return domain.ErrBreakInheritanceFailed
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrBreakInheritanceFailed, err)
 	}
 
 	for _, parent := range parents {
 		if _, err := s.enforcer.DeleteRoleForUser(role.Name, parent); err != nil {
-			s.logger.Error("移除角色继承失败", zap.Error(err), zap.String("parent", parent))
-
-			return domain.ErrBreakInheritanceFailed
+			return apperr.Wrap("application/rbac/permission_service", domain.ErrBreakInheritanceFailed, err)
 		}
 	}
 
 	if err := s.roleMenus.DeleteInheritedByRole(ctx, role.ID); err != nil {
-		s.logger.Error("移除继承菜单失败", zap.Error(err))
-
-		return domain.ErrBreakInheritanceFailed
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrBreakInheritanceFailed, err)
 	}
 
 	return nil
@@ -405,9 +270,7 @@ func (s *PermissionService) clearRoleInheritance(ctx context.Context, role *doma
 func (s *PermissionService) WildcardList() ([]WildcardPermissionItem, error) {
 	policies, err := s.enforcer.GetPolicy()
 	if err != nil {
-		s.logger.Error("读取权限策略失败", zap.Error(err))
-
-		return nil, domain.ErrGetWildcardFailed
+		return nil, apperr.Wrap("application/rbac/permission_service", domain.ErrGetWildcardFailed, err)
 	}
 
 	seen := make(map[string]struct{})
@@ -435,6 +298,7 @@ func (s *PermissionService) WildcardList() ([]WildcardPermissionItem, error) {
 		}
 
 		seen[key] = struct{}{}
+
 		items = append(items, WildcardPermissionItem{
 			Resource: resource,
 			Action:   action,
@@ -456,9 +320,7 @@ func (s *PermissionService) WildcardList() ([]WildcardPermissionItem, error) {
 func (s *PermissionService) ResourceList(ctx context.Context) ([]APIResourceItem, error) {
 	resources, err := s.resources.ListOrdered(ctx)
 	if err != nil {
-		s.logger.Error("读取资源表失败", zap.Error(err))
-
-		return nil, domain.ErrGetResourceFailed
+		return nil, apperr.Wrap("application/rbac/permission_service", domain.ErrGetResourceFailed, err)
 	}
 
 	items := make([]APIResourceItem, 0, len(resources))
@@ -481,4 +343,149 @@ func (s *PermissionService) ResourceList(ctx context.Context) ([]APIResourceItem
 	})
 
 	return items, nil
+}
+
+func finishPermissionServiceRolePermissions(ctx context.Context, s *PermissionService, roleName string, directRows [][]string, directItems []domain.PermissionItem, effective *[]EffectivePermissionItem, seenOwnerPolicy, seenPathAction map[string]struct{}, effectiveItems *[]domain.PermissionItem) (RolePermissionsResp, error) {
+	var err error
+
+	for _, p := range directItems {
+		pathKey := p.Resource + "\x00" + strings.ToUpper(p.Action)
+
+		ownerKey := roleName + "\x00" + pathKey
+		if _, ok := seenOwnerPolicy[ownerKey]; ok {
+			continue
+		}
+
+		seenOwnerPolicy[ownerKey] = struct{}{}
+
+		(*effective) = append((*effective), EffectivePermissionItem{
+			Resource: p.Resource,
+			Action:   p.Action,
+			Owner:    roleName,
+			Source:   RolePermissionSourceDirect,
+		})
+
+		if _, ok := seenPathAction[pathKey]; !ok {
+			seenPathAction[pathKey] = struct{}{}
+
+			(*effectiveItems) = append((*effectiveItems), p)
+		}
+	}
+
+	// 计算资源表中被有效权限覆盖的具体 API
+	resources, err := s.resources.ListPathMethod(ctx)
+	if err != nil {
+		return RolePermissionsResp{}, apperr.Wrap("application/rbac/permission_service", domain.ErrGetPermissionFailed, err)
+	}
+
+	covered := make([]string, 0)
+
+	for _, r := range resources {
+		path := strings.TrimSpace(r.Path)
+
+		method := strings.TrimSpace(r.Method)
+		if path == "" || method == "" {
+			continue
+		}
+
+		if s.evaluator.IsCoveredBy((*effectiveItems), path, method) {
+			covered = append(covered, strings.ToUpper(method)+":"+path)
+		}
+	}
+
+	return RolePermissionsResp{
+		Direct:    directRows,
+		Effective: (*effective),
+		Covered:   covered,
+	}, nil
+}
+
+func finishPermissionServiceUpdateRolePermissions(ctx context.Context, s *PermissionService, params UpdateRolePermissionsParams, role *domain.Role, perms []domain.PermissionItem) (result error) {
+	if params.BreakInheritance {
+		previousMenus, err := s.roleMenus.InheritedMenuIDs(ctx, role.ID)
+		if err != nil {
+			return apperr.Wrap("application/rbac/permission_service", domain.ErrBreakInheritanceFailed, err)
+		}
+		defer s.restoreInheritedMenusOnFailure(ctx, role.ID, previousMenus, &result)
+
+		if err := s.clearRoleInheritance(ctx, role); err != nil {
+			return err
+		}
+	} else if err := s.ensurePermissionsNotInherited(role.Name, perms); err != nil {
+		return err
+	}
+
+	// 清空原有直接权限
+	if _, err := s.enforcer.RemoveFilteredPolicy(0, role.Name); err != nil {
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrUpdateFailed, err)
+	}
+
+	for _, p := range perms {
+		if _, err := s.enforcer.AddPolicy(role.Name, p.Resource, p.Action); err != nil {
+			return apperr.Wrap("application/rbac/permission_service", domain.ErrUpdateFailed, err)
+		}
+	}
+
+	if err := s.enforcer.SavePolicy(); err != nil {
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrUpdateFailed, err)
+	}
+
+	return nil
+}
+
+func (s *PermissionService) resolvePermissionSource(ctx context.Context, roleName string, directParents map[string]struct{}, item EffectivePermissionItem) EffectivePermissionItem {
+	if item.Owner == "" || item.Owner == roleName {
+		item.Source = RolePermissionSourceDirect
+		return item
+	}
+
+	if _, ok := directParents[item.Owner]; ok {
+		item.Source = RolePermissionSourceInheritDirect
+		item.TopParent = item.Owner
+
+		return item
+	}
+
+	top, kind, err := s.graph.FindTopParentForOwner(roleName, item.Owner)
+	if err != nil {
+		logctx.With(ctx, s.logger).Warn("解析继承顶层父角色失败", zap.String("event", "rbac.permission_service.role_permissions.degraded"), zap.String("operation", "rbac.permission_service.role_permissions"), zap.Error(err), zap.String("owner", item.Owner))
+	}
+
+	item.Source = RolePermissionSourceInheritIndirect
+
+	item.TopParent = top
+	if kind == domain.InheritKindDirect {
+		item.Source = RolePermissionSourceInheritDirect
+	}
+
+	return item
+}
+
+func (s *PermissionService) restoreInheritedMenusOnFailure(ctx context.Context, roleID uint, previous map[uint]struct{}, result *error) {
+	if *result == nil {
+		return
+	}
+
+	ids := make([]uint, 0, len(previous))
+	for id := range previous {
+		ids = append(ids, id)
+	}
+
+	if err := s.roleMenus.CreateIgnoreConflict(context.WithoutCancel(ctx), domain.NewInheritedRoleMenus(roleID, ids)); err != nil {
+		*result = errors.Join(*result, err)
+	}
+}
+
+func (s *PermissionService) ensurePermissionsNotInherited(roleName string, perms []domain.PermissionItem) error {
+	direct, err := s.graph.DirectPermissionItems(roleName)
+	if err != nil {
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrQueryPermissionFailed, err)
+	}
+
+	effective, err := s.graph.EffectivePermissionItems(roleName)
+	if err != nil {
+		return apperr.Wrap("application/rbac/permission_service", domain.ErrQueryPermissionFailed, err)
+	}
+
+	return s.evaluator.CheckAlreadyOwned(domain.FilterInheritedPermissions(direct, effective), perms)
 }

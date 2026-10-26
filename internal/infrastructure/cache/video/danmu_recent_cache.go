@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -45,7 +47,7 @@ func (c *DanmuRecentCache) Push(ctx context.Context, dto *app.DanmuDTO) {
 
 	data, err := json.Marshal(dto)
 	if err != nil {
-		c.logger.Warn("marshal danmu cache failed", zap.Error(err), zap.Uint("videoId", dto.VideoID))
+		logctx.With(ctx, c.logger).Warn("marshal danmu cache failed", zap.String("event", "cache.danmu_recent_cache.push.degraded"), zap.String("operation", "cache.danmu_recent_cache.push"), zap.Error(err), zap.Uint("video_id", dto.VideoID))
 
 		return
 	}
@@ -61,7 +63,7 @@ func (c *DanmuRecentCache) Push(ctx context.Context, dto *app.DanmuDTO) {
 	pipe.Expire(cacheCtx, key, domain.DanmuRecentCacheTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		c.logger.Warn("write danmu cache failed", zap.Error(err), zap.Uint("videoId", dto.VideoID))
+		logctx.With(ctx, c.logger).Warn("write danmu cache failed", zap.String("event", "cache.danmu_recent_cache.push.degraded"), zap.String("operation", "cache.danmu_recent_cache.push"), zap.Error(err), zap.Uint("video_id", dto.VideoID))
 	}
 }
 
@@ -76,8 +78,8 @@ func (c *DanmuRecentCache) Invalidate(ctx context.Context, videoID, partID uint)
 
 	key := danmuRecentKey(videoID, partID)
 	if err := c.redis.Del(cacheCtx, key).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("clear recent danmu cache failed",
-			zap.Error(err), zap.Uint("videoId", videoID), zap.Uint("partId", partID))
+		logctx.With(ctx, c.logger).Warn("clear recent danmu cache failed", zap.String("event", "cache.danmu_recent_cache.invalidate.degraded"), zap.String("operation", "cache.danmu_recent_cache.invalidate"),
+			zap.Error(err), zap.Uint("video_id", videoID), zap.Uint("part_id", partID))
 	}
 }
 

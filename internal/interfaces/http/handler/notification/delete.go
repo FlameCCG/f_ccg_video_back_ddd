@@ -3,10 +3,10 @@ package notification
 import (
 	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-
-	domain "f_ccg_video_back_ddd/internal/domain/notification"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+
+	domain "f_ccg_video_back_ddd/internal/domain/notification"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,12 +29,12 @@ func (h *Handler) Delete(c *gin.Context) {
 
 	if err := h.svc.Delete(c.Request.Context(), int(uid), req.IDs); err != nil {
 		if errors.Is(err, domain.ErrSystemNotificationNotDeletable) {
-			res.FailWithMsg(clienterror.Message(err), c)
+			res.FailWithCause(err, clienterror.Message(err), c)
 
 			return
 		}
 
-		res.FailWithMsg("删除失败", c)
+		res.FailWithCause(err, "删除失败", c)
 
 		return
 	}
@@ -47,7 +47,7 @@ func (h *Handler) AdminDelete(c *gin.Context) {
 	req := middlewares.GetBound[DeleteNotificationReq](c)
 
 	if err := h.svc.AdminDelete(c.Request.Context(), req.IDs); err != nil {
-		res.FailWithMsg("删除失败", c)
+		res.FailWithCause(err, "删除失败", c)
 
 		return
 	}

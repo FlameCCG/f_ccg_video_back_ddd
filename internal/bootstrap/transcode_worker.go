@@ -3,10 +3,9 @@ package bootstrap
 import (
 	"context"
 	"errors"
-	"fmt"
-
 	"f_ccg_video_back_ddd/internal/infrastructure/mq"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"fmt"
 
 	"go.uber.org/zap"
 )
@@ -40,19 +39,29 @@ func (w *TranscodeWorker) Run(ctx context.Context) (err error) {
 	defer func() {
 		err = errors.Join(err, w.consumer.Stop())
 		err = errors.Join(err, w.producers.Close())
+
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), ctxutil.AsyncLongTimeout)
 		defer cancel()
+
 		err = errors.Join(err, w.detached.Stop(cleanupCtx))
 	}()
 
 	if ctx.Err() != nil {
 		return nil
 	}
+
 	if err := w.consumer.Start(); err != nil {
 		return fmt.Errorf("start transcode consumer: %w", err)
 	}
-	w.logger.Info("standalone transcode consumer started")
+
+	w.logger.Info("process.started", zap.String("event", "process.started"), zap.String("component", "transcode_worker"))
 	<-ctx.Done()
-	w.logger.Info("standalone transcode consumer stopping")
+	w.logger.Info("process.stopping", zap.String("event", "process.stopping"), zap.String("component", "transcode_worker"))
+
 	return nil
+}
+
+// ReportError reports a worker failure to the process supervisor.
+func (w *TranscodeWorker) ReportError(err error) {
+	w.logger.Error("process.failed", zap.String("event", "process.failed"), zap.String("component", "transcode_worker"), zap.Error(err))
 }

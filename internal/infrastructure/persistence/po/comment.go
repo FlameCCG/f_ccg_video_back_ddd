@@ -27,9 +27,9 @@ type Comment struct {
 	CommenterIP   string           `gorm:"type:varchar(20);comment:评论者IP" json:"commenterIP"`
 	CommenterAddr string           `gorm:"type:varchar(255);comment:评论者地址" json:"commenterAddr"`
 	// 关联关系
-	User          User          `gorm:"foreignKey:UserID" json:"userEntity,omitempty"`
-	Video         Video         `gorm:"foreignKey:VideoID" json:"video,omitempty"`
-	Dynamic       Dynamic       `gorm:"foreignKey:DynamicID" json:"dynamic,omitempty"`
+	User          User          `gorm:"foreignKey:UserID" json:"userEntity"`
+	Video         Video         `gorm:"foreignKey:VideoID" json:"video"`
+	Dynamic       Dynamic       `gorm:"foreignKey:DynamicID" json:"dynamic"`
 	ParentComment *Comment      `gorm:"foreignKey:ParentID" json:"parentComment,omitempty"`
 	RootComment   *Comment      `gorm:"foreignKey:RootID" json:"rootComment,omitempty"`
 	Children      []Comment     `gorm:"foreignKey:ParentID" json:"children,omitempty"`

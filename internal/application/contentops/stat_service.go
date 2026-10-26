@@ -2,9 +2,9 @@ package contentops
 
 import (
 	"context"
-	"time"
-
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -82,13 +82,13 @@ func (s *StatService) grantDailyLoginReward(ctx context.Context, userID uint) {
 	s.detached.Go(ctx, ctxutil.AsyncDefaultTimeout, func(bg context.Context) {
 		if s.exp != nil {
 			if err := s.exp.LoginExp(bg, userID); err != nil {
-				s.logger.Warn("apply login exp failed", zap.Uint("uid", userID), zap.Error(err))
+				logctx.With(bg, s.logger).Warn("apply login exp failed", zap.String("event", "contentops.stat_service.grant_daily_login_reward.degraded"), zap.String("operation", "contentops.stat_service.grant_daily_login_reward"), zap.Uint("uid", userID), zap.Error(err))
 			}
 		}
 
 		if s.coin != nil {
 			if err := s.coin.LoginCoin(bg, userID); err != nil {
-				s.logger.Warn("apply login coin failed", zap.Uint("uid", userID), zap.Error(err))
+				logctx.With(bg, s.logger).Warn("apply login coin failed", zap.String("event", "contentops.stat_service.grant_daily_login_reward.degraded"), zap.String("operation", "contentops.stat_service.grant_daily_login_reward"), zap.Uint("uid", userID), zap.Error(err))
 			}
 		}
 	})

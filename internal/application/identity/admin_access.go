@@ -2,7 +2,6 @@ package identity
 
 import (
 	"context"
-
 	"f_ccg_video_back_ddd/pkg/constants"
 )
 
@@ -12,14 +11,17 @@ func IsAdminUser(ctx context.Context, roles UserRoleQuery, userID uint) (bool, e
 	if roles == nil {
 		return false, ErrRoleCheckFailed
 	}
+
 	items, err := roles.LoadRoles(ctx, userID)
 	if err != nil {
 		return false, err
 	}
+
 	for _, role := range items {
 		if role.Name == constants.AdminUserRole {
 			return true, nil
 		}
 	}
+
 	return false, nil
 }

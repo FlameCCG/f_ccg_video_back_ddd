@@ -27,7 +27,7 @@ func (h *Handler) List(c *gin.Context) {
 
 	list, total, err := h.svc.List(c.Request.Context(), int(uid), req.Page, req.PageSize, req.Category)
 	if err != nil {
-		res.FailWithMsg("获取通知失败", c)
+		res.FailWithCause(err, "获取通知失败", c)
 
 		return
 	}
@@ -46,7 +46,7 @@ func (h *Handler) Counts(c *gin.Context) {
 
 	data, err := h.svc.CountSummary(c.Request.Context(), int(uid))
 	if err != nil {
-		res.FailWithMsg("获取数量失败", c)
+		res.FailWithCause(err, "获取数量失败", c)
 
 		return
 	}

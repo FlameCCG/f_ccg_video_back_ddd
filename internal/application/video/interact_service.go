@@ -3,12 +3,13 @@ package video
 import (
 	"context"
 	"errors"
-	"fmt"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/pkg/coinutil"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"fmt"
+
+	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
 )
@@ -136,35 +137,7 @@ func (s *InteractionService) Coin(ctx context.Context, videoID, userID uint, coi
 	}
 
 	if delta > 0 {
-		stats, statsErr := s.stats.ApplyCommittedDelta(ctx, videoID, domain.StatsDelta{CoinCount: delta})
-		if statsErr != nil {
-			// 账本已提交：不回滚硬币；尽量返回当前可读计数。
-			s.logger.Error("coin committed but stats update failed",
-				zap.Uint("videoId", videoID),
-				zap.Uint("userId", userID),
-				zap.Int64("delta", delta),
-				zap.Error(statsErr),
-			)
-
-			if stats == nil {
-				stats, _ = s.stats.Load(ctx, videoID)
-			}
-
-			if stats == nil {
-				// 计数不可读仍视为投币成功语义弱化：返回 0 计数避免用户以为失败可重试乱扣
-				return &CoinResult{CoinCount: 0}, nil
-			}
-		}
-
-		s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreCoinWeight, delta)
-
-		if authorID > 0 {
-			_ = s.creators.IncrCoins(ctx, authorID, delta)
-		}
-
-		_ = s.exp.CoinExpForVideo(ctx, userID, videoID, delta)
-
-		return &CoinResult{CoinCount: stats.CoinCount}, nil
+		return s.completeCoinStats(ctx, videoID, userID, authorID, delta)
 	}
 
 	stats, err := s.stats.Load(ctx, videoID)
@@ -286,30 +259,9 @@ func (s *InteractionService) removeFavorite(
 	videoID, userID, folderID uint,
 ) (*FavoriteResult, error) {
 	var deltaFavorite int64
+
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		authorID, err := s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
-		if err != nil {
-			return err
-		}
-		if err := s.ledger.LockAccounts(txCtx, []uint{userID, authorID}); err != nil {
-			return err
-		}
-		exists, err := s.folders.LinkExists(txCtx, folderID, videoID)
-		if err != nil || !exists {
-			return err
-		}
-		if err := s.folders.DeleteLink(txCtx, folderID, videoID); err != nil {
-			return err
-		}
-		still, err := s.folders.UserFavorited(txCtx, videoID, userID)
-		if err != nil {
-			return err
-		}
-		if !still {
-			deltaFavorite = -1
-			return s.ledger.RevokeFavoriteReward(txCtx, authorID, userID, videoID)
-		}
-		return nil
+		return interactionServiceremoveFavoriteTransaction(txCtx, s, videoID, userID, folderID, &deltaFavorite)
 	})
 	if err != nil {
 		return nil, err
@@ -347,51 +299,13 @@ func (s *InteractionService) addFavorite(
 	videoID, userID, folderID uint,
 ) (*FavoriteResult, error) {
 	authorID := uint(0)
+
 	var err error
+
 	firstFavorite := false
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		authorID, err = s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
-		if err != nil {
-			return err
-		}
-		if err := s.ledger.LockAccounts(txCtx, []uint{userID, authorID}); err != nil {
-			return err
-		}
-
-		existsAny, err := s.folders.UserFavorited(txCtx, videoID, userID)
-		if err != nil {
-			return err
-		}
-
-		created, err := s.folders.EnsureLink(txCtx, folderID, videoID)
-		if err != nil {
-			return err
-		}
-
-		if !created || existsAny {
-			return nil
-		}
-
-		firstFavorite = true
-
-		authorID, err = s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
-		if err != nil {
-			return err
-		}
-
-		if authorID == 0 || authorID == userID {
-			return nil
-		}
-
-		key := favoriteRewardKey(userID, videoID)
-		return s.ledger.ApplyChange(
-			txCtx,
-			authorID,
-			domain.FavoriteAuthorReward,
-			"作品被收藏 +"+coinutil.Format(domain.FavoriteAuthorReward),
-			&key,
-		)
+		return interactionServiceaddFavoriteTransaction(txCtx, s, videoID, userID, folderID, &authorID, &err, &firstFavorite)
 	}); err != nil {
 		return nil, err
 	}
@@ -432,4 +346,114 @@ func (s *InteractionService) HasCoined(ctx context.Context, videoID, userID uint
 
 func favoriteRewardKey(userID, videoID uint) string {
 	return fmt.Sprintf("favorite:%d:%d", userID, videoID)
+}
+
+func interactionServiceremoveFavoriteTransaction(txCtx context.Context, s *InteractionService, videoID, userID, folderID uint, deltaFavorite *int64) error {
+	authorID, err := s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
+	if err != nil {
+		return err
+	}
+
+	if err := s.ledger.LockAccounts(txCtx, []uint{userID, authorID}); err != nil {
+		return err
+	}
+
+	exists, err := s.folders.LinkExists(txCtx, folderID, videoID)
+	if err != nil || !exists {
+		return err
+	}
+
+	if err := s.folders.DeleteLink(txCtx, folderID, videoID); err != nil {
+		return err
+	}
+
+	still, err := s.folders.UserFavorited(txCtx, videoID, userID)
+	if err != nil {
+		return err
+	}
+
+	if !still {
+		(*deltaFavorite) = -1
+		return s.ledger.RevokeFavoriteReward(txCtx, authorID, userID, videoID)
+	}
+
+	return nil
+}
+
+func interactionServiceaddFavoriteTransaction(txCtx context.Context, s *InteractionService, videoID, userID, folderID uint, authorID *uint, resultErr *error, firstFavorite *bool) error {
+	(*authorID), (*resultErr) = s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
+	if (*resultErr) != nil {
+		return (*resultErr)
+	}
+
+	if err := s.ledger.LockAccounts(txCtx, []uint{userID, (*authorID)}); err != nil {
+		return err
+	}
+
+	existsAny, err := s.folders.UserFavorited(txCtx, videoID, userID)
+	if err != nil {
+		return err
+	}
+
+	created, err := s.folders.EnsureLink(txCtx, folderID, videoID)
+	if err != nil {
+		return err
+	}
+
+	if !created || existsAny {
+		return nil
+	}
+
+	(*firstFavorite) = true
+
+	(*authorID), err = s.videos.PublishedAuthorIDByVideoID(txCtx, videoID)
+	if err != nil {
+		return err
+	}
+
+	if (*authorID) == 0 || (*authorID) == userID {
+		return nil
+	}
+
+	key := favoriteRewardKey(userID, videoID)
+
+	return s.ledger.ApplyChange(
+		txCtx,
+		(*authorID),
+		domain.FavoriteAuthorReward,
+		"作品被收藏 +"+coinutil.Format(domain.FavoriteAuthorReward),
+		&key,
+	)
+}
+
+func (s *InteractionService) completeCoinStats(ctx context.Context, videoID, userID, authorID uint, delta int64) (*CoinResult, error) {
+	stats, statsErr := s.stats.ApplyCommittedDelta(ctx, videoID, domain.StatsDelta{CoinCount: delta})
+	if statsErr != nil {
+		// 账本已提交：不回滚硬币；尽量返回当前可读计数。
+		logctx.With(ctx, s.logger).Warn("coin committed but stats update failed", zap.String("event", "video.interact_service.coin.failed"), zap.String("operation", "video.interact_service.coin"),
+			zap.Uint("video_id", videoID),
+			zap.Uint("user_id", userID),
+			zap.Int64("delta", delta),
+			zap.Error(statsErr),
+		)
+
+		if stats == nil {
+			stats, _ = s.stats.Load(ctx, videoID)
+		}
+
+		if stats == nil {
+			// 计数不可读仍视为投币成功语义弱化：返回 0 计数避免用户以为失败可重试乱扣
+			return &CoinResult{CoinCount: 0}, nil
+		}
+	}
+
+	s.stats.RecordHotScoreDelta(ctx, videoID, domain.HotScoreCoinWeight, delta)
+
+	if authorID > 0 {
+		_ = s.creators.IncrCoins(ctx, authorID, delta)
+	}
+
+	_ = s.exp.CoinExpForVideo(ctx, userID, videoID, delta)
+
+	return &CoinResult{CoinCount: stats.CoinCount}, nil
 }

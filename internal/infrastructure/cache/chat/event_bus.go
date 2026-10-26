@@ -8,11 +8,11 @@ package chat
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strconv"
 	"sync"
 	"time"
-
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -59,7 +59,7 @@ func (b *EventBus) Publish(ctx context.Context, userID uint, payload []byte) {
 	defer cancel()
 
 	if err := b.redis.Publish(pubCtx, userChannel(userID), payload).Err(); err != nil {
-		b.logger.Warn("publish chat event failed", zap.Error(err), zap.Uint("userId", userID))
+		logctx.With(ctx, b.logger).Warn("publish chat event failed", zap.String("event", "cache.event_bus.publish.degraded"), zap.String("operation", "cache.event_bus.publish"), zap.Error(err), zap.Uint("user_id", userID))
 	}
 }
 
@@ -91,9 +91,9 @@ func (b *EventBus) Subscribe(userID uint, handler func(payload []byte)) func() {
 			cancel()
 
 			if err := pubsub.Close(); err != nil {
-				b.logger.Warn("close chat redis subscriber failed",
+				b.logger.Warn("close chat redis subscriber failed", zap.String("event", "cache.event_bus.subscribe.degraded"), zap.String("operation", "cache.event_bus.subscribe"),
 					zap.Error(err),
-					zap.Uint("userId", userID),
+					zap.Uint("user_id", userID),
 				)
 			}
 		})

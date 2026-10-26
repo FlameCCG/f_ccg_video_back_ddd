@@ -3,7 +3,6 @@ package identity
 import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
 
@@ -22,25 +21,7 @@ type AdminUserListReq struct {
 // AdminUserListView 管理员用户列表.
 func (h *AdminHandler) AdminUserListView(c *gin.Context) {
 	req := middlewares.GetBound[AdminUserListReq](c)
-
-	if !ensureUserStatusValid(c, req.Status) {
-		return
-	}
-
-	list, total, err := h.users.List(c.Request.Context(), app.AdminUserListParams{
-		Keyword:  req.Keyword,
-		Status:   req.Status,
-		RoleID:   req.RoleID,
-		Page:     req.Page,
-		PageSize: req.PageSize,
-	})
-	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
-
-		return
-	}
-
-	res.OkWithList(list, total, c)
+	serveAdminAccountList(c, req.Status, app.AdminUserListParams{Keyword: req.Keyword, Status: req.Status, RoleID: req.RoleID, Page: req.Page, PageSize: req.PageSize}, h.users.List)
 }
 
 // ensureUserStatusValid 校验可选的用户状态过滤值；非法时已写响应并返回 false。

@@ -2,10 +2,15 @@ package ai
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"io"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
+)
+
+const (
+	eventTypeField = "type"
 )
 
 // AssetProxyReq 资源代理请求参数.
@@ -30,6 +35,9 @@ func (h *Handler) AssetProxyView(c *gin.Context) {
 	c.Status(resp.StatusCode)
 
 	if _, err = io.Copy(c.Writer, resp.Body); err != nil && !errors.Is(err, io.EOF) {
-		h.log().Warn("write AI asset stream failed", zap.Error(err))
+		res.RecordFailure(apperr.Wrap("handler/ai/assets", nil, err), c)
+		return
 	}
+
+	res.SetSuccess(c, resp.StatusCode >= 200 && resp.StatusCode < 300)
 }

@@ -15,6 +15,7 @@ import (
 // 这里返回候选字段，实际创建菜单还要经过父级、唯一性与持久化用例，不能跳过常规写入规则。
 func parseMenuSuggestion(text string) (*domainrbac.MenuSuggestion, error) {
 	start := strings.Index(text, "{")
+
 	end := strings.LastIndex(text, "}")
 	if start < 0 || end < start {
 		return nil, errors.New("AI 未返回合法的菜单 JSON")
@@ -32,13 +33,7 @@ func parseMenuSuggestion(text string) (*domainrbac.MenuSuggestion, error) {
 	suggestion.Name = strings.TrimSpace(suggestion.Name)
 	suggestion.Component = strings.TrimSpace(suggestion.Component)
 
-	if suggestion.TitleEn == "" ||
-		suggestion.TitleJa == "" ||
-		suggestion.Icon == "" ||
-		suggestion.Path == "" ||
-		suggestion.Name == "" ||
-		suggestion.Component == "" ||
-		suggestion.SortOrder == 0 {
+	if parseMenuSuggestionCondition(suggestion) {
 		return nil, errors.New("AI 返回的菜单字段不完整")
 	}
 
@@ -59,4 +54,14 @@ func parseMenuSuggestion(text string) (*domainrbac.MenuSuggestion, error) {
 	}
 
 	return &suggestion, nil
+}
+
+func parseMenuSuggestionCondition(suggestion domainrbac.MenuSuggestion) bool {
+	return suggestion.TitleEn == "" ||
+		suggestion.TitleJa == "" ||
+		suggestion.Icon == "" ||
+		suggestion.Path == "" ||
+		suggestion.Name == "" ||
+		suggestion.Component == "" ||
+		suggestion.SortOrder == 0
 }

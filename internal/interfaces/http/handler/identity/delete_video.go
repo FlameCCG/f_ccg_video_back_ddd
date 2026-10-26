@@ -25,7 +25,7 @@ func (h *Handler) DeleteVideoView(c *gin.Context) {
 	}
 
 	if err := h.activity.DeleteVideo(c.Request.Context(), req.VideoID, uid); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

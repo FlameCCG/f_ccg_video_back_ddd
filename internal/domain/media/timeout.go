@@ -13,21 +13,21 @@ const (
 	defaultUploadMinBytesPerSec int64 = 512 * 1024
 	// UploadTimeoutBase 上传固定开销：建连 + multipart complete。
 	UploadTimeoutBase = 2 * time.Minute
-	// UploadTimeoutMin 上传超时下限。
-	UploadTimeoutMin = 3 * time.Minute
+	// MinUploadTimeout 上传超时下限。
+	MinUploadTimeout = 3 * time.Minute
 	// UploadTimeoutMax 上传超时上限。
 	UploadTimeoutMax = 2 * time.Hour
 	// UploadTimeoutUnknownSize 未知体积时的固定上传预算。
 	UploadTimeoutUnknownSize = 30 * time.Minute
 
-	// EncodeTimeoutMin 编码墙钟超时下限。
-	EncodeTimeoutMin = 15 * time.Minute
+	// MinEncodeTimeout 编码墙钟超时下限。
+	MinEncodeTimeout = 15 * time.Minute
 	// EncodeTimeoutMax 编码墙钟超时上限。
 	EncodeTimeoutMax = 12 * time.Hour
 
-	// ProgressStallMin 进度停滞判定下限。
+	// MinProgressStall 进度停滞判定下限。
 	// 双管线 4K CPU 重编码时 out_time 可能很久才跳一截，5 分钟会误杀 → 整单 Kafka 重试、进度永远卡个位数。
-	ProgressStallMin = 20 * time.Minute
+	MinProgressStall = 20 * time.Minute
 	// ProgressStallMax 进度停滞判定上限。
 	ProgressStallMax = 90 * time.Minute
 
@@ -38,13 +38,13 @@ const (
 	assembleMinBytesPerSec int64 = 10 * 1024 * 1024
 	// AssembleTimeoutBase 拼装固定开销。
 	AssembleTimeoutBase = 2 * time.Minute
-	// AssembleTimeoutMin 拼装超时下限。
-	AssembleTimeoutMin = 5 * time.Minute
+	// MinAssembleTimeout 拼装超时下限。
+	MinAssembleTimeout = 5 * time.Minute
 	// AssembleTimeoutMax 拼装超时上限。
 	AssembleTimeoutMax = 1 * time.Hour
 
-	// AudioEncodeTimeoutMin 音频整轨编码超时下限（AAC 编码约百倍实时，预算给足冗余）。
-	AudioEncodeTimeoutMin = 10 * time.Minute
+	// MinAudioEncodeTimeout 音频整轨编码超时下限（AAC 编码约百倍实时，预算给足冗余）。
+	MinAudioEncodeTimeout = 10 * time.Minute
 	// AudioEncodeTimeoutMax 音频整轨编码超时上限。
 	AudioEncodeTimeoutMax = 1 * time.Hour
 )
@@ -83,8 +83,8 @@ func CalcPipelineEncodeTimeout(durationSec, targetCount int, useGPU bool, source
 		d += time.Duration(sourceBytes/(50*1024*1024)) * time.Minute
 	}
 
-	if d < EncodeTimeoutMin {
-		return EncodeTimeoutMin
+	if d < MinEncodeTimeout {
+		return MinEncodeTimeout
 	}
 
 	if d > EncodeTimeoutMax {
@@ -102,8 +102,8 @@ func CalcProgressStallTimeout(durationSec int) time.Duration {
 	}
 	// 约 duration/3，例如 25 分钟片源 ≈ 8 分钟 → 抬到下限 20 分钟。
 	d := time.Duration(durationSec) * time.Second / 3
-	if d < ProgressStallMin {
-		return ProgressStallMin
+	if d < MinProgressStall {
+		return MinProgressStall
 	}
 
 	if d > ProgressStallMax {
@@ -129,8 +129,8 @@ func CalcUploadTimeout(fileSize int64) time.Duration {
 
 	d := time.Duration(secs)*time.Second + UploadTimeoutBase
 
-	if d < UploadTimeoutMin {
-		return UploadTimeoutMin
+	if d < MinUploadTimeout {
+		return MinUploadTimeout
 	}
 
 	if d > UploadTimeoutMax {
@@ -143,7 +143,7 @@ func CalcUploadTimeout(fileSize int64) time.Duration {
 // CalcAssembleTimeout 按待拼装总字节数估算 -c copy 拼装超时。
 func CalcAssembleTimeout(totalBytes int64) time.Duration {
 	if totalBytes <= 0 {
-		return AssembleTimeoutMin
+		return MinAssembleTimeout
 	}
 
 	secs := totalBytes / assembleMinBytesPerSec
@@ -152,8 +152,8 @@ func CalcAssembleTimeout(totalBytes int64) time.Duration {
 	}
 
 	d := time.Duration(secs)*time.Second + AssembleTimeoutBase
-	if d < AssembleTimeoutMin {
-		return AssembleTimeoutMin
+	if d < MinAssembleTimeout {
+		return MinAssembleTimeout
 	}
 
 	if d > AssembleTimeoutMax {
@@ -170,8 +170,8 @@ func CalcAudioEncodeTimeout(durationSec int) time.Duration {
 	}
 
 	d := time.Duration(durationSec/5)*time.Second + 2*time.Minute
-	if d < AudioEncodeTimeoutMin {
-		return AudioEncodeTimeoutMin
+	if d < MinAudioEncodeTimeout {
+		return MinAudioEncodeTimeout
 	}
 
 	if d > AudioEncodeTimeoutMax {
@@ -219,14 +219,7 @@ func WithProgressStallGuard(
 
 	// 轮询间隔：既要尽快发现停滞，又避免忙等。
 	// 生产环境限制多为分钟级 → 约 15s 一跳；测试用短限制会更快。
-	interval := stallLimit / 3
-	if interval < 50*time.Millisecond {
-		interval = 50 * time.Millisecond
-	}
-
-	if interval > 15*time.Second {
-		interval = 15 * time.Second
-	}
+	interval := min(max(stallLimit/3, 50*time.Millisecond), 15*time.Second)
 
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -263,16 +256,16 @@ func ClassifyFFmpegCtxError(runCtx context.Context, waitErr error, encodeTimeout
 
 	cause := context.Cause(runCtx)
 	if errors.Is(cause, ErrTranscodeProgressStalled) {
-		return fmt.Errorf("ffmpeg pipeline failed: %w, stderr: %s", cause, stderr)
+		return fmt.Errorf("ffmpeg pipeline failed: %w: %w, stderr: %s", cause, waitErr, stderr)
 	}
 
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) || errors.Is(cause, context.DeadlineExceeded) {
-		return fmt.Errorf("ffmpeg pipeline failed: %w after %s: %v, stderr: %s",
+		return fmt.Errorf("ffmpeg pipeline failed: %w after %s: %w, stderr: %s",
 			ErrTranscodeEncodeTimeout, encodeTimeout, waitErr, stderr)
 	}
 
 	if cause != nil && !errors.Is(cause, context.Canceled) {
-		return fmt.Errorf("ffmpeg pipeline failed: %w (%v), stderr: %s", waitErr, cause, stderr)
+		return fmt.Errorf("ffmpeg pipeline failed: %w (%w), stderr: %s", waitErr, cause, stderr)
 	}
 
 	return fmt.Errorf("ffmpeg pipeline failed: %w, stderr: %s", waitErr, stderr)

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,8 +15,8 @@ import (
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/search"
+
 	domain "f_ccg_video_back_ddd/internal/domain/search"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -71,8 +73,10 @@ type VideoVectorIndex struct {
 	checked map[vectorIndexState]struct{}
 }
 
-var _ app.VideoVectorIndex = (*VideoVectorIndex)(nil)
-var _ app.VideoVectorIndexLifecycle = (*VideoVectorIndex)(nil)
+var (
+	_ app.VideoVectorIndex          = (*VideoVectorIndex)(nil)
+	_ app.VideoVectorIndexLifecycle = (*VideoVectorIndex)(nil)
+)
 
 // NewVideoVectorIndex 构造视频向量索引适配器（client 允许为 nil）。
 func NewVideoVectorIndex(client *elasticsearch8.Client, logger *zap.Logger) *VideoVectorIndex {
@@ -102,6 +106,7 @@ func (v *VideoVectorIndex) SearchIDs(
 	}
 
 	input.Text = strings.TrimSpace(input.Text)
+
 	input.ImageURL = strings.TrimSpace(input.ImageURL)
 	if input.IsZero() {
 		return nil, nil
@@ -123,8 +128,8 @@ func (v *VideoVectorIndex) SearchIDs(
 
 	keywordHits, err := v.runKeywordSearch(ctx, cfg, input.Text, limit*keywordRecallFactor)
 	if err != nil {
-		v.logger.Warn(
-			"keyword recall on vector index failed, falling back to vector-only",
+		logctx.With(ctx, v.logger).Warn(
+			"keyword recall on vector index failed, falling back to vector-only", zap.String("event", "search.video_vector.search_i_ds.degraded"), zap.String("operation", "search.video_vector.search_i_ds"),
 			zap.String("index", cfg.Index),
 			zap.Error(err),
 		)
@@ -175,7 +180,7 @@ func (v *VideoVectorIndex) runKeywordSearch(
 				"must": []any{map[string]any{
 					"multi_match": map[string]any{
 						"query": query,
-						"fields": []string{
+						responseFields: []string{
 							vectorFieldTitle + "^3",
 							vectorFieldTags + "^2",
 							vectorFieldPartition + "^2",
@@ -240,6 +245,7 @@ func (v *VideoVectorIndex) runIndexSearch(
 		if convertErr != nil || id <= 0 {
 			continue
 		}
+
 		hits = append(hits, vectorHit{VideoID: uint(id), Score: hit.Score})
 	}
 
@@ -255,11 +261,13 @@ func (v *VideoVectorIndex) Store(
 	if !v.Available() {
 		return app.ErrES8Unavailable
 	}
+
 	if err := v.Prepare(ctx, cfg, false); err != nil {
 		return err
 	}
 
 	document, content := buildVideoVectorDocument(source)
+
 	imageSource, imageErr := v.resolveVideoCover(ctx, cfg, source.Cover)
 	if imageErr != nil {
 		if cfg.ImageMode == embeddingImageModeOn {
@@ -269,13 +277,15 @@ func (v *VideoVectorIndex) Store(
 				imageErr,
 			)
 		}
-		v.logger.Debug("index video without cover vector", zap.Uint("videoId", source.ID), zap.Error(imageErr))
+
+		logctx.With(ctx, v.logger).Debug("index video without cover vector", zap.String("event", "search.video_vector.store.diagnostic"), zap.String("operation", "search.video_vector.store"), zap.Uint("video_id", source.ID), zap.Error(imageErr))
 	}
 
 	vector, err := v.embedder(cfg).Embed(ctx, app.EmbedInput{Text: content, ImageURL: imageSource})
 	if err != nil {
 		return fmt.Errorf("embed video %d failed: %w", source.ID, err)
 	}
+
 	document[vectorFieldEmbedding] = vector
 	document[vectorFieldHasImage] = imageSource != ""
 
@@ -336,6 +346,7 @@ func (v *VideoVectorIndex) Delete(ctx context.Context, cfg app.VectorConfig, vid
 	if resp.StatusCode == http.StatusNotFound {
 		return nil
 	}
+
 	if resp.IsError() {
 		return fmt.Errorf(
 			"delete video vector document failed: %s %s",
@@ -355,6 +366,7 @@ func (v *VideoVectorIndex) Prepare(ctx context.Context, cfg app.VectorConfig, re
 
 	if recreate {
 		ignoreUnavailable := true
+
 		resp, err := (esapi.IndicesDeleteRequest{
 			Index:             []string{cfg.Index},
 			IgnoreUnavailable: &ignoreUnavailable,
@@ -362,16 +374,20 @@ func (v *VideoVectorIndex) Prepare(ctx context.Context, cfg app.VectorConfig, re
 		if err != nil {
 			return fmt.Errorf("删除向量索引失败: %w", err)
 		}
+
 		if err = closeVectorResponse(resp, "删除向量索引失败"); err != nil {
 			return err
 		}
+
 		v.resetIndexChecks()
 	}
 
 	state := vectorIndexState{index: cfg.Index, dims: cfg.EmbeddingDimensions}
+
 	v.indexMu.Lock()
 	_, checked := v.checked[state]
 	v.indexMu.Unlock()
+
 	if checked {
 		return nil
 	}
@@ -380,6 +396,7 @@ func (v *VideoVectorIndex) Prepare(ctx context.Context, cfg app.VectorConfig, re
 	if err != nil {
 		return err
 	}
+
 	if !exists {
 		if err = v.createIndex(ctx, cfg); err != nil {
 			return err
@@ -405,6 +422,7 @@ func (v *VideoVectorIndex) indexExists(ctx context.Context, index string) (bool,
 	if resp.StatusCode == http.StatusNotFound {
 		return false, nil
 	}
+
 	if resp.IsError() {
 		return false, fmt.Errorf("check vector index existence failed: %s", resp.Status())
 	}
@@ -436,8 +454,8 @@ func (v *VideoVectorIndex) createIndex(ctx context.Context, cfg app.VectorConfig
 		return fmt.Errorf("create vector index failed: %s %s", resp.Status(), body)
 	}
 
-	v.logger.Info(
-		"vector index created",
+	logctx.With(ctx, v.logger).Info(
+		"vector index created", zap.String("event", "search.video_vector.create_index.diagnostic"), zap.String("operation", "search.video_vector.create_index"),
 		zap.String("index", cfg.Index),
 		zap.Int("dims", cfg.EmbeddingDimensions),
 	)
@@ -533,20 +551,20 @@ func buildVideoVectorIndexSpec(dimensions int) map[string]any {
 				vectorFieldVideoID: map[string]any{esMappingType: "long"},
 				vectorFieldTitle: map[string]any{
 					esMappingType: esMappingText,
-					"fields": map[string]any{
+					responseFields: map[string]any{
 						esMappingKeyword: map[string]any{esMappingType: esMappingKeyword},
 					},
 				},
 				vectorFieldDesc: map[string]any{esMappingType: esMappingText},
 				vectorFieldTags: map[string]any{
 					esMappingType: esMappingText,
-					"fields": map[string]any{
+					responseFields: map[string]any{
 						esMappingKeyword: map[string]any{esMappingType: esMappingKeyword},
 					},
 				},
 				vectorFieldPartition: map[string]any{
 					esMappingType: esMappingText,
-					"fields": map[string]any{
+					responseFields: map[string]any{
 						esMappingKeyword: map[string]any{esMappingType: esMappingKeyword},
 					},
 				},
@@ -595,12 +613,14 @@ func fuseByRRF(rankConstant, limit int, rankings ...[]vectorHit) []uint {
 	}
 
 	scores := make(map[uint]float64)
+
 	order := make([]uint, 0, limit*len(rankings))
 	for _, ranking := range rankings {
 		for rank, hit := range ranking {
 			if _, seen := scores[hit.VideoID]; !seen {
 				order = append(order, hit.VideoID)
 			}
+
 			scores[hit.VideoID] += 1 / float64(rankConstant+rank+1)
 		}
 	}
@@ -609,6 +629,7 @@ func fuseByRRF(rankConstant, limit int, rankings ...[]vectorHit) []uint {
 	for index, id := range order {
 		position[id] = index
 	}
+
 	sort.SliceStable(order, func(left, right int) bool {
 		leftID, rightID := order[left], order[right]
 		if scores[leftID] != scores[rightID] {
@@ -627,12 +648,15 @@ func fuseByRRF(rankConstant, limit int, rankings ...[]vectorHit) []uint {
 
 func topVectorHitIDs(hits []vectorHit, limit int) []uint {
 	ids := make([]uint, 0, len(hits))
+
 	seen := make(map[uint]struct{}, len(hits))
 	for _, hit := range hits {
 		if _, ok := seen[hit.VideoID]; ok {
 			continue
 		}
+
 		seen[hit.VideoID] = struct{}{}
+
 		ids = append(ids, hit.VideoID)
 		if limit > 0 && len(ids) >= limit {
 			break

@@ -2,16 +2,16 @@ package router
 
 import (
 	"bufio"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/config"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+	"github.com/stretchr/testify/require"
 
-	"github.com/gin-gonic/gin"
+	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 )
 
 // goldenRoutesPath 原项目路由的金标准清单（从基线 router 包静态提取，见 docs/decisions.md D-014）。
@@ -22,9 +22,9 @@ const goldenRoutesPath = "testdata/routes_golden.txt"
 //
 // 处理器全部传 nil：路由注册只取方法值（method value），不会调用处理器本身，
 // 因此无需任何数据库/缓存连接即可完成校验。
+//
+//nolint:paralleltest // Router construction configures Gin process mode.
 func TestRoutesMatchLegacyGolden(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	router := New(
 		infraconfig.NewProvider(&config.Config{}),
 		nil,           // middlewares：路由注册期只取方法值，不会执行
@@ -52,13 +52,12 @@ func TestRoutesMatchLegacyGolden(t *testing.T) {
 
 	want := loadGoldenRoutes(t)
 
-	if diff := diffRouteLists(want, got); diff != "" {
-		t.Fatalf("路由清单与原项目金标准不一致：\n%s", diff)
+	{
+		diff := diffRouteLists(want, got)
+		require.Empty(t, diff, "路由清单与原项目金标准不一致：\n%s", diff)
 	}
 
-	if len(got) != len(want) {
-		t.Fatalf("路由条数不一致：新 %d 条，原 %d 条", len(got), len(want))
-	}
+	require.Len(t, got, len(want), "路由条数不一致：新 %d 条，原 %d 条", len(got), len(want))
 }
 
 // loadGoldenRoutes 读取金标准清单，规范化为 "METHOD /path" 形式。
@@ -66,9 +65,7 @@ func loadGoldenRoutes(t *testing.T) []string {
 	t.Helper()
 
 	file, err := os.Open(goldenRoutesPath)
-	if err != nil {
-		t.Fatalf("打开金标准清单失败: %v", err)
-	}
+	require.NoError(t, err, "打开金标准清单失败: %v", err)
 
 	defer func() { _ = file.Close() }()
 
@@ -84,15 +81,14 @@ func loadGoldenRoutes(t *testing.T) []string {
 		fields := strings.Fields(line)
 
 		const expectedFields = 2
-		if len(fields) != expectedFields {
-			t.Fatalf("金标准清单格式非法: %q", line)
-		}
+		require.Len(t, fields, expectedFields, "金标准清单格式非法: %q", line)
 
 		routes = append(routes, fields[0]+" "+fields[1])
 	}
 
-	if err := scanner.Err(); err != nil {
-		t.Fatalf("读取金标准清单失败: %v", err)
+	{
+		err := scanner.Err()
+		require.NoError(t, err, "读取金标准清单失败: %v", err)
 	}
 
 	sort.Strings(routes)

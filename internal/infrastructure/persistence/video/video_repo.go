@@ -3,13 +3,13 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"fmt"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -47,6 +47,7 @@ func (r *Repository) FindByID(ctx context.Context, videoID uint) (*domain.Video,
 	return toDomainVideo(&row), nil
 }
 
+// FindByIDForUpdate loads a video while holding the transaction row lock.
 func (r *Repository) FindByIDForUpdate(ctx context.Context, videoID uint) (*domain.Video, error) {
 	var row po.Video
 	if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -54,8 +55,10 @@ func (r *Repository) FindByIDForUpdate(ctx context.Context, videoID uint) (*doma
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
+
 		return nil, err
 	}
+
 	return toDomainVideo(&row), nil
 }
 
@@ -259,7 +262,7 @@ func (r *Repository) UsernameByUserID(ctx context.Context, userID uint) (string,
 
 // UserIDByUsername 读取用户 ID 与规范化后的用户名（读侧投影）。
 //
-// 与原 fetchUserByUsername 一致：查询失败时返回 (0, 入参用户名)。
+// 用户不存在时返回 (0, 入参用户名)；依赖故障保留原因向上传递。
 func (r *Repository) UserIDByUsername(ctx context.Context, username string) (uint, string, error) {
 	if username == "" {
 		return 0, "", nil
@@ -270,7 +273,11 @@ func (r *Repository) UserIDByUsername(ctx context.Context, username string) (uin
 		Select("id", "username").
 		Where("username = ?", username).
 		First(&user).Error; err != nil {
-		return 0, username, nil
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, username, nil
+		}
+
+		return 0, username, err
 	}
 
 	return user.ID, user.Username, nil
@@ -303,6 +310,7 @@ func (r *Repository) Approve(ctx context.Context, videoID uint, status enum.Vide
 	result := gormx.DB(ctx, r.db).Model(&po.Video{}).
 		Where("id = ? AND status = ?", videoID, enum.VideoStatusReview).
 		Updates(map[string]any{"status": status, "approved_at": approvedAt})
+
 	return result.RowsAffected, result.Error
 }
 

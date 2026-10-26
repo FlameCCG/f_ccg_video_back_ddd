@@ -16,6 +16,8 @@ func MapUserVideoAuditStatus(status enum.VideoStatus) (int, string) {
 		return UserVideoAuditReviewing, "审核中"
 	case enum.VideoStatusScheduled:
 		return UserVideoAuditScheduled, "定时发布"
+	case enum.VideoStatusDeleted:
+		fallthrough
 	default:
 		return 0, ""
 	}

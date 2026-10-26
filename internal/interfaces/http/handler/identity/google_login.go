@@ -1,13 +1,13 @@
 package identity
 
 import (
-	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 
-	"github.com/gin-gonic/gin"
+	app "f_ccg_video_back_ddd/internal/application/identity"
 
-	"go.uber.org/zap"
+	"github.com/gin-gonic/gin"
 )
 
 // GoogleLoginReq 请求/响应结构体.
@@ -25,8 +25,8 @@ func (h *Handler) GoogleLoginView(c *gin.Context) {
 	cr := middlewares.GetBound[GoogleLoginReq](c)
 
 	if err := h.oauth.ConsumeOAuthState(c.Request.Context(), app.OAuthProviderGoogle, cr.State); err != nil {
-		h.log().Warn("Google OAuth State Invalid", zap.Error(err))
-		res.FailWithMsg("google登录状态无效，请重试", c)
+		res.RecordFailure(apperr.Wrap("handler/identity/google_login", nil, err, apperr.Security), c)
+		res.FailWithCause(err, "google登录状态无效，请重试", c)
 
 		return
 	}

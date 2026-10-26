@@ -3,13 +3,13 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )
@@ -32,6 +32,7 @@ func (s *ScheduleStore) Add(ctx context.Context, videoID uint, when time.Time) e
 	if videoID == 0 {
 		return domain.ErrVideoIDRequired
 	}
+
 	return gormx.DB(ctx, s.db).Model(&po.Video{}).Where("id = ?", videoID).
 		UpdateColumns(map[string]any{"publish_at": when, "is_scheduled": true}).Error
 }
@@ -45,6 +46,7 @@ func (s *ScheduleStore) save(ctx context.Context, videoID uint, when *time.Time)
 	if videoID == 0 {
 		return domain.ErrVideoIDRequired
 	}
+
 	return gormx.DB(ctx, s.db).Model(&po.Video{}).Where("id = ?", videoID).
 		UpdateColumn("publish_at", when).Error
 }
@@ -52,10 +54,12 @@ func (s *ScheduleStore) save(ctx context.Context, videoID uint, when *time.Time)
 // PublishTime 读取计划时刻；无记录和未设置计划都返回 nil 时间，调用方另查视频状态。
 func (s *ScheduleStore) PublishTime(ctx context.Context, videoID uint) (*time.Time, error) {
 	var row po.Video
+
 	err := gormx.DB(ctx, s.db).Select("publish_at").Take(&row, "id = ?", videoID).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
+
 	return row.PublishAt, err
 }
 
@@ -63,8 +67,10 @@ func (s *ScheduleStore) PublishTime(ctx context.Context, videoID uint) (*time.Ti
 // 并发调度的最终裁定在 Scheduler.ProcessDueScheduledVideo 的行锁事务中。
 func (s *ScheduleStore) DueVideoIDs(ctx context.Context, now time.Time, statuses []enum.VideoStatus) ([]uint, error) {
 	var ids []uint
+
 	err := gormx.DB(ctx, s.db).Model(&po.Video{}).Where("publish_at <= ?", now).
 		Where("status IN ?", statuses).
 		Order("publish_at ASC, id ASC").Limit(100).Pluck("id", &ids).Error
+
 	return ids, err
 }

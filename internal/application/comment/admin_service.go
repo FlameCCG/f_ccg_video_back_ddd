@@ -2,10 +2,11 @@ package comment
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strings"
 
 	domain "f_ccg_video_back_ddd/internal/domain/comment"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
@@ -81,6 +82,33 @@ func (s *Service) AdminDelete(ctx context.Context, commentIDs []uint) (int64, er
 		}
 	}
 
+	return finishServiceAdminDelete(ctx, s, comments, rootIDSet, replyRootDelta, children)
+}
+
+func serviceAdminDeleteTransaction(txCtx context.Context, s *Service, rootIDSet map[uint]struct{}, replyRootDelta map[uint]int64, idsToDelete []uint) error {
+	// 更新根评论 reply_count（仅删除回复且根评论未删除时）
+	for rootID, dec := range replyRootDelta {
+		if dec <= 0 {
+			continue
+		}
+
+		if _, ok := rootIDSet[rootID]; ok {
+			continue
+		}
+
+		if err := s.comments.DecrReplyCountBy(txCtx, rootID, dec); err != nil {
+			return err
+		}
+	}
+
+	if err := s.likes.DeleteByCommentIDs(txCtx, idsToDelete); err != nil {
+		return err
+	}
+
+	return s.comments.DeleteByIDs(txCtx, idsToDelete)
+}
+
+func finishServiceAdminDelete(ctx context.Context, s *Service, comments []domain.Comment, rootIDSet map[uint]struct{}, replyRootDelta map[uint]int64, children []domain.Comment) (int64, error) {
 	videoDelta := make(map[uint]int64)
 	idsToDeleteSet := make(map[uint]struct{}, len(comments)+len(children))
 
@@ -115,26 +143,7 @@ func (s *Service) AdminDelete(ctx context.Context, commentIDs []uint) (int64, er
 	}
 
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		// 更新根评论 reply_count（仅删除回复且根评论未删除时）
-		for rootID, dec := range replyRootDelta {
-			if dec <= 0 {
-				continue
-			}
-
-			if _, ok := rootIDSet[rootID]; ok {
-				continue
-			}
-
-			if err := s.comments.DecrReplyCountBy(txCtx, rootID, dec); err != nil {
-				return err
-			}
-		}
-
-		if err := s.likes.DeleteByCommentIDs(txCtx, idsToDelete); err != nil {
-			return err
-		}
-
-		return s.comments.DeleteByIDs(txCtx, idsToDelete)
+		return serviceAdminDeleteTransaction(txCtx, s, rootIDSet, replyRootDelta, idsToDelete)
 	}); err != nil {
 		return 0, err
 	}
@@ -157,7 +166,7 @@ func (s *Service) AdminDelete(ctx context.Context, commentIDs []uint) (int64, er
 		s.likeCache.Drop(cleanCtx, id)
 	}
 
-	s.logger.Info("admin delete comments ok", zap.Int("count", len(idsToDelete)))
+	logctx.With(ctx, s.logger).Info("admin delete comments ok", zap.String("event", "comment.admin_service.admin_delete.diagnostic"), zap.String("operation", "comment.admin_service.admin_delete"), zap.Int("count", len(idsToDelete)))
 
 	return int64(len(idsToDelete)), nil
 }

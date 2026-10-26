@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,9 +13,9 @@ import (
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 )
 
+//nolint:gosec // These constants are public OAuth endpoint URLs, not credentials.
 const (
 	qqTokenURL    = "https://graph.qq.com/oauth2.0/token"
 	qqUserInfoURL = "https://graph.qq.com/user/get_user_info"

@@ -1,10 +1,10 @@
 package bootstrap
 
 import (
+	"f_ccg_video_back_ddd/internal/config"
 	"strings"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/config"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	httprouter "f_ccg_video_back_ddd/internal/interfaces/http/router"
 

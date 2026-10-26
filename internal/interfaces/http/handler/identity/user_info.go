@@ -44,7 +44,7 @@ func (h *Handler) UserInfoView(c *gin.Context) {
 
 	info, err := h.profiles.UserInfo(c.Request.Context(), uid)
 	if err != nil {
-		res.FailWithMsg("用户不存在", c)
+		res.FailWithCause(err, "用户不存在", c)
 
 		return
 	}

@@ -2,8 +2,15 @@ package ctxutil
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/logmeta"
+	"f_ccg_video_back_ddd/pkg/logsafe"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // DetachedTaskGroup 管理与请求解耦、但仍受进程生命周期约束的后台任务。
@@ -12,11 +19,12 @@ import (
 // 新架构改为可注入类型：由 bootstrap 创建唯一实例并注入需要 fire-and-forget 的应用服务，
 // 优雅退出时由 App.Stop 调用 Stop 取消并等待在途任务。行为与原实现一致。
 type DetachedTaskGroup struct {
+	logger     *zap.Logger
 	mu         sync.Mutex
 	active     int
 	idle       chan struct{}
 	stopping   bool
-	rootCtx    context.Context
+	rootCtx    context.Context //nolint:containedctx // Owns the task group lifecycle; Stop cancels all pending detached work.
 	rootCancel context.CancelFunc
 }
 
@@ -27,6 +35,7 @@ func NewDetachedTaskGroup() *DetachedTaskGroup {
 	close(idle)
 
 	return &DetachedTaskGroup{
+		logger:     zap.NewNop(),
 		idle:       idle,
 		rootCtx:    rootCtx,
 		rootCancel: rootCancel,
@@ -52,7 +61,13 @@ func (g *DetachedTaskGroup) Go(parent context.Context, timeout time.Duration, fn
 		g.idle = make(chan struct{})
 	}
 
-	ctx, cancel := WithDetachedTimeout(parent, timeout)
+	values := logmeta.From(parent)
+	if values.TaskID == "" {
+		values.TaskID = logmeta.NewID()
+	}
+
+	values.AttemptID = logmeta.NewID()
+	ctx, cancel := WithDetachedTimeout(logmeta.With(parent, values), timeout)
 	stopCancel := context.AfterFunc(g.rootCtx, cancel)
 	g.active++
 	g.mu.Unlock()
@@ -61,6 +76,26 @@ func (g *DetachedTaskGroup) Go(parent context.Context, timeout time.Duration, fn
 		defer g.done()
 		defer stopCancel()
 		defer cancel()
+
+		logger := logctx.With(ctx, g.logger)
+		start := time.Now()
+
+		logger.Info("task.started", zap.String("event", "task.started"))
+
+		defer func() {
+			fields := []zap.Field{zap.Float64("duration_ms", float64(time.Since(start))/float64(time.Millisecond))}
+			if value := recover(); value != nil {
+				logger.Error("task.failed", append(fields, zap.String("event", "task.failed"), zap.String("error", logsafe.Text(fmt.Sprint(value), logsafe.ErrorLimit)), zap.String("stack", string(debug.Stack())))...)
+				return
+			}
+
+			event := "task.finished"
+			if ctx.Err() != nil {
+				event = "task.canceled"
+			}
+
+			logger.Info(event, append(fields, zap.String("event", event))...)
+		}()
 
 		fn(ctx)
 	}()
@@ -127,4 +162,14 @@ func (g *DetachedTaskGroup) done() {
 	if g.active == 0 {
 		close(g.idle)
 	}
+}
+
+// NewLoggedDetachedTaskGroup injects the process logger without storing it in a context.
+func NewLoggedDetachedTaskGroup(logger *zap.Logger) *DetachedTaskGroup {
+	g := NewDetachedTaskGroup()
+	if logger != nil {
+		g.logger = logger
+	}
+
+	return g
 }

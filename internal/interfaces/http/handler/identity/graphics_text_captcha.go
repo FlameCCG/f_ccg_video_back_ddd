@@ -3,13 +3,13 @@ package identity
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/res"
 	"fmt"
 	"image/color"
 	"math/big"
 	"strconv"
-
-	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
-	"f_ccg_video_back_ddd/pkg/res"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -51,16 +51,18 @@ func (h *CaptchaHandler) GraphicsTextCaptchaView(c *gin.Context) {
 	// independently of the math/rand state used for decorative image noise.
 	id, question, answer, err := newGraphicChallenge(req.Type)
 	if err != nil {
-		res.FailWithMsg("验证码生成失败", c)
+		res.FailWithCause(err, "验证码生成失败", c)
 		return
 	}
+
 	image, err := newGraphicCaptchaDriver(req.Type).DrawCaptcha(question)
 	if err != nil {
-		res.FailWithMsg("验证码生成失败", c)
+		res.FailWithCause(err, "验证码生成失败", c)
 		return
 	}
+
 	if err := h.captcha.GraphicStore().Set(id, answer); err != nil {
-		res.FailWithMsg("验证码生成失败", c)
+		res.FailWithCause(err, "验证码生成失败", c)
 		return
 	}
 
@@ -75,8 +77,10 @@ func newGraphicChallenge(captchaType int) (id, question, answer string, err erro
 	if _, err = rand.Read(rawID[:]); err != nil {
 		return "", "", "", err
 	}
+
 	id = hex.EncodeToString(rawID[:])
 	source := ""
+
 	switch captchaType {
 	case 2:
 		source = graphicCaptchaAlphanumericSource
@@ -85,35 +89,48 @@ func newGraphicChallenge(captchaType int) (id, question, answer string, err erro
 	case 4:
 		source = graphicCaptchaLetterSource
 	}
+
 	if source != "" {
+		var answerSb88 strings.Builder
+
 		for range graphicCaptchaLength {
 			index, err := rand.Int(rand.Reader, big.NewInt(int64(len(source))))
 			if err != nil {
 				return "", "", "", err
 			}
-			answer += string(source[index.Int64()])
+
+			answerSb88.WriteString(string(source[index.Int64()]))
 		}
+
+		answer += answerSb88.String()
+
 		return id, answer, answer, nil
 	}
+
 	a, err := rand.Int(rand.Reader, big.NewInt(20))
 	if err != nil {
 		return "", "", "", err
 	}
+
 	b, err := rand.Int(rand.Reader, big.NewInt(20))
 	if err != nil {
 		return "", "", "", err
 	}
+
 	op, err := rand.Int(rand.Reader, big.NewInt(3))
 	if err != nil {
 		return "", "", "", err
 	}
+
 	operator, result := "+", a.Int64()+b.Int64()
 	if op.Int64() == 1 {
 		operator, result = "-", a.Int64()-b.Int64()
 	}
+
 	if op.Int64() == 2 {
 		operator, result = "x", a.Int64()*b.Int64()
 	}
+
 	return id, fmt.Sprintf("%d%s%d=?", a.Int64(), operator, b.Int64()), strconv.FormatInt(result, 10), nil
 }
 
@@ -139,7 +156,8 @@ func newGraphicCaptchaDriver(captchaType int) base64Captcha.Driver {
 		return base64Captcha.NewDriverMath(
 			graphicCaptchaHeight, graphicCaptchaWidth, graphicCaptchaNoiseText,
 			base64Captcha.OptionShowSineLine|base64Captcha.OptionShowHollowLine,
-			bgColor, nil, []string{graphicCaptchaFont})
+			bgColor, nil, []string{graphicCaptchaFont},
+		)
 	}
 }
 
@@ -148,5 +166,6 @@ func newGraphicStringDriver(source string, bgColor *color.RGBA) base64Captcha.Dr
 	return base64Captcha.NewDriverString(
 		graphicCaptchaHeight, graphicCaptchaWidth, graphicCaptchaNoiseText,
 		base64Captcha.OptionShowSineLine|base64Captcha.OptionShowSlimeLine,
-		graphicCaptchaLength, source, bgColor, nil, []string{graphicCaptchaFont})
+		graphicCaptchaLength, source, bgColor, nil, []string{graphicCaptchaFont},
+	)
 }

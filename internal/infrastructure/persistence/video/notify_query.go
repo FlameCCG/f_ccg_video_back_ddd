@@ -2,10 +2,10 @@ package video
 
 import (
 	"context"
-
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/video"
 
 	"gorm.io/gorm"
 )
@@ -13,7 +13,7 @@ import (
 // NotifySourceQuery 通知渲染所需的读侧投影查询的 GORM 实现。
 //
 // 按 decisions.md D-011：这些只读投影（users / videos 列）允许在本包直读；
-// 写入通知行仍走 application 层的 VideoNotifier 端口。
+// 写入通知行仍走 application 层的 Notifier 端口。
 type NotifySourceQuery struct {
 	db *gorm.DB
 }

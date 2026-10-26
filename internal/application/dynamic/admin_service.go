@@ -2,10 +2,10 @@ package dynamic
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"strings"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // AdminService 管理端动态用例服务（原 service/dynamic_service/admin_service.go）。
@@ -40,15 +40,20 @@ func (s *AdminService) Delete(ctx context.Context, dynamicIDs []uint) (int64, er
 	}
 
 	var affected int64
+
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		for _, id := range dynamicIDs {
 			if _, _, err := s.comments.PurgeByDynamic(txCtx, id); err != nil {
 				return err
 			}
 		}
+
 		var err error
+
 		affected, err = s.dynamics.DeleteByIDs(txCtx, dynamicIDs)
+
 		return err
 	})
+
 	return affected, err
 }

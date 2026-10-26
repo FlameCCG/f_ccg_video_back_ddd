@@ -3,6 +3,9 @@ package mq
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,10 +14,10 @@ import (
 	"strings"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
+
 	media "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
@@ -56,7 +59,7 @@ func NewTranscodeEngine(
 }
 
 // -----------------------------------------------------------------------------
-// MediaProber
+// Prober
 // -----------------------------------------------------------------------------
 
 // ProbeVideo 探测本地媒体文件元数据。
@@ -113,8 +116,11 @@ func (e *TranscodeEngine) statHTTPFile(ctx context.Context, source string) (int6
 // -----------------------------------------------------------------------------
 
 // OpenCheckpoint 打开（或创建）任务的断点目录。
-func (e *TranscodeEngine) OpenCheckpoint(task media.TranscodeTask) (mediaapp.Checkpoint, error) {
-	return e.checkpoints.open(task)
+func (e *TranscodeEngine) OpenCheckpoint(ctx context.Context, task media.TranscodeTask) (mediaapp.Checkpoint, error) {
+	manager := *e.checkpoints
+	manager.logger = logctx.With(ctx, manager.logger)
+
+	return manager.open(task)
 }
 
 // StartCheckpointJanitor 启动断点目录孤儿清扫（随 ctx 退出）。
@@ -172,19 +178,19 @@ func (e *TranscodeEngine) reuseStagedSource(
 	}
 
 	if remoteSize, err := e.statHTTPFile(ctx, sourceURL); err == nil && remoteSize > 0 && remoteSize != info.Size() {
-		e.logger.Warn("staged transcode source size mismatch, will re-download",
-			zap.String("sourceURL", sourceURL),
-			zap.Int64("stagedSize", info.Size()),
-			zap.Int64("remoteSize", remoteSize),
+		logctx.With(ctx, e.logger).Warn("staged transcode source size mismatch, will re-download", zap.String("event", "mq.transcode_engine.reuse_staged_source.degraded"), zap.String("operation", "mq.transcode_engine.reuse_staged_source"),
+			zap.String("source_url", sourceURL),
+			zap.Int64("staged_size", info.Size()),
+			zap.Int64("remote_size", remoteSize),
 		)
 		ckpt.DiscardCommitted(name)
 
 		return "", false
 	}
 
-	e.logger.Info("staged transcode source reused from checkpoint",
-		zap.String("sourceURL", sourceURL),
-		zap.String("stagedPath", committedPath),
+	logctx.With(ctx, e.logger).Info("staged transcode source reused from checkpoint", zap.String("event", "mq.transcode_engine.reuse_staged_source.diagnostic"), zap.String("operation", "mq.transcode_engine.reuse_staged_source"),
+		zap.String("source_url", sourceURL),
+		zap.String("staged_path", committedPath),
 		zap.Int64("size", info.Size()),
 	)
 
@@ -232,60 +238,7 @@ func (e *TranscodeEngine) stageRemoteSource(
 		return "", nil, fmt.Errorf("create staged source file: %w", err)
 	}
 
-	stagedPath := file.Name()
-	cleanup := func() { _ = os.Remove(stagedPath) }
-
-	written, err := io.Copy(file, resp.Body)
-	if err != nil {
-		_ = file.Close()
-		cleanup()
-
-		return "", nil, fmt.Errorf("copy remote source: %w", err)
-	}
-
-	if err := file.Close(); err != nil {
-		cleanup()
-
-		return "", nil, fmt.Errorf("close staged source file: %w", err)
-	}
-
-	if written <= 0 {
-		cleanup()
-
-		return "", nil, errors.New("remote source is empty")
-	}
-
-	if resp.ContentLength >= 0 && written != resp.ContentLength {
-		cleanup()
-
-		return "", nil, fmt.Errorf(
-			"remote source truncated: downloaded %d bytes, expected %d",
-			written,
-			resp.ContentLength,
-		)
-	}
-
-	if ckpt.persistent() {
-		// 校验通过后原子提交，供后续重试复用；提交失败退回一次性暂存语义。
-		committedPath, commitErr := ckpt.CommitFile(stagedPath, media.StagedSourceCheckpointName(sourceURL))
-		if commitErr == nil {
-			stagedPath = committedPath
-			cleanup = func() {}
-		} else {
-			e.logger.Warn("commit staged transcode source failed, keep ephemeral copy",
-				zap.String("sourceURL", sourceURL),
-				zap.Error(commitErr),
-			)
-		}
-	}
-
-	e.logger.Info("remote transcode source staged locally",
-		zap.String("sourceURL", sourceURL),
-		zap.String("stagedPath", stagedPath),
-		zap.Int64("size", written),
-	)
-
-	return stagedPath, cleanup, nil
+	return finishTranscodeEngineStageRemoteSource(ctx, e, sourceURL, ckpt, resp, file)
 }
 
 // -----------------------------------------------------------------------------
@@ -340,4 +293,64 @@ func outputFileName(target media.TranscodeTarget, index int) string {
 	}
 
 	return filepath.Base(name)
+}
+
+func finishTranscodeEngineStageRemoteSource(ctx context.Context, e *TranscodeEngine, sourceURL string, ckpt *transcodeCheckpoint, resp *http.Response, file *os.File) (string, func(), error) {
+	var err error
+
+	stagedPath := file.Name()
+	cleanup := func() { _ = os.Remove(stagedPath) }
+
+	written, err := io.Copy(file, resp.Body)
+	if err != nil {
+		_ = file.Close()
+
+		cleanup()
+
+		return "", nil, fmt.Errorf("copy remote source: %w", err)
+	}
+
+	if errLocal := file.Close(); errLocal != nil {
+		cleanup()
+
+		return "", nil, fmt.Errorf("close staged source file: %w", errLocal)
+	}
+
+	if written <= 0 {
+		cleanup()
+
+		return "", nil, errors.New("remote source is empty")
+	}
+
+	if resp.ContentLength >= 0 && written != resp.ContentLength {
+		cleanup()
+
+		return "", nil, fmt.Errorf(
+			"remote source truncated: downloaded %d bytes, expected %d",
+			written,
+			resp.ContentLength,
+		)
+	}
+
+	if ckpt.persistent() {
+		// 校验通过后原子提交，供后续重试复用；提交失败退回一次性暂存语义。
+		committedPath, commitErr := ckpt.CommitFile(stagedPath, media.StagedSourceCheckpointName(sourceURL))
+		if commitErr == nil {
+			stagedPath = committedPath
+			cleanup = func() {}
+		} else {
+			logctx.With(ctx, e.logger).Warn("commit staged transcode source failed, keep ephemeral copy", zap.String("event", "mq.transcode_engine.stage_remote_source.degraded"), zap.String("operation", "mq.transcode_engine.stage_remote_source"),
+				zap.String("source_url", sourceURL),
+				zap.Error(commitErr),
+			)
+		}
+	}
+
+	logctx.With(ctx, e.logger).Info("remote transcode source staged locally", zap.String("event", "mq.transcode_engine.stage_remote_source.diagnostic"), zap.String("operation", "mq.transcode_engine.stage_remote_source"),
+		zap.String("source_url", sourceURL),
+		zap.String("staged_path", stagedPath),
+		zap.Int64("size", written),
+	)
+
+	return stagedPath, cleanup, nil
 }

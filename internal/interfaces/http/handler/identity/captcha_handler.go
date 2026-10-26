@@ -10,7 +10,6 @@ import (
 type CaptchaHandler struct {
 	captcha *app.CaptchaService
 	emails  *app.EmailCaptchaSendService
-	logger  *zap.Logger
 }
 
 // NewCaptchaHandler 构造验证码处理器。
@@ -20,15 +19,7 @@ type CaptchaHandler struct {
 func NewCaptchaHandler(
 	captcha *app.CaptchaService,
 	emails *app.EmailCaptchaSendService,
-	logger *zap.Logger,
+	_ *zap.Logger,
 ) *CaptchaHandler {
-	return &CaptchaHandler{captcha: captcha, emails: emails, logger: loggerOrNop(logger)}
-}
-
-func (h *CaptchaHandler) log() *zap.Logger {
-	if h == nil {
-		return zap.NewNop()
-	}
-
-	return loggerOrNop(h.logger)
+	return &CaptchaHandler{captcha: captcha, emails: emails}
 }

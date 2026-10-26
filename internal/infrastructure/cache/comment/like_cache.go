@@ -9,11 +9,12 @@ package comment
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strconv"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/comment"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -212,7 +213,7 @@ func (c *LikeCache) Drop(ctx context.Context, commentID uint) {
 		likeCountKey(commentID),
 		likeUserSetKey(commentID),
 	).Err(); err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("clear comment like cache failed", zap.Uint("commentId", commentID), zap.Error(err))
+		logctx.With(ctx, c.logger).Warn("clear comment like cache failed", zap.String("event", "cache.like_cache.drop.degraded"), zap.String("operation", "cache.like_cache.drop"), zap.Uint("comment_id", commentID), zap.Error(err))
 	}
 }
 
@@ -265,7 +266,7 @@ func (c *LikeCache) Counts(ctx context.Context, commentIDs []uint) (map[uint]int
 
 	values, err := c.redis.MGet(cacheCtx, keys...).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("fetch comment like count cache failed", zap.Error(err))
+		logctx.With(ctx, c.logger).Warn("fetch comment like count cache failed", zap.String("event", "cache.like_cache.counts.degraded"), zap.String("operation", "cache.like_cache.counts"), zap.Error(err))
 
 		return nil, append([]uint(nil), commentIDs...)
 	}
@@ -321,53 +322,10 @@ func (c *LikeCache) LikedFlags(
 	cacheCtx, cancel := context.WithTimeout(ctx, likeReadTimeout)
 	defer cancel()
 
-	// 批量探测 count / set 是否成套
-	type probe struct {
-		countGet  *redis.StringCmd
-		setExists *redis.IntCmd
-	}
-
-	pipe := c.redis.Pipeline()
-	probes := make(map[uint]probe, len(commentIDs))
-
-	for _, id := range commentIDs {
-		probes[id] = probe{
-			countGet:  pipe.Get(cacheCtx, likeCountKey(id)),
-			setExists: pipe.Exists(cacheCtx, likeUserSetKey(id)),
-		}
-	}
-
-	// 允许部分 key 缺失（Get 带 redis.Nil），逐条读取结果时再判定 miss。
-	_, _ = pipe.Exec(cacheCtx)
-
-	hitIDs := make([]uint, 0, len(commentIDs))
-	missIDs := make([]uint, 0)
-
-	for _, id := range commentIDs {
-		p := probes[id]
-
-		raw, err := p.countGet.Result()
-		if err != nil {
-			missIDs = append(missIDs, id)
-
-			continue
-		}
-
-		count, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			missIDs = append(missIDs, id)
-
-			continue
-		}
-
-		if count > 0 && p.setExists.Val() == 0 {
-			// 半残：有 count 无 set
-			missIDs = append(missIDs, id)
-
-			continue
-		}
-
-		hitIDs = append(hitIDs, id)
+	hitIDs, missIDs, probeErr := c.probeLikedIDs(cacheCtx, commentIDs)
+	if probeErr != nil {
+		logctx.With(ctx, c.logger).Warn("probe comment like cache failed", zap.String("event", "cache.like_cache.liked_flags.degraded"), zap.String("operation", "cache.like_cache.liked_flags"), zap.Error(probeErr))
+		return nil, append([]uint(nil), commentIDs...)
 	}
 
 	result := make(map[uint]bool, len(commentIDs))
@@ -384,7 +342,7 @@ func (c *LikeCache) LikedFlags(
 	}
 
 	if _, err := pipe2.Exec(cacheCtx); err != nil && !errors.Is(err, redis.Nil) {
-		c.logger.Warn("fetch comment like flags cache failed", zap.Error(err))
+		logctx.With(ctx, c.logger).Warn("fetch comment like flags cache failed", zap.String("event", "cache.like_cache.liked_flags.degraded"), zap.String("operation", "cache.like_cache.liked_flags"), zap.Error(err))
 
 		return nil, append([]uint(nil), commentIDs...)
 	}
@@ -476,4 +434,59 @@ func toBool(v any) bool {
 	default:
 		return false
 	}
+}
+
+func (c *LikeCache) probeLikedIDs(cacheCtx context.Context, commentIDs []uint) ([]uint, []uint, error) {
+	// 批量探测 count / set 是否成套
+	type probe struct {
+		countGet  *redis.StringCmd
+		setExists *redis.IntCmd
+	}
+
+	pipe := c.redis.Pipeline()
+	probes := make(map[uint]probe, len(commentIDs))
+
+	for _, id := range commentIDs {
+		probes[id] = probe{
+			countGet:  pipe.Get(cacheCtx, likeCountKey(id)),
+			setExists: pipe.Exists(cacheCtx, likeUserSetKey(id)),
+		}
+	}
+
+	// 允许部分 key 缺失（Get 带 redis.Nil），逐条读取结果时再判定 miss。
+	if _, err := pipe.Exec(cacheCtx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, nil, err
+	}
+
+	hitIDs := make([]uint, 0, len(commentIDs))
+	missIDs := make([]uint, 0)
+
+	for _, id := range commentIDs {
+		p := probes[id]
+
+		raw, err := p.countGet.Result()
+		if err != nil {
+			missIDs = append(missIDs, id)
+
+			continue
+		}
+
+		count, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			missIDs = append(missIDs, id)
+
+			continue
+		}
+
+		if count > 0 && p.setExists.Val() == 0 {
+			// 半残：有 count 无 set
+			missIDs = append(missIDs, id)
+
+			continue
+		}
+
+		hitIDs = append(hitIDs, id)
+	}
+
+	return hitIDs, missIDs, nil
 }

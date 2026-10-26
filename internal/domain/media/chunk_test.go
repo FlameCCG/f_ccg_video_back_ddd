@@ -1,8 +1,9 @@
 package media
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestPlanTranscodeChunks(t *testing.T) {
@@ -12,14 +13,12 @@ func TestPlanTranscodeChunks(t *testing.T) {
 		t.Parallel()
 
 		chunks := PlanTranscodeChunks(3600, 4, 180)
-		if len(chunks) != 20 {
-			t.Fatalf("chunks = %d, want 20", len(chunks))
-		}
+		require.Len(t, chunks, 20, "chunks = %d, want 20", len(chunks))
 
 		for i, ch := range chunks {
-			if ch.Index != i || ch.StartSec != i*180 || ch.LenSec != 180 {
-				t.Fatalf("chunk %d = %+v, want start=%d len=180", i, ch, i*180)
-			}
+			require.Equal(t, ch.Index, i, "chunk %d = %+v, want start=%d len=180", i, ch, i*180)
+			require.Equal(t, ch.StartSec, i*180, "chunk %d = %+v, want start=%d len=180", i, ch, i*180)
+			require.Equal(t, 180, ch.LenSec, "chunk %d = %+v, want start=%d len=180", i, ch, i*180)
 		}
 	})
 
@@ -29,14 +28,10 @@ func TestPlanTranscodeChunks(t *testing.T) {
 		a := PlanTranscodeChunks(3777, 4, 180)
 
 		b := PlanTranscodeChunks(3777, 4, 180)
-		if len(a) == 0 || len(a) != len(b) {
-			t.Fatalf("plan lengths differ: %d vs %d", len(a), len(b))
-		}
+		require.False(t, len(a) == 0 || len(a) != len(b), "plan lengths differ: %d vs %d", len(a), len(b))
 
 		for i := range a {
-			if a[i] != b[i] {
-				t.Fatalf("chunk %d differs: %+v vs %+v", i, a[i], b[i])
-			}
+			require.Equal(t, a[i], b[i], "chunk %d differs: %+v vs %+v", i, a[i], b[i])
 		}
 	})
 
@@ -44,52 +39,43 @@ func TestPlanTranscodeChunks(t *testing.T) {
 		t.Parallel()
 
 		chunks := PlanTranscodeChunks(3601, 4, 180)
-		if len(chunks) != 20 {
-			t.Fatalf("chunks = %d, want 20 (tail merged)", len(chunks))
-		}
+		require.Len(t, chunks, 20, "chunks = %d, want 20 (tail merged)", len(chunks))
 
 		last := chunks[len(chunks)-1]
-		if last.LenSec != 181 {
-			t.Fatalf("merged last chunk len = %d, want 181", last.LenSec)
-		}
+		require.Equal(t, 181, last.LenSec, "merged last chunk len = %d, want 181", last.LenSec)
 	})
 
 	t.Run("normal tail keeps own chunk", func(t *testing.T) {
 		t.Parallel()
 
 		chunks := PlanTranscodeChunks(3700, 4, 180)
-		if len(chunks) != 21 {
-			t.Fatalf("chunks = %d, want 21", len(chunks))
-		}
+		require.Len(t, chunks, 21, "chunks = %d, want 21", len(chunks))
 
 		last := chunks[len(chunks)-1]
-		if last.StartSec != 3600 || last.LenSec != 100 {
-			t.Fatalf("last chunk = %+v, want start=3600 len=100", last)
-		}
+		require.Equal(t, 3600, last.StartSec, "last chunk = %+v, want start=3600 len=100", last)
+		require.Equal(t, 100, last.LenSec, "last chunk = %+v, want start=3600 len=100", last)
 	})
 
 	t.Run("chunk length rounds up to seg duration grid", func(t *testing.T) {
 		t.Parallel()
 
 		chunks := PlanTranscodeChunks(1000, 4, 90)
-		if len(chunks) == 0 {
-			t.Fatal("expected chunked plan")
-		}
+		require.NotEmpty(t, chunks, "expected chunked plan")
 
-		if chunks[0].LenSec%4 != 0 {
-			t.Fatalf("chunk len %d not aligned to segDur grid", chunks[0].LenSec)
-		}
+		require.Equal(t, 0, chunks[0].LenSec%4, "chunk len %d not aligned to segDur grid", chunks[0].LenSec)
 	})
 
 	t.Run("short source not chunked", func(t *testing.T) {
 		t.Parallel()
 
-		if chunks := PlanTranscodeChunks(359, 4, 180); chunks != nil {
-			t.Fatalf("short source must not be chunked, got %d chunks", len(chunks))
+		{
+			chunks := PlanTranscodeChunks(359, 4, 180)
+			require.Nil(t, chunks, "short source must not be chunked, got %d chunks", len(chunks))
 		}
 
-		if chunks := PlanTranscodeChunks(0, 4, 180); chunks != nil {
-			t.Fatal("zero duration must not be chunked")
+		{
+			chunks := PlanTranscodeChunks(0, 4, 180)
+			require.Nil(t, chunks, "zero duration must not be chunked")
 		}
 	})
 
@@ -102,17 +88,13 @@ func TestPlanTranscodeChunks(t *testing.T) {
 		total := 0
 
 		for _, ch := range chunks {
-			if ch.StartSec != next {
-				t.Fatalf("gap before chunk %d: start=%d want=%d", ch.Index, ch.StartSec, next)
-			}
+			require.Equal(t, ch.StartSec, next, "gap before chunk %d: start=%d want=%d", ch.Index, ch.StartSec, next)
 
 			next = ch.StartSec + ch.LenSec
 			total += ch.LenSec
 		}
 
-		if total != duration {
-			t.Fatalf("chunk coverage = %d, want %d", total, duration)
-		}
+		require.Equal(t, total, duration, "chunk coverage = %d, want %d", total, duration)
 	})
 }
 
@@ -124,25 +106,29 @@ func TestChunkPlanGates(t *testing.T) {
 
 	policy := &TranscodePolicy{DashSegDuration: 4}
 
-	if plan := policy.ChunkPlan(3600, true); len(plan) == 0 {
-		t.Fatal("long source with persistent checkpoint must be chunked")
+	{
+		plan := policy.ChunkPlan(3600, true)
+		require.NotEmpty(t, plan, "long source with persistent checkpoint must be chunked")
 	}
 
 	// 断点不可跨尝试复用（ephemeral / 无断点目录）：分段无意义。
-	if plan := policy.ChunkPlan(3600, false); plan != nil {
-		t.Fatal("non-persistent checkpoint must not chunk")
+	{
+		plan := policy.ChunkPlan(3600, false)
+		require.Nil(t, plan, "non-persistent checkpoint must not chunk")
 	}
 
 	// chunkDurationSec < 0 显式关闭分段。
 	disabled := &TranscodePolicy{DashSegDuration: 4, ChunkDurationSec: -1}
-	if plan := disabled.ChunkPlan(3600, true); plan != nil {
-		t.Fatal("negative chunkDurationSec must disable chunking")
+	{
+		plan := disabled.ChunkPlan(3600, true)
+		require.Nil(t, plan, "negative chunkDurationSec must disable chunking")
 	}
 
 	// nil 策略走默认块长，仍可分段。
 	var nilPolicy *TranscodePolicy
-	if plan := nilPolicy.ChunkPlan(3600, true); len(plan) == 0 {
-		t.Fatal("nil policy must fall back to default chunk length")
+	{
+		plan := nilPolicy.ChunkPlan(3600, true)
+		require.NotEmpty(t, plan, "nil policy must fall back to default chunk length")
 	}
 }
 
@@ -152,17 +138,12 @@ func TestChunkArtifactDirNameSeparatesEncoderModes(t *testing.T) {
 	gpu := ChunkArtifactDirName(TranscodePipelineMP4, true, 3)
 
 	cpu := ChunkArtifactDirName(TranscodePipelineMP4, false, 3)
-	if gpu == cpu {
-		t.Fatal("gpu/cpu chunk namespaces must differ (mixing encoders in one concat is forbidden)")
-	}
+	require.NotEqual(t, gpu, cpu, "gpu/cpu chunk namespaces must differ (mixing encoders in one concat is forbidden)")
 
-	if !strings.Contains(gpu, "gpu") || !strings.Contains(cpu, "cpu") {
-		t.Fatalf("dir names must embed encoder mode: %q %q", gpu, cpu)
-	}
+	require.Contains(t, gpu, "gpu", "dir names must embed encoder mode: %q %q", gpu, cpu)
+	require.Contains(t, cpu, "cpu", "dir names must embed encoder mode: %q %q", gpu, cpu)
 
-	if ChunkArtifactDirName(TranscodePipelineDASH, false, 3) == cpu {
-		t.Fatal("pipeline namespaces must differ")
-	}
+	require.NotEqual(t, ChunkArtifactDirName(TranscodePipelineDASH, false, 3), cpu, "pipeline namespaces must differ")
 }
 
 // TestIsLastChunk 覆盖末块判定（原实现为内联的 chunk.Index == plan[len-1].Index 比较）。
@@ -170,19 +151,11 @@ func TestIsLastChunk(t *testing.T) {
 	t.Parallel()
 
 	plan := PlanTranscodeChunks(3600, 4, 180)
-	if len(plan) < 2 {
-		t.Fatalf("expected multi-chunk plan, got %d", len(plan))
-	}
+	require.GreaterOrEqual(t, len(plan), 2, "expected multi-chunk plan, got %d", len(plan))
 
-	if IsLastChunk(plan, plan[len(plan)-1]) != true {
-		t.Fatal("last chunk must be detected")
-	}
+	require.True(t, IsLastChunk(plan, plan[len(plan)-1]), "last chunk must be detected")
 
-	if IsLastChunk(plan, plan[0]) {
-		t.Fatal("first chunk must not be treated as last")
-	}
+	require.False(t, IsLastChunk(plan, plan[0]), "first chunk must not be treated as last")
 
-	if IsLastChunk(nil, plan[0]) {
-		t.Fatal("empty plan has no last chunk")
-	}
+	require.False(t, IsLastChunk(nil, plan[0]), "empty plan has no last chunk")
 }

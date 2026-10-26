@@ -2,11 +2,12 @@ package media
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strconv"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -62,9 +63,9 @@ func (c *VideoDetailCache) InvalidateVideoDetailMeta(ctx context.Context, videoI
 	pipe.Expire(cacheCtx, genKey, videoDetailMetaGenTTL)
 
 	if _, err := pipe.Exec(cacheCtx); err != nil {
-		c.logger.Warn("invalidate video detail meta cache failed",
+		logctx.With(ctx, c.logger).Warn("invalidate video detail meta cache failed", zap.String("event", "cache.video_detail_cache.invalidate_video_detail_meta.degraded"), zap.String("operation", "cache.video_detail_cache.invalidate_video_detail_meta"),
 			zap.Error(err),
-			zap.Uint("videoId", videoID),
+			zap.Uint("video_id", videoID),
 		)
 	}
 }

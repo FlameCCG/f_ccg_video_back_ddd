@@ -1,10 +1,10 @@
 package ai
 
 import (
+	"f_ccg_video_back_ddd/pkg/res"
 	"strings"
 
 	aiapp "f_ccg_video_back_ddd/internal/application/ai"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,7 +24,7 @@ func (h *Handler) GenerateVideoView(c *gin.Context) {
 }
 
 // VideoStatusView 查询视频生成任务状态.
-// Query: requestID
+// Query: requestID.
 func (h *Handler) VideoStatusView(c *gin.Context) {
 	requestID := strings.TrimSpace(c.Query("requestID"))
 	if requestID == "" {

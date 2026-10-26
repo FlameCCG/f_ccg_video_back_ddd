@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
@@ -120,8 +121,8 @@ func (s *AuthorService) InvalidateVideoMetaCacheByPartition(ctx context.Context,
 
 	videoIDs, err := s.videos.IDsByPartition(ctx, partitionID)
 	if err != nil {
-		s.logger.Warn("list videos by partition for meta invalidate failed",
-			zap.Uint("partitionId", partitionID), zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("list videos by partition for meta invalidate failed", zap.String("event", "video.author_service.invalidate_video_meta_cache_by_partition.degraded"), zap.String("operation", "video.author_service.invalidate_video_meta_cache_by_partition"),
+			zap.Uint("partition_id", partitionID), zap.Error(err))
 
 		return
 	}
@@ -147,8 +148,8 @@ func (s *AuthorService) InvalidateVideosByAuthor(ctx context.Context, authorUser
 
 	videoIDs, err := s.videos.IDsByAuthor(ctx, authorUsername)
 	if err != nil {
-		s.logger.Warn("list videos by author for cache invalidate failed",
-			zap.String("authorUsername", authorUsername), zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("list videos by author for cache invalidate failed", zap.String("event", "video.author_service.invalidate_videos_by_author.degraded"), zap.String("operation", "video.author_service.invalidate_videos_by_author"),
+			zap.String("author_username", authorUsername), zap.Error(err))
 
 		return
 	}

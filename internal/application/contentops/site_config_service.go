@@ -1,13 +1,14 @@
 package contentops
 
 import (
+	"errors"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/config/site"
 	"fmt"
 	"net/url"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/config"
-	"f_ccg_video_back_ddd/internal/config/site"
 	thirdlogin "f_ccg_video_back_ddd/internal/config/thirdlogin"
 )
 
@@ -37,8 +38,7 @@ const (
 // SiteConfigService 站点配置用例服务（原 api/site_api/admin_config.go 的配置读写逻辑）。
 //
 // 配置快照由注入的 shared.ConfigStore 端口持有（实现为 infraconfig.Provider，替代原 global.Config/SetConfig）：
-// 更新时先浅拷贝顶层、替换目标配置段、再原子发布，避免与热更新/并发读产生 data race；
-// 发布成功后把该配置段写回配置文件，语义与原 viper.WriteConfig 一致。
+// 更新时校验并持久化目标配置段，再在同一通知路径发布新快照；失败保留上一份有效配置。
 type SiteConfigService struct {
 	provider shared.ConfigStore
 	files    ConfigFileWriter
@@ -82,7 +82,7 @@ func (s *SiteConfigService) AdminConfigByName(name string) (any, error) {
 	case ConfigNameServer:
 		return cloneAdminServerCORSConfig(cfg.Server), nil
 	case ConfigNameLogger:
-		return cfg.Logger, nil
+		return LoggerConfigView{Logger: cfg.Logger, RestartRequired: s.LoggerRestartRequired(cfg.Logger)}, nil
 	case ConfigNameTranscode:
 		return cfg.Transcode, nil
 	default:
@@ -93,8 +93,9 @@ func (s *SiteConfigService) AdminConfigByName(name string) (any, error) {
 // UpdateSite 更新站点配置段（空/脱敏的 MinIO 密钥保留原值）。
 func (s *SiteConfigService) UpdateSite(siteCfg *site.Site, disableUserSubmission *bool) error {
 	next := config.Clone(s.provider.Get())
+
 	if siteCfg == nil {
-		return fmt.Errorf("站点配置不能为空")
+		return errors.New("站点配置不能为空")
 	}
 	// 旧管理端未提交新字段时保留当前策略，避免意外重新开放投稿。
 	if disableUserSubmission != nil {
@@ -102,6 +103,7 @@ func (s *SiteConfigService) UpdateSite(siteCfg *site.Site, disableUserSubmission
 	} else if next.Site != nil {
 		siteCfg.DisableUserSubmission = next.Site.DisableUserSubmission
 	}
+
 	preserveSiteSecrets(siteCfg, next.Site)
 	next.Site = siteCfg
 
@@ -111,6 +113,11 @@ func (s *SiteConfigService) UpdateSite(siteCfg *site.Site, disableUserSubmission
 // UpdateLogger 更新日志配置段。
 func (s *SiteConfigService) UpdateLogger(logger *config.Logger) error {
 	next := config.Clone(s.provider.Get())
+
+	if err := logger.Validate(); err != nil {
+		return err
+	}
+
 	next.Logger = logger
 
 	return s.publish(next, ConfigNameLogger, next.Logger)
@@ -149,6 +156,7 @@ func (s *SiteConfigService) UpdateTranscode(transcode *config.Transcode, localCo
 			transcode.LocalConsumerDisabled = next.Transcode.LocalConsumerDisabled
 		}
 	}
+
 	next.Transcode = transcode
 
 	return s.publish(next, ConfigNameTranscode, next.Transcode)
@@ -194,14 +202,21 @@ func (s *SiteConfigService) UpdateServerCORS(origins []string) error {
 	return s.publish(next, ConfigNameServer, next.Server)
 }
 
-// publish 原子发布新配置树，随后把对应配置段写回配置文件。
-//
-// 原子性仅针对内存指针替换，文件写入失败时新快照已经对读者可见，当前没有回滚。
-// 调用方看到错误时应区分“未持久化”与“未生效”，不能把它解释成旧配置仍在内存中。
+// publish persists a validated section before publishing its snapshot.
 func (s *SiteConfigService) publish(next *config.Config, name string, item any) error {
+	if publisher, ok := s.provider.(interface {
+		PublishSection(string, any, func() error) error
+	}); ok {
+		return publisher.PublishSection(name, item, func() error { return s.files.Write(name, item) })
+	}
+
+	if err := s.files.Write(name, item); err != nil {
+		return err
+	}
+
 	s.provider.Set(next)
 
-	return s.files.Write(name, item)
+	return nil
 }
 
 // normalizeAdminCorsOrigins 校验并归一化 Origin 列表（允许 "*" 或完整 http(s) URL）。
@@ -222,6 +237,7 @@ func normalizeAdminCorsOrigins(raw []string) ([]string, error) {
 		if item == "*" {
 			if _, ok := seen["*"]; !ok {
 				seen["*"] = struct{}{}
+
 				out = append(out, "*")
 			}
 
@@ -473,11 +489,11 @@ func preserveThirdLoginSecrets(next, current *config.ThirdLogin) {
 		preserveQQSecret(next.QQ, current.QQ)
 	}
 
-	if next.Google != nil && current.Google != nil && shouldPreserveSecret(next.Google.ClientSecret) {
+	if preserveThirdLoginSecretsCondition(next, current) {
 		next.Google.ClientSecret = current.Google.ClientSecret
 	}
 
-	if next.GitHub != nil && current.GitHub != nil && shouldPreserveSecret(next.GitHub.ClientSecret) {
+	if preserveThirdLoginSecretsCondition2(next, current) {
 		next.GitHub.ClientSecret = current.GitHub.ClientSecret
 	}
 
@@ -502,4 +518,27 @@ func shouldPreserveSecret(value string) bool {
 	trimmed := strings.TrimSpace(value)
 
 	return trimmed == "" || trimmed == maskedSecretValue
+}
+
+// LoggerConfigView preserves the existing config fields and reports pending restart requirements.
+type LoggerConfigView struct {
+	*config.Logger
+	RestartRequired bool `json:"restartRequired"`
+}
+
+// LoggerRestartRequired reports whether the current output configuration differs from the running logger.
+func (s *SiteConfigService) LoggerRestartRequired(next *config.Logger) bool {
+	if p, ok := s.provider.(interface{ LoggerRestartRequired(*config.Logger) bool }); ok {
+		return p.LoggerRestartRequired(next)
+	}
+
+	return config.LoggerRestartRequired(s.provider.Get().Logger, next)
+}
+
+func preserveThirdLoginSecretsCondition(next, current *config.ThirdLogin) bool {
+	return next.Google != nil && current.Google != nil && shouldPreserveSecret(next.Google.ClientSecret)
+}
+
+func preserveThirdLoginSecretsCondition2(next, current *config.ThirdLogin) bool {
+	return next.GitHub != nil && current.GitHub != nil && shouldPreserveSecret(next.GitHub.ClientSecret)
 }

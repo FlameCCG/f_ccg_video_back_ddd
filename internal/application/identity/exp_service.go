@@ -3,11 +3,11 @@ package identity
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"fmt"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // ExpService 经验用例服务（原 service/user_service/exp_service.go）。
@@ -129,52 +129,7 @@ func (s *ExpService) addExpWithRecord(
 	applied := false
 
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		beforeExp, _, err := s.users.ExpAndLevelForUpdate(txCtx, userID)
-		if err != nil {
-			return err
-		}
-
-		// 正向加经验受每日总上限约束；负向调整不占用日额度。
-		applyDelta := delta
-
-		if applyDelta > 0 {
-			gained, sumErr := s.records.SumDailyGained(txCtx, userID, time.Now())
-			if sumErr != nil {
-				return sumErr
-			}
-
-			clamped, allowed := domain.ClampDailyExpGain(applyDelta, gained)
-			if !allowed {
-				return nil
-			}
-
-			applyDelta = clamped
-		}
-
-		afterExp := max(beforeExp+applyDelta, 0)
-		afterLevel := domain.CalcLevel(afterExp)
-
-		recReason := reason
-		if applyDelta > 0 && applyDelta != delta {
-			recReason = fmt.Sprintf("%s（日上限截断 +%d→+%d）", reason, delta, applyDelta)
-		}
-
-		if createErr := s.records.Create(txCtx, userID, applyDelta, recReason, dedupKey); createErr != nil {
-			if errors.Is(createErr, domain.ErrDuplicateRecord) {
-				return nil
-			}
-
-			return createErr
-		}
-
-		if updateErr := s.users.UpdateExpAndLevel(txCtx, userID, afterExp, afterLevel); updateErr != nil {
-			return updateErr
-		}
-
-		out = domain.User{ID: userID, Exp: afterExp, Level: afterLevel}
-		applied = true
-
-		return nil
+		return expServiceaddExpWithRecordTransaction(txCtx, s, userID, delta, reason, dedupKey, &out, &applied)
 	})
 	if err != nil {
 		return nil, false, err
@@ -185,4 +140,53 @@ func (s *ExpService) addExpWithRecord(
 	}
 
 	return &out, true, nil
+}
+
+func expServiceaddExpWithRecordTransaction(txCtx context.Context, s *ExpService, userID uint, delta int64, reason string, dedupKey *string, out *domain.User, applied *bool) error {
+	beforeExp, _, err := s.users.ExpAndLevelForUpdate(txCtx, userID)
+	if err != nil {
+		return err
+	}
+
+	// 正向加经验受每日总上限约束；负向调整不占用日额度。
+	applyDelta := delta
+
+	if applyDelta > 0 {
+		gained, sumErr := s.records.SumDailyGained(txCtx, userID, time.Now())
+		if sumErr != nil {
+			return sumErr
+		}
+
+		clamped, allowed := domain.ClampDailyExpGain(applyDelta, gained)
+		if !allowed {
+			return nil
+		}
+
+		applyDelta = clamped
+	}
+
+	afterExp := max(beforeExp+applyDelta, 0)
+	afterLevel := domain.CalcLevel(afterExp)
+
+	recReason := reason
+	if applyDelta > 0 && applyDelta != delta {
+		recReason = fmt.Sprintf("%s（日上限截断 +%d→+%d）", reason, delta, applyDelta)
+	}
+
+	if createErr := s.records.Create(txCtx, userID, applyDelta, recReason, dedupKey); createErr != nil {
+		if errors.Is(createErr, domain.ErrDuplicateRecord) {
+			return nil
+		}
+
+		return createErr
+	}
+
+	if updateErr := s.users.UpdateExpAndLevel(txCtx, userID, afterExp, afterLevel); updateErr != nil {
+		return updateErr
+	}
+
+	(*out) = domain.User{ID: userID, Exp: afterExp, Level: afterLevel}
+	(*applied) = true
+
+	return nil
 }

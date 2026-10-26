@@ -12,13 +12,13 @@ import (
 	"errors"
 	identityapp "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/pkg/authsession"
+	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 	"strconv"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 	wsdanmu "f_ccg_video_back_ddd/internal/interfaces/ws/danmu"
-	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -45,7 +45,6 @@ type Handler struct {
 	hub         *wsdanmu.Hub
 	cfgProvider *infraconfig.Provider
 	resolver    ipUtils.RegionResolver
-	logger      *zap.Logger
 }
 
 // NewHandler 构造视频 HTTP 处理器。
@@ -70,7 +69,7 @@ func NewHandler(
 	hub *wsdanmu.Hub,
 	cfgProvider *infraconfig.Provider,
 	resolver ipUtils.RegionResolver,
-	logger *zap.Logger,
+	_ *zap.Logger,
 	userStatus *identityapp.UserStatusService,
 ) *Handler {
 	return &Handler{
@@ -92,24 +91,7 @@ func NewHandler(
 		hub:         hub,
 		cfgProvider: cfgProvider,
 		resolver:    resolver,
-		logger:      loggerOrNop(logger),
 	}
-}
-
-func (h *Handler) log() *zap.Logger {
-	if h == nil {
-		return zap.NewNop()
-	}
-
-	return loggerOrNop(h.logger)
-}
-
-func loggerOrNop(logger *zap.Logger) *zap.Logger {
-	if logger == nil {
-		return zap.NewNop()
-	}
-
-	return logger
 }
 
 // accessSecret 读取当前生效的 JWT access 密钥（支持配置热更新）。
@@ -137,6 +119,7 @@ func (h *Handler) resolveUID(c *gin.Context) uint {
 	if h.userStatus == nil {
 		return 0
 	}
+
 	token := c.GetHeader("Authorization")
 	if token == "" {
 		return 0
@@ -170,19 +153,24 @@ func (h *Handler) parseUIDFromToken(c *gin.Context, queryToken, headerToken stri
 	if h.userStatus == nil {
 		return 0
 	}
+
 	user, err := h.userStatus.ValidateAccessToken(c.Request.Context(), token, h.accessSecret())
 	if err != nil || user.MustChangePassword {
 		return 0
 	}
+
 	c.Request = c.Request.WithContext(authsession.WithValidator(c.Request.Context(), func(ctx context.Context) error {
 		current, err := h.userStatus.ValidateAccessToken(ctx, token, h.accessSecret())
 		if err != nil {
 			return err
 		}
+
 		if current.MustChangePassword {
 			return errors.New("initial password change required")
 		}
+
 		return nil
 	}))
+
 	return user.ID
 }

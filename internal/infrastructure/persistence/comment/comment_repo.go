@@ -3,11 +3,11 @@ package comment
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/comment"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -253,10 +253,12 @@ func (r *LikeRepository) Create(ctx context.Context, like *domain.Like) error {
 	}
 
 	row := toPOLike(like)
+
 	result := gormx.DB(ctx, r.db).Clauses(clause.OnConflict{DoNothing: true}).Create(row)
 	if result.Error != nil {
 		return result.Error
 	}
+
 	if result.RowsAffected == 0 {
 		return domain.ErrLikeDuplicated
 	}

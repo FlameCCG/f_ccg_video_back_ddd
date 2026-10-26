@@ -3,6 +3,7 @@ package media
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"os"
 	"strings"
@@ -47,7 +48,7 @@ func (s *TranscodeService) executeVariantPipeline(
 		if until, active := s.gpuCooldown.Active(); active {
 			useGPU = false
 
-			s.logger.Warn("skip GPU pipeline during cooldown", zap.Time("retryAfter", until))
+			logctx.With(ctx, s.logger).Warn("skip GPU pipeline during cooldown", zap.String("event", "media.variant_pipeline.execute_variant_pipeline.degraded"), zap.String("operation", "media.variant_pipeline.execute_variant_pipeline"), zap.Time("retry_after", until))
 		}
 	}
 
@@ -61,10 +62,10 @@ func (s *TranscodeService) executeVariantPipeline(
 			return results, err
 		}
 
-		s.noteGPUFailure(err)
+		s.noteGPUFailure(ctx, err)
 		// CPU 回退会经由断点复用 GPU 已提交的完整产物（编码成功但上传失败时不再重编）。
 		// 分段块按编码模式隔离，CPU 不复用 GPU 块（参数集不同禁止混拼），但已拼装的最终产物可复用。
-		s.logger.Warn("GPU pipeline failed, fallback to CPU", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("GPU pipeline failed, fallback to CPU", zap.String("event", "media.variant_pipeline.execute_variant_pipeline.degraded"), zap.String("operation", "media.variant_pipeline.execute_variant_pipeline"), zap.Error(err))
 	}
 
 	// CPU 回退。最终失败时只清理独立的规范化源输出，原始输入永远不参与清理。
@@ -83,15 +84,15 @@ func (s *TranscodeService) executeVariantPipeline(
 }
 
 // noteGPUFailure 按错误内容决定是否进入 GPU 冷却，并输出与原实现一致的日志。
-func (s *TranscodeService) noteGPUFailure(err error) {
+func (s *TranscodeService) noteGPUFailure(ctx context.Context, err error) {
 	until, cooldown, entered := s.gpuCooldown.NoteFailure(err)
 	if !entered {
 		return
 	}
 
-	s.logger.Warn("disable GPU transcode temporarily",
-		zap.Time("retryAfter", until),
-		zap.Duration("cooldown", cooldown),
+	logctx.With(ctx, s.logger).Warn("disable GPU transcode temporarily", zap.String("event", "media.variant_pipeline.note_gpu_failure.degraded"), zap.String("operation", "media.variant_pipeline.note_gpu_failure"),
+		zap.Time("retry_after", until),
+		zap.Duration("cooldown_ms", cooldown),
 		zap.Error(err),
 	)
 }
@@ -172,13 +173,9 @@ func (s *TranscodeService) uploadLocalMP4Outputs(
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
+			} else {
+				firstErr = errors.Join(firstErr, err)
 			}
-
-			s.logger.Error("upload local mp4 output failed",
-				zap.String("targetId", target.ID),
-				zap.String("path", localPath),
-				zap.Error(err),
-			)
 
 			continue
 		}
@@ -280,7 +277,7 @@ func (s *TranscodeService) cleanupFailedNormalizedTargets(
 		}
 
 		if err := driver.DeleteStoredFile(cleanupCtx, target.RelativePath); err != nil {
-			s.logger.Warn("cleanup failed normalized source output",
+			logctx.With(ctx, s.logger).Warn("cleanup failed normalized source output", zap.String("event", "media.variant_pipeline.cleanup_failed_normalized_targets.degraded"), zap.String("operation", "media.variant_pipeline.cleanup_failed_normalized_targets"),
 				zap.Error(err),
 				zap.String("path", target.RelativePath),
 			)

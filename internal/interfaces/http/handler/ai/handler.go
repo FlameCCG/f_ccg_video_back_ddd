@@ -21,28 +21,11 @@ import (
 // 新架构由 wire 注入应用服务。
 type Handler struct {
 	service *aiapp.Service
-	logger  *zap.Logger
 }
 
 // NewHandler 构造 AI HTTP 处理器。
-func NewHandler(service *aiapp.Service, logger *zap.Logger) *Handler {
-	return &Handler{service: service, logger: loggerOrNop(logger)}
-}
-
-func (h *Handler) log() *zap.Logger {
-	if h == nil {
-		return zap.NewNop()
-	}
-
-	return loggerOrNop(h.logger)
-}
-
-func loggerOrNop(logger *zap.Logger) *zap.Logger {
-	if logger == nil {
-		return zap.NewNop()
-	}
-
-	return logger
+func NewHandler(service *aiapp.Service, _ *zap.Logger) *Handler {
+	return &Handler{service: service}
 }
 
 // bound 读取中间件已绑定的请求参数。

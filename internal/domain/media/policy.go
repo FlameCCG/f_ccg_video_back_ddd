@@ -43,12 +43,12 @@ type TranscodePolicy struct {
 	// GpuCQP360 标准档目标分辨率 <=360 的 GPU CQP。
 	GpuCQP360 int
 
-	// CpuMode 是否允许 CPU 编码。
-	CpuMode bool
+	// CPUMode 是否允许 CPU 编码。
+	CPUMode bool
 	// GpuMode 是否允许 GPU 编码。
 	GpuMode bool
-	// CpuPreset CPU 编码速度预设。
-	CpuPreset string
+	// CPUPreset CPU 编码速度预设。
+	CPUPreset string
 	// GpuPreset GPU 编码速度预设。
 	GpuPreset string
 	// Threads ffmpeg 线程数（<=0 表示不显式指定）。
@@ -94,7 +94,7 @@ const (
 	default1080HighReduce  = 15
 	defaultDashSegDuration = 4
 	defaultGpuPreset       = "p4"
-	defaultCpuPreset       = "medium"
+	defaultCPUPreset       = "medium"
 )
 
 // HighBitrateThresholdOrDefault 返回高码率判定阈值（未配置时 10000 kbps）。
@@ -125,11 +125,11 @@ func (p *TranscodePolicy) PresetOrDefault(useGPU bool) string {
 		return defaultGpuPreset
 	}
 
-	if p != nil && p.CpuPreset != "" {
-		return p.CpuPreset
+	if p != nil && p.CPUPreset != "" {
+		return p.CPUPreset
 	}
 
-	return defaultCpuPreset
+	return defaultCPUPreset
 }
 
 // ThreadsOrZero 返回 ffmpeg 线程数；<=0 表示不显式指定。
@@ -330,36 +330,47 @@ func (p *TranscodePolicy) OutputCQP(res uint16, gpu bool) int {
 func (p *TranscodePolicy) OutputCQPForTarget(t TranscodeTarget, gpu bool) int {
 	switch t.Quality {
 	case QualityModeHigh:
-		if gpu {
-			if p != nil && p.GpuCQPHigh > 0 {
-				return p.GpuCQPHigh
-			}
-
-			return defaultCQPHigh
-		}
-
-		if p != nil && p.CrfHigh > 0 {
-			return p.CrfHigh
-		}
-
-		return defaultCQPHigh
+		return p.highQualityCQP(gpu)
 	case QualityModeMedium:
-		if gpu {
-			if p != nil && p.GpuCQPMedium > 0 {
-				return p.GpuCQPMedium
-			}
-
-			return defaultGpuCQPMedium
-		}
-
-		if p != nil && p.CrfMedium > 0 {
-			return p.CrfMedium
-		}
-
-		return defaultCrfMedium
+		return p.mediumQualityCQP(gpu)
+	case QualityModeNone:
+		return p.OutputCQP(t.Resolution, gpu)
 	default:
 		return p.OutputCQP(t.Resolution, gpu)
 	}
+}
+
+func (p *TranscodePolicy) highQualityCQP(gpu bool) int {
+	if p == nil {
+		return defaultCQPHigh
+	}
+
+	value := p.CrfHigh
+	if gpu {
+		value = p.GpuCQPHigh
+	}
+
+	if value > 0 {
+		return value
+	}
+
+	return defaultCQPHigh
+}
+
+func (p *TranscodePolicy) mediumQualityCQP(gpu bool) int {
+	if gpu {
+		if p != nil && p.GpuCQPMedium > 0 {
+			return p.GpuCQPMedium
+		}
+
+		return defaultGpuCQPMedium
+	}
+
+	if p != nil && p.CrfMedium > 0 {
+		return p.CrfMedium
+	}
+
+	return defaultCrfMedium
 }
 
 // OutputBitrateForTarget 根据 target 返回 -maxrate 码率上限(kbps)。
@@ -398,6 +409,8 @@ func (p *TranscodePolicy) OutputBitrateForTarget(t TranscodeTarget, srcBitrate i
 		return v
 	case QualityModeMedium:
 		return p.CalcOutputBitrateForRes(srcBitrate, t.Resolution)
+	case QualityModeNone:
+		fallthrough
 	default:
 		return p.CalcOutputBitrateForRes(srcBitrate, t.Resolution)
 	}

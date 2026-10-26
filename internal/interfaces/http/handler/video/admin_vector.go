@@ -3,10 +3,10 @@ package video
 import (
 	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+
+	app "f_ccg_video_back_ddd/internal/application/video"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,18 +21,18 @@ type AdminRebuildVectorIndexReq struct {
 func (h *AdminHandler) AdminRebuildVectorIndexView(c *gin.Context) {
 	req := middlewares.GetBound[AdminRebuildVectorIndexReq](c)
 
-	status, err := h.vectors.StartRebuild(app.VectorRebuildOptions{
+	status, err := h.vectors.StartRebuild(c.Request.Context(), app.VectorRebuildOptions{
 		Recreate: req.Recreate,
 		Workers:  req.Workers,
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrVectorRebuildInProgress) {
-			res.FailWithMsg(clienterror.Message(err), c)
+			res.FailWithCause(err, clienterror.Message(err), c)
 
 			return
 		}
 
-		res.FailWithMsg("启动向量索引重建失败: "+clienterror.Message(err), c)
+		res.FailWithCause(err, "启动向量索引重建失败: "+clienterror.Message(err), c)
 
 		return
 	}

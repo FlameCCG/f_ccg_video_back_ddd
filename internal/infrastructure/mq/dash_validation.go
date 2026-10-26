@@ -160,6 +160,7 @@ func validateDASHOutputWithProbe(
 
 func inspectDASHManifest(dir string) (dashManifestInspection, error) {
 	mpdPath := filepath.Join(dir, media.DashManifestName)
+
 	info, err := os.Stat(mpdPath)
 	if err != nil {
 		return dashManifestInspection{}, fmt.Errorf("stat DASH manifest: %w", err)
@@ -176,7 +177,7 @@ func inspectDASHManifest(dir string) (dashManifestInspection, error) {
 		)
 	}
 
-	data, err := os.ReadFile(mpdPath)
+	data, err := os.ReadFile(mpdPath) // #nosec G304 -- The manifest path belongs to a server-owned transcode working directory.
 	if err != nil {
 		return dashManifestInspection{}, fmt.Errorf("read DASH manifest: %w", err)
 	}
@@ -195,54 +196,7 @@ func inspectDASHManifest(dir string) (dashManifestInspection, error) {
 		return dashManifestInspection{}, fmt.Errorf("parse DASH manifest duration: %w", err)
 	}
 
-	inspection := dashManifestInspection{durationSec: durationSec}
-	representationCount := 0
-
-	for _, period := range manifest.Periods {
-		for _, adaptationSet := range period.AdaptationSets {
-			for _, representation := range adaptationSet.Representations {
-				representationCount++
-				if representation.Template != nil {
-					if err := validateDASHTemplateFiles(dir, representation, durationSec); err != nil {
-						return dashManifestInspection{}, fmt.Errorf("DASH representation %q: %w", representation.ID, err)
-					}
-					if inspection.videoPath == "" && isDASHVideoRepresentation(adaptationSet, representation) {
-						// FFprobe 直接打开原生 MPD，读取初始化文件和分片以探测媒体。
-						inspection.videoPath = mpdPath
-					}
-					continue
-				}
-
-				if err := validateDASHSegmentCoverage(representation.Segments, durationSec); err != nil {
-					return dashManifestInspection{}, fmt.Errorf("DASH representation %q: %w", representation.BaseURL, err)
-				}
-
-				repPath, err := resolveDASHRepresentationPath(dir, representation.BaseURL)
-				if err != nil {
-					return dashManifestInspection{}, err
-				}
-
-				if err := validateDASHRepresentationFile(repPath); err != nil {
-					return dashManifestInspection{}, err
-				}
-
-				if inspection.videoPath == "" &&
-					isDASHVideoRepresentation(adaptationSet, representation) {
-					inspection.videoPath = repPath
-				}
-			}
-		}
-	}
-
-	if representationCount == 0 {
-		return dashManifestInspection{}, errors.New("DASH manifest has no representations")
-	}
-
-	if inspection.videoPath == "" {
-		return dashManifestInspection{}, errors.New("DASH manifest has no video representation")
-	}
-
-	return inspection, nil
+	return finishInspectDASHManifest(dir, mpdPath, manifest, durationSec)
 }
 
 const maxDASHSegments = 100000
@@ -255,53 +209,64 @@ func validateDASHTemplateFiles(dir string, rep dashRepresentationXML, sourceDura
 	if rep.BaseURL != "" || template.Initialization == "" || template.Media == "" {
 		return errors.New("unsupported DASH segment template")
 	}
+
 	validateFile := func(pattern string, number uint64) error {
 		name, err := expandDASHSegmentName(pattern, rep, number)
 		if err != nil {
 			return err
 		}
+
 		file, err := resolveDASHRepresentationPath(dir, name)
 		if err != nil {
 			return err
 		}
+
 		return validateDASHRepresentationFile(file)
 	}
 	if err := validateFile(template.Initialization, 0); err != nil {
 		return err
 	}
+
 	startNumber := template.StartNumber
 	if startNumber == 0 {
 		startNumber = 1
 	}
+
 	end, _, err := walkDASHTimeline(template.Timeline, func(index uint64) error {
 		if startNumber > math.MaxUint64-index {
 			return errors.New("DASH segment number overflows")
 		}
+
 		return validateFile(template.Media, startNumber+index)
 	})
 	if err != nil {
 		return err
 	}
+
 	return validateDASHTimelineDuration(end, template.Timescale, sourceDuration)
 }
 
 func expandDASHSegmentName(pattern string, rep dashRepresentationXML, number uint64) (string, error) {
 	name := strings.ReplaceAll(pattern, "$RepresentationID$", rep.ID)
 	name = strings.ReplaceAll(name, "$Bandwidth$", strconv.FormatUint(rep.Bandwidth, 10))
+
 	name = dashSegmentNumberPattern.ReplaceAllStringFunc(name, func(token string) string {
 		match := dashSegmentNumberPattern.FindStringSubmatch(token)
 		if match[1] == "" {
 			return strconv.FormatUint(number, 10)
 		}
+
 		width, _ := strconv.Atoi(match[1])
 		if width > 20 {
 			return token
 		}
+
 		return fmt.Sprintf("%0*d", width, number)
 	})
 	if strings.Contains(name, "$") {
 		return "", fmt.Errorf("unsupported DASH filename template %q", pattern)
 	}
+
 	return name, nil
 }
 
@@ -311,31 +276,42 @@ func walkDASHTimeline(timeline *dashSegmentTimelineXML, visit func(uint64) error
 	if timeline == nil || len(timeline.Entries) == 0 {
 		return 0, 0, errors.New("DASH SegmentTimeline is missing")
 	}
+
 	var end, count uint64
+
 	for _, entry := range timeline.Entries {
-		if entry.Duration == 0 || entry.Repeat < 0 || entry.Repeat >= maxDASHSegments {
+		if entry.Repeat < 0 {
+			return 0, 0, errors.New("negative DASH timeline repeat")
+		}
+
+		if walkDASHTimelineCondition(entry) {
 			return 0, 0, errors.New("invalid or unbounded DASH timeline entry")
 		}
+
 		if entry.Start != nil {
 			if count > 0 && *entry.Start != end {
 				return 0, 0, errors.New("DASH timeline contains a gap or overlap")
 			}
+
 			end = *entry.Start
 		}
+
 		repeats := uint64(entry.Repeat + 1)
 		if count+repeats > maxDASHSegments || entry.Duration > (math.MaxUint64-end)/repeats {
 			return 0, 0, errors.New("DASH timeline exceeds limits")
 		}
+
 		for range repeats {
-			if visit != nil {
-				if err := visit(count); err != nil {
-					return 0, 0, err
-				}
+			if err := visitDASHSegment(visit, count); err != nil {
+				return 0, 0, err
 			}
+
 			count++
 		}
+
 		end += repeats * entry.Duration
 	}
+
 	return end, count, nil
 }
 
@@ -343,13 +319,16 @@ func validateDASHTimelineDuration(end, scale uint64, sourceDuration int) error {
 	if scale == 0 {
 		scale = 1
 	}
+
 	seconds := float64(end) / float64(scale)
 	if seconds >= float64(math.MaxInt) {
 		return errors.New("DASH timeline duration overflows")
 	}
+
 	if err := media.ValidateTranscodedDuration(sourceDuration, int(math.Round(seconds))); err != nil {
 		return fmt.Errorf("segment timeline does not cover presentation: %w", err)
 	}
+
 	return nil
 }
 
@@ -358,19 +337,24 @@ func validateDASHSegmentCoverage(list *dashSegmentListXML, sourceDuration int) e
 	if list == nil || len(list.URLs) == 0 {
 		return nil
 	}
+
 	if list.Timeline != nil {
 		end, count, err := walkDASHTimeline(list.Timeline, nil)
 		if err != nil {
 			return err
 		}
+
 		if count != uint64(len(list.URLs)) {
 			return errors.New("DASH timeline does not match segment count")
 		}
+
 		return validateDASHTimelineDuration(end, list.Timescale, sourceDuration)
 	}
+
 	if list.Duration == 0 || list.Duration > math.MaxUint64/uint64(len(list.URLs)) {
 		return errors.New("invalid DASH segment duration")
 	}
+
 	return validateDASHTimelineDuration(list.Duration*uint64(len(list.URLs)), list.Timescale, sourceDuration)
 }
 
@@ -400,6 +384,7 @@ func resolveDASHRepresentationPath(dir, rawBaseURL string) (string, error) {
 	}
 
 	fullPath := filepath.Join(dir, relativePath)
+
 	relativeToDir, err := filepath.Rel(dir, fullPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve DASH representation BaseURL %q: %w", baseURL, err)
@@ -447,6 +432,7 @@ func isDASHVideoRepresentation(
 
 func parseDASHDurationSeconds(raw string) (int, error) {
 	value := strings.TrimSpace(raw)
+
 	matches := dashDurationPattern.FindStringSubmatch(value)
 	if len(matches) != 5 {
 		return 0, fmt.Errorf("unsupported ISO-8601 duration %q", raw)
@@ -481,4 +467,86 @@ func parseDASHDurationSeconds(raw string) (int, error) {
 	}
 
 	return int(math.Round(totalSeconds)), nil
+}
+
+func walkDASHTimelineCondition(entry struct {
+	Start    *uint64 "xml:\"t,attr\""
+	Duration uint64  "xml:\"d,attr\""
+	Repeat   int64   "xml:\"r,attr\""
+},
+) bool {
+	return entry.Duration == 0 || entry.Repeat < 0 || entry.Repeat >= maxDASHSegments
+}
+
+func finishInspectDASHManifest(dir, mpdPath string, manifest dashManifestXML, durationSec int) (dashManifestInspection, error) {
+	inspection := dashManifestInspection{durationSec: durationSec}
+	representationCount := 0
+
+	for _, period := range manifest.Periods {
+		for _, set := range period.AdaptationSets {
+			for _, rep := range set.Representations {
+				representationCount++
+
+				candidate, err := inspectDASHRepresentation(dir, mpdPath, set, rep, durationSec)
+				if err != nil {
+					return dashManifestInspection{}, err
+				}
+
+				if inspection.videoPath == "" {
+					inspection.videoPath = candidate
+				}
+			}
+		}
+	}
+
+	if representationCount == 0 {
+		return dashManifestInspection{}, errors.New("DASH manifest has no representations")
+	}
+
+	if inspection.videoPath == "" {
+		return dashManifestInspection{}, errors.New("DASH manifest has no video representation")
+	}
+
+	return inspection, nil
+}
+
+func visitDASHSegment(visit func(uint64) error, index uint64) error {
+	if visit == nil {
+		return nil
+	}
+
+	return visit(index)
+}
+
+func inspectDASHRepresentation(dir, mpdPath string, set dashAdaptationSetXML, rep dashRepresentationXML, durationSec int) (string, error) {
+	if rep.Template != nil {
+		if err := validateDASHTemplateFiles(dir, rep, durationSec); err != nil {
+			return "", fmt.Errorf("DASH representation %q: %w", rep.ID, err)
+		}
+
+		if isDASHVideoRepresentation(set, rep) {
+			return mpdPath, nil
+		}
+
+		return "", nil
+	}
+
+	if err := validateDASHSegmentCoverage(rep.Segments, durationSec); err != nil {
+		return "", fmt.Errorf("DASH representation %q: %w", rep.BaseURL, err)
+	}
+
+	repPath, err := resolveDASHRepresentationPath(dir, rep.BaseURL)
+	if err != nil {
+		return "", err
+	}
+
+	if err := validateDASHRepresentationFile(repPath); err != nil {
+		return "", err
+	}
+
+	if isDASHVideoRepresentation(set, rep) {
+		return repPath, nil
+	}
+
+	return "", nil
 }

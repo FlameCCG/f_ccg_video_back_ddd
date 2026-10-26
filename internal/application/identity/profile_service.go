@@ -2,11 +2,12 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"strings"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -58,7 +59,7 @@ func NewProfileService(
 func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoResult, error) {
 	user, conf, err := s.users.FindWithConfByID(ctx, userID)
 	if err != nil || user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/identity/profile_service", domain.ErrUserNotFound, err)
 	}
 
 	var (
@@ -111,13 +112,13 @@ func (s *ProfileService) UserInfo(ctx context.Context, userID uint) (*UserInfoRe
 func (s *ProfileService) UserDetail(ctx context.Context, userID uint) (*UserDetailResult, error) {
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil || user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/identity/profile_service", domain.ErrUserNotFound, err)
 	}
 
 	conf, err := s.confs.FindByUserID(ctx, userID)
 	if err != nil {
 		// 原 GORM Preload 链路中，配置查询失败会使整个用户详情查询失败。
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/identity/profile_service", domain.ErrUserNotFound, err)
 	}
 
 	var (
@@ -160,12 +161,12 @@ func (s *ProfileService) UserDetail(ctx context.Context, userID uint) (*UserDeta
 func (s *ProfileService) AdminUserInfo(ctx context.Context, userID uint) (*AdminUserInfoResult, error) {
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil || user == nil {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/identity/profile_service", domain.ErrUserNotFound, err)
 	}
 
 	roleMap, err := s.roles.RoleMap(ctx, userID)
 	if err != nil {
-		return nil, domain.ErrUserNotFound
+		return nil, apperr.Wrap("application/identity/profile_service", domain.ErrUserNotFound, err)
 	}
 
 	counts := s.relations.RelationCounts(ctx, userID, false)
@@ -196,7 +197,7 @@ func (s *ProfileService) AdminUserInfo(ctx context.Context, userID uint) (*Admin
 func (s *ProfileService) UpdateProfile(ctx context.Context, in UpdateProfileInput) error {
 	user, err := s.users.FindByID(ctx, in.UserID)
 	if err != nil || user == nil {
-		return domain.ErrUserNotFound
+		return apperr.Wrap("application/identity/profile_service", domain.ErrUserNotFound, err)
 	}
 
 	changes, err := s.buildProfileChanges(ctx, in, user)
@@ -213,6 +214,7 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, in UpdateProfileInpu
 
 	if usernameChanged {
 		newUsername := *changes.Username
+
 		if err = s.txm.Do(ctx, func(txCtx context.Context) error {
 			if updateErr := s.users.UpdateProfile(txCtx, in.UserID, changes); updateErr != nil {
 				return updateErr
@@ -220,10 +222,10 @@ func (s *ProfileService) UpdateProfile(ctx context.Context, in UpdateProfileInpu
 
 			return s.renamer.RenameAuthor(txCtx, oldUsername, newUsername)
 		}); err != nil {
-			return ErrUpdateUserFailed
+			return apperr.Wrap("application/identity/profile_service", ErrUpdateUserFailed, err)
 		}
 	} else if err = s.users.UpdateProfile(ctx, in.UserID, changes); err != nil {
-		return ErrUpdateUserFailed
+		return apperr.Wrap("application/identity/profile_service", ErrUpdateUserFailed, err)
 	}
 
 	s.invalidateAfterProfileUpdate(ctx, in.UserID, oldUsername, changes)

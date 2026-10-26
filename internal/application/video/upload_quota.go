@@ -3,17 +3,19 @@ package video
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 	"sort"
 	"strings"
-
-	"f_ccg_video_back_ddd/internal/application/shared"
 )
 
 const defaultDailyUploadLimit = 10
 
 var (
-	ErrDailyUploadLimit       = errors.New("今日上传源视频文件数量已达上限，请明天再试")
+	// ErrDailyUploadLimit indicates that the daily upload allowance has been consumed.
+	ErrDailyUploadLimit = errors.New("今日上传源视频文件数量已达上限，请明天再试")
+	// ErrUploadQuotaUnavailable indicates that quota enforcement is unavailable.
 	ErrUploadQuotaUnavailable = errors.New("上传额度服务暂不可用，请稍后重试")
 )
 
@@ -44,6 +46,7 @@ type UploadQuotaService struct {
 	cfg       shared.ConfigReader
 }
 
+// NewUploadQuotaService constructs upload quota enforcement and exemption checks.
 func NewUploadQuotaService(store UploadQuotaStore, exemption UploadQuotaExemption, cfg shared.ConfigReader) *UploadQuotaService {
 	return &UploadQuotaService{store: store, exemption: exemption, cfg: cfg}
 }
@@ -52,45 +55,61 @@ func NewUploadQuotaService(store UploadQuotaStore, exemption UploadQuotaExemptio
 // 同哈希重试是否重复计数由 store 的原子去重契约保证，本方法不在进程内先读后写计数。
 func (s *UploadQuotaService) Claim(ctx context.Context, userID uint, fileHash string) error {
 	fileHash = strings.TrimSpace(fileHash)
-	if s == nil || s.store == nil || s.exemption == nil || userID == 0 {
+
+	if uploadQuotaServiceClaimCondition(s, userID) {
 		return ErrUploadQuotaUnavailable
 	}
+
 	admin, err := s.exemption.IsUploadQuotaExempt(ctx, userID)
 	if err != nil {
-		return ErrUploadQuotaUnavailable
+		return apperr.Wrap("application/video/upload_quota", ErrUploadQuotaUnavailable, err)
 	}
+
 	if admin {
 		return nil
 	}
+
 	limit := defaultDailyUploadLimit
+
 	if s.cfg != nil {
 		if cfg := s.cfg.Get(); cfg != nil && cfg.Site != nil && cfg.Site.Storage != nil && cfg.Site.Storage.DailyUploadLimit > 0 {
 			limit = cfg.Site.Storage.DailyUploadLimit
 		}
 	}
+
 	allowed, err := s.store.Claim(ctx, userID, fileHash, limit)
 	if err != nil {
-		return ErrUploadQuotaUnavailable
+		return apperr.Wrap("application/video/upload_quota", ErrUploadQuotaUnavailable, err)
 	}
+
 	if !allowed {
 		return fmt.Errorf("%w（每日最多 %d 个不同文件）", ErrDailyUploadLimit, limit)
 	}
+
 	return nil
 }
 
 func uniqueUploadHashes(hashes []string) []string {
 	seen := make(map[string]struct{}, len(hashes))
+
 	unique := make([]string, 0, len(hashes))
 	for _, hash := range hashes {
 		hash = strings.TrimSpace(hash)
 		if hash == "" {
 			continue
 		}
+
 		if _, exists := seen[hash]; !exists {
 			seen[hash] = struct{}{}
 			unique = append(unique, hash)
 		}
 	}
+
 	sort.Strings(unique)
+
 	return unique
+}
+
+func uploadQuotaServiceClaimCondition(s *UploadQuotaService, userID uint) bool {
+	return s == nil || s.store == nil || s.exemption == nil || userID == 0
 }

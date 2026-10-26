@@ -3,12 +3,12 @@ package video
 import (
 	"context"
 	"encoding/json"
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"time"
+
+	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"gorm.io/datatypes"
 	"gorm.io/gorm"

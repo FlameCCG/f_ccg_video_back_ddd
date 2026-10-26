@@ -61,6 +61,7 @@ func TestMenuMutationsPreserveUnknownTransactionErrorForHTTPBoundary(t *testing.
 			if !errors.Is(err, cause) {
 				t.Fatalf("error = %v, want underlying cause %v", err, cause)
 			}
+
 			if errors.Is(err, tt.fallback) {
 				t.Fatalf("application mapped error to HTTP fallback too early: %v", err)
 			}
@@ -86,6 +87,7 @@ func TestMenuGenerationPreservesInfrastructureCauseAndPublicFallback(t *testing.
 	if !errors.Is(err, cause) {
 		t.Fatalf("error = %v, want underlying cause %v", err, cause)
 	}
+
 	if !errors.Is(err, domain.ErrReadMenuDataFailed) {
 		t.Fatalf("error = %v, want public fallback %v", err, domain.ErrReadMenuDataFailed)
 	}

@@ -2,13 +2,13 @@ package dynamic
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"strings"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 )
@@ -243,6 +243,7 @@ func (q *FeedQuery) ListFollowingWorks(ctx context.Context, params app.Following
 	}
 
 	sql := strings.Join(sqlParts, "\nUNION ALL\n") + followingFeedOrderSQL
+
 	args = append(args, params.Limit, params.Offset)
 
 	var rows []feedRow
@@ -373,45 +374,30 @@ func (q *FeedQuery) CommentCountsByDynamic(ctx context.Context, dynamicIDs []uin
 }
 
 // LikedVideoIDs 返回浏览者已点赞的视频 ID 集合。
-func (q *FeedQuery) LikedVideoIDs(ctx context.Context, viewerID uint, videoIDs []uint) (map[uint]bool, error) {
-	result := make(map[uint]bool, len(videoIDs))
-	if viewerID == 0 || len(videoIDs) == 0 {
-		return result, nil
-	}
-
-	var ids []uint
-	if err := gormx.DB(ctx, q.db).
-		Model(&po.VideoLike{}).
-		Where("user_id = ? AND video_id IN ?", viewerID, videoIDs).
-		Pluck("video_id", &ids).Error; err != nil {
-		return nil, err
-	}
-
-	for _, id := range ids {
-		result[id] = true
-	}
-
-	return result, nil
+func (q *FeedQuery) LikedVideoIDs(ctx context.Context, viewerID uint, ids []uint) (map[uint]bool, error) {
+	return q.likedIDs(ctx, viewerID, ids, &po.VideoLike{}, "video_id")
 }
 
 // LikedDynamicIDs 返回浏览者已点赞的动态 ID 集合。
-func (q *FeedQuery) LikedDynamicIDs(ctx context.Context, viewerID uint, dynamicIDs []uint) (map[uint]bool, error) {
-	result := make(map[uint]bool, len(dynamicIDs))
-	if viewerID == 0 || len(dynamicIDs) == 0 {
-		return result, nil
+func (q *FeedQuery) LikedDynamicIDs(ctx context.Context, viewerID uint, ids []uint) (map[uint]bool, error) {
+	return q.likedIDs(ctx, viewerID, ids, &po.DynamicLike{}, "dynamic_id")
+}
+
+// likedIDs receives its model and column exclusively from the two fixed query methods above.
+func (q *FeedQuery) likedIDs(ctx context.Context, viewerID uint, ids []uint, model any, column string) (map[uint]bool, error) {
+	flags := make(map[uint]bool, len(ids))
+	if viewerID == 0 || len(ids) == 0 {
+		return flags, nil
 	}
 
-	var ids []uint
-	if err := gormx.DB(ctx, q.db).
-		Model(&po.DynamicLike{}).
-		Where("user_id = ? AND dynamic_id IN ?", viewerID, dynamicIDs).
-		Pluck("dynamic_id", &ids).Error; err != nil {
+	var liked []uint
+	if err := gormx.DB(ctx, q.db).Model(model).Where("user_id = ? AND "+column+" IN ?", viewerID, ids).Pluck(column, &liked).Error; err != nil {
 		return nil, err
 	}
 
-	for _, id := range ids {
-		result[id] = true
+	for _, id := range liked {
+		flags[id] = true
 	}
 
-	return result, nil
+	return flags, nil
 }

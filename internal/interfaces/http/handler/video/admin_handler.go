@@ -16,7 +16,6 @@ type AdminHandler struct {
 	partition *app.PartitionService
 	progress  app.TranscodeProgressReader
 	vectors   *app.VectorSyncService
-	logger    *zap.Logger
 }
 
 // NewAdminHandler 构造视频管理端处理器。
@@ -28,7 +27,7 @@ func NewAdminHandler(
 	partition *app.PartitionService,
 	progress app.TranscodeProgressReader,
 	vectors *app.VectorSyncService,
-	logger *zap.Logger,
+	_ *zap.Logger,
 ) *AdminHandler {
 	return &AdminHandler{
 		admin:     admin,
@@ -38,14 +37,5 @@ func NewAdminHandler(
 		partition: partition,
 		progress:  progress,
 		vectors:   vectors,
-		logger:    loggerOrNop(logger),
 	}
-}
-
-func (h *AdminHandler) log() *zap.Logger {
-	if h == nil {
-		return zap.NewNop()
-	}
-
-	return loggerOrNop(h.logger)
 }

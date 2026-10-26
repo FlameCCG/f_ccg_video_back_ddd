@@ -2,11 +2,12 @@ package platform
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/platform"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
 )
@@ -48,7 +49,7 @@ func (s *AutoUnbanService) Run(ctx context.Context) {
 
 	expired, err := s.bans.ListExpiredBans(ctx, now)
 	if err != nil {
-		s.logger.Error("auto unban query failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Error("auto unban query failed", zap.String("event", "platform.auto_unban_service.run.failed"), zap.String("operation", "platform.auto_unban_service.run"), zap.Error(err))
 
 		return
 	}
@@ -69,7 +70,7 @@ func (s *AutoUnbanService) Run(ctx context.Context) {
 
 		return s.bans.MarkBanRecordsUnbanned(txCtx, plan.RecordIDs)
 	}); err != nil {
-		s.logger.Error("auto unban failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Error("auto unban failed", zap.String("event", "platform.auto_unban_service.run.failed"), zap.String("operation", "platform.auto_unban_service.run"), zap.Error(err))
 
 		return
 	}
@@ -81,5 +82,5 @@ func (s *AutoUnbanService) Run(ctx context.Context) {
 		}
 	}
 
-	s.logger.Info("auto unban ok", zap.Int("count", len(plan.UserIDs)))
+	logctx.With(ctx, s.logger).Info("auto unban ok", zap.String("event", "platform.auto_unban_service.run.diagnostic"), zap.String("operation", "platform.auto_unban_service.run"), zap.Int("count", len(plan.UserIDs)))
 }

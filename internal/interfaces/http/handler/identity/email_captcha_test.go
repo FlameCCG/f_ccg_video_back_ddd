@@ -2,22 +2,25 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
+	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	app "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/cache/ratelimit"
-	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+
 	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -60,6 +63,7 @@ func newEmailCaptchaFixture(t *testing.T, sender app.EmailCaptchaSender) *emailC
 
 	server := miniredis.RunT(t)
 	redisClient := redis.NewClient(&redis.Options{Addr: server.Addr()})
+
 	t.Cleanup(func() { _ = redisClient.Close() })
 
 	db := openTestDB(t, &po.User{}, &po.UserConf{}, &po.FavoriteFolder{})
@@ -69,6 +73,7 @@ func newEmailCaptchaFixture(t *testing.T, sender app.EmailCaptchaSender) *emailC
 
 	captchaSvc := app.NewCaptchaService(nil, nil, nil, captcha.NewEmailCaptchaStore(redisClient), provider)
 	tasks := ctxutil.NewDetachedTaskGroup()
+
 	t.Cleanup(func() { _ = tasks.Stop(context.Background()) })
 
 	emails := app.NewEmailCaptchaSendService(
@@ -108,7 +113,7 @@ func (f *emailCaptchaFixture) sendEmailCaptcha(t *testing.T, email string) res.R
 // TestEmailCaptchaViewReturnsImmediately 验证邮件投递是异步的：
 // 即使发送方阻塞，接口也立即返回（原 TestQueueEmailCaptchaDeliveryReturnsImmediately）。
 func TestEmailCaptchaViewReturnsImmediately(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
@@ -123,36 +128,30 @@ func TestEmailCaptchaViewReturnsImmediately(t *testing.T) {
 		},
 	})
 
+	t.Cleanup(func() { close(release) })
+
 	startAt := time.Now()
 	response := fixture.sendEmailCaptcha(t, "slow@example.com")
 	elapsed := time.Since(startAt)
 
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d (%s)", response.Code, response.Msg)
-	}
+	require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d (%s)", response.Code, response.Msg)
 
-	if response.Msg != "验证码发送中，请稍候查收" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	require.Equal(t, "验证码发送中，请稍候查收", response.Msg, "unexpected response msg: %s", response.Msg)
 
 	// 阻塞的发送方不得拖慢接口：留出宽松阈值以容忍 sqlite/miniredis 的固定开销。
-	if elapsed > time.Second {
-		t.Fatalf("expected handler to return without waiting for delivery, got %s", elapsed)
-	}
+	require.LessOrEqual(t, elapsed, time.Second, "expected handler to return without waiting for delivery, got %s", elapsed)
 
 	select {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("expected background email sender to start")
 	}
-
-	close(release)
 }
 
 // TestEmailCaptchaViewIgnoresSendFailure 验证异步发送失败不影响接口成功响应
 // （原 TestQueueEmailCaptchaDeliveryIgnoresSendFailure）。
 func TestEmailCaptchaViewIgnoresSendFailure(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	done := make(chan struct{}, 1)
 
@@ -165,9 +164,7 @@ func TestEmailCaptchaViewIgnoresSendFailure(t *testing.T) {
 	})
 
 	response := fixture.sendEmailCaptcha(t, "fail@example.com")
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d (%s)", response.Code, response.Msg)
-	}
+	require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d (%s)", response.Code, response.Msg)
 
 	select {
 	case <-done:
@@ -178,7 +175,7 @@ func TestEmailCaptchaViewIgnoresSendFailure(t *testing.T) {
 
 // TestEmailCaptchaViewStoresConsumableCaptcha 验证验证码已写入存储且可被中间件消费一次。
 func TestEmailCaptchaViewStoresConsumableCaptcha(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	codes := make(chan string, 1)
 
@@ -191,16 +188,12 @@ func TestEmailCaptchaViewStoresConsumableCaptcha(t *testing.T) {
 	})
 
 	response := fixture.sendEmailCaptcha(t, "store@example.com")
-	if response.Code != res.SuccessCode {
-		t.Fatalf("unexpected response code: %d (%s)", response.Code, response.Msg)
-	}
+	require.EqualValues(t, res.SuccessCode, response.Code, "unexpected response code: %d (%s)", response.Code, response.Msg)
 
 	var payload EmailCaptchaResponse
 	decodeResponseData(t, response, &payload)
 
-	if payload.EmailID == "" {
-		t.Fatal("expected non-empty emailID")
-	}
+	require.NotEmpty(t, payload.EmailID, "expected non-empty emailID")
 
 	var sentCode string
 	select {
@@ -212,15 +205,9 @@ func TestEmailCaptchaViewStoresConsumableCaptcha(t *testing.T) {
 	stored, err := app.NewCaptchaService(nil, nil, nil,
 		captcha.NewEmailCaptchaStore(fixture.redis), infraconfig.NewProvider(&config.Config{}),
 	).ConsumeEmailCaptcha(context.Background(), payload.EmailID)
-	if err != nil {
-		t.Fatalf("consume stored captcha failed: %v", err)
-	}
+	require.NoError(t, err, "consume stored captcha failed: %v", err)
 
-	if stored.Email != "store@example.com" {
-		t.Fatalf("unexpected stored email: %s", stored.Email)
-	}
+	require.Equal(t, "store@example.com", stored.Email, "unexpected stored email: %s", stored.Email)
 
-	if stored.Code != sentCode {
-		t.Fatalf("stored code %q != sent code %q", stored.Code, sentCode)
-	}
+	require.Equal(t, stored.Code, sentCode, "stored code %q != sent code %q", stored.Code, sentCode)
 }

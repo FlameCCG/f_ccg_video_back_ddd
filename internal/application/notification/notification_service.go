@@ -3,13 +3,14 @@ package notification
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strconv"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/notification"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -358,7 +359,7 @@ func (s *Service) refreshCountSummary(ctx context.Context, receiverID int) (*Cou
 func (s *Service) refreshCountSummaryAsync(receiverID int) {
 	s.tasks.Go(context.TODO(), ctxutil.AsyncQuickTimeout, func(bg context.Context) {
 		if _, err := s.refreshCountSummary(bg, receiverID); err != nil {
-			s.logger.Warn("refresh notification count cache failed", zap.Int("receiverId", receiverID), zap.Error(err))
+			logctx.With(bg, s.logger).Warn("refresh notification count cache failed", zap.String("event", "notification.notification_service.refresh_count_summary_async.degraded"), zap.String("operation", "notification.notification_service.refresh_count_summary_async"), zap.Int("receiver_id", receiverID), zap.Error(err))
 		}
 	})
 }
@@ -390,7 +391,7 @@ func (s *Service) loadCountSummary(ctx context.Context, receiverID int) (CountSu
 
 		n, err := s.chat.TotalUnread(chatCtx, uint(receiverID))
 		if err != nil {
-			s.logger.Warn("load chat unread failed", zap.Int("receiverId", receiverID), zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("load chat unread failed", zap.String("event", "notification.notification_service.load_count_summary.degraded"), zap.String("operation", "notification.notification_service.load_count_summary"), zap.Int("receiver_id", receiverID), zap.Error(err))
 
 			return nil
 		}

@@ -19,13 +19,13 @@ func (h *Handler) DeleteConversationView(c *gin.Context) {
 
 	uid, ok := middlewares.GetUID(c)
 	if !ok {
-		res.FailWithMsg("请先登录", c)
+		res.FailWithMsg(testLoginRequired, c)
 
 		return
 	}
 
 	if err := h.service.DeleteConversation(c.Request.Context(), uid, req.PeerID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

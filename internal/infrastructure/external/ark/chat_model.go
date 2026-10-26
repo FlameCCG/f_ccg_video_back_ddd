@@ -3,6 +3,7 @@ package ark
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 	"net/http"
 	"strings"
@@ -38,10 +39,11 @@ func (m *ChatModel) InvokeText(ctx context.Context, invocation aiapp.TextInvocat
 
 	response, err := model.Generate(ctx, invocation.Messages)
 	if err != nil {
-		return "", fmt.Errorf("Eino 聊天模型生成失败: %w", err)
+		return "", apperr.Private("ai.generate", fmt.Errorf("eino 聊天模型生成失败: %w", err))
 	}
+
 	if response == nil {
-		return "", errors.New("Eino 聊天模型返回空响应")
+		return "", errors.New("eino 聊天模型返回空响应")
 	}
 
 	return strings.TrimSpace(response.Content), nil
@@ -57,6 +59,7 @@ func (m *ChatModel) OpenStream(
 	}
 
 	httpClient, releaseResponseBody := gatedStreamHTTPClient()
+
 	model, err := m.newModel(ctx, invocation, httpClient)
 	if err != nil {
 		releaseResponseBody()
@@ -65,9 +68,11 @@ func (m *ChatModel) OpenStream(
 	}
 
 	stream, err := model.Stream(ctx, invocation.Messages)
+
 	releaseResponseBody()
+
 	if err != nil {
-		return nil, fmt.Errorf("打开 Eino 聊天模型流失败: %w", err)
+		return nil, apperr.Private("ai.stream.open", fmt.Errorf("打开 Eino 聊天模型流失败: %w", err))
 	}
 
 	return stream, nil
@@ -80,7 +85,7 @@ func (m *ChatModel) newModel(
 ) (*claude.ChatModel, error) {
 	baseURL := strings.TrimSpace(invocation.Runtime.ChatModelBaseURL)
 	if baseURL == "" {
-		return nil, errors.New("AI 聊天模型 Base URL 未配置")
+		return nil, errors.New("ai 聊天模型 Base URL 未配置")
 	}
 
 	maxTokens := invocation.MaxTokens

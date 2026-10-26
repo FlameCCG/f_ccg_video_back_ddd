@@ -55,8 +55,6 @@ func (m *ImageModel) Generate(ctx context.Context, inv aiapp.ImageInvocation) (a
 
 	msg, err := model.Generate(ctx, buildImageGenerationMessages(inv.Prompt, inv.Refs))
 	if err != nil {
-		m.logger.Error("generate AI image failed", zap.String("model", inv.Model), zap.Error(err))
-
 		return nil, wrapArkError(err)
 	}
 

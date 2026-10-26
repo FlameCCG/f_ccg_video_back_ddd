@@ -1,10 +1,10 @@
 package media
 
 import (
-	"fmt"
-	"strings"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"fmt"
+	"math"
+	"strings"
 )
 
 // defaultHighBitrateThreshold 未配置 highBitrateThreshold 时的高码率判定阈值（kbps）。
@@ -248,6 +248,8 @@ func CanonicalResolutionHeight(res enum.VideoResolution) uint16 {
 		return 720
 	case enum.Resolution360P:
 		return 360
+	case enum.ResolutionAuto:
+		fallthrough
 	default:
 		return 360
 	}
@@ -256,7 +258,7 @@ func CanonicalResolutionHeight(res enum.VideoResolution) uint16 {
 // EffectivePixelHeight 返回用于 scale 的真实帧高。
 // 优先 ffprobe 高度；禁止用「宽≥3840 就标 2160」的档位高度去上采样。
 func EffectivePixelHeight(metaHeight int, classHeight uint16) uint16 {
-	if metaHeight > 0 {
+	if metaHeight > 0 && metaHeight <= math.MaxUint16 {
 		return uint16(metaHeight)
 	}
 
@@ -273,10 +275,10 @@ func ValidateTranscodedDuration(sourceDuration, outputDuration int) error {
 		return fmt.Errorf("transcoded output duration is invalid: %d seconds", outputDuration)
 	}
 
-	tolerance := sourceDuration / 50 // 2% 容差，覆盖 ffprobe 取整和容器封装轻微漂移。
-	if tolerance < 3 {
-		tolerance = 3
-	}
+	tolerance := max(
+		// 2% 容差，覆盖 ffprobe 取整和容器封装轻微漂移。
+		sourceDuration/50, 3,
+	)
 
 	delta := sourceDuration - outputDuration
 	if delta < 0 {

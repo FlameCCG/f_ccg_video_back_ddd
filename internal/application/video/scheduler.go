@@ -2,13 +2,14 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/application/shared"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"sync"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/application/shared"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
@@ -59,7 +60,7 @@ func NewScheduler(
 // Start 启动调度循环。
 //
 // 调度依赖数据库，不依赖 Redis。重复调用幂等，由 Stop 统一取消。
-func (s *Scheduler) Start(_ context.Context) error {
+func (s *Scheduler) Start(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -68,7 +69,7 @@ func (s *Scheduler) Start(_ context.Context) error {
 	}
 
 	if !s.store.Available() {
-		s.logger.Warn("schedule storage not configured, skip video scheduler")
+		logctx.With(ctx, s.logger).Warn("schedule storage not configured, skip video scheduler", zap.String("event", "video.scheduler.start.degraded"), zap.String("operation", "video.scheduler.start"))
 
 		return nil
 	}
@@ -125,9 +126,11 @@ func (s *Scheduler) SchedulePublish(ctx context.Context, videoID uint, when time
 		if err != nil {
 			return err
 		}
+
 		if video == nil {
 			return domain.ErrRecordNotFound
 		}
+
 		return s.store.Add(txCtx, videoID, when)
 	})
 }
@@ -155,9 +158,10 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 	if !contentReviewEnabled(s.cfgProvider) {
 		statuses = append(statuses, enum.VideoStatusReview)
 	}
+
 	videoIDs, err := s.store.DueVideoIDs(ctx, time.Now(), statuses)
 	if err != nil {
-		s.logger.Error("fetch scheduled videos failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Error("fetch scheduled videos failed", zap.String("event", "video.scheduler.flush_due.failed"), zap.String("operation", "video.scheduler.flush_due"), zap.Error(err))
 
 		return
 	}
@@ -165,7 +169,7 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 	for _, videoID := range videoIDs {
 		_, pubErr := s.ProcessDueScheduledVideo(ctx, videoID)
 		if pubErr != nil {
-			s.logger.Error("scheduled publish failed", zap.Error(pubErr), zap.Uint("videoId", videoID))
+			logctx.With(ctx, s.logger).Error("scheduled publish failed", zap.String("event", "video.scheduler.flush_due.failed"), zap.String("operation", "video.scheduler.flush_due"), zap.Error(pubErr), zap.Uint("video_id", videoID))
 		}
 	}
 }
@@ -179,54 +183,79 @@ func (s *Scheduler) flushDue(ctx context.Context) {
 // drop=true 表示本次任务已处理；成功发布保留原计划时间，调用方不可再无条件清除。
 func (s *Scheduler) ProcessDueScheduledVideo(ctx context.Context, videoID uint) (bool, error) {
 	var drop, published bool
+
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
-		video, err := s.videos.FindByIDForUpdate(txCtx, videoID)
-		if err != nil {
-			return err
-		}
-		if video != nil {
-			if video.Status == enum.VideoStatusPublished {
-				drop = true
-				return nil // 其它实例已发布，保留原计划时间，不能把历史信息当作过期任务清掉。
-			}
-			publishAt, err := s.store.PublishTime(txCtx, videoID)
-			if err != nil {
-				return err
-			}
-			if publishAt == nil {
-				drop = true
-				return nil
-			}
-			if publishAt.After(time.Now()) {
-				return nil // 列出到期任务后已被作者改期。
-			}
-			switch domain.ResolveScheduledPublishOutcome(video.Status, contentReviewEnabled(s.cfgProvider)) {
-			case domain.ScheduledPublishFromScheduled, domain.ScheduledPublishFromReview:
-				rows, err := s.videos.UpdateStatusFrom(txCtx, videoID, video.Status, enum.VideoStatusPublished)
-				if err != nil {
-					return err
-				}
-				if rows == 0 {
-					return fmt.Errorf("video %d status changed during scheduled publish", videoID)
-				}
-				published = true
-				drop = true
-				return nil // 保留计划时间和定时标识供后台查看；已发布状态不会再次进入到期列表。
-			case domain.ScheduledPublishKeepReview:
-				return nil // 待审作品保留原计划时间，审核通过时再决定立即或定时发布。
-			}
-		}
-		if err := s.store.Remove(txCtx, videoID); err != nil {
-			return err
-		}
-		drop = true
-		return nil
+		return schedulerProcessDueScheduledVideoTransaction(txCtx, s, videoID, &drop, &published)
 	})
 	if err != nil {
 		return false, err
 	}
+
 	if published {
 		s.vectors.SyncAsync(ctx, videoID, enum.VideoStatusPublished)
 	}
+
 	return drop, nil
+}
+
+func schedulerProcessDueScheduledVideoTransaction(txCtx context.Context, s *Scheduler, videoID uint, drop, published *bool) error {
+	video, err := s.videos.FindByIDForUpdate(txCtx, videoID)
+	if err != nil {
+		return err
+	}
+
+	if video == nil {
+		return s.removeStaleSchedule(txCtx, videoID, drop)
+	}
+
+	if video.Status == enum.VideoStatusPublished {
+		(*drop) = true
+		return nil // 其它实例已发布，保留原计划时间，不能把历史信息当作过期任务清掉。
+	}
+
+	publishAt, err := s.store.PublishTime(txCtx, videoID)
+	if err != nil {
+		return err
+	}
+
+	if publishAt == nil {
+		(*drop) = true
+		return nil
+	}
+
+	if publishAt.After(time.Now()) {
+		return nil // 列出到期任务后已被作者改期。
+	}
+
+	switch domain.ResolveScheduledPublishOutcome(video.Status, contentReviewEnabled(s.cfgProvider)) {
+	case domain.ScheduledPublishFromScheduled, domain.ScheduledPublishFromReview:
+		rows, err := s.videos.UpdateStatusFrom(txCtx, videoID, video.Status, enum.VideoStatusPublished)
+		if err != nil {
+			return err
+		}
+
+		if rows == 0 {
+			return fmt.Errorf("video %d status changed during scheduled publish", videoID)
+		}
+
+		(*published) = true
+		(*drop) = true
+
+		return nil // 保留计划时间和定时标识供后台查看；已发布状态不会再次进入到期列表。
+	case domain.ScheduledPublishKeepReview:
+		return nil // 待审作品保留原计划时间，审核通过时再决定立即或定时发布。
+	case domain.ScheduledPublishDrop:
+	}
+
+	return s.removeStaleSchedule(txCtx, videoID, drop)
+}
+
+func (s *Scheduler) removeStaleSchedule(ctx context.Context, videoID uint, drop *bool) error {
+	if err := s.store.Remove(ctx, videoID); err != nil {
+		return err
+	}
+
+	*drop = true
+
+	return nil
 }

@@ -10,12 +10,11 @@ package search
 import (
 	"context"
 	"crypto/tls"
+	"f_ccg_video_back_ddd/internal/config"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
-
-	"f_ccg_video_back_ddd/internal/config"
 
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/olivere/elastic/v7"
@@ -62,12 +61,16 @@ func (e *ES) V8() *elasticsearch8.Client {
 	return e.v8
 }
 
-// New 连接 Elasticsearch（带 Ping 重试）；失败时 zap.Panic（与原 core.InitES 一致）。
-func New(cfg *config.ES, logger *zap.Logger) *ES {
-	if cfg == nil || cfg.Host == "" || cfg.Port == 0 {
-		logger.Warn("ES 配置为空，跳过初始化")
+// New 连接 Elasticsearch（带 Ping 重试）；失败返回错误，由入口记录并退出。
+func New(cfg *config.ES, logger *zap.Logger) (*ES, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 
-		return &ES{logger: logger}
+	if newCondition(cfg) {
+		logger.Warn("ES 配置为空，跳过初始化", zap.String("event", "search.es.new.degraded"), zap.String("operation", "search.es.new"))
+
+		return &ES{logger: logger}, nil
 	}
 
 	scheme := "http"
@@ -89,7 +92,7 @@ func New(cfg *config.ES, logger *zap.Logger) *ES {
 	}
 
 	if cfg.IsHTTPS && cfg.InsecureSkipVerify {
-		logger.Warn("ES TLS certificate verification is disabled; use only in development")
+		logger.Warn("ES TLS certificate verification is disabled; use only in development", zap.String("event", "search.es.new.degraded"), zap.String("operation", "search.es.new"))
 
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // 仅开发环境显式开启
 	}
@@ -122,7 +125,8 @@ func New(cfg *config.ES, logger *zap.Logger) *ES {
 	// 3. 初始化客户端
 	client, err := elastic.NewClient(opts...)
 	if err != nil {
-		logger.Panic("ES 客户端创建失败 (配置错误)", zap.Error(err))
+		httpClient.CloseIdleConnections()
+		return nil, fmt.Errorf("create elasticsearch client: %w", err)
 	}
 
 	// 4. 手动测试连接 (带重试逻辑)
@@ -136,7 +140,7 @@ func New(cfg *config.ES, logger *zap.Logger) *ES {
 		pingErr error
 	)
 
-	logger.Info("正在尝试连接 Elasticsearch...", zap.String("url", url))
+	logger.Info("正在尝试连接 Elasticsearch...", zap.String("event", "search.es.new.diagnostic"), zap.String("operation", "search.es.new"), zap.String("url", url))
 
 	for i := range pingRetries {
 		pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
@@ -148,30 +152,33 @@ func New(cfg *config.ES, logger *zap.Logger) *ES {
 			break
 		}
 
-		logger.Warn("ES 尚未就绪或连接被拒绝，正在重试...",
+		logger.Warn("ES 尚未就绪或连接被拒绝，正在重试...", zap.String("event", "search.es.new.degraded"), zap.String("operation", "search.es.new"),
 			zap.Int("retry", i+1),
 			zap.Error(pingErr))
 		time.Sleep(pingRetryInterval)
 	}
 
 	if pingErr != nil {
-		logger.Panic("ES 连接最终失败",
-			zap.Error(pingErr),
-			zap.String("url", url),
-			zap.String("tips", "请检查 ES 是否开启了 HTTPS 但你使用了 http，或者账号密码错误"))
+		client.Stop()
+		httpClient.CloseIdleConnections()
+
+		return nil, fmt.Errorf("connect elasticsearch: %w", pingErr)
 	}
 
 	es8Client, err := elasticsearch8.NewClient(es8Config)
 	if err != nil {
-		logger.Panic("ES8 客户端创建失败 (配置错误)", zap.Error(err))
+		client.Stop()
+		httpClient.CloseIdleConnections()
+
+		return nil, fmt.Errorf("create elasticsearch v8 client: %w", err)
 	}
 
-	logger.Info("ES 连接成功",
+	logger.Info("ES 连接成功", zap.String("event", "search.es.new.diagnostic"), zap.String("operation", "search.es.new"),
 		zap.String("cluster", info.ClusterName),
 		zap.String("version", info.Version.Number),
 		zap.Int("code", code))
 
-	return &ES{v7: client, v8: es8Client, httpClient: httpClient, logger: logger}
+	return &ES{v7: client, v8: es8Client, httpClient: httpClient, logger: logger}, nil
 }
 
 // Stop 停止 ES v7 后台协程并释放 HTTP 空闲连接。
@@ -196,7 +203,7 @@ func (e *ES) Stop() {
 	}
 
 	if had {
-		e.logger.Info("elasticsearch 连接已关闭")
+		e.logger.Info("elasticsearch 连接已关闭", zap.String("event", "search.es.stop.diagnostic"), zap.String("operation", "search.es.stop"))
 	}
 }
 
@@ -211,8 +218,15 @@ func ProvideV8(e *ES) *elasticsearch8.Client {
 }
 
 // Provide 供 wire 使用的 provider：返回 ES 客户端集合与其资源关闭函数。
-func Provide(cfg *config.ES, logger *zap.Logger) (*ES, func()) {
-	es := New(cfg, logger)
+func Provide(cfg *config.ES, logger *zap.Logger) (*ES, func(), error) {
+	es, err := New(cfg, logger)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return es, es.Stop
+	return es, es.Stop, nil
+}
+
+func newCondition(cfg *config.ES) bool {
+	return cfg == nil || cfg.Host == "" || cfg.Port == 0
 }

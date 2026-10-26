@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"strconv"
 	"time"
 
 	app "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -53,7 +53,7 @@ func (c *FolderListCache) Load(userID, videoID uint) ([]app.FolderWithCount, boo
 	raw, err := c.redis.Get(cacheCtx, key).Bytes()
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
-			c.logger.Warn("get folder list cache failed", zap.String("key", key), zap.Error(err))
+			c.logger.Warn("get folder list cache failed", zap.String("event", "cache.folder_cache.load.degraded"), zap.String("operation", "cache.folder_cache.load"), zap.String("key", key), zap.Error(err))
 		}
 
 		return nil, false
@@ -61,7 +61,7 @@ func (c *FolderListCache) Load(userID, videoID uint) ([]app.FolderWithCount, boo
 
 	var items []app.FolderWithCount
 	if err := json.Unmarshal(raw, &items); err != nil {
-		c.logger.Warn("unmarshal folder list cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("unmarshal folder list cache failed", zap.String("event", "cache.folder_cache.load.degraded"), zap.String("operation", "cache.folder_cache.load"), zap.String("key", key), zap.Error(err))
 		_ = c.redis.Del(cacheCtx, key).Err()
 
 		return nil, false
@@ -83,7 +83,7 @@ func (c *FolderListCache) Store(userID, videoID uint, items []app.FolderWithCoun
 
 	raw, err := json.Marshal(items)
 	if err != nil {
-		c.logger.Warn("marshal folder list cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("marshal folder list cache failed", zap.String("event", "cache.folder_cache.store.degraded"), zap.String("operation", "cache.folder_cache.store"), zap.String("key", key), zap.Error(err))
 
 		return
 	}
@@ -92,7 +92,7 @@ func (c *FolderListCache) Store(userID, videoID uint, items []app.FolderWithCoun
 	defer cancel()
 
 	if err := c.redis.Set(cacheCtx, key, raw, folderListCacheTTL).Err(); err != nil {
-		c.logger.Warn("set folder list cache failed", zap.String("key", key), zap.Error(err))
+		c.logger.Warn("set folder list cache failed", zap.String("event", "cache.folder_cache.store.degraded"), zap.String("operation", "cache.folder_cache.store"), zap.String("key", key), zap.Error(err))
 	}
 }
 
@@ -108,7 +108,7 @@ func (c *FolderListCache) Invalidate(userID uint) {
 	defer cancel()
 
 	if err := c.deleteKeysByPrefix(cacheCtx, prefix); err != nil {
-		c.logger.Warn("invalidate folder list cache failed", zap.Uint("userId", userID), zap.Error(err))
+		c.logger.Warn("invalidate folder list cache failed", zap.String("event", "cache.folder_cache.invalidate.degraded"), zap.String("operation", "cache.folder_cache.invalidate"), zap.Uint("user_id", userID), zap.Error(err))
 	}
 }
 

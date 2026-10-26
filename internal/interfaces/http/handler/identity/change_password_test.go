@@ -1,19 +1,27 @@
 package identity
 
 import (
-	"net/http"
-	"testing"
-
-	app "f_ccg_video_back_ddd/internal/application/identity"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/encrypt"
 	"f_ccg_video_back_ddd/pkg/res"
+	"net/http"
+	"strconv"
+	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
+
+	app "f_ccg_video_back_ddd/internal/application/identity"
+
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
+
+	persistence "f_ccg_video_back_ddd/internal/infrastructure/persistence/identity"
+
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+)
+
+const (
+	testNewPassword = "new-password"
 )
 
 // newChangePasswordHandler 构造只装配账号凭据用例的处理器（注入式，不依赖全局状态）。
@@ -31,8 +39,9 @@ func newChangePasswordHandler(t *testing.T) (*Handler, *gorm.DB) {
 func insertChangePasswordTestUser(t *testing.T, db *gorm.DB, user po.User) {
 	t.Helper()
 
-	if err := db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error; err != nil {
-		t.Fatalf("insert user failed: %v", err)
+	{
+		err := db.Session(&gorm.Session{SkipHooks: true}).Create(&user).Error
+		require.NoError(t, err, "insert user failed: %v", err)
 	}
 }
 
@@ -50,69 +59,30 @@ func performChangePassword(t *testing.T, handler *Handler, req ChangePasswordReq
 }
 
 func TestChangePasswordViewRequiresOldPasswordForPasswordUser(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	handler, db := newChangePasswordHandler(t)
-
-	oldHash, err := encrypt.GenPasswordHash([]byte("old-password"))
-	if err != nil {
-		t.Fatalf("generate old password hash failed: %v", err)
-	}
-
-	insertChangePasswordTestUser(t, db, po.User{
-		Model:    po.Model{ID: 1},
-		Username: "pwd_user",
-		Email:    "pwd@example.com",
-		Password: string(oldHash),
-	})
-
-	response := performChangePassword(t, handler, ChangePasswordReq{
-		OldPassword: "",
-		NewPassword: "new-password",
-	}, "1")
-
-	if response.Code != res.FailServiceCode {
-		t.Fatalf("expected fail response code, got %d", response.Code)
-	}
-
-	if response.Msg != "请输入旧密码" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	t.Parallel()
+	assertOldPasswordRejected(t, po.User{Model: po.Model{ID: 1}, Username: "pwd_user", Email: "pwd@example.com"}, "", "请输入旧密码")
 }
 
 func TestChangePasswordViewRejectsWrongOldPasswordForPasswordUser(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
+	assertOldPasswordRejected(t, po.User{Model: po.Model{ID: 2}, Username: "wrong_old_pwd_user", Email: "wrong-old@example.com"}, "wrong-password", "旧密码错误")
+}
 
+func assertOldPasswordRejected(t *testing.T, user po.User, supplied, expected string) {
+	t.Helper()
 	handler, db := newChangePasswordHandler(t)
+	hash, err := encrypt.GenPasswordHash([]byte("old-password"))
+	require.NoError(t, err)
 
-	oldHash, err := encrypt.GenPasswordHash([]byte("old-password"))
-	if err != nil {
-		t.Fatalf("generate old password hash failed: %v", err)
-	}
-
-	insertChangePasswordTestUser(t, db, po.User{
-		Model:    po.Model{ID: 2},
-		Username: "wrong_old_pwd_user",
-		Email:    "wrong-old@example.com",
-		Password: string(oldHash),
-	})
-
-	response := performChangePassword(t, handler, ChangePasswordReq{
-		OldPassword: "wrong-password",
-		NewPassword: "new-password",
-	}, "2")
-
-	if response.Code != res.FailServiceCode {
-		t.Fatalf("expected fail response code, got %d", response.Code)
-	}
-
-	if response.Msg != "旧密码错误" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	user.Password = string(hash)
+	insertChangePasswordTestUser(t, db, user)
+	response := performChangePassword(t, handler, ChangePasswordReq{OldPassword: supplied, NewPassword: testNewPassword}, strconv.FormatUint(uint64(user.ID), 10))
+	require.EqualValues(t, res.FailServiceCode, response.Code)
+	require.Equal(t, expected, response.Msg)
 }
 
 func TestChangePasswordViewSkipsOldPasswordForOAuthUser(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler, db := newChangePasswordHandler(t)
 
@@ -126,36 +96,29 @@ func TestChangePasswordViewSkipsOldPasswordForOAuthUser(t *testing.T) {
 	})
 
 	response := performChangePassword(t, handler, ChangePasswordReq{
-		NewPassword: "new-password",
+		NewPassword: testNewPassword,
 	}, "3")
 
-	if response.Code != res.SuccessCode {
-		t.Fatalf("expected success response code, got %d", response.Code)
-	}
+	require.EqualValues(t, res.SuccessCode, response.Code, "expected success response code, got %d", response.Code)
 
-	if response.Msg != "修改成功" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	require.Equal(t, "修改成功", response.Msg, "unexpected response msg: %s", response.Msg)
 
 	var user po.User
-	if err := db.First(&user, "id = ?", 3).Error; err != nil {
-		t.Fatalf("query updated user failed: %v", err)
+	{
+		err := db.First(&user, "id = ?", 3).Error
+		require.NoError(t, err, "query updated user failed: %v", err)
 	}
 
-	if !encrypt.ValidatePasswordHash("new-password", user.Password) {
-		t.Fatalf("expected password to be updated with bcrypt hash")
-	}
+	require.True(t, encrypt.ValidatePasswordHash(testNewPassword, user.Password), "expected password to be updated with bcrypt hash")
 }
 
 func TestChangePasswordViewRequiresOldPasswordAfterOAuthUserSetsPassword(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	t.Parallel()
 
 	handler, db := newChangePasswordHandler(t)
 
 	oldHash, err := encrypt.GenPasswordHash([]byte("old-password"))
-	if err != nil {
-		t.Fatalf("generate old password hash failed: %v", err)
-	}
+	require.NoError(t, err, "generate old password hash failed: %v", err)
 
 	// 第三方账号已设密后，再次修改必须校验旧密码
 	insertChangePasswordTestUser(t, db, po.User{
@@ -169,34 +132,24 @@ func TestChangePasswordViewRequiresOldPasswordAfterOAuthUserSetsPassword(t *test
 
 	response := performChangePassword(t, handler, ChangePasswordReq{
 		OldPassword: "",
-		NewPassword: "new-password",
+		NewPassword: testNewPassword,
 	}, "4")
 
-	if response.Code != res.FailServiceCode {
-		t.Fatalf("expected fail response code, got %d", response.Code)
-	}
+	require.EqualValues(t, res.FailServiceCode, response.Code, "expected fail response code, got %d", response.Code)
 
-	if response.Msg != "请输入旧密码" {
-		t.Fatalf("unexpected response msg: %s", response.Msg)
-	}
+	require.Equal(t, "请输入旧密码", response.Msg, "unexpected response msg: %s", response.Msg)
 }
 
 // TestUserPasswordFlags 迁移原 user_api 的同名用例：
 // 判定逻辑已上移到领域层（domain.User 的 HasPassword / IsThirdParty）。
 func TestUserPasswordFlags(t *testing.T) {
-	if (&domain.User{Password: ""}).HasPassword() {
-		t.Fatal("empty password should be hasPassword=false")
-	}
+	t.Parallel()
 
-	if !(&domain.User{Password: "hash"}).HasPassword() {
-		t.Fatal("non-empty password should be hasPassword=true")
-	}
+	require.False(t, (&domain.User{Password: ""}).HasPassword(), "empty password should be hasPassword=false")
 
-	if (&domain.User{OpenID: ""}).IsThirdParty() {
-		t.Fatal("empty open id should be isThirdParty=false")
-	}
+	require.True(t, (&domain.User{Password: "hash"}).HasPassword(), "non-empty password should be hasPassword=true")
 
-	if !(&domain.User{OpenID: "abc"}).IsThirdParty() {
-		t.Fatal("non-empty open id should be isThirdParty=true")
-	}
+	require.False(t, (&domain.User{OpenID: ""}).IsThirdParty(), "empty open id should be isThirdParty=false")
+
+	require.True(t, (&domain.User{OpenID: "abc"}).IsThirdParty(), "non-empty open id should be isThirdParty=true")
 }

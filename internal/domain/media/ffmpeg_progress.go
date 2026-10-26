@@ -1,6 +1,7 @@
 package media
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -8,10 +9,8 @@ import (
 // InjectFFmpegProgressArgs 确保 ffmpeg 参数里带上 `-progress pipe:2`，
 // 使其即便在 `-loglevel error` 下也向 stderr 输出 key=value 进度。幂等。
 func InjectFFmpegProgressArgs(args []string) []string {
-	for i := range args {
-		if args[i] == "-progress" {
-			return args
-		}
+	if slices.Contains(args, "-progress") {
+		return args
 	}
 
 	// 没有任何参数时直接给出进度参数。
@@ -35,8 +34,8 @@ func ParseFFmpegProgressLine(line string) (float64, bool) {
 	}
 
 	const outTimeMS = "out_time_ms="
-	if strings.HasPrefix(line, outTimeMS) {
-		v := strings.TrimPrefix(line, outTimeMS)
+	if after, ok := strings.CutPrefix(line, outTimeMS); ok {
+		v := after
 
 		ms, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 		if err != nil || ms < 0 {
@@ -47,8 +46,8 @@ func ParseFFmpegProgressLine(line string) (float64, bool) {
 	}
 
 	const outTimeUS = "out_time_us="
-	if strings.HasPrefix(line, outTimeUS) {
-		v := strings.TrimPrefix(line, outTimeUS)
+	if after, ok := strings.CutPrefix(line, outTimeUS); ok {
+		v := after
 
 		us, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 		if err != nil || us < 0 {
@@ -59,8 +58,8 @@ func ParseFFmpegProgressLine(line string) (float64, bool) {
 	}
 
 	const outTime = "out_time="
-	if strings.HasPrefix(line, outTime) {
-		return ParseFFmpegClock(strings.TrimPrefix(line, outTime))
+	if after, ok := strings.CutPrefix(line, outTime); ok {
+		return ParseFFmpegClock(after)
 	}
 
 	return 0, false
@@ -69,12 +68,12 @@ func ParseFFmpegProgressLine(line string) (float64, bool) {
 // ParseFFmpegTimeEquals 解析经典 stderr 行里的 `time=HH:MM:SS.xx` 字段。
 func ParseFFmpegTimeEquals(line string) (float64, bool) {
 	// 例如 frame= 123 fps=... time=00:01:02.34 bitrate=...
-	idx := strings.Index(line, "time=")
-	if idx < 0 {
+	_, after, ok := strings.Cut(line, "time=")
+	if !ok {
 		return 0, false
 	}
 
-	rest := line[idx+len("time="):]
+	rest := after
 
 	field := rest
 	if sp := strings.IndexAny(rest, " \t"); sp >= 0 {

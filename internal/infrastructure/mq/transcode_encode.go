@@ -3,14 +3,15 @@ package mq
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
+
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"go.uber.org/zap"
@@ -57,9 +58,9 @@ func (e *TranscodeEngine) EncodeMP4Targets(
 	}
 
 	if len(pending) < len(targets) {
-		e.logger.Info("mp4 targets reused from transcode checkpoint",
-			zap.Uint("videoId", req.Task.VideoID),
-			zap.Uint("partId", req.Task.VideoPartID),
+		logctx.With(ctx, e.logger).Info("mp4 targets reused from transcode checkpoint", zap.String("event", "mq.transcode_encode.encode_mp4_targets.diagnostic"), zap.String("operation", "mq.transcode_encode.encode_mp4_targets"),
+			zap.Uint("video_id", req.Task.VideoID),
+			zap.Uint("part_id", req.Task.VideoPartID),
 			zap.Int("reused", len(targets)-len(pending)),
 			zap.Int("pending", len(pending)),
 		)
@@ -123,25 +124,25 @@ func (e *TranscodeEngine) encodeDirectMP4(
 	encodeCtx, cancelEncode := context.WithTimeout(ctx, encodeTimeout)
 	defer cancelEncode()
 
-	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
+	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, nil)
 	defer cancelRun()
 
-	cmd := exec.CommandContext(runCtx, "ffmpeg", args...)
+	cmd := exec.CommandContext(runCtx, "ffmpeg", args...) // #nosec G204 -- Executes a fixed ffmpeg/ffprobe binary directly, with generated argv and no shell expansion.
 	cmd.Stdout = io.Discard
 
 	tracker := media.ProgressTrackerFromContext(ctx)
 	progressCb := wrapProgress(progressCbForPipeline(ctx, tracker, media.TranscodePipelineMP4))
 	stderrBuf, startProgressRead, waitProgress := attachFFmpegProgress(cmd, progressCb)
 
-	e.logger.Info("ffmpeg multi-output pipeline uses checkpoint attempt dir",
-		zap.Uint("videoId", req.Task.VideoID),
+	logctx.With(ctx, e.logger).Info("ffmpeg multi-output pipeline uses checkpoint attempt dir", zap.String("event", "mq.transcode_encode.encode_direct_mp4.diagnostic"), zap.String("operation", "mq.transcode_encode.encode_direct_mp4"),
+		zap.Uint("video_id", req.Task.VideoID),
 		zap.Int("targets", len(encTargets)),
 		zap.Int("reused", len(targets)-len(pending)),
-		zap.Bool("useGPU", req.UseGPU),
-		zap.Duration("encodeTimeout", encodeTimeout),
-		zap.Duration("progressStallLimit", stallLimit),
-		zap.Int64("sourceBytes", srcBytes),
-		zap.String("attemptDir", attemptDir),
+		zap.Bool("use_gpu", req.UseGPU),
+		zap.Duration("encode_timeout_ms", encodeTimeout),
+		zap.Duration("progress_stall_limit_ms", stallLimit),
+		zap.Int64("source_bytes", srcBytes),
+		zap.String("attempt_dir", attemptDir),
 	)
 
 	if err := cmd.Start(); err != nil {
@@ -151,7 +152,9 @@ func (e *TranscodeEngine) encodeDirectMP4(
 	}
 
 	startProgressRead()
+
 	waitErr := cmd.Wait()
+
 	waitProgress()
 
 	if waitErr != nil {
@@ -193,12 +196,12 @@ func (e *TranscodeEngine) encodeChunkedMP4(
 		encTargets = append(encTargets, target)
 	}
 
-	e.logger.Info("mp4 pipeline uses chunked encode",
-		zap.Uint("videoId", req.Task.VideoID),
-		zap.Uint("partId", req.Task.VideoPartID),
+	logctx.With(ctx, e.logger).Info("mp4 pipeline uses chunked encode", zap.String("event", "mq.transcode_encode.encode_chunked_mp4.diagnostic"), zap.String("operation", "mq.transcode_encode.encode_chunked_mp4"),
+		zap.Uint("video_id", req.Task.VideoID),
+		zap.Uint("part_id", req.Task.VideoPartID),
 		zap.Int("targets", len(encTargets)),
 		zap.Int("chunks", len(req.ChunkPlan)),
-		zap.Bool("useGPU", req.UseGPU),
+		zap.Bool("use_gpu", req.UseGPU),
 	)
 
 	assembled, err := e.runChunkedMP4Targets(ctx, req, ckpt, encTargets)
@@ -235,9 +238,9 @@ func (e *TranscodeEngine) EncodeDASHDir(ctx context.Context, req mediaapp.DASHEn
 	// 断点复用：上次尝试已提交的完整 DASH 目录直接进入上传（编码整体跳过）。
 	// GPU 编码成功但上传失败时，CPU 回退也会走到这里而不重编。
 	if committedDir, ok := reusableCommittedDashDir(ctx, ckpt, req.SourceDuration); ok {
-		e.logger.Info("dash outputs reused from transcode checkpoint",
-			zap.Uint("videoId", req.Task.VideoID),
-			zap.Uint("partId", req.Task.VideoPartID),
+		logctx.With(ctx, e.logger).Info("dash outputs reused from transcode checkpoint", zap.String("event", "mq.transcode_encode.encode_dash_dir.diagnostic"), zap.String("operation", "mq.transcode_encode.encode_dash_dir"),
+			zap.Uint("video_id", req.Task.VideoID),
+			zap.Uint("part_id", req.Task.VideoPartID),
 			zap.String("dir", committedDir),
 		)
 
@@ -299,10 +302,10 @@ func (e *TranscodeEngine) encodeDirectDASH(
 	encodeCtx, cancelEncode := context.WithTimeout(ctx, encodeTimeout)
 	defer cancelEncode()
 
-	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, e.logProgressStall)
+	runCtx, cancelRun, wrapProgress := media.WithProgressStallGuard(encodeCtx, stallLimit, nil)
 	defer cancelRun()
 
-	cmd := exec.CommandContext(runCtx, "ffmpeg", args...)
+	cmd := exec.CommandContext(runCtx, "ffmpeg", args...) // #nosec G204 -- Executes a fixed ffmpeg/ffprobe binary directly, with generated argv and no shell expansion.
 	// CWD 切到临时目录，初始化文件和分片都在同一目录，manifest 只含相对路径。
 	cmd.Dir = tmpDir
 	cmd.Stdout = io.Discard
@@ -311,13 +314,13 @@ func (e *TranscodeEngine) encodeDirectDASH(
 	progressCb := wrapProgress(progressCbForPipeline(ctx, tracker, media.TranscodePipelineDASH))
 	stderrBuf, startProgressRead, waitProgress := attachFFmpegProgress(cmd, progressCb)
 
-	e.logger.Info("dash pipeline start",
-		zap.Uint("videoId", req.Task.VideoID),
+	logctx.With(ctx, e.logger).Info("dash pipeline start", zap.String("event", "mq.transcode_encode.encode_direct_dash.diagnostic"), zap.String("operation", "mq.transcode_encode.encode_direct_dash"),
+		zap.Uint("video_id", req.Task.VideoID),
 		zap.Int("representations", len(targets)),
-		zap.Bool("useGPU", req.UseGPU),
-		zap.Duration("encodeTimeout", encodeTimeout),
-		zap.Duration("progressStallLimit", stallLimit),
-		zap.Int64("sourceBytes", srcBytes),
+		zap.Bool("use_gpu", req.UseGPU),
+		zap.Duration("encode_timeout_ms", encodeTimeout),
+		zap.Duration("progress_stall_limit_ms", stallLimit),
+		zap.Int64("source_bytes", srcBytes),
 	)
 
 	if err := cmd.Start(); err != nil {
@@ -327,7 +330,9 @@ func (e *TranscodeEngine) encodeDirectDASH(
 	}
 
 	startProgressRead()
+
 	waitErr := cmd.Wait()
+
 	waitProgress()
 
 	if waitErr != nil {
@@ -351,12 +356,12 @@ func (e *TranscodeEngine) encodeChunkedDASH(
 		targets[i].FileName = fmt.Sprintf("rep%d.mp4", i)
 	}
 
-	e.logger.Info("dash pipeline uses chunked encode",
-		zap.Uint("videoId", req.Task.VideoID),
-		zap.Uint("partId", req.Task.VideoPartID),
+	logctx.With(ctx, e.logger).Info("dash pipeline uses chunked encode", zap.String("event", "mq.transcode_encode.encode_chunked_dash.diagnostic"), zap.String("operation", "mq.transcode_encode.encode_chunked_dash"),
+		zap.Uint("video_id", req.Task.VideoID),
+		zap.Uint("part_id", req.Task.VideoPartID),
 		zap.Int("representations", len(targets)),
 		zap.Int("chunks", len(req.ChunkPlan)),
-		zap.Bool("useGPU", req.UseGPU),
+		zap.Bool("use_gpu", req.UseGPU),
 	)
 
 	perChunk, err := e.encodeChunkedTargets(ctx, chunkedEncodeRequest{
@@ -385,12 +390,4 @@ func (e *TranscodeEngine) encodeChunkedDASH(
 	}
 
 	return e.muxChunkedDASH(ctx, ckpt, targets, perChunk, audioPath, tmpDir, mpdPath, fileHash, segDur)
-}
-
-// logProgressStall 是进度停滞看门狗的日志回调（原 withProgressStallGuard 内联的 zap 调用）。
-func (e *TranscodeEngine) logProgressStall(idle, limit time.Duration) {
-	e.logger.Error("ffmpeg progress stalled, canceling pipeline",
-		zap.Duration("idle", idle),
-		zap.Duration("limit", limit),
-	)
 }

@@ -2,11 +2,10 @@ package social
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-	"strconv"
-	"strings"
-
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +18,7 @@ type FocusStatusRes struct {
 }
 
 // FocusStatusView 查询与指定用户的关注关系.
-// Query: id
+// Query: id.
 func (h *Handler) FocusStatusView(c *gin.Context) {
 	targetUserID := strings.TrimSpace(c.Query("id"))
 	if targetUserID == "" {
@@ -29,7 +28,7 @@ func (h *Handler) FocusStatusView(c *gin.Context) {
 
 	targetUID, err := strconv.Atoi(targetUserID)
 	if err != nil {
-		res.FailWithMsg("用户ID格式错误", c)
+		res.FailWithCause(err, "用户ID格式错误", c)
 		return
 	}
 
@@ -41,7 +40,7 @@ func (h *Handler) FocusStatusView(c *gin.Context) {
 
 	relation, err := h.relations.FocusStatus(c.Request.Context(), uid, targetUID)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

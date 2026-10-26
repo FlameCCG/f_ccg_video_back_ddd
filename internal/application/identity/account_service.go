@@ -2,10 +2,11 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/encrypt"
 	"strings"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/pkg/encrypt"
 )
 
 // AccountService 账号凭据与角色切换用例服务
@@ -25,7 +26,7 @@ func NewAccountService(users domain.UserAccountRepository, roles UserRoleQuery) 
 func (s *AccountService) BindEmail(ctx context.Context, in BindEmailInput) (alreadyBound bool, err error) {
 	user, err := s.users.FindByID(ctx, in.UserID)
 	if err != nil || user == nil {
-		return false, domain.ErrUserNotFound
+		return false, apperr.Wrap("application/identity/account_service", domain.ErrUserNotFound, err)
 	}
 
 	if user.Email != "" && user.Email == in.Email {
@@ -39,7 +40,7 @@ func (s *AccountService) BindEmail(ctx context.Context, in BindEmailInput) (alre
 	}
 
 	if err = s.users.UpdateEmail(ctx, user.ID, in.Email); err != nil {
-		return false, ErrBindEmailFailed
+		return false, apperr.Wrap("application/identity/account_service", ErrBindEmailFailed, err)
 	}
 
 	return false, nil
@@ -49,7 +50,7 @@ func (s *AccountService) BindEmail(ctx context.Context, in BindEmailInput) (alre
 func (s *AccountService) ResetPassword(ctx context.Context, in ResetPasswordInput) error {
 	user, err := s.users.FindByEmail(ctx, in.Email)
 	if err != nil {
-		return ErrResetPasswordFailed
+		return apperr.Wrap("application/identity/account_service", ErrResetPasswordFailed, err)
 	}
 
 	if user == nil {
@@ -58,11 +59,11 @@ func (s *AccountService) ResetPassword(ctx context.Context, in ResetPasswordInpu
 
 	passwordHash, err := encrypt.GenPasswordHash([]byte(in.NewPassword))
 	if err != nil {
-		return domain.ErrPasswordHashFailed
+		return apperr.Wrap("application/identity/account_service", domain.ErrPasswordHashFailed, err)
 	}
 
 	if err = s.users.UpdatePassword(ctx, user.ID, string(passwordHash)); err != nil {
-		return ErrResetPasswordFailed
+		return apperr.Wrap("application/identity/account_service", ErrResetPasswordFailed, err)
 	}
 
 	return nil
@@ -72,7 +73,7 @@ func (s *AccountService) ResetPassword(ctx context.Context, in ResetPasswordInpu
 func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordInput) error {
 	user, err := s.users.FindByID(ctx, in.UserID)
 	if err != nil || user == nil {
-		return domain.ErrUserNotFound
+		return apperr.Wrap("application/identity/account_service", domain.ErrUserNotFound, err)
 	}
 
 	if user.RequiresOldPassword() {
@@ -88,13 +89,14 @@ func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordIn
 	if user.MustChangePassword && encrypt.ValidatePasswordHash(in.NewPassword, user.Password) {
 		return ErrInitialPasswordUnchanged
 	}
+
 	passwordHash, err := encrypt.GenPasswordHash([]byte(in.NewPassword))
 	if err != nil {
-		return domain.ErrPasswordHashFailed
+		return apperr.Wrap("application/identity/account_service", domain.ErrPasswordHashFailed, err)
 	}
 
 	if err = s.users.UpdatePassword(ctx, user.ID, string(passwordHash)); err != nil {
-		return ErrChangePasswordFailed
+		return apperr.Wrap("application/identity/account_service", ErrChangePasswordFailed, err)
 	}
 
 	return nil
@@ -104,7 +106,7 @@ func (s *AccountService) ChangePassword(ctx context.Context, in ChangePasswordIn
 func (s *AccountService) SwitchRole(ctx context.Context, userID, roleID uint) error {
 	hasRole, err := s.roles.HasRole(ctx, userID, roleID)
 	if err != nil {
-		return ErrRoleCheckFailed
+		return apperr.Wrap("application/identity/account_service", ErrRoleCheckFailed, err)
 	}
 
 	if !hasRole {
@@ -112,7 +114,7 @@ func (s *AccountService) SwitchRole(ctx context.Context, userID, roleID uint) er
 	}
 
 	if err = s.users.UpdateCurrentRole(ctx, userID, roleID); err != nil {
-		return ErrSwitchRoleFailed
+		return apperr.Wrap("application/identity/account_service", ErrSwitchRoleFailed, err)
 	}
 
 	return nil

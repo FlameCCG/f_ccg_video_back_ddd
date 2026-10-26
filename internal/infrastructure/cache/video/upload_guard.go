@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -39,6 +40,7 @@ type UploadHashGuard struct {
 
 var _ app.UploadHashGuard = (*UploadHashGuard)(nil)
 
+// NewUploadHashGuard constructs an ownership checked Redis guard for upload operations.
 func NewUploadHashGuard(client *redis.Client) *UploadHashGuard {
 	return &UploadHashGuard{redis: client}
 }
@@ -58,60 +60,68 @@ func (g *UploadHashGuard) run(ctx context.Context, hashes []string, wait bool, f
 	if g == nil || g.redis == nil {
 		return false, errors.New("redis unavailable")
 	}
+
 	unique := make(map[string]struct{}, len(hashes))
 	for _, hash := range hashes {
 		if hash != "" {
 			unique[hash] = struct{}{}
 		}
 	}
+
 	keys := make([]string, 0, len(unique))
 	for hash := range unique {
 		keys = append(keys, "video:upload:processing:"+hash)
 	}
 	// 所有参与者按同样顺序取得多把锁，避免不同分P组合以相反顺序持锁等待。
 	sort.Strings(keys)
+
 	if len(keys) == 0 {
 		return true, fn(ctx)
 	}
+
 	token := uuid.NewString()
 	acquired := make([]string, 0, len(keys))
+
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 		defer cancel()
-		for i := len(acquired) - 1; i >= 0; i-- {
-			_ = releaseUploadGuardScript.Run(releaseCtx, g.redis, []string{acquired[i]}, token).Err()
+
+		for _, a := range slices.Backward(acquired) {
+			_ = releaseUploadGuardScript.Run(releaseCtx, g.redis, []string{a}, token).Err()
 		}
 	}()
+
 	for _, key := range keys {
-		for {
-			ok, err := g.redis.SetNX(ctx, key, token, uploadGuardLease).Result()
-			if err != nil {
-				return false, err
-			}
-			if ok {
-				acquired = append(acquired, key)
-				break
-			}
-			if !wait {
-				return false, nil
-			}
-			select {
-			case <-ctx.Done():
-				return false, ctx.Err()
-			case <-time.After(75 * time.Millisecond):
-			}
+		ok, err := g.acquireKey(ctx, key, token, wait)
+		if err != nil {
+			return false, err
 		}
+
+		if !ok {
+			return false, nil
+		}
+
+		acquired = append(acquired, key)
 	}
+
 	// 续租失败会取消回调 context 并优先返回失锁错误。
 	// 回调需及时响应取消；租期锁本身不能强制停止已在执行的数据库或存储操作。
+	return finishUploadHashGuardRun(ctx, g, fn, token, acquired)
+}
+
+func finishUploadHashGuardRun(ctx context.Context, g *UploadHashGuard, fn func(context.Context) error, token string, acquired []string) (bool, error) {
 	guardCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
 	done := make(chan struct{})
 	lost := make(chan error, 1)
+
 	go func() {
 		defer close(done)
+
 		ticker := time.NewTicker(uploadGuardLease / 4)
 		defer ticker.Stop()
+
 		for {
 			select {
 			case <-guardCtx.Done():
@@ -123,21 +133,46 @@ func (g *UploadHashGuard) run(ctx context.Context, hashes []string, wait bool, f
 						if err == nil {
 							err = fmt.Errorf("upload lock lost: %s", key)
 						}
+
 						lost <- err
+
 						cancel()
+
 						return
 					}
 				}
 			}
 		}
 	}()
+
 	err := fn(guardCtx)
+
 	cancel()
 	<-done
+
 	select {
 	case lockErr := <-lost:
 		return true, lockErr
 	default:
 		return true, err
+	}
+}
+
+func (g *UploadHashGuard) acquireKey(ctx context.Context, key, token string, wait bool) (bool, error) {
+	for {
+		ok, err := g.redis.SetNX(ctx, key, token, uploadGuardLease).Result()
+		if err != nil || ok {
+			return ok, err
+		}
+
+		if !wait {
+			return false, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(75 * time.Millisecond):
+		}
 	}
 }

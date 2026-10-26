@@ -3,10 +3,10 @@ package identity
 import (
 	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-
-	app "f_ccg_video_back_ddd/internal/application/identity"
 	"f_ccg_video_back_ddd/pkg/res"
 	"f_ccg_video_back_ddd/pkg/utils/ipUtils"
+
+	app "f_ccg_video_back_ddd/internal/application/identity"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,12 +39,12 @@ func (h *Handler) completeOAuthLogin(c *gin.Context, params oauthLoginParams) {
 	})
 	if err != nil {
 		if errors.Is(err, app.ErrOAuthProviderFailed) || errors.Is(err, app.ErrOAuthProviderUnsupported) {
-			res.FailWithMsg(params.provider+"登录失败", c)
+			res.FailWithCause(err, params.provider+"登录失败", c)
 
 			return
 		}
 
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -61,4 +61,14 @@ func (h *Handler) ensureOAuthProviderEnabled(c *gin.Context, provider string) bo
 	res.FailWithMsg(provider+"登录已关闭", c)
 
 	return false
+}
+
+// completeOAuthCallback consumes the provider-bound state before authenticating the callback.
+func (h *Handler) completeOAuthCallback(c *gin.Context, state, invalidStateMessage string, params oauthLoginParams) {
+	if err := h.oauth.ConsumeOAuthState(c.Request.Context(), params.provider, state); err != nil {
+		res.FailWithCause(err, invalidStateMessage, c)
+		return
+	}
+
+	h.completeOAuthLogin(c, params)
 }

@@ -56,7 +56,7 @@ var VideoPartitionsTaskProviderSet = wire.NewSet(
 // BannerTaskProviderSet 组装 -br；只在数据库图上增加存储解析器。
 var BannerTaskProviderSet = wire.NewSet(
 	CLIDatabaseProviderSet,
-	ctxutil.NewDetachedTaskGroup,
+	ctxutil.NewLoggedDetachedTaskGroup,
 	storage.NewMinIOClientPool,
 	storage.NewResolver,
 	wire.Bind(new(mediadomain.StorageResolver), new(*storage.Resolver)),
@@ -118,7 +118,7 @@ var RBACInitTaskProviderSet = wire.NewSet(
 // 不构造完整 App，也不提前连接 Kafka/启动后台组件。
 var ResourceSyncTaskProviderSet = wire.NewSet(
 	CLIFullInfrastructureProviderSet,
-	rbacrepo.NewApiResourceRepository,
+	rbacrepo.NewAPIResourceRepository,
 	wire.Bind(new(rbacdomain.APIResourceRepository), new(*rbacrepo.APIResourceRepository)),
 	rbacrepo.NewOpenAPIMetaLoader,
 	wire.Bind(new(rbacapp.ResourceMetaLoader), new(*rbacrepo.OpenAPIMetaLoader)),

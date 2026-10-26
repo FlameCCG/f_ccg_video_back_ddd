@@ -2,10 +2,11 @@ package video
 
 import (
 	"context"
-
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"f_ccg_video_back_ddd/pkg/apperr"
+
+	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"gorm.io/gorm"
 )
@@ -26,65 +27,7 @@ func (r *Repository) Persist(ctx context.Context, draft *domain.PublishDraft) er
 	row.PublishAt = draft.PublishAt
 	row.IsScheduled = draft.PublishAt != nil
 
-	err := gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
-		if createErr := tx.Create(row).Error; createErr != nil {
-			return domain.ErrCreateVideoFailed
-		}
-		if len(draft.TagIDs) > 0 {
-			tags := make([]po.Tag, 0, len(draft.TagIDs))
-			for _, id := range draft.TagIDs {
-				tags = append(tags, po.Tag{Model: po.Model{ID: id}})
-			}
-
-			values := make([]any, 0, len(tags))
-			for i := range tags {
-				values = append(values, &tags[i])
-			}
-
-			if assocErr := tx.Model(row).Association("Tags").Replace(values...); assocErr != nil {
-				return domain.ErrCreateVideoTagsFailed
-			}
-		}
-
-		if len(draft.Parts) > 0 {
-			parts := make([]po.Part, 0, len(draft.Parts))
-			for _, part := range draft.Parts {
-				parts = append(parts, toPOVideoPart(part, row.ID))
-			}
-
-			if createErr := tx.Create(&parts).Error; createErr != nil {
-				return domain.ErrCreatePartsFailed
-			}
-
-			// 回填自增 ID 供调用方派发转码任务
-			for i := range parts {
-				if i < len(draft.Parts) {
-					draft.Parts[i].ID = parts[i].ID
-					draft.Parts[i].VideoID = row.ID
-				}
-			}
-
-			if resErr := createInitialPartResources(tx, draft, parts); resErr != nil {
-				if domain.IsSourceFileNameError(resErr) {
-					return resErr
-				}
-
-				return domain.ErrCreatePartResourcesFailed
-			}
-
-			return nil
-		}
-
-		if resErr := createInitialVideoResource(tx, draft, row.ID); resErr != nil {
-			if domain.IsSourceFileNameError(resErr) {
-				return resErr
-			}
-
-			return domain.ErrCreateVideoResourceFailed
-		}
-
-		return nil
-	})
+	err := gormx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error { return repositoryPersistTransaction(tx, draft, row) })
 	if err != nil {
 		return err
 	}
@@ -127,6 +70,71 @@ func createInitialVideoResource(tx *gorm.DB, draft *domain.PublishDraft, videoID
 
 	if err := tx.Create(resource).Error; err != nil {
 		return domain.MapSourceFileNameDBError(err, resource.SourceFileName)
+	}
+
+	return nil
+}
+
+func repositoryPersistTransaction(tx *gorm.DB, draft *domain.PublishDraft, row *po.Video) error {
+	if createErr := tx.Create(row).Error; createErr != nil {
+		return apperr.Wrap("infrastructure/persistence/video/publish_repo", domain.ErrCreateVideoFailed, createErr)
+	}
+
+	if len(draft.TagIDs) > 0 {
+		tags := make([]po.Tag, 0, len(draft.TagIDs))
+		for _, id := range draft.TagIDs {
+			tags = append(tags, po.Tag{Model: po.Model{ID: id}})
+		}
+
+		values := make([]any, 0, len(tags))
+		for i := range tags {
+			values = append(values, &tags[i])
+		}
+
+		if assocErr := tx.Model(row).Association("Tags").Replace(values...); assocErr != nil {
+			return apperr.Wrap("infrastructure/persistence/video/publish_repo", domain.ErrCreateVideoTagsFailed, assocErr)
+		}
+	}
+
+	return finishRepositoryPersistTransaction(tx, draft, row)
+}
+
+func finishRepositoryPersistTransaction(tx *gorm.DB, draft *domain.PublishDraft, row *po.Video) error {
+	if len(draft.Parts) == 0 {
+		if resErr := createInitialVideoResource(tx, draft, row.ID); resErr != nil {
+			if domain.IsSourceFileNameError(resErr) {
+				return resErr
+			}
+
+			return apperr.Wrap("infrastructure/persistence/video/publish_repo", domain.ErrCreateVideoResourceFailed, resErr)
+		}
+
+		return nil
+	}
+
+	parts := make([]po.Part, 0, len(draft.Parts))
+	for _, part := range draft.Parts {
+		parts = append(parts, toPOVideoPart(part, row.ID))
+	}
+
+	if createErr := tx.Create(&parts).Error; createErr != nil {
+		return apperr.Wrap("infrastructure/persistence/video/publish_repo", domain.ErrCreatePartsFailed, createErr)
+	}
+
+	// 回填自增 ID 供调用方派发转码任务
+	for i := range parts {
+		if i < len(draft.Parts) {
+			draft.Parts[i].ID = parts[i].ID
+			draft.Parts[i].VideoID = row.ID
+		}
+	}
+
+	if resErr := createInitialPartResources(tx, draft, parts); resErr != nil {
+		if domain.IsSourceFileNameError(resErr) {
+			return resErr
+		}
+
+		return apperr.Wrap("infrastructure/persistence/video/publish_repo", domain.ErrCreatePartResourcesFailed, resErr)
 	}
 
 	return nil

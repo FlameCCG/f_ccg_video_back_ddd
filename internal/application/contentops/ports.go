@@ -2,10 +2,10 @@ package contentops
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/contentops"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // 端口阅读：运营页面需要的统计、分区事实、缓存、配置写回与登录奖励通过端口提供。

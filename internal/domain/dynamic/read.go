@@ -1,9 +1,8 @@
 package dynamic
 
 import (
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"time"
 )
 
 // ReadRecord 用户对某作者「最新作品」的已读位点。

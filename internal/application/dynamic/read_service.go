@@ -2,9 +2,9 @@ package dynamic
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // ReadService 「最新作品已读」用例服务（原 service/dynamic_service/read_service.go）。

@@ -2,12 +2,12 @@ package video
 
 import (
 	"context"
-
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/video"
+	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"gorm.io/gorm"
 )
@@ -51,6 +51,7 @@ func (q *UserVideoQuery) ListByAuthor(
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
+
 	var rows []po.Video
 	if err := query.Session(&gorm.Session{}).
 		Select("id", "title", "cover", "views", "likes", "favorite_count",

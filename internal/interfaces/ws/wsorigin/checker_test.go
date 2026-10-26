@@ -1,12 +1,19 @@
 package wsorigin
 
 import (
+	"f_ccg_video_back_ddd/internal/config"
 	"net/http"
 	"testing"
 
-	"f_ccg_video_back_ddd/internal/config"
+	"github.com/stretchr/testify/require"
+
 	third_login "f_ccg_video_back_ddd/internal/config/thirdlogin"
+
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
+)
+
+const (
+	testExampleCom = "example.com"
 )
 
 // 对应原 pkg/wsorigin/enter.go（原为包级函数 + global.Config()，此处为注入式 Checker）。
@@ -37,20 +44,18 @@ func TestCheckRejectsMissingOrMalformedOrigin(t *testing.T) {
 		request *http.Request
 	}{
 		{name: "nil request", request: nil},
-		{name: "no origin header", request: newRequest("", "example.com")},
-		{name: "blank origin", request: newRequest("   ", "example.com")},
-		{name: "origin without host", request: newRequest("http://", "example.com")},
-		{name: "non http scheme", request: newRequest("ws://example.com", "example.com")},
-		{name: "file scheme", request: newRequest("file:///tmp/x.html", "example.com")},
+		{name: "no origin header", request: newRequest("", testExampleCom)},
+		{name: "blank origin", request: newRequest("   ", testExampleCom)},
+		{name: "origin without host", request: newRequest("http://", testExampleCom)},
+		{name: "non http scheme", request: newRequest("ws://example.com", testExampleCom)},
+		{name: "file scheme", request: newRequest("file:///tmp/x.html", testExampleCom)},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if checker.Check(tt.request) {
-				t.Fatal("origin must be rejected")
-			}
+			require.False(t, checker.Check(tt.request), "origin must be rejected")
 		})
 	}
 }
@@ -67,20 +72,21 @@ func TestCheckAllowsSameHost(t *testing.T) {
 		host   string
 		want   bool
 	}{
-		{name: "identical", origin: "https://example.com", host: "example.com", want: true},
-		{name: "case insensitive", origin: "https://EXAMPLE.com", host: "example.com", want: true},
+		{name: "identical", origin: "https://example.com", host: testExampleCom, want: true},
+		{name: "case insensitive", origin: "https://EXAMPLE.com", host: testExampleCom, want: true},
 		{name: "same host and port", origin: "http://example.com:8080", host: "example.com:8080", want: true},
 		{name: "port mismatch", origin: "http://example.com:8080", host: "example.com:9090", want: false},
-		{name: "origin has port host does not", origin: "http://example.com:8080", host: "example.com", want: false},
-		{name: "different host", origin: "https://evil.com", host: "example.com", want: false},
+		{name: "origin has port host does not", origin: "http://example.com:8080", host: testExampleCom, want: false},
+		{name: "different host", origin: "https://evil.com", host: testExampleCom, want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := checker.Check(newRequest(tt.origin, tt.host)); got != tt.want {
-				t.Fatalf("Check(%q, %q) = %v, want %v", tt.origin, tt.host, got, tt.want)
+			{
+				got := checker.Check(newRequest(tt.origin, tt.host))
+				require.Equal(t, tt.want, got, "Check(%q, %q) = %v, want %v", tt.origin, tt.host, got, tt.want)
 			}
 		})
 	}
@@ -101,7 +107,7 @@ func TestCheckAllowsLoopbackPairs(t *testing.T) {
 		{name: "localhost to 127.0.0.1", origin: "http://localhost:5173", host: "127.0.0.1:8080", want: true},
 		{name: "127.0.0.1 to localhost", origin: "http://127.0.0.1:5173", host: "localhost:8080", want: true},
 		{name: "ipv6 loopback", origin: "http://[::1]:5173", host: "localhost:8080", want: true},
-		{name: "loopback origin public host", origin: "http://localhost:5173", host: "example.com", want: false},
+		{name: "loopback origin public host", origin: "http://localhost:5173", host: testExampleCom, want: false},
 		{name: "public origin loopback host", origin: "http://evil.com", host: "localhost:8080", want: false},
 	}
 
@@ -109,8 +115,9 @@ func TestCheckAllowsLoopbackPairs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := checker.Check(newRequest(tt.origin, tt.host)); got != tt.want {
-				t.Fatalf("Check(%q, %q) = %v, want %v", tt.origin, tt.host, got, tt.want)
+			{
+				got := checker.Check(newRequest(tt.origin, tt.host))
+				require.Equal(t, tt.want, got, "Check(%q, %q) = %v, want %v", tt.origin, tt.host, got, tt.want)
 			}
 		})
 	}
@@ -146,8 +153,9 @@ func TestCheckAllowsConfiguredThirdLoginRedirects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := checker.Check(newRequest(tt.origin, "api.example.com")); got != tt.want {
-				t.Fatalf("Check(%q) = %v, want %v", tt.origin, got, tt.want)
+			{
+				got := checker.Check(newRequest(tt.origin, "api.example.com"))
+				require.Equal(t, tt.want, got, "Check(%q) = %v, want %v", tt.origin, got, tt.want)
 			}
 		})
 	}
@@ -163,14 +171,10 @@ func TestCheckRejectsWhenConfigMissing(t *testing.T) {
 		newChecker(nil),
 		newChecker(&config.ThirdLogin{}),
 	} {
-		if checker.Check(newRequest("https://front.example.com", "api.example.com")) {
-			t.Fatal("cross-origin request must be rejected without configured redirects")
-		}
+		require.False(t, checker.Check(newRequest("https://front.example.com", "api.example.com")), "cross-origin request must be rejected without configured redirects")
 
 		// 同源仍然放行（不依赖配置）。
-		if !checker.Check(newRequest("https://api.example.com", "api.example.com")) {
-			t.Fatal("same-origin request must stay allowed")
-		}
+		require.True(t, checker.Check(newRequest("https://api.example.com", "api.example.com")), "same-origin request must stay allowed")
 	}
 }
 
@@ -202,8 +206,9 @@ func TestRedirectOfHandlesAllProviders(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := redirectOf(tt.value); got != tt.want {
-				t.Fatalf("redirectOf(%T) = %q, want %q", tt.value, got, tt.want)
+			{
+				got := redirectOf(tt.value)
+				require.Equal(t, tt.want, got, "redirectOf(%T) = %q, want %q", tt.value, got, tt.want)
 			}
 		})
 	}
@@ -218,8 +223,8 @@ func TestSplitHostPort(t *testing.T) {
 		wantHost string
 		wantPort string
 	}{
-		{name: "host and port", value: "Example.com:8080", wantHost: "example.com", wantPort: "8080"},
-		{name: "host only", value: "Example.com", wantHost: "example.com", wantPort: ""},
+		{name: "host and port", value: "Example.com:8080", wantHost: testExampleCom, wantPort: "8080"},
+		{name: "host only", value: "Example.com", wantHost: testExampleCom, wantPort: ""},
 		{name: "ipv6 with port", value: "[::1]:8080", wantHost: "::1", wantPort: "8080"},
 		{name: "ipv6 without port", value: "[::1]", wantHost: "::1", wantPort: ""},
 		{name: "blank", value: "   ", wantHost: "", wantPort: ""},
@@ -230,10 +235,8 @@ func TestSplitHostPort(t *testing.T) {
 			t.Parallel()
 
 			host, port := splitHostPort(tt.value)
-			if host != tt.wantHost || port != tt.wantPort {
-				t.Fatalf("splitHostPort(%q) = (%q, %q), want (%q, %q)",
-					tt.value, host, port, tt.wantHost, tt.wantPort)
-			}
+			require.Equal(t, tt.wantHost, host, "splitHostPort(%q) = (%q, %q), want (%q, %q)", tt.value, host, port, tt.wantHost, tt.wantPort)
+			require.Equal(t, tt.wantPort, port, "splitHostPort(%q) = (%q, %q), want (%q, %q)", tt.value, host, port, tt.wantHost, tt.wantPort)
 		})
 	}
 }
@@ -250,7 +253,7 @@ func TestIsLoopback(t *testing.T) {
 		{host: "127.0.0.1", want: true},
 		{host: "127.5.5.5", want: true},
 		{host: "[::1]", want: true},
-		{host: "example.com", want: false},
+		{host: testExampleCom, want: false},
 		{host: "10.0.0.1", want: false},
 		{host: "", want: false},
 	}
@@ -259,8 +262,9 @@ func TestIsLoopback(t *testing.T) {
 		t.Run(tt.host, func(t *testing.T) {
 			t.Parallel()
 
-			if got := isLoopback(tt.host); got != tt.want {
-				t.Fatalf("isLoopback(%q) = %v, want %v", tt.host, got, tt.want)
+			{
+				got := isLoopback(tt.host)
+				require.Equal(t, tt.want, got, "isLoopback(%q) = %v, want %v", tt.host, got, tt.want)
 			}
 		})
 	}

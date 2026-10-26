@@ -48,7 +48,7 @@ type Checkpoint interface {
 // 实现：`*mq.TranscodeEngine`。
 type CheckpointManager interface {
 	// OpenCheckpoint 打开（或创建）任务的断点目录；断点续传被关闭时退化为一次性临时目录。
-	OpenCheckpoint(task domain.TranscodeTask) (Checkpoint, error)
+	OpenCheckpoint(ctx context.Context, task domain.TranscodeTask) (Checkpoint, error)
 	// StartCheckpointJanitor 启动孤儿断点目录清扫：立即扫一次，此后周期扫，随 ctx 退出。
 	StartCheckpointJanitor(ctx context.Context)
 }

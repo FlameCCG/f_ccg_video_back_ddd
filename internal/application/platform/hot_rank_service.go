@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 
 	domain "f_ccg_video_back_ddd/internal/domain/platform"
 
@@ -27,7 +28,7 @@ func NewHotRankDecayService(store HotRankStore, logger *zap.Logger) *HotRankDeca
 // 每一步失败只记录警告日志；衰减管线失败不阻断后续裁剪（与原实现一致）。
 func (s *HotRankDecayService) Run(ctx context.Context) {
 	if !s.store.Available() {
-		s.logger.Warn("skip DecayVideoHotScore: redis not configured")
+		logctx.With(ctx, s.logger).Warn("skip DecayVideoHotScore: redis not configured", zap.String("event", "platform.hot_rank_service.run.degraded"), zap.String("operation", "platform.hot_rank_service.run"))
 
 		return
 	}
@@ -39,7 +40,7 @@ func (s *HotRankDecayService) Run(ctx context.Context) {
 
 	total, err := s.store.Size(ctx)
 	if err != nil {
-		s.logger.Warn("fetch hot rank size failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("fetch hot rank size failed", zap.String("event", "platform.hot_rank_service.run.degraded"), zap.String("operation", "platform.hot_rank_service.run"), zap.Error(err))
 
 		return
 	}
@@ -50,7 +51,7 @@ func (s *HotRankDecayService) Run(ctx context.Context) {
 
 	entries, err := s.store.Entries(ctx)
 	if err != nil {
-		s.logger.Warn("fetch hot rank scores failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("fetch hot rank scores failed", zap.String("event", "platform.hot_rank_service.run.degraded"), zap.String("operation", "platform.hot_rank_service.run"), zap.Error(err))
 
 		return
 	}
@@ -60,19 +61,19 @@ func (s *HotRankDecayService) Run(ctx context.Context) {
 	}
 
 	if err := s.store.ApplyDecay(ctx, s.policy.DecayAll(entries)); err != nil {
-		s.logger.Warn("decay hot rank failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("decay hot rank failed", zap.String("event", "platform.hot_rank_service.run.degraded"), zap.String("operation", "platform.hot_rank_service.run"), zap.Error(err))
 	}
 
 	total, err = s.store.Size(ctx)
 	if err != nil {
-		s.logger.Warn("fetch hot rank size failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("fetch hot rank size failed", zap.String("event", "platform.hot_rank_service.run.degraded"), zap.String("operation", "platform.hot_rank_service.run"), zap.Error(err))
 
 		return
 	}
 
 	if removeCount := s.policy.OverflowCount(total); removeCount > 0 {
 		if err := s.store.TrimLowest(ctx, removeCount); err != nil {
-			s.logger.Warn("trim hot rank failed", zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("trim hot rank failed", zap.String("event", "platform.hot_rank_service.run.degraded"), zap.String("operation", "platform.hot_rank_service.run"), zap.Error(err))
 		}
 	}
 }

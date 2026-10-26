@@ -76,8 +76,11 @@ var (
 	ErrEmailCaptchaStoreFailed = errors.New("验证码保存失败")
 )
 
+// ErrOAuthAccountBindingRequired indicates that this OAuth identity must first be linked to an account.
 var ErrOAuthAccountBindingRequired = errors.New("existing account requires explicit OAuth binding")
 
+// ErrRefreshTokenReused indicates that the refresh token was already rotated.
 var ErrRefreshTokenReused = errors.New("refresh token has already been used")
 
+// ErrInitialPasswordUnchanged requires changing the initial administrator password.
 var ErrInitialPasswordUnchanged = errors.New("new password must differ from initial password")

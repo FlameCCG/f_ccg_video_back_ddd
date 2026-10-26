@@ -30,6 +30,7 @@ func TestRuntimeComponentsPreserveStartAndStopOrder(t *testing.T) {
 	t.Parallel()
 
 	var events []string
+
 	component := func(name string) runtimeComponent {
 		return &runtimeComponentSpy{name: name, events: &events}
 	}
@@ -59,6 +60,7 @@ func TestRuntimeComponentsContinueAfterComponentError(t *testing.T) {
 	t.Parallel()
 
 	var events []string
+
 	runtime := &RuntimeComponents{
 		river: &runtimeComponentSpy{
 			name:     "river",

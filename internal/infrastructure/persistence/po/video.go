@@ -33,8 +33,8 @@ type Video struct {
 	PublishAt      *time.Time            `gorm:"index:idx_videos_publish_at;comment:定时发布时间" json:"publishAt,omitempty"`
 	ApprovedAt     *time.Time            `gorm:"comment:审核通过时间" json:"approvedAt,omitempty"`
 	IsScheduled    bool                  `gorm:"not null;default:false;comment:是否定时作品" json:"isScheduled"`
-	Author         User                  `gorm:"foreignKey:AuthorUsername;references:Username" json:"author,omitempty"`
-	VideoPartition VideoPartition        `gorm:"foreignKey:PartitionID" json:"category,omitempty"`
+	Author         User                  `gorm:"foreignKey:AuthorUsername;references:Username" json:"author"`
+	VideoPartition VideoPartition        `gorm:"foreignKey:PartitionID" json:"category"`
 	VideoResources []VideoResource       `gorm:"foreignKey:VideoID" json:"videoResources,omitempty"`
 	VideoParts     []Part                `gorm:"foreignKey:VideoID" json:"videoParts,omitempty"`
 	VideoComments  []Comment             `gorm:"foreignKey:VideoID" json:"videoComments,omitempty"`

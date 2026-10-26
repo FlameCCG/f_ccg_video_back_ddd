@@ -3,15 +3,21 @@ package danmu
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wslog"
+	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/authsession"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"f_ccg_video_back_ddd/pkg/res"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
-	"f_ccg_video_back_ddd/internal/interfaces/ws/wsorigin"
-	"f_ccg_video_back_ddd/pkg/authsession"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -143,14 +149,21 @@ func (h *Hub) Stop(_ context.Context) error {
 func (h *Hub) ServeWS(c *gin.Context, videoID, partID, userID uint) error {
 	room := h.getRoom(videoID, partID)
 
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		h.log().Warn("danmu websocket upgrade failed", zap.Error(err), zap.Uint("videoId", videoID))
+	c.Status(http.StatusSwitchingProtocols)
 
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, http.Header{"X-Request-ID": []string{c.Writer.Header().Get("X-Request-ID")}})
+	if err != nil {
+		res.RecordFailure(wslog.UpgradeFailure(err, c.Writer.Status()), c)
 		return err
 	}
 
-	clientCtx := c.Request.Context()
+	connectionCtx := wslog.Connection(c.Request.Context(), strconv.FormatUint(uint64(userID), 10))
+	res.SetSuccess(c, true)
+
+	logctx.With(connectionCtx, h.log()).Info("websocket.connection.opened", zap.String("event", "websocket.connection.opened"))
+	defer logctx.With(connectionCtx, h.log()).Info("websocket.connection.closed", zap.String("event", "websocket.connection.closed"))
+
+	clientCtx := connectionCtx
 
 	cl := &client{
 		id:      fmt.Sprintf("%s:%s", h.serverID, uuid.NewString()),
@@ -248,7 +261,7 @@ func (h *Hub) publish(ctx context.Context, videoID, partID uint, event Event) {
 
 	payload, err := json.Marshal(envelope{Event: event, ServerID: h.serverID})
 	if err != nil {
-		h.log().Warn("marshal danmu envelope failed", zap.Error(err), zap.Uint("videoId", videoID))
+		h.log().Warn("marshal danmu envelope failed", zap.Error(err), zap.Uint("video_id", videoID))
 
 		return
 	}
@@ -311,6 +324,7 @@ func (h *Hub) deleteRoom(r *room) {
 
 		if len(r.clients) == 0 {
 			delete(h.rooms, key)
+
 			shouldStop = true
 		}
 
@@ -396,7 +410,7 @@ func (r *room) closeClients() {
 func (r *room) dispatch(event Event) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		r.log().Warn("marshal danmu event failed", zap.Error(err), zap.Uint("videoId", r.videoID))
+		r.log().Warn("marshal danmu event failed", zap.Error(err), zap.Uint("video_id", r.videoID))
 
 		return
 	}
@@ -428,7 +442,7 @@ func (r *room) startSubscriber() {
 		stop := r.hub.bus.Subscribe(r.videoID, r.partID, func(payload []byte) {
 			var env envelope
 			if err := json.Unmarshal(payload, &env); err != nil {
-				r.log().Warn("unmarshal danmu envelope failed", zap.Error(err), zap.Uint("videoId", r.videoID))
+				r.log().Warn("unmarshal danmu envelope failed", zap.Error(err), zap.Uint("video_id", r.videoID))
 
 				return
 			}
@@ -551,7 +565,7 @@ type client struct {
 	conn    *websocket.Conn
 	room    *room
 	send    chan []byte
-	ctx     context.Context
+	ctx     context.Context //nolint:containedctx // Owns a WebSocket connection lifetime beyond the HTTP upgrade request.
 }
 
 // readPump 读循环：处理 ping / danmu / send 三类上行事件。
@@ -574,6 +588,7 @@ func (c *client) readPump() {
 
 		var msg clientMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
+			wslog.Run(c.ctx, c.room.hub.log(), "danmu.decode", func(context.Context) error { return apperr.Wrap("websocket.decode", nil, err, apperr.Validation) })
 			continue
 		}
 
@@ -581,7 +596,7 @@ func (c *client) readPump() {
 		case clientEventPing:
 			// reply handled in writePump via ping ticker
 		case clientEventDanmu, clientEventSend:
-			c.handleSend(msg)
+			wslog.Run(c.ctx, c.room.hub.log(), "danmu.send", func(ctx context.Context) error { return c.handleSend(ctx, msg) })
 		default:
 			// ignore unknown
 		}
@@ -589,36 +604,30 @@ func (c *client) readPump() {
 }
 
 // handleSend 处理客户端发送弹幕事件。
-func (c *client) handleSend(msg clientMessage) {
+func (c *client) handleSend(parent context.Context, msg clientMessage) error {
 	if c.userID == 0 {
 		c.sendSystem(loginRequiredMessage)
-
-		return
+		return apperr.Wrap("danmu.send", nil, errors.New("authentication required"), apperr.Rejected)
 	}
 
 	if c.room == nil || c.room.hub == nil || c.room.hub.service == nil {
-		return
+		return errors.New("danmu service unavailable")
 	}
 
-	ctx, cancel := context.WithTimeout(c.ctx, sendDanmuTimeout)
+	ctx, cancel := context.WithTimeout(parent, sendDanmuTimeout)
 	defer cancel()
+
 	if err := authsession.Validate(ctx); err != nil {
 		c.sendSystem("session expired, please sign in again")
-		return
+		return err
 	}
 
-	_, err := c.room.hub.service.Send(ctx, c.userID, videoapp.SendDanmuParams{
-		VideoID:     c.videoID,
-		VideoPartID: c.partID,
-		Content:     msg.Content,
-		TimeOffset:  msg.TimeOffset,
-		Color:       msg.Color,
-		FontSize:    msg.FontSize,
-		Position:    msg.Position,
-	})
+	_, err := c.room.hub.service.Send(ctx, c.userID, videoapp.SendDanmuParams{VideoID: c.videoID, VideoPartID: c.partID, Content: msg.Content, TimeOffset: msg.TimeOffset, Color: msg.Color, FontSize: msg.FontSize, Position: msg.Position})
 	if err != nil {
 		c.sendSystem(clienterror.Message(err))
 	}
+
+	return err
 }
 
 // writePump 写循环：转发下行事件、定时 ping 并续期在线集合。
@@ -644,9 +653,13 @@ func (c *client) writePump() {
 			if c.userID != 0 {
 				authCtx, cancel := context.WithTimeout(c.ctx, 3*time.Second)
 				err := authsession.Validate(authCtx)
+
 				cancel()
+
 				if err != nil {
+					wslog.Result(c.ctx, c.room.hub.log(), "danmu.session.validate", err, "", 0)
 					c.closeWithReason("session revoked")
+
 					return
 				}
 			}

@@ -1,11 +1,13 @@
 package rbac
 
 import (
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"os"
 	"path/filepath"
 	"strings"
 
 	app "f_ccg_video_back_ddd/internal/application/rbac"
+
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 
 	"gopkg.in/yaml.v3"
@@ -31,9 +33,9 @@ func (l *OpenAPIMetaLoader) Load() (map[string]domain.ResourceMeta, error) {
 		return map[string]domain.ResourceMeta{}, err
 	}
 
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- The resolver selects only fixed docs/openapi.yaml locations under the installation.
 	if err != nil {
-		return map[string]domain.ResourceMeta{}, domain.ErrOpenAPIRead
+		return map[string]domain.ResourceMeta{}, apperr.Wrap("infrastructure/persistence/rbac/openapi_meta", domain.ErrOpenAPIRead, err)
 	}
 
 	var doc struct {
@@ -43,7 +45,7 @@ func (l *OpenAPIMetaLoader) Load() (map[string]domain.ResourceMeta, error) {
 		} `yaml:"paths"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return map[string]domain.ResourceMeta{}, domain.ErrOpenAPIParse
+		return map[string]domain.ResourceMeta{}, apperr.Wrap("infrastructure/persistence/rbac/openapi_meta", domain.ErrOpenAPIParse, err)
 	}
 
 	result := make(map[string]domain.ResourceMeta)

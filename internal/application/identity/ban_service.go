@@ -2,12 +2,12 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"fmt"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 )
 
 // banNotifyTitle 封禁通知标题（与原实现一致）。
@@ -151,6 +151,7 @@ func (s *BanService) ReleaseExpired(ctx context.Context, userID uint, now time.T
 	}
 
 	unbanned := false
+
 	if err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		record, findErr := s.records.FindLatestUnreleasedForUpdate(
 			txCtx,
@@ -227,30 +228,38 @@ func (s *BanService) EnsureCanPublish(ctx context.Context, userID uint) error {
 	if userID == 0 {
 		return domain.ErrUserNotLogin
 	}
+
 	user, err := s.users.FindStatusByID(ctx, userID)
 	if err != nil {
 		return err
 	}
+
 	if user == nil {
 		return domain.ErrUserNotFound
 	}
+
 	if user.Status == enum.UserStatusBanned {
 		if _, err := s.ReleaseExpired(ctx, userID, time.Now()); err != nil {
 			return err
 		}
+
 		user, err = s.users.FindStatusByID(ctx, userID)
 		if err != nil {
 			return err
 		}
+
 		if user == nil {
 			return domain.ErrUserNotFound
 		}
 	}
+
 	if user.IsPermanentlyBanned() {
 		return domain.ErrAccountPermanentlyBanned
 	}
+
 	if user.IsBanned() {
 		return domain.ErrAccountBanned
 	}
+
 	return nil
 }

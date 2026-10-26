@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config/site"
+	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"io"
 
 	captcha_service "f_ccg_video_back_ddd/internal/application/identity"
-	"f_ccg_video_back_ddd/internal/config/site"
-	"f_ccg_video_back_ddd/internal/infrastructure/captcha"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 )
@@ -48,6 +49,7 @@ func (m *Middlewares) InteractiveCaptchaVerify(scene string) gin.HandlerFunc {
 			if cfg == nil {
 				return site.CaptchaOptions{}
 			}
+
 			return cfg.Site.InteractiveCaptchaOptions(scene)
 		}, scopedCaptchaVerifier{service: m.captcha, scene: scene})(c)
 	}
@@ -62,24 +64,29 @@ func interactiveCaptchaVerify(options func() site.CaptchaOptions, verifier inter
 		}
 
 		LimitRequestBody(c, DefaultCaptchaBodyLimit)
+
 		body, err := c.GetRawData()
 		if err != nil {
-			res.FailWithMsg("invalid request body", c)
+			res.FailWithCause(apperr.Wrap("request.body", nil, err, apperr.Validation), "invalid request body", c)
 			c.Abort()
+
 			return
 		}
+
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+
 		var req interactiveCaptchaReq
 		if err = c.ShouldBind(&req); err != nil {
-			res.FailWithMsg("invalid captcha payload", c)
+			res.FailWithCause(apperr.Wrap("middlewares/interactive_captcha_verify", nil, err, apperr.Validation), "invalid captcha payload", c)
 			c.Abort()
+
 			return
 		}
 
 		var ok bool
 		// 必须且只能提交一种已开启的验证码，不能通过缺字段或关闭的类型绕过校验。
 		switch {
-		case enabled.Click && req.ClickToken != "" && req.SlideToken == "" && len(req.Dots) > 0:
+		case interactiveCaptchaVerifyCondition(enabled, req):
 			ok, err = verifier.VerifyClick(c.Request.Context(), req.ClickToken, req.Dots)
 		case enabled.Slide && req.SlideToken != "" && req.ClickToken == "":
 			ok, err = verifier.VerifySlide(c.Request.Context(), captcha_service.SlideCaptchaVerifyReq{
@@ -88,18 +95,33 @@ func interactiveCaptchaVerify(options func() site.CaptchaOptions, verifier inter
 		default:
 			res.FailWithMsg("captcha verification required", c)
 			c.Abort()
+
 			return
 		}
+
 		if err != nil || !ok {
 			message := "验证码验证失败"
 			if errors.Is(err, captcha.ErrCaptchaExpired) {
 				message = captcha.ErrCaptchaExpired.Error()
 			}
+
+			if err != nil {
+				res.RecordFailure(err, c)
+			} else {
+				res.RecordFailure(apperr.Wrap("captcha.verify", nil, nil, apperr.Rejected), c)
+			}
+
 			res.FailWithMsg(message, c)
 			c.Abort()
+
 			return
 		}
+
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		c.Next()
 	}
+}
+
+func interactiveCaptchaVerifyCondition(enabled site.CaptchaOptions, req interactiveCaptchaReq) bool {
+	return enabled.Click && req.ClickToken != "" && req.SlideToken == "" && len(req.Dots) > 0
 }

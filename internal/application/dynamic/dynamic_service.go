@@ -2,10 +2,11 @@ package dynamic
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 
 	"go.uber.org/zap"
 )
@@ -116,10 +117,10 @@ func (s *Service) Delete(ctx context.Context, userID, dynamicID uint) error {
 		return err
 	}
 
-	s.logger.Info("delete dynamic ok",
-		zap.Uint("dynamicId", dynamicID),
-		zap.Int64("commentDeleted", deletedComments),
-		zap.Int64("commentLikeDeleted", deletedCommentLikes),
+	logctx.With(ctx, s.logger).Info("delete dynamic ok", zap.String("event", "dynamic.dynamic_service.delete.diagnostic"), zap.String("operation", "dynamic.dynamic_service.delete"),
+		zap.Uint("dynamic_id", dynamicID),
+		zap.Int64("comment_deleted", deletedComments),
+		zap.Int64("comment_like_deleted", deletedCommentLikes),
 	)
 
 	return nil
@@ -156,19 +157,7 @@ func (s *Service) Pin(ctx context.Context, userID, dynamicID uint, pinned bool) 
 
 	return s.txm.Do(ctx, func(txCtx context.Context) error {
 		if plan.ClearOwnPinned {
-			// 与原实现一致：作者名缺失时跳过视频侧清理，只清动态侧。
-			username, usernameErr := s.users.UsernameByID(txCtx, userID)
-			if usernameErr != nil {
-				return usernameErr
-			}
-
-			if username != "" {
-				if err := s.videoPins.ClearPinnedByAuthor(txCtx, username); err != nil {
-					return err
-				}
-			}
-
-			if err := s.dynamics.ClearPinnedByUser(txCtx, userID); err != nil {
+			if err := s.clearOwnPins(txCtx, userID); err != nil {
 				return err
 			}
 		}
@@ -233,4 +222,19 @@ func (s *Service) PinVideo(ctx context.Context, userID, videoID uint, pinned boo
 
 		return s.videoPins.ClearPinned(txCtx, videoID, profile.Username)
 	})
+}
+
+func (s *Service) clearOwnPins(ctx context.Context, userID uint) error {
+	username, err := s.users.UsernameByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if username != "" {
+		if err := s.videoPins.ClearPinnedByAuthor(ctx, username); err != nil {
+			return err
+		}
+	}
+
+	return s.dynamics.ClearPinnedByUser(ctx, userID)
 }

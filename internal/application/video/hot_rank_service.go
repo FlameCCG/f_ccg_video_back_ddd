@@ -102,10 +102,7 @@ func (s *FeedService) rankTopFromZSet(ctx context.Context, page, pageSize int) (
 		return nil, 0, false
 	}
 
-	total := card
-	if total > int64(rankTopLimit) {
-		total = int64(rankTopLimit)
-	}
+	total := min(card, int64(rankTopLimit))
 
 	start := int64((page - 1) * pageSize)
 	if start >= total {

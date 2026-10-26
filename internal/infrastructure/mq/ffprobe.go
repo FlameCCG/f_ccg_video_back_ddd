@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"os"
 	"os/exec"
@@ -50,7 +51,7 @@ func ProbeVideoMeta(ctx context.Context, p string, logger *zap.Logger) (media.Vi
 
 // ProbeVideo 调用 ffprobe 解析视频元数据（分辨率、码率、编码、容器 brand、时长等）。
 func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoMeta, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
+	cmd := exec.CommandContext(ctx, "ffprobe", // #nosec G204 -- Executes a fixed ffmpeg/ffprobe binary directly, with generated argv and no shell expansion.
 		"-v", "error",
 		"-show_streams",
 		"-show_format",
@@ -65,8 +66,6 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoM
 
 	var result ffprobeResult
 	if err := json.Unmarshal(out, &result); err != nil {
-		logger.Error("unmarshal ffprobe json failed", zap.String("json", string(out)))
-
 		return media.VideoMeta{}, err
 	}
 
@@ -93,69 +92,12 @@ func ProbeVideo(ctx context.Context, p string, logger *zap.Logger) (media.VideoM
 		return media.VideoMeta{}, errors.New("no video stream found")
 	}
 
-	format := result.Format
-
-	v, err := strconv.ParseFloat(videoStream.Duration, 64)
-	if err != nil || v <= 0 {
-		v, err = strconv.ParseFloat(format.Duration, 64)
-		if err != nil || v <= 0 {
-			logger.Warn("无效的视频时长信息")
-
-			v = 0
-		}
-	}
-
-	meta := media.VideoMeta{
-		Height:           videoStream.Height,
-		Width:            videoStream.Width,
-		Format:           format.FormatName,
-		Codec:            strings.TrimSpace(videoStream.Codec),
-		VideoProfile:     strings.TrimSpace(videoStream.Profile),
-		PixelFormat:      strings.TrimSpace(videoStream.PixFmt),
-		VideoLevel:       videoStream.Level,
-		MajorBrand:       strings.TrimSpace(format.Tags.MajorBrand),
-		CompatibleBrands: strings.TrimSpace(format.Tags.CompatibleBrands),
-		Duration:         int(v),
-	}
-
-	if audioStream != nil {
-		meta.AudioCodec = strings.TrimSpace(audioStream.Codec)
-		meta.AudioProfile = strings.TrimSpace(audioStream.Profile)
-	}
-
-	if size, err := strconv.ParseInt(format.Size, 10, 64); err == nil && size > 0 {
-		meta.Size = size
-	}
-
-	br, _ := strconv.Atoi(format.BitRate)
-	if br <= 0 {
-		br, _ = strconv.Atoi(videoStream.BitRate)
-	}
-
-	if br <= 0 {
-		size, _ := strconv.ParseInt(format.Size, 10, 64)
-
-		dur, _ := strconv.ParseFloat(format.Duration, 64)
-		if dur <= 0 {
-			dur, _ = strconv.ParseFloat(videoStream.Duration, 64)
-		}
-
-		if size > 0 && dur > 0 {
-			bitrateBps := float64(size*8) / dur
-			br = int(bitrateBps)
-		}
-	}
-
-	if br > 0 {
-		meta.Bitrate = br / 1000
-	}
-
-	return meta, nil
+	return finishProbeVideo(ctx, logger, result, videoStream, audioStream)
 }
 
 // probeContainerDurationSec 探测容器时长（音频文件无视频流，不能走 ProbeVideo）。
 func probeContainerDurationSec(ctx context.Context, p string) (int, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
+	cmd := exec.CommandContext(ctx, "ffprobe", // #nosec G204 -- Executes a fixed ffmpeg/ffprobe binary directly, with generated argv and no shell expansion.
 		"-v", "error",
 		"-show_entries", "format=duration",
 		"-of", "json",
@@ -214,4 +156,72 @@ func sumFileSizes(paths ...string) int64 {
 	}
 
 	return total
+}
+
+func finishProbeVideo(ctx context.Context, logger *zap.Logger, result ffprobeResult, videoStream, audioStream *ffprobeStream) (media.VideoMeta, error) {
+	format := result.Format
+	v := probeDuration(ctx, logger, videoStream.Duration, format.Duration)
+
+	meta := media.VideoMeta{
+		Height:           videoStream.Height,
+		Width:            videoStream.Width,
+		Format:           format.FormatName,
+		Codec:            strings.TrimSpace(videoStream.Codec),
+		VideoProfile:     strings.TrimSpace(videoStream.Profile),
+		PixelFormat:      strings.TrimSpace(videoStream.PixFmt),
+		VideoLevel:       videoStream.Level,
+		MajorBrand:       strings.TrimSpace(format.Tags.MajorBrand),
+		CompatibleBrands: strings.TrimSpace(format.Tags.CompatibleBrands),
+		Duration:         int(v),
+	}
+
+	if audioStream != nil {
+		meta.AudioCodec = strings.TrimSpace(audioStream.Codec)
+		meta.AudioProfile = strings.TrimSpace(audioStream.Profile)
+	}
+
+	if size, errLocal := strconv.ParseInt(format.Size, 10, 64); errLocal == nil && size > 0 {
+		meta.Size = size
+	}
+
+	br, _ := strconv.Atoi(format.BitRate)
+	if br <= 0 {
+		br, _ = strconv.Atoi(videoStream.BitRate)
+	}
+
+	if br <= 0 {
+		size, _ := strconv.ParseInt(format.Size, 10, 64)
+
+		dur, _ := strconv.ParseFloat(format.Duration, 64)
+		if dur <= 0 {
+			dur, _ = strconv.ParseFloat(videoStream.Duration, 64)
+		}
+
+		if size > 0 && dur > 0 {
+			bitrateBps := float64(size*8) / dur
+			br = int(bitrateBps)
+		}
+	}
+
+	if br > 0 {
+		meta.Bitrate = br / 1000
+	}
+
+	return meta, nil
+}
+
+func probeDuration(ctx context.Context, logger *zap.Logger, streamDuration, formatDuration string) float64 {
+	var err error
+
+	v, err := strconv.ParseFloat(streamDuration, 64)
+	if err != nil || v <= 0 {
+		v, err = strconv.ParseFloat(formatDuration, 64)
+		if err != nil || v <= 0 {
+			logctx.With(ctx, logger).Warn("无效的视频时长信息", zap.String("event", "mq.ffprobe.probe_video.degraded"), zap.String("operation", "mq.ffprobe.probe_video"))
+
+			v = 0
+		}
+	}
+
+	return v
 }

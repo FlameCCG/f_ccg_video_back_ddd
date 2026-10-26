@@ -1,9 +1,8 @@
 package media
 
 import (
-	"slices"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"slices"
 )
 
 // PipelineMode 描述本次任务实际选择的管线组合（供日志区分，与原实现的分支一一对应）。

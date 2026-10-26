@@ -19,6 +19,10 @@ import (
 	zhtranslations "github.com/go-playground/validator/v10/translations/zh"
 )
 
+const (
+	messageInvalidParams = "请求参数错误"
+)
+
 const ginTranslatorKey = "request_validation_translator"
 
 // Translator 持有请求参数校验错误的中文翻译器。
@@ -59,18 +63,20 @@ func (translator *Translator) Middleware() gin.HandlerFunc {
 func (translator *Translator) Error(err error) string {
 	var validationErrors validator.ValidationErrors
 	if !errors.As(err, &validationErrors) || translator == nil || translator.translator == nil {
-		return "请求参数错误"
+		return messageInvalidParams
 	}
 
 	messages := make([]string, 0, len(validationErrors))
 	for _, fieldError := range validationErrors {
 		translated := fieldError.Translate(translator.translator)
+
 		parts := strings.SplitN(translated, "---", 2)
 		if len(parts) == 2 {
 			messages = append(messages, parts[1])
 
 			continue
 		}
+
 		messages = append(messages, translated)
 	}
 
@@ -80,17 +86,17 @@ func (translator *Translator) Error(err error) string {
 // ErrorFromContext 使用当前请求中由 Router 注入的翻译器。
 func ErrorFromContext(c *gin.Context, err error) string {
 	if c == nil {
-		return "请求参数错误"
+		return messageInvalidParams
 	}
 
 	value, ok := c.Get(ginTranslatorKey)
 	if !ok {
-		return "请求参数错误"
+		return messageInvalidParams
 	}
 
 	translator, ok := value.(*Translator)
 	if !ok {
-		return "请求参数错误"
+		return messageInvalidParams
 	}
 
 	return translator.Error(err)

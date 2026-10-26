@@ -3,13 +3,13 @@ package identity
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"slices"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -28,19 +28,23 @@ var _ domain.UserRepository = (*UserRepository)(nil)
 func (r *UserRepository) LockAccounts(ctx context.Context, userIDs []uint) error {
 	ordered := slices.Clone(userIDs)
 	slices.Sort(ordered)
+
 	ordered = slices.Compact(ordered)
 	for _, id := range ordered {
 		if id == 0 {
 			continue
 		}
-		if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: "UPDATE"}).
+
+		if err := gormx.DB(ctx, r.db).Clauses(clause.Locking{Strength: sqlLockUpdate}).
 			Select("id").Take(&po.User{}, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return domain.ErrUserRecordNotFound
 			}
+
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -168,7 +172,7 @@ func (r *UserRepository) ActivateIfBanned(ctx context.Context, userID uint) (boo
 func (r *UserRepository) CoinBalanceForUpdate(ctx context.Context, userID uint) (float64, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Clauses(clause.Locking{Strength: sqlLockUpdate}).
 		Select("id", "coin_count").
 		Take(&row, "id = ?", userID).Error; err != nil {
 		return 0, err
@@ -201,7 +205,7 @@ func (r *UserRepository) UpdateCoinBalance(ctx context.Context, userID uint, coi
 func (r *UserRepository) ExpAndLevelForUpdate(ctx context.Context, userID uint) (int64, int, error) {
 	var row po.User
 	if err := gormx.DB(ctx, r.db).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Clauses(clause.Locking{Strength: sqlLockUpdate}).
 		Select("id", "exp", "level").
 		Take(&row, "id = ?", userID).Error; err != nil {
 		return 0, 0, err

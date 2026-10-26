@@ -2,11 +2,10 @@ package identity
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-
-	"go.uber.org/zap"
 )
 
 // MentionSuggestReq 请求/响应结构体.
@@ -29,8 +28,8 @@ func (h *Handler) MentionSuggestView(c *gin.Context) {
 
 	list, total, err := h.activity.SuggestMentions(c.Request.Context(), uid, req.Keyword, req.Page, req.PageSize)
 	if err != nil {
-		h.log().Error("查询提及联想用户失败", zap.Error(err))
-		res.FailWithMsg("查询失败", c)
+		res.RecordFailure(apperr.Wrap("handler/identity/mention_suggest", nil, err), c)
+		res.FailWithCause(err, "查询失败", c)
 
 		return
 	}

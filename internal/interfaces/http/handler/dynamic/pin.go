@@ -32,12 +32,12 @@ func (h *Handler) PinView(c *gin.Context) {
 
 	if req.DynamicID > 0 {
 		if err := h.dynamics.Pin(c.Request.Context(), uid, req.DynamicID, req.Pinned); err != nil {
-			res.FailWithMsg(clienterror.Message(err), c)
+			res.FailWithCause(err, clienterror.Message(err), c)
 			return
 		}
 	} else {
 		if err := h.dynamics.PinVideo(c.Request.Context(), uid, req.VideoID, req.Pinned); err != nil {
-			res.FailWithMsg(clienterror.Message(err), c)
+			res.FailWithCause(err, clienterror.Message(err), c)
 			return
 		}
 	}

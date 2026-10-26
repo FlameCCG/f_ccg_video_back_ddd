@@ -2,13 +2,13 @@ package adapters
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"sync"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
 	searchapp "f_ccg_video_back_ddd/internal/application/search"
 	videoapp "f_ccg_video_back_ddd/internal/application/video"
 	mediadomain "f_ccg_video_back_ddd/internal/domain/media"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 )
 
 // VideoStorageResolver 把 media 存储驱动接口窄化为 video 上下文所需的方法集。
@@ -134,7 +134,7 @@ func (a *VideoTranscodeProgressReader) IsTerminalStatus(status string) bool {
 }
 
 type videoProgressSubscription struct {
-	ctx       context.Context
+	ctx       context.Context //nolint:containedctx // Owns the lifetime of the adapted progress subscription.
 	done      chan struct{}
 	closeOnce sync.Once
 	closeErr  error
@@ -155,7 +155,8 @@ func newVideoProgressSubscription(ctx context.Context, inner *mediaapp.ProgressS
 
 func (s *videoProgressSubscription) pump() {
 	defer close(s.events)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
+
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -166,6 +167,7 @@ func (s *videoProgressSubscription) pump() {
 			if !ok {
 				return
 			}
+
 			select {
 			case <-s.ctx.Done():
 				return

@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"strconv"
 	"strings"
 	"time"
@@ -106,7 +107,7 @@ func (s *SuggestService) Suggest(ctx context.Context, prefix string, size int) (
 	})
 
 	if err := group.Wait(); err != nil {
-		s.logger.Warn("suggest fallback to mysql", zap.String("prefix", prefix), zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("suggest fallback to mysql", zap.String("event", "search.suggest_service.suggest.degraded"), zap.String("operation", "search.suggest_service.suggest"), zap.String("prefix", prefix), zap.Error(err))
 
 		items, fallbackErr := s.fallbackSuggest(parent, prefix, size)
 		if fallbackErr != nil {
@@ -228,6 +229,7 @@ func mergeSuggestionPriority(size int, groups ...[]SuggestionItem) []SuggestionI
 			}
 
 			seen[key] = struct{}{}
+
 			result = append(result, item)
 
 			if len(result) >= size {

@@ -2,12 +2,12 @@ package video
 
 import (
 	"context"
-	"strings"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	domain "f_ccg_video_back_ddd/internal/domain/video"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"strings"
+
+	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"gorm.io/gorm"
 )
@@ -64,47 +64,7 @@ func (r *Repository) HardDelete(
 		return nil, nil, err
 	}
 
-	if result.Resources, err = deleteModelByBatches(db, &po.VideoResource{}, "video_id", videoIDs); err != nil {
-		return nil, nil, err
-	}
-
-	if result.Likes, err = deleteModelByBatches(db, &po.VideoLike{}, "video_id", videoIDs); err != nil {
-		return nil, nil, err
-	}
-
-	if result.Coins, err = deleteModelByBatches(db, &po.VideoCoin{}, "video_id", videoIDs); err != nil {
-		return nil, nil, err
-	}
-
-	if result.Favorites, err = deleteModelByBatches(
-		db, &po.FavoriteFolderVideo{}, "video_id", videoIDs,
-	); err != nil {
-		return nil, nil, err
-	}
-
-	if result.Histories, err = deleteModelByBatches(
-		db, &po.VideoPlayHistory{}, "video_id", videoIDs,
-	); err != nil {
-		return nil, nil, err
-	}
-
-	if result.Reports, err = deleteModelByBatches(db, &po.Report{}, "video_id", videoIDs); err != nil {
-		return nil, nil, err
-	}
-
-	if result.DanmuReports, err = deleteModelByBatches(db, &po.DanmuReport{}, "video_id", videoIDs); err != nil {
-		return nil, nil, err
-	}
-
-	if result.Tags, err = deleteTableByBatches(db, "video_tags", "video_id", videoIDs); err != nil {
-		return nil, nil, err
-	}
-
-	if result.Videos, err = deleteModelByBatches(db, &po.Video{}, "id", videoIDs); err != nil {
-		return nil, nil, err
-	}
-
-	return result, targets, nil
+	return finishRepositoryHardDelete(videoIDs, db, result, targets)
 }
 
 // forEachIDBatch 按固定批量遍历 ID 列表。
@@ -255,6 +215,84 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 		addTarget(videoStorage[resource.VideoID], resource.FileURL)
 	}
 
+	return finishCollectStorageDeleteTargets(db, videoIDs, videoStorage, &targets, seen, addTarget)
+}
+
+// addDashPrefixTarget 为 DASH 资源追加一个目录前缀清理目标。
+//
+// DeleteByPrefix 会清扫同目录下的 manifest 与所有 rep 分片 mp4。
+func addDashPrefixTarget(
+	storageType enum.VideoStorageType,
+	manifestURL string,
+	targets *[]domain.StorageDeleteTarget,
+	seen map[string]struct{},
+) {
+	prefix := domain.DashDirPrefix(manifestURL)
+	if prefix == "" {
+		return
+	}
+
+	key := string(storageType) + "\x00" + prefix
+	if _, ok := seen[key]; ok {
+		return
+	}
+
+	seen[key] = struct{}{}
+
+	*targets = append(*targets, domain.StorageDeleteTarget{
+		StorageType:   storageType,
+		Path:          prefix,
+		DashDirPrefix: prefix,
+	})
+}
+
+func finishRepositoryHardDelete(videoIDs []uint, db *gorm.DB, result *domain.HardDeleteResult, targets []domain.StorageDeleteTarget) (*domain.HardDeleteResult, []domain.StorageDeleteTarget, error) {
+	var err error
+
+	if result.Resources, err = deleteModelByBatches(db, &po.VideoResource{}, "video_id", videoIDs); err != nil {
+		return nil, nil, err
+	}
+
+	if result.Likes, err = deleteModelByBatches(db, &po.VideoLike{}, "video_id", videoIDs); err != nil {
+		return nil, nil, err
+	}
+
+	if result.Coins, err = deleteModelByBatches(db, &po.VideoCoin{}, "video_id", videoIDs); err != nil {
+		return nil, nil, err
+	}
+
+	if result.Favorites, err = deleteModelByBatches(
+		db, &po.FavoriteFolderVideo{}, "video_id", videoIDs,
+	); err != nil {
+		return nil, nil, err
+	}
+
+	if result.Histories, err = deleteModelByBatches(
+		db, &po.VideoPlayHistory{}, "video_id", videoIDs,
+	); err != nil {
+		return nil, nil, err
+	}
+
+	if result.Reports, err = deleteModelByBatches(db, &po.Report{}, "video_id", videoIDs); err != nil {
+		return nil, nil, err
+	}
+
+	if result.DanmuReports, err = deleteModelByBatches(db, &po.DanmuReport{}, "video_id", videoIDs); err != nil {
+		return nil, nil, err
+	}
+
+	if result.Tags, err = deleteTableByBatches(db, "video_tags", "video_id", videoIDs); err != nil {
+		return nil, nil, err
+	}
+
+	if result.Videos, err = deleteModelByBatches(db, &po.Video{}, "id", videoIDs); err != nil {
+		return nil, nil, err
+	}
+
+	return result, targets, nil
+}
+
+func finishCollectStorageDeleteTargets(db *gorm.DB, videoIDs []uint, videoStorage map[uint]enum.VideoStorageType, targets *[]domain.StorageDeleteTarget, seen map[string]struct{}, addTarget func(storageType enum.VideoStorageType, storedPath string)) ([]domain.StorageDeleteTarget, error) {
 	var parts []po.Part
 
 	if err := forEachIDBatch(videoIDs, func(batch []uint) error {
@@ -288,7 +326,7 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 	}
 
 	if len(partIDs) == 0 {
-		return targets, nil
+		return (*targets), nil
 	}
 
 	var partResources []po.VideoPartResource
@@ -311,7 +349,7 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 
 	for _, resource := range partResources {
 		if resource.Format == "dash" {
-			addDashPrefixTarget(partStorage[resource.VideoPartID], resource.FileURL, &targets, seen)
+			addDashPrefixTarget(partStorage[resource.VideoPartID], resource.FileURL, targets, seen)
 
 			continue
 		}
@@ -319,33 +357,5 @@ func collectStorageDeleteTargets(db *gorm.DB, videoIDs []uint) ([]domain.Storage
 		addTarget(partStorage[resource.VideoPartID], resource.FileURL)
 	}
 
-	return targets, nil
-}
-
-// addDashPrefixTarget 为 DASH 资源追加一个目录前缀清理目标。
-//
-// DeleteByPrefix 会清扫同目录下的 manifest 与所有 rep 分片 mp4。
-func addDashPrefixTarget(
-	storageType enum.VideoStorageType,
-	manifestURL string,
-	targets *[]domain.StorageDeleteTarget,
-	seen map[string]struct{},
-) {
-	prefix := domain.DashDirPrefix(manifestURL)
-	if prefix == "" {
-		return
-	}
-
-	key := string(storageType) + "\x00" + prefix
-	if _, ok := seen[key]; ok {
-		return
-	}
-
-	seen[key] = struct{}{}
-
-	*targets = append(*targets, domain.StorageDeleteTarget{
-		StorageType:   storageType,
-		Path:          prefix,
-		DashDirPrefix: prefix,
-	})
+	return (*targets), nil
 }

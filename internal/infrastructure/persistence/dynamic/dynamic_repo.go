@@ -3,12 +3,12 @@ package dynamic
 import (
 	"context"
 	"errors"
-	"time"
-
-	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"time"
+
+	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"

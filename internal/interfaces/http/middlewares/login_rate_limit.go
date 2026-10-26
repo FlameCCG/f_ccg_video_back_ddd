@@ -3,6 +3,7 @@ package middlewares
 import (
 	"bytes"
 	"encoding/json"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/res"
 	"io"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 const (
@@ -57,8 +57,8 @@ func (m *Middlewares) LoginRateLimit() gin.HandlerFunc {
 func (m *Middlewares) allowLoginRate(c *gin.Context, key string, limit int64) bool {
 	ok, err := m.limiter.Allow(c.Request.Context(), key, limit, loginRateWindow)
 	if err != nil {
-		m.log().Warn("login rate limit check failed", zap.String("key", key), zap.Error(err))
-		res.FailWithMsg("登录服务繁忙，请稍后再试", c)
+		res.RecordFailure(apperr.Wrap("middlewares/login_rate_limit", nil, err), c)
+		res.FailWithCause(err, "登录服务繁忙，请稍后再试", c)
 		c.Abort()
 
 		return false

@@ -10,9 +10,9 @@
 package video
 
 import (
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
@@ -532,8 +532,8 @@ type UpdatedVideo struct {
 	IsOriginal     bool                  `json:"isOriginal"`
 	StorageType    enum.VideoStorageType `json:"storageType"`
 	Status         enum.VideoStatus      `json:"status"`
-	Author         UpdatedVideoAuthor    `json:"author,omitempty"`
-	Partition      UpdatedVideoPartition `json:"category,omitempty"`
+	Author         UpdatedVideoAuthor    `json:"author"`
+	Partition      UpdatedVideoPartition `json:"category"`
 }
 
 // UpdatedVideoTag 改稿响应中的标签（形态等同 po.Tag 序列化结果）。
@@ -584,7 +584,7 @@ type FolderDTO struct {
 	IsDefault bool   `json:"isDefault"`
 }
 
-// ReportDTO 视频举报响应体（形态等同 po.VideoReport 序列化结果）。
+// ReportDTO 视频举报响应体（形态等同 po.Report 序列化结果）。
 type ReportDTO struct {
 	ID               uint              `json:"id"`
 	ReporterUsername string            `json:"reporterUsername"`
@@ -636,7 +636,7 @@ type TranscodeProgressItem struct {
 	OutTimeSec   float64                     `json:"outTimeSec,omitempty"`
 	Error        string                      `json:"error,omitempty"`
 	UpdatedAt    time.Time                   `json:"updatedAt"`
-	StartedAt    time.Time                   `json:"startedAt,omitempty"`
+	StartedAt    time.Time                   `json:"startedAt"`
 	Pipelines    []TranscodePipelineProgress `json:"pipelines,omitempty"`
 }
 

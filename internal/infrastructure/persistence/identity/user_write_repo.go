@@ -3,10 +3,10 @@ package identity
 import (
 	"context"
 	"errors"
-
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
 
 	"gorm.io/gorm"
 )
@@ -112,7 +112,7 @@ func (r *UserRepository) CountByEmailExcluding(
 
 // Create 创建用户并写入 user_roles 关联，回填 user.ID。
 //
-// 要求在事务内调用；ctx 必须先经 WithDefaultBanner 包装，
+// 要求在事务内调用；ctx 必须先经 WithDefaultBanner 包装，.
 func (r *UserRepository) Create(ctx context.Context, user *domain.User, roleID uint) error {
 	if user == nil {
 		return domain.ErrUserNotFound

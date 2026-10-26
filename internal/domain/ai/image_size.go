@@ -42,27 +42,7 @@ func ResolveImageSize(model, size, resolution, ratio string) string {
 		}
 	}
 
-	maxSide := 2048
-
-	switch resolution {
-	case "1k":
-		maxSide = 1024
-	case "3k":
-		maxSide = 3072
-	case "4k":
-		maxSide = 4096
-	}
-
-	if requiresSeedreamMinImagePixels(model) {
-		minMaxSide := getSeedreamMinMaxSide(ratio)
-		if maxSide < minMaxSide {
-			maxSide = minMaxSide
-		}
-	}
-
-	width, height := dimensionsForRatio(maxSide, ratio)
-
-	return fmt.Sprintf("%dx%d", width, height)
+	return finishResolveImageSize(model, resolution, ratio)
 }
 
 func normalizeSeedreamImageSize(model, size string) string {
@@ -115,7 +95,7 @@ func getSeedreamMinMaxSide(ratio string) int {
 	switch ratio {
 	case "1:1":
 		return 2048
-	case "16:9", "9:16":
+	case test169, "9:16":
 		return 2560
 	case "4:3", "3:4":
 		return 2304
@@ -171,7 +151,7 @@ func ratioForDimensions(width, height int) string {
 
 	current := float64(width) / float64(height)
 
-	for _, ratio := range []string{"1:1", "16:9", "9:16", "4:3", "3:4", "21:9"} {
+	for _, ratio := range []string{"1:1", test169, "9:16", "4:3", "3:4", "21:9"} {
 		parts := strings.Split(ratio, ":")
 
 		var w, h float64
@@ -217,4 +197,28 @@ func dimensionsForRatio(maxSide int, ratio string) (int, int) {
 	}
 
 	return int(math.Round(float64(maxSide)*w/h/8) * 8), maxSide
+}
+
+func finishResolveImageSize(model, resolution, ratio string) string {
+	maxSide := 2048
+
+	switch resolution {
+	case "1k":
+		maxSide = 1024
+	case "3k":
+		maxSide = 3072
+	case "4k":
+		maxSide = 4096
+	}
+
+	if requiresSeedreamMinImagePixels(model) {
+		minMaxSide := getSeedreamMinMaxSide(ratio)
+		if maxSide < minMaxSide {
+			maxSide = minMaxSide
+		}
+	}
+
+	width, height := dimensionsForRatio(maxSide, ratio)
+
+	return fmt.Sprintf("%dx%d", width, height)
 }

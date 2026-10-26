@@ -19,7 +19,7 @@ func (h *Handler) RefreshTokenView(c *gin.Context) {
 
 	jwtToken, err := h.logins.RefreshToken(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

@@ -3,11 +3,13 @@ package mq
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/config"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strings"
+	"time"
 
 	mediaapp "f_ccg_video_back_ddd/internal/application/media"
-	"f_ccg_video_back_ddd/internal/config"
 	media "f_ccg_video_back_ddd/internal/domain/media"
 
 	"github.com/IBM/sarama"
@@ -80,6 +82,7 @@ func NewTranscodeConsumer(
 		return nil, err
 	}
 
+	consumer.failureEvent = "transcode.task.failed"
 	tc.consumer = consumer
 
 	return tc, nil
@@ -119,7 +122,7 @@ func (tc *TranscodeConsumer) Stop() error {
 
 	if tc.subscriber != nil {
 		if err := tc.subscriber.Stop(); err != nil {
-			tc.logger.Warn("stop transcode cancel subscriber failed", zap.Error(err))
+			tc.logger.Warn("stop transcode cancel subscriber failed", zap.String("event", "mq.transcode_consumer.stop.degraded"), zap.String("operation", "mq.transcode_consumer.stop"), zap.Error(err))
 		}
 	}
 
@@ -137,21 +140,20 @@ func (tc *TranscodeConsumer) Stop() error {
 func (tc *TranscodeConsumer) handleMessage(session sarama.ConsumerGroupSession, msg *sarama.ConsumerMessage) error {
 	key := taskIdentityFromMessage(msg.Value)
 
-	tc.logger.Info("transcode task received",
-		zap.Uint("videoId", key.VideoID),
-		zap.Uint("partId", key.PartID),
+	logger := logctx.With(session.Context(), tc.logger)
+	logger.Info("transcode.task.started",
+		zap.String("event", "transcode.task.started"),
+		zap.Uint("video_id", key.VideoID),
+		zap.Uint("part_id", key.PartID),
 		zap.String("topic", msg.Topic),
 		zap.Int32("partition", msg.Partition),
 		zap.Int64("offset", msg.Offset),
-		zap.String("memberId", session.MemberID()),
+		zap.String("member_id", session.MemberID()),
 		zap.Int32("generation", session.GenerationID()),
 		zap.String("key", string(msg.Key)),
 	)
-	tc.logger.Debug("transcode task payload",
-		zap.Uint("videoId", key.VideoID),
-		zap.Int64("offset", msg.Offset),
-		zap.String("value", string(msg.Value)),
-	)
+
+	queueStart := time.Now()
 
 	baseCtx, releaseBaseCtx := tc.taskContext(session.Context())
 	defer releaseBaseCtx()
@@ -160,15 +162,17 @@ func (tc *TranscodeConsumer) handleMessage(session sarama.ConsumerGroupSession, 
 	defer unregister()
 
 	if err := tc.acquireWorker(taskCtx); err != nil {
-		return tc.finishMessage(session, msg, taskCtx, nil, fmt.Errorf("wait transcode worker failed: %w", err))
+		return tc.finishMessage(taskCtx, session, msg, nil, fmt.Errorf("wait transcode worker failed: %w", err))
 	}
 
 	defer func() { <-tc.workerPool }()
 
+	logger.Debug("transcode.worker.acquired", zap.String("event", "mq.transcode_consumer.handle_message.diagnostic"), zap.String("operation", "mq.transcode_consumer.handle_message"), zap.Float64("duration_ms", float64(time.Since(queueStart))/float64(time.Millisecond)))
+
 	pt := tc.service.NewProgressTracker(key.VideoID, key.PartID)
 	taskCtx = media.ContextWithProgressTracker(taskCtx, pt)
 
-	return tc.finishMessage(session, msg, taskCtx, pt, tc.processMessage(taskCtx, msg.Value))
+	return tc.finishMessage(taskCtx, session, msg, pt, tc.processMessage(taskCtx, msg.Value))
 }
 
 // processMessage 反序列化消息并交由应用层执行（原 processMessage 的入口部分）。
@@ -185,21 +189,16 @@ func (tc *TranscodeConsumer) processMessage(ctx context.Context, payloadBytes []
 //
 // 成功与已删除任务可以标记消息；永久错误交给外层死信流程，普通失败保留重试机会。
 // 这里的 MarkMessage 是可提交标记，提交时机由 consumer group 管理；任务实现仍需容忍重投。
-func (tc *TranscodeConsumer) finishMessage(
-	session sarama.ConsumerGroupSession,
-	msg *sarama.ConsumerMessage,
-	taskCtx context.Context,
-	pt *media.TranscodeProgressTracker,
-	processErr error,
-) error {
+func (tc *TranscodeConsumer) finishMessage(taskCtx context.Context, session sarama.ConsumerGroupSession, msg *sarama.ConsumerMessage, _ *media.TranscodeProgressTracker, processErr error) error {
 	key := taskIdentityFromMessage(msg.Value)
 
 	if media.TaskWasDeleted(taskCtx, processErr) {
 		tc.service.ClearProgress(taskCtx, key.VideoID, key.PartID)
 		session.MarkMessage(msg, "video deleted; transcode canceled")
-		tc.logger.Info("deleted video transcode task skipped",
-			zap.Uint("videoId", key.VideoID),
-			zap.Uint("partId", key.PartID),
+		logctx.With(taskCtx, tc.logger).Info("transcode.task.canceled",
+			zap.String("event", "transcode.task.canceled"),
+			zap.Uint("video_id", key.VideoID),
+			zap.Uint("part_id", key.PartID),
 			zap.String("topic", msg.Topic),
 			zap.Int32("partition", msg.Partition),
 			zap.Int64("offset", msg.Offset),
@@ -209,63 +208,27 @@ func (tc *TranscodeConsumer) finishMessage(
 	}
 
 	if processErr != nil {
-		tc.logTranscodeSkipCommit(session, msg, key, taskCtx, pt, processErr, "process_error")
-
 		return processErr
 	}
 
 	if cause := context.Cause(taskCtx); cause != nil {
-		tc.logTranscodeSkipCommit(session, msg, key, taskCtx, pt, cause, "task_context_cause")
-
 		return cause
 	}
 
 	session.MarkMessage(msg, "")
-	tc.logger.Info("transcode kafka offset marked",
-		zap.Uint("videoId", key.VideoID),
-		zap.Uint("partId", key.PartID),
+	logctx.With(taskCtx, tc.logger).Info("transcode.task.completed",
+		zap.String("event", "transcode.task.completed"),
+		zap.Bool("success", true),
+		zap.Uint("video_id", key.VideoID),
+		zap.Uint("part_id", key.PartID),
 		zap.String("topic", msg.Topic),
 		zap.Int32("partition", msg.Partition),
 		zap.Int64("offset", msg.Offset),
-		zap.String("memberId", session.MemberID()),
+		zap.String("member_id", session.MemberID()),
 		zap.Int32("generation", session.GenerationID()),
 	)
 
 	return nil
-}
-
-// logTranscodeSkipCommit 记录在途任务将被重投递的原因（原 logTranscodeSkipCommit）。
-func (tc *TranscodeConsumer) logTranscodeSkipCommit(
-	session sarama.ConsumerGroupSession,
-	msg *sarama.ConsumerMessage,
-	key media.TaskKey,
-	taskCtx context.Context,
-	pt *media.TranscodeProgressTracker,
-	err error,
-	source string,
-) {
-	percent, stage, status, outTimeSec := pt.DiagnosticSnapshot()
-	reason := media.ClassifyInterruptReason(taskCtx, err, session.Context().Err() != nil)
-
-	tc.logger.Warn("transcode unfinished, skip kafka offset commit (will redeliver; checkpoint resumes finished encodes)",
-		zap.String("source", source),
-		zap.String("reason", reason),
-		zap.Uint("videoId", key.VideoID),
-		zap.Uint("partId", key.PartID),
-		zap.String("topic", msg.Topic),
-		zap.Int32("partition", msg.Partition),
-		zap.Int64("offset", msg.Offset),
-		zap.String("memberId", session.MemberID()),
-		zap.Int32("generation", session.GenerationID()),
-		zap.String("stage", stage),
-		zap.String("status", status),
-		zap.Float64("percent", percent),
-		zap.Float64("outTimeSec", outTimeSec),
-		zap.NamedError("err", err),
-		zap.NamedError("taskCause", context.Cause(taskCtx)),
-		zap.NamedError("sessionErr", session.Context().Err()),
-		zap.NamedError("sessionCause", context.Cause(session.Context())),
-	)
 }
 
 // taskContext 把 Kafka 会话所有权与进程停止联动（原 taskContext）。

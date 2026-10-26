@@ -9,14 +9,15 @@ package provisioning
 import (
 	"context"
 	"errors"
-	"fmt"
-
-	app "f_ccg_video_back_ddd/internal/application/provisioning"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 	"f_ccg_video_back_ddd/pkg/casbins"
 	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/logctx"
+	"fmt"
+
+	app "f_ccg_video_back_ddd/internal/application/provisioning"
 
 	"github.com/casbin/casbin/v2"
 	"go.uber.org/zap"
@@ -74,7 +75,7 @@ func (r *SuperUserRepository) EnsureAdminRole(ctx context.Context) (uint, string
 		return 0, "", false, fmt.Errorf("查询管理员角色失败: %w", err)
 	}
 
-	r.logger.Warn(adminRoleMissingWarnText, zap.String("role", constants.AdminUserRole))
+	logctx.With(ctx, r.logger).Warn(adminRoleMissingWarnText, zap.String("event", "persistence.repository.ensure_admin_role.degraded"), zap.String("operation", "persistence.repository.ensure_admin_role"), zap.String("role", constants.AdminUserRole))
 
 	adminRole = po.Role{
 		Name: constants.AdminUserRole,
@@ -143,6 +144,7 @@ func (r *SuperUserRepository) UpsertSuperUser(
 			return 0, false, err
 		}
 	}
+
 	return user.ID, true, nil
 }
 
@@ -172,7 +174,7 @@ func NewCasbinRoleBinder(enforcer *casbin.SyncedEnforcer, logger *zap.Logger) *C
 // BindUserRole 清空用户旧角色后绑定新角色，并持久化策略。
 func (b *CasbinRoleBinder) BindUserRole(userID uint, roleName string) error {
 	if b.enforcer == nil {
-		return errors.New("Casbin enforcer 未初始化")
+		return errors.New("casbin enforcer 未初始化")
 	}
 
 	sub := casbins.GetUserSub(userID)
@@ -187,7 +189,7 @@ func (b *CasbinRoleBinder) BindUserRole(userID uint, roleName string) error {
 		return fmt.Errorf("Casbin保存策略失败: %w", err) //nolint:staticcheck // 保留原日志文案
 	}
 
-	b.logger.Info("Casbin权限策略同步成功", zap.String("sub", sub), zap.String("role", roleName))
+	b.logger.Info("Casbin权限策略同步成功", zap.String("event", "persistence.repository.bind_user_role.diagnostic"), zap.String("operation", "persistence.repository.bind_user_role"), zap.String("sub", sub), zap.String("role", roleName))
 
 	return nil
 }

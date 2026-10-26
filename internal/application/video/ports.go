@@ -2,10 +2,10 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"io"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 )
 
@@ -115,7 +115,7 @@ type UserVideoQuery interface {
 // NotifySourceQuery 通知渲染所需的读侧投影端口。
 //
 // 按 decisions.md D-011：这些只读投影（users / videos 列）允许在 persistence/video 直读，
-// 不必经跨上下文端口；写入通知行仍走 VideoNotifier。
+// 不必经跨上下文端口；写入通知行仍走 Notifier。
 type NotifySourceQuery interface {
 	// ActionUser 读取用户 id/username/avatar；不存在时返回 (零值, false)。
 	ActionUser(ctx context.Context, userID uint) (ActionUser, bool)
@@ -344,7 +344,7 @@ type StorageResolver interface {
 
 // Searcher 视频搜索端口。
 //
-// 绑定目标：search 上下文（原 service/search_service.SearchService）。
+// 绑定目标：search 上下文（原 service/search_service.Service）。
 // 返回值使用 any，以保证响应 JSON 完全等于搜索上下文产出的结构。
 type Searcher interface {
 	SearchVideos(ctx context.Context, opts SearchOptions) (any, error)
@@ -353,7 +353,7 @@ type Searcher interface {
 	RecordHotKeyword(ctx context.Context, keyword string)
 }
 
-// SearchOptions 视频搜索参数（字段与原 search_service.SearchOptions 的视频侧子集一致）。
+// SearchOptions 视频搜索参数（字段与原 search_service.Options 的视频侧子集一致）。
 type SearchOptions struct {
 	Keyword    string
 	Page       int
@@ -378,7 +378,7 @@ type VectorIndexer interface {
 // 已有任务在跑时约定返回 (false, nil)，由应用层转成
 // ErrVectorRebuildInProgress 的错误文案，避免跨上下文共享哨兵错误。
 type VectorIndexRebuilder interface {
-	StartRebuild(opts VectorRebuildOptions) (started bool, err error)
+	StartRebuild(ctx context.Context, opts VectorRebuildOptions) (started bool, err error)
 	RebuildStatus() any
 }
 

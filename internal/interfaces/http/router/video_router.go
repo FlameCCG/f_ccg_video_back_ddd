@@ -28,7 +28,7 @@ func registerVideoCommonRoutes(
 		videoGroup.GET("detail", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), middlewares.BindQueryParams[videohandler.DetailReq], h.DetailView)
 		videoGroup.GET("recommend", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), middlewares.BindQueryParams[videohandler.RecommendReq], h.RecommendView)
 		videoGroup.GET("partitions", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.ListSubmittablePartitionsView)
-		videoGroup.POST("view", middlewares.RequestTimeout(ctxutil.RequestFastTimeout), mw.JwtOptional(), middlewares.JsonBindParams[videohandler.ViewReq], h.ViewView)
+		videoGroup.POST("view", middlewares.RequestTimeout(ctxutil.RequestFastTimeout), mw.JwtOptional(), middlewares.JSONBindParams[videohandler.ViewReq], h.ViewView)
 		videoGroup.GET("danmu/history",
 			middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			mw.JwtOptional(),
@@ -50,21 +50,21 @@ func registerVideoCommonRoutes(
 	authGroup := videoGroup.Group("")
 	{
 		// 互动操作 (点赞、投币、收藏)
-		authGroup.POST("like", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.LikeReq], h.LikeView)
-		authGroup.POST("coin", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.CoinReq], h.CoinView)
-		authGroup.POST("favorite", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.FavoriteReq], h.FavoriteView)
-		authGroup.POST("triple", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.TripleReq], h.TripleView)
+		authGroup.POST("like", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.LikeReq], h.LikeView)
+		authGroup.POST("coin", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.CoinReq], h.CoinView)
+		authGroup.POST("favorite", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.FavoriteReq], h.FavoriteView)
+		authGroup.POST("triple", middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.TripleReq], h.TripleView)
 		authGroup.POST("report", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindParams[videohandler.ReportReq], h.ReportVideoView)
 		authGroup.POST("danmu/send",
 			middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			mw.JwtAuth(),
 			mw.UserBanCheck(),
-			middlewares.JsonBindParams[videohandler.DanmuSendReq],
+			middlewares.JSONBindParams[videohandler.DanmuSendReq],
 			h.SendDanmuView,
 		)
-		authGroup.POST("danmu/report", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.DanmuReportReq], h.ReportDanmuView)
-		authGroup.POST("danmu/like", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.DanmuLikeReq], h.DanmuLikeView)
-		authGroup.DELETE("danmu", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.DeleteDanmuReq], h.DeleteDanmuView)
+		authGroup.POST("danmu/report", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.DanmuReportReq], h.ReportDanmuView)
+		authGroup.POST("danmu/like", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.DanmuLikeReq], h.DanmuLikeView)
+		authGroup.DELETE("danmu", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.DeleteDanmuReq], h.DeleteDanmuView)
 		authGroup.GET("danmu/creator/list",
 			middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			mw.JwtAuth(),
@@ -73,12 +73,12 @@ func registerVideoCommonRoutes(
 		)
 
 		// 用户个人数据 (历史记录、收藏夹)
-		authGroup.POST("history", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.SaveHistoryReq], h.SaveHistoryView)
+		authGroup.POST("history", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.SaveHistoryReq], h.SaveHistoryView)
 		authGroup.GET("history/list", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.HistoryListReq], h.GetVideoHistoryView)
-		authGroup.DELETE("history", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.DeleteHistoryReq], h.DeleteHistoryView)
-		authGroup.POST("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.CreateFolderReq], h.CreateFolderView)
-		authGroup.PUT("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.UpdateFolderReq], h.UpdateFolderView)
-		authGroup.DELETE("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JsonBindParams[videohandler.DeleteFolderReq], h.DeleteFolderView)
+		authGroup.DELETE("history", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.DeleteHistoryReq], h.DeleteHistoryView)
+		authGroup.POST("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.CreateFolderReq], h.CreateFolderView)
+		authGroup.PUT("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.UpdateFolderReq], h.UpdateFolderView)
+		authGroup.DELETE("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.JSONBindParams[videohandler.DeleteFolderReq], h.DeleteFolderView)
 		authGroup.GET("folder", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.FolderListReq], h.FolderListView)
 		authGroup.GET("folder/videos", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), mw.JwtAuth(), middlewares.BindQueryParams[videohandler.FolderVideosReq], h.FolderVideosView)
 
@@ -89,7 +89,7 @@ func registerVideoCommonRoutes(
 			mw.JwtAuth(),
 			mw.VideoSubmissionCheck(),
 			mw.UserBanCheck(),
-			middlewares.JsonBindParams[videohandler.PublishVideoReq],
+			middlewares.JSONBindParams[videohandler.PublishVideoReq],
 			h.PublishVideoView,
 		)
 		authGroup.PUT("publish",
@@ -97,7 +97,7 @@ func registerVideoCommonRoutes(
 			mw.JwtAuth(),
 			mw.VideoSubmissionCheck(),
 			mw.UserBanCheck(),
-			middlewares.JsonBindParams[videohandler.UpdateVideoReq],
+			middlewares.JSONBindParams[videohandler.UpdateVideoReq],
 			h.UpdateVideoView,
 		)
 
@@ -118,7 +118,7 @@ func registerVideoCommonRoutes(
 				mw.JwtAuth(),
 				mw.VideoSubmissionCheck(),
 				mw.UserBanCheck(),
-				middlewares.JsonBindParams[videohandler.CompleteUploadReq],
+				middlewares.JSONBindParams[videohandler.CompleteUploadReq],
 				h.CompleteUploadView,
 			)
 		}
@@ -139,14 +139,14 @@ func registerVideoAdminRoutes(
 			slowGroup.GET("detail", middlewares.BindQueryParams[videohandler.AdminVideoDetailReq], h.AdminDetailView)
 			slowGroup.GET("list", middlewares.BindQueryParams[videohandler.AdminVideoListReq], h.AdminListView)
 			slowGroup.GET("report/list", middlewares.BindQueryParams[videohandler.AdminReportListReq], h.AdminReportListView)
-			slowGroup.PUT("report/handle", middlewares.JsonBindParams[videohandler.AdminReportHandleReq], h.AdminReportHandleView)
-			slowGroup.PUT("review", middlewares.JsonBindParams[videohandler.AdminVideoReviewReq], h.AdminReviewView)
-			slowGroup.PUT("restore", middlewares.JsonBindParams[videohandler.AdminRestoreVideoReq], h.AdminRestoreVideoView)
+			slowGroup.PUT("report/handle", middlewares.JSONBindParams[videohandler.AdminReportHandleReq], h.AdminReportHandleView)
+			slowGroup.PUT("review", middlewares.JSONBindParams[videohandler.AdminVideoReviewReq], h.AdminReviewView)
+			slowGroup.PUT("restore", middlewares.JSONBindParams[videohandler.AdminRestoreVideoReq], h.AdminRestoreVideoView)
 			slowGroup.GET("danmu/list", middlewares.BindQueryParams[videohandler.AdminDanmuListReq], h.AdminDanmuListView)
-			slowGroup.DELETE("danmu", middlewares.JsonBindParams[videohandler.AdminDeleteDanmuReq], h.AdminDeleteDanmuView)
-			slowGroup.POST("partition", middlewares.JsonBindParams[videohandler.CreatePartitionReq], h.CreatePartitionView)
-			slowGroup.PUT("partition", middlewares.JsonBindParams[videohandler.UpdatePartitionReq], h.UpdatePartitionView)
-			slowGroup.DELETE("partition", middlewares.JsonBindParams[videohandler.DeletePartitionReq], h.DeletePartitionView)
+			slowGroup.DELETE("danmu", middlewares.JSONBindParams[videohandler.AdminDeleteDanmuReq], h.AdminDeleteDanmuView)
+			slowGroup.POST("partition", middlewares.JSONBindParams[videohandler.CreatePartitionReq], h.CreatePartitionView)
+			slowGroup.PUT("partition", middlewares.JSONBindParams[videohandler.UpdatePartitionReq], h.UpdatePartitionView)
+			slowGroup.DELETE("partition", middlewares.JSONBindParams[videohandler.DeletePartitionReq], h.DeletePartitionView)
 			slowGroup.GET("partitions", middlewares.BindQueryParams[videohandler.PartitionListReq], h.ListPartitionView)
 			slowGroup.GET(
 				"transcode/progress",
@@ -155,7 +155,7 @@ func registerVideoAdminRoutes(
 			)
 			slowGroup.POST(
 				"vector/rebuild",
-				middlewares.JsonBindParams[videohandler.AdminRebuildVectorIndexReq],
+				middlewares.JSONBindParams[videohandler.AdminRebuildVectorIndexReq],
 				h.AdminRebuildVectorIndexView,
 			)
 			slowGroup.GET("vector/status", h.AdminVectorIndexStatusView)
@@ -178,7 +178,7 @@ func registerVideoAdminRoutes(
 		heavyGroup := videoGroup.Group("")
 		heavyGroup.Use(middlewares.RequestTimeout(ctxutil.RequestHeavyTimeout), mw.AuthAll())
 		{
-			heavyGroup.DELETE("delete", middlewares.JsonBindParams[videohandler.AdminDeleteVideoReq], h.AdminDeleteVideoView)
+			heavyGroup.DELETE("delete", middlewares.JSONBindParams[videohandler.AdminDeleteVideoReq], h.AdminDeleteVideoView)
 		}
 	}
 }

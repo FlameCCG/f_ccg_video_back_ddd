@@ -10,17 +10,27 @@ package media
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
-
-	domain "f_ccg_video_back_ddd/internal/domain/media"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"fmt"
+	"strings"
+
+	domain "f_ccg_video_back_ddd/internal/domain/media"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+)
+
+const (
+	fieldCodec          = "codec"
+	fieldFileSize       = "file_size"
+	fieldFileURL        = "file_url"
+	fieldFormat         = "format"
+	codecH264           = "h264"
+	formatMP4           = "mp4"
+	fieldSourceFileName = "source_file_name"
 )
 
 // TranscodeResourceRepository 转码资源仓储的 GORM 实现。
@@ -141,105 +151,7 @@ func (r *TranscodeResourceRepository) SaveOriginalResource(
 	normalizedRelative := task.NormalizedSourceRelativePath()
 
 	return r.txm.Do(ctx, func(txCtx context.Context) error {
-		db := gormx.DB(txCtx, r.db)
-		// 行级锁：避免同一视频重复写入源资源，并与硬删除状态切换串行化。
-		if err := lockActiveVideo(txCtx, db, task.VideoID); err != nil {
-			return err
-		}
-
-		if task.VideoPartID > 0 {
-			if err := lockVideoPart(txCtx, db, task.VideoID, task.VideoPartID); err != nil {
-				return err
-			}
-
-			var list []po.VideoPartResource
-			if err := db.Where(
-				"video_part_id = ? AND resolution = ? AND is_souce_video = ?",
-				task.VideoPartID, resolution, true,
-			).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
-				return err
-			}
-
-			if len(list) == 0 {
-				if err := db.Where("video_part_id = ? AND is_souce_video = ?", task.VideoPartID, true).
-					Order("file_size DESC, id DESC").
-					Find(&list).Error; err != nil {
-					return err
-				}
-			}
-
-			if len(list) == 0 {
-				return db.Create(&po.VideoPartResource{
-					VideoPartID:    task.VideoPartID,
-					Resolution:     resolution,
-					SourceFileName: sourceName,
-					FileURL:        fileURL,
-					FileSize:       fileSize,
-					Bitrate:        bitrate,
-					Format:         format,
-					Codec:          codec,
-					IsVip:          isVip,
-					IsSouceVideo:   true,
-				}).Error
-			}
-
-			keep := list[0]
-			update := originalResourceUpdateMap(
-				resolution, isVip, normalizedRelative,
-				sourceName, fileURL, format, codec, fileSize, bitrate,
-				keep.SourceFileName, keep.FileURL, keep.Format, keep.Codec, keep.FileSize, keep.Bitrate,
-			)
-
-			if err := db.Model(&po.VideoPartResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
-				return err
-			}
-
-			return deleteDuplicateVideoPartResources(db, list[1:])
-		}
-
-		var list []po.VideoResource
-		if err := db.Where(
-			"video_id = ? AND resolution = ? AND is_souce_video = ?",
-			task.VideoID, resolution, true,
-		).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
-			return err
-		}
-
-		if len(list) == 0 {
-			if err := db.Where("video_id = ? AND is_souce_video = ?", task.VideoID, true).
-				Order("file_size DESC, id DESC").
-				Find(&list).Error; err != nil {
-				return err
-			}
-		}
-
-		if len(list) == 0 {
-			return db.Create(&po.VideoResource{
-				VideoID:        task.VideoID,
-				Resolution:     resolution,
-				SourceFileName: sourceName,
-				FileURL:        fileURL,
-				FileSize:       fileSize,
-				Bitrate:        bitrate,
-				Format:         format,
-				Codec:          codec,
-				IsVip:          isVip,
-				IsSouceVideo:   true,
-			}).Error
-		}
-
-		keep := list[0]
-		update := originalResourceUpdateMap(
-			resolution, isVip, normalizedRelative,
-			sourceName, fileURL, format, codec, fileSize, bitrate,
-			keep.SourceFileName, keep.FileURL, keep.Format, keep.Codec, keep.FileSize, keep.Bitrate,
-		)
-
-		if err := db.Model(&po.VideoResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
-			return err
-		}
-
-		return deleteDuplicateVideoResources(db, list[1:])
+		return transcodeResourceRepositorySaveOriginalResourceTransaction(txCtx, r, task, resolution, isVip, format, codec, sourceName, fileURL, bitrate, fileSize, normalizedRelative)
 	})
 }
 
@@ -292,15 +204,15 @@ func originalResourceUpdateMap(
 	}
 
 	return map[string]any{
-		"resolution":       resolution,
-		"source_file_name": sourceName,
-		"file_url":         fileURL,
-		"file_size":        fileSize,
-		"bitrate":          bitrate,
-		"format":           format,
-		"codec":            codec,
-		"is_vip":           isVip,
-		"is_souce_video":   true,
+		"resolution":        resolution,
+		fieldSourceFileName: sourceName,
+		fieldFileURL:        fileURL,
+		fieldFileSize:       fileSize,
+		"bitrate":           bitrate,
+		fieldFormat:         format,
+		fieldCodec:          codec,
+		"is_vip":            isVip,
+		"is_souce_video":    true,
 	}
 }
 
@@ -314,12 +226,12 @@ func (r *TranscodeResourceRepository) UpdateOriginalResourceFile(
 	bitrate int,
 ) error {
 	update := map[string]any{
-		"source_file_name": newFileName,
-		"file_url":         url,
-		"file_size":        size,
-		"bitrate":          bitrate,
-		"format":           "mp4",
-		"codec":            "h264",
+		fieldSourceFileName: newFileName,
+		fieldFileURL:        url,
+		fieldFileSize:       size,
+		"bitrate":           bitrate,
+		fieldFormat:         formatMP4,
+		fieldCodec:          codecH264,
 	}
 
 	return r.txm.Do(ctx, func(txCtx context.Context) error {
@@ -407,104 +319,7 @@ func (r *TranscodeResourceRepository) SaveSpecificVideoResource(
 	isVip, isSource bool,
 ) error {
 	return r.txm.Do(ctx, func(txCtx context.Context) error {
-		db := gormx.DB(txCtx, r.db)
-		if err := lockActiveVideo(txCtx, db, task.VideoID); err != nil {
-			return err
-		}
-
-		if task.VideoPartID > 0 {
-			if err := lockVideoPart(txCtx, db, task.VideoID, task.VideoPartID); err != nil {
-				return err
-			}
-
-			var list []po.VideoPartResource
-			if err := db.Where(
-				"video_part_id = ? AND resolution = ? AND is_souce_video = ?",
-				task.VideoPartID, res, isSource,
-			).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
-				return err
-			}
-
-			if len(list) == 0 && isSource && strings.TrimSpace(url) != "" {
-				if err := db.Where(
-					"video_part_id = ? AND is_souce_video = ? AND file_url = ?",
-					task.VideoPartID, true, url,
-				).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
-					return err
-				}
-			}
-
-			if len(list) == 0 {
-				return db.Create(&po.VideoPartResource{
-					VideoPartID:    task.VideoPartID,
-					Resolution:     res,
-					SourceFileName: sourceName,
-					FileURL:        url,
-					FileSize:       size,
-					Bitrate:        bitrate,
-					Format:         "mp4",
-					Codec:          "h264",
-					IsVip:          isVip,
-					IsSouceVideo:   isSource,
-				}).Error
-			}
-
-			keep := list[0]
-			update := videoResourceUpdateMap(
-				res, sourceName, url, size, bitrate, isVip, isSource,
-				keep.SourceFileName, keep.FileURL, keep.FileSize, keep.Bitrate,
-			)
-
-			if err := db.Model(&po.VideoPartResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
-				return err
-			}
-
-			return deleteDuplicateVideoPartResources(db, list[1:])
-		}
-
-		var list []po.VideoResource
-		if err := db.Where(
-			"video_id = ? AND resolution = ? AND is_souce_video = ?",
-			task.VideoID, res, isSource,
-		).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
-			return err
-		}
-
-		if len(list) == 0 && isSource && strings.TrimSpace(url) != "" {
-			if err := db.Where(
-				"video_id = ? AND is_souce_video = ? AND file_url = ?",
-				task.VideoID, true, url,
-			).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
-				return err
-			}
-		}
-
-		if len(list) == 0 {
-			return db.Create(&po.VideoResource{
-				VideoID:        task.VideoID,
-				Resolution:     res,
-				SourceFileName: sourceName,
-				FileURL:        url,
-				FileSize:       size,
-				Bitrate:        bitrate,
-				Format:         "mp4",
-				Codec:          "h264",
-				IsVip:          isVip,
-				IsSouceVideo:   isSource,
-			}).Error
-		}
-
-		keep := list[0]
-		update := videoResourceUpdateMap(
-			res, sourceName, url, size, bitrate, isVip, isSource,
-			keep.SourceFileName, keep.FileURL, keep.FileSize, keep.Bitrate,
-		)
-
-		if err := db.Model(&po.VideoResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
-			return err
-		}
-
-		return deleteDuplicateVideoResources(db, list[1:])
+		return transcodeResourceRepositorySaveSpecificVideoResourceTransaction(txCtx, r, task, res, sourceName, url, size, bitrate, isVip, isSource)
 	})
 }
 
@@ -518,11 +333,11 @@ func (r *TranscodeResourceRepository) SaveDASHResource(
 ) error {
 	name := strings.TrimSpace(sourceName)
 	updates := map[string]any{
-		"source_file_name": name,
-		"file_url":         mpdURL,
-		"file_size":        totalSize,
-		"format":           "dash",
-		"codec":            "h264",
+		fieldSourceFileName: name,
+		fieldFileURL:        mpdURL,
+		fieldFileSize:       totalSize,
+		fieldFormat:         "dash",
+		fieldCodec:          codecH264,
 	}
 
 	return r.txm.Do(ctx, func(txCtx context.Context) error {
@@ -558,7 +373,7 @@ func (r *TranscodeResourceRepository) SaveDASHResource(
 				FileSize:       totalSize,
 				Bitrate:        0,
 				Format:         "dash",
-				Codec:          "h264",
+				Codec:          codecH264,
 				IsVip:          false,
 				IsSouceVideo:   false,
 			}).Error
@@ -586,7 +401,7 @@ func (r *TranscodeResourceRepository) SaveDASHResource(
 			FileSize:       totalSize,
 			Bitrate:        0,
 			Format:         "dash",
-			Codec:          "h264",
+			Codec:          codecH264,
 			IsVip:          false,
 			IsSouceVideo:   false,
 		}).Error
@@ -615,7 +430,7 @@ func (r *TranscodeResourceRepository) PersistedResourceURLs(
 			query = query.Where("resolution = ?", resolution)
 		}
 
-		err := query.Order("file_size DESC, id DESC").Pluck("file_url", &urls).Error
+		err := query.Order("file_size DESC, id DESC").Pluck(fieldFileURL, &urls).Error
 
 		return urls, err
 	}
@@ -627,7 +442,7 @@ func (r *TranscodeResourceRepository) PersistedResourceURLs(
 		query = query.Where("resolution = ?", resolution)
 	}
 
-	err := query.Order("file_size DESC, id DESC").Pluck("file_url", &urls).Error
+	err := query.Order("file_size DESC, id DESC").Pluck(fieldFileURL, &urls).Error
 
 	return urls, err
 }
@@ -703,15 +518,15 @@ func videoResourceUpdateMap(
 	}
 
 	return map[string]any{
-		"resolution":       res,
-		"source_file_name": sourceName,
-		"file_url":         url,
-		"file_size":        size,
-		"bitrate":          bitrate,
-		"format":           "mp4",
-		"codec":            "h264",
-		"is_vip":           isVip,
-		"is_souce_video":   isSource,
+		"resolution":        res,
+		fieldSourceFileName: sourceName,
+		fieldFileURL:        url,
+		fieldFileSize:       size,
+		"bitrate":           bitrate,
+		fieldFormat:         formatMP4,
+		fieldCodec:          codecH264,
+		"is_vip":            isVip,
+		"is_souce_video":    isSource,
 	}
 }
 
@@ -739,4 +554,223 @@ func deleteDuplicateVideoResources(db *gorm.DB, list []po.VideoResource) error {
 	}
 
 	return db.Where("id IN ?", ids).Delete(&po.VideoResource{}).Error
+}
+
+func transcodeResourceRepositorySaveSpecificVideoResourceCondition(url string, isSource bool, list []po.VideoPartResource) bool {
+	return len(list) == 0 && isSource && strings.TrimSpace(url) != ""
+}
+
+func transcodeResourceRepositorySaveSpecificVideoResourceCondition2(url string, isSource bool, list []po.VideoResource) bool {
+	return len(list) == 0 && isSource && strings.TrimSpace(url) != ""
+}
+
+func transcodeResourceRepositorySaveOriginalResourceTransaction(txCtx context.Context, r *TranscodeResourceRepository, task domain.TranscodeTask, resolution enum.VideoResolution, isVip bool, format, codec, sourceName, fileURL string, bitrate int, fileSize int64, normalizedRelative string) error {
+	db := gormx.DB(txCtx, r.db)
+	// 行级锁：避免同一视频重复写入源资源，并与硬删除状态切换串行化。
+	if err := lockActiveVideo(txCtx, db, task.VideoID); err != nil {
+		return err
+	}
+
+	if task.VideoPartID == 0 {
+		return finishTranscodeResourceRepositorySaveOriginalResourceTransaction(task, resolution, isVip, format, codec, sourceName, fileURL, bitrate, fileSize, normalizedRelative, db)
+	}
+
+	if err := lockVideoPart(txCtx, db, task.VideoID, task.VideoPartID); err != nil {
+		return err
+	}
+
+	var list []po.VideoPartResource
+	if err := db.Where(
+		"video_part_id = ? AND resolution = ? AND is_souce_video = ?",
+		task.VideoPartID, resolution, true,
+	).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
+		return err
+	}
+
+	if len(list) == 0 {
+		if err := db.Where("video_part_id = ? AND is_souce_video = ?", task.VideoPartID, true).
+			Order("file_size DESC, id DESC").
+			Find(&list).Error; err != nil {
+			return err
+		}
+	}
+
+	if len(list) == 0 {
+		return db.Create(&po.VideoPartResource{
+			VideoPartID:    task.VideoPartID,
+			Resolution:     resolution,
+			SourceFileName: sourceName,
+			FileURL:        fileURL,
+			FileSize:       fileSize,
+			Bitrate:        bitrate,
+			Format:         format,
+			Codec:          codec,
+			IsVip:          isVip,
+			IsSouceVideo:   true,
+		}).Error
+	}
+
+	keep := list[0]
+	update := originalResourceUpdateMap(
+		resolution, isVip, normalizedRelative,
+		sourceName, fileURL, format, codec, fileSize, bitrate,
+		keep.SourceFileName, keep.FileURL, keep.Format, keep.Codec, keep.FileSize, keep.Bitrate,
+	)
+
+	if err := db.Model(&po.VideoPartResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
+		return err
+	}
+
+	return deleteDuplicateVideoPartResources(db, list[1:])
+}
+
+func transcodeResourceRepositorySaveSpecificVideoResourceTransaction(txCtx context.Context, r *TranscodeResourceRepository, task domain.TranscodeTask, res enum.VideoResolution, sourceName, url string, size int64, bitrate int, isVip, isSource bool) error {
+	db := gormx.DB(txCtx, r.db)
+	if err := lockActiveVideo(txCtx, db, task.VideoID); err != nil {
+		return err
+	}
+
+	if task.VideoPartID == 0 {
+		return finishTranscodeResourceRepositorySaveSpecificVideoResourceTransaction(task, res, sourceName, url, size, bitrate, isVip, isSource, db)
+	}
+
+	if err := lockVideoPart(txCtx, db, task.VideoID, task.VideoPartID); err != nil {
+		return err
+	}
+
+	var list []po.VideoPartResource
+	if err := db.Where(
+		"video_part_id = ? AND resolution = ? AND is_souce_video = ?",
+		task.VideoPartID, res, isSource,
+	).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
+		return err
+	}
+
+	if transcodeResourceRepositorySaveSpecificVideoResourceCondition(url, isSource, list) {
+		if err := db.Where(
+			"video_part_id = ? AND is_souce_video = ? AND file_url = ?",
+			task.VideoPartID, true, url,
+		).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
+			return err
+		}
+	}
+
+	if len(list) == 0 {
+		return db.Create(&po.VideoPartResource{
+			VideoPartID:    task.VideoPartID,
+			Resolution:     res,
+			SourceFileName: sourceName,
+			FileURL:        url,
+			FileSize:       size,
+			Bitrate:        bitrate,
+			Format:         formatMP4,
+			Codec:          codecH264,
+			IsVip:          isVip,
+			IsSouceVideo:   isSource,
+		}).Error
+	}
+
+	keep := list[0]
+	update := videoResourceUpdateMap(
+		res, sourceName, url, size, bitrate, isVip, isSource,
+		keep.SourceFileName, keep.FileURL, keep.FileSize, keep.Bitrate,
+	)
+
+	if err := db.Model(&po.VideoPartResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
+		return err
+	}
+
+	return deleteDuplicateVideoPartResources(db, list[1:])
+}
+
+func finishTranscodeResourceRepositorySaveOriginalResourceTransaction(task domain.TranscodeTask, resolution enum.VideoResolution, isVip bool, format, codec, sourceName, fileURL string, bitrate int, fileSize int64, normalizedRelative string, db *gorm.DB) error {
+	var list []po.VideoResource
+	if err := db.Where(
+		"video_id = ? AND resolution = ? AND is_souce_video = ?",
+		task.VideoID, resolution, true,
+	).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
+		return err
+	}
+
+	if len(list) == 0 {
+		if err := db.Where("video_id = ? AND is_souce_video = ?", task.VideoID, true).
+			Order("file_size DESC, id DESC").
+			Find(&list).Error; err != nil {
+			return err
+		}
+	}
+
+	if len(list) == 0 {
+		return db.Create(&po.VideoResource{
+			VideoID:        task.VideoID,
+			Resolution:     resolution,
+			SourceFileName: sourceName,
+			FileURL:        fileURL,
+			FileSize:       fileSize,
+			Bitrate:        bitrate,
+			Format:         format,
+			Codec:          codec,
+			IsVip:          isVip,
+			IsSouceVideo:   true,
+		}).Error
+	}
+
+	keep := list[0]
+	update := originalResourceUpdateMap(
+		resolution, isVip, normalizedRelative,
+		sourceName, fileURL, format, codec, fileSize, bitrate,
+		keep.SourceFileName, keep.FileURL, keep.Format, keep.Codec, keep.FileSize, keep.Bitrate,
+	)
+
+	if err := db.Model(&po.VideoResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
+		return err
+	}
+
+	return deleteDuplicateVideoResources(db, list[1:])
+}
+
+func finishTranscodeResourceRepositorySaveSpecificVideoResourceTransaction(task domain.TranscodeTask, res enum.VideoResolution, sourceName, url string, size int64, bitrate int, isVip, isSource bool, db *gorm.DB) error {
+	var list []po.VideoResource
+	if err := db.Where(
+		"video_id = ? AND resolution = ? AND is_souce_video = ?",
+		task.VideoID, res, isSource,
+	).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
+		return err
+	}
+
+	if transcodeResourceRepositorySaveSpecificVideoResourceCondition2(url, isSource, list) {
+		if err := db.Where(
+			"video_id = ? AND is_souce_video = ? AND file_url = ?",
+			task.VideoID, true, url,
+		).Order("file_size DESC, id DESC").Find(&list).Error; err != nil {
+			return err
+		}
+	}
+
+	if len(list) == 0 {
+		return db.Create(&po.VideoResource{
+			VideoID:        task.VideoID,
+			Resolution:     res,
+			SourceFileName: sourceName,
+			FileURL:        url,
+			FileSize:       size,
+			Bitrate:        bitrate,
+			Format:         formatMP4,
+			Codec:          codecH264,
+			IsVip:          isVip,
+			IsSouceVideo:   isSource,
+		}).Error
+	}
+
+	keep := list[0]
+	update := videoResourceUpdateMap(
+		res, sourceName, url, size, bitrate, isVip, isSource,
+		keep.SourceFileName, keep.FileURL, keep.FileSize, keep.Bitrate,
+	)
+
+	if err := db.Model(&po.VideoResource{}).Where("id = ?", keep.ID).Updates(update).Error; err != nil {
+		return err
+	}
+
+	return deleteDuplicateVideoResources(db, list[1:])
 }

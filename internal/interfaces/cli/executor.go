@@ -4,12 +4,12 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"fmt"
 	"strings"
 
 	provisioningapp "f_ccg_video_back_ddd/internal/application/provisioning"
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"go.uber.org/zap"
 )
@@ -72,7 +72,7 @@ type IndexCreator interface {
 
 // ResourceSynchronizer 是 -rs 所需的最小用例端口。
 type ResourceSynchronizer interface {
-	SyncApiResources(ctx context.Context) (rbacapp.ResourceSyncResult, error)
+	SyncAPIResources(ctx context.Context) (rbacapp.ResourceSyncResult, error)
 }
 
 // RBACInitializer 是 -rbac 所需的最小用例端口。
@@ -196,7 +196,7 @@ func NewResourceSyncExecutor(syncer ResourceSynchronizer, logger *zap.Logger) *E
 	logger = loggerOrNop(logger)
 
 	return &Executor{run: func(ctx context.Context, _ []string) error {
-		result, err := syncer.SyncApiResources(ctx)
+		result, err := syncer.SyncAPIResources(ctx)
 		if err != nil {
 			logger.Error("resource sync failed", zap.Error(err))
 

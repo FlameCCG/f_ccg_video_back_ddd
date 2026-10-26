@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/apperr"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
 )
@@ -107,7 +108,7 @@ func (s *UserActivityService) ensureActionVisible(ctx context.Context, targetID,
 
 	privacy, err := s.relations.ActionPrivacy(ctx, targetID)
 	if err != nil || !privacy.Exists {
-		return domain.ErrUserNotFound
+		return apperr.Wrap("application/identity/user_activity_service", domain.ErrUserNotFound, err)
 	}
 
 	switch action {

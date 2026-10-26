@@ -12,7 +12,7 @@ type Part struct {
 	DanmuCount  int64                 `gorm:"default:0;comment:弹幕量" json:"danmuCount"`
 	StorageType enum.VideoStorageType `gorm:"default:1;index;comment:存储类型" json:"storageType"`
 	Resources   []VideoPartResource   `gorm:"foreignKey:VideoPartID" json:"resources,omitempty"`
-	Video       Video                 `gorm:"foreignKey:VideoID" json:"video,omitempty"`
+	Video       Video                 `gorm:"foreignKey:VideoID" json:"video"`
 }
 
 // TableName 显式绑定表名 video_parts，保持迁移与仓储 SQL 使用同一张表。

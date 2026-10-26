@@ -3,10 +3,10 @@ package rbac
 import (
 	"context"
 	"errors"
-
-	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	domain "f_ccg_video_back_ddd/internal/domain/rbac"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

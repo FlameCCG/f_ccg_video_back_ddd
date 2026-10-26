@@ -3,14 +3,17 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"f_ccg_video_back_ddd/pkg/res"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	chatapp "f_ccg_video_back_ddd/internal/application/chat"
+
 	domain "f_ccg_video_back_ddd/internal/domain/chat"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -39,13 +42,12 @@ func newTestContext(method, target string) (*httptest.ResponseRecorder, *gin.Con
 func decodeResponse(t *testing.T, recorder *httptest.ResponseRecorder) res.Response {
 	t.Helper()
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("http status = %d, want 200", recorder.Code)
-	}
+	require.Equal(t, http.StatusOK, recorder.Code, "http status = %d, want 200", recorder.Code)
 
 	var body res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("unmarshal response failed: %v (%s)", err, recorder.Body.String())
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &body)
+		require.NoError(t, err, "unmarshal response failed: %v (%s)", err, recorder.Body.String())
 	}
 
 	return body
@@ -69,9 +71,8 @@ func TestConversationListViewRequiresLogin(t *testing.T) {
 	newHandler(&stubRepository{available: true}, &stubQuery{}).ConversationListView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.FailServiceCode || body.Msg != "请先登录" {
-		t.Fatalf("body = %+v", body)
-	}
+	require.EqualValues(t, res.FailServiceCode, body.Code, "body = %+v", body)
+	require.Equal(t, testLoginRequired, body.Msg, "body = %+v", body)
 }
 
 // TestConversationListViewReturnsListEnvelope 成功响应是 {list, total} 包装，
@@ -91,39 +92,34 @@ func TestConversationListViewReturnsListEnvelope(t *testing.T) {
 	newHandler(&stubRepository{available: true}, query).ConversationListView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.SuccessCode || body.Msg != "成功" {
-		t.Fatalf("body = %+v", body)
-	}
+	require.EqualValues(t, res.SuccessCode, body.Code, "body = %+v", body)
+	require.Equal(t, "成功", body.Msg, "body = %+v", body)
 
 	data, ok := body.Data.(map[string]any)
-	if !ok {
-		t.Fatalf("data = %T, want object", body.Data)
-	}
+	require.True(t, ok, "data = %T, want object", body.Data)
 
-	if got := data["total"]; got != float64(7) {
-		t.Fatalf("total = %v, want 7", got)
+	{
+		got := data["total"]
+		require.InDelta(t, float64(7), got, 1e-9, "total = %v, want 7", got)
 	}
 
 	list, ok := data["list"].([]any)
-	if !ok || len(list) != 1 {
-		t.Fatalf("list = %v", data["list"])
-	}
+	require.True(t, ok, "list = %v", data["list"])
+	require.Len(t, list, 1, "list = %v", data["list"])
 
 	item, ok := list[0].(map[string]any)
-	if !ok {
-		t.Fatalf("list[0] = %T", list[0])
-	}
+	require.True(t, ok, "list[0] = %T", list[0])
 
 	// 响应字段名属于外部契约。
 	for _, key := range []string{"id", "peerId", "unread", "updatedAt"} {
-		if _, exists := item[key]; !exists {
-			t.Fatalf("missing field %q in %v", key, item)
+		{
+			_, exists := item[key]
+			require.True(t, exists, "missing field %q in %v", key, item)
 		}
 	}
 
-	if query.lastPage != 2 || query.lastPageSize != 15 {
-		t.Fatalf("paging = (%d, %d), want (2, 15)", query.lastPage, query.lastPageSize)
-	}
+	require.Equal(t, 2, query.lastPage, "paging = (%d, %d), want (2, 15)", query.lastPage, query.lastPageSize)
+	require.Equal(t, 15, query.lastPageSize, "paging = (%d, %d), want (2, 15)", query.lastPage, query.lastPageSize)
 }
 
 // TestConversationListViewSurfacesServiceError 服务层错误文案原样返回给前端。
@@ -137,9 +133,8 @@ func TestConversationListViewSurfacesServiceError(t *testing.T) {
 	newHandler(&stubRepository{available: false}, &stubQuery{}).ConversationListView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.FailServiceCode || body.Msg != domain.ErrStoreUnavailable.Error() {
-		t.Fatalf("body = %+v", body)
-	}
+	require.EqualValues(t, res.FailServiceCode, body.Code, "body = %+v", body)
+	require.Equal(t, body.Msg, domain.ErrStoreUnavailable.Error(), "body = %+v", body)
 }
 
 // ---------------- CreateConversationView ----------------
@@ -152,8 +147,9 @@ func TestCreateConversationViewRequiresLogin(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).CreateConversationView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != "请先登录" {
-		t.Fatalf("body = %+v", body)
+	{
+		body := decodeResponse(t, recorder)
+		require.Equal(t, testLoginRequired, body.Msg, "body = %+v", body)
 	}
 }
 
@@ -179,22 +175,20 @@ func TestCreateConversationViewReturnsItem(t *testing.T) {
 	newHandler(repo, &stubQuery{}).CreateConversationView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.SuccessCode || body.Msg != "ok" {
-		t.Fatalf("body = %+v", body)
-	}
+	require.EqualValues(t, res.SuccessCode, body.Code, "body = %+v", body)
+	require.Equal(t, "ok", body.Msg, "body = %+v", body)
 
 	item, ok := body.Data.(map[string]any)
-	if !ok {
-		t.Fatalf("data = %T, want object", body.Data)
-	}
+	require.True(t, ok, "data = %T, want object", body.Data)
 
-	if item["id"] != "1_2" || item["peerId"] != float64(2) || item["unread"] != float64(4) {
-		t.Fatalf("item = %v", item)
-	}
+	require.EqualValues(t, "1_2", item["id"], "item = %v", item)
+	require.InDelta(t, float64(2), item["peerId"], 1e-9, "item = %v", item)
+	require.InDelta(t, float64(4), item["unread"], 1e-9, "item = %v", item)
 
 	// 空会话没有 lastMessage（omitempty 省略该字段）。
-	if _, exists := item["lastMessage"]; exists {
-		t.Fatalf("empty conversation must omit lastMessage: %v", item)
+	{
+		_, exists := item["lastMessage"]
+		require.False(t, exists, "empty conversation must omit lastMessage: %v", item)
 	}
 }
 
@@ -208,8 +202,9 @@ func TestCreateConversationViewRejectsSelf(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).CreateConversationView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != domain.ErrSelfConversation.Error() {
-		t.Fatalf("body = %+v", body)
+	{
+		body := decodeResponse(t, recorder)
+		require.Equal(t, body.Msg, domain.ErrSelfConversation.Error(), "body = %+v", body)
 	}
 }
 
@@ -223,8 +218,9 @@ func TestDeleteConversationViewRequiresLogin(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).DeleteConversationView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != "请先登录" {
-		t.Fatalf("body = %+v", body)
+	{
+		body := decodeResponse(t, recorder)
+		require.Equal(t, testLoginRequired, body.Msg, "body = %+v", body)
 	}
 }
 
@@ -240,13 +236,11 @@ func TestDeleteConversationViewReturnsSuccessMessage(t *testing.T) {
 	newHandler(repo, &stubQuery{}).DeleteConversationView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.SuccessCode || body.Msg != "删除成功" {
-		t.Fatalf("body = %+v", body)
-	}
+	require.EqualValues(t, res.SuccessCode, body.Code, "body = %+v", body)
+	require.Equal(t, "删除成功", body.Msg, "body = %+v", body)
 
-	if repo.hiddenFor != 9 || repo.hiddenPeer != 3 {
-		t.Fatalf("hidden for (%d, %d), want (9, 3)", repo.hiddenFor, repo.hiddenPeer)
-	}
+	require.EqualValues(t, 9, repo.hiddenFor, "hidden for (%d, %d), want (9, 3)", repo.hiddenFor, repo.hiddenPeer)
+	require.EqualValues(t, 3, repo.hiddenPeer, "hidden for (%d, %d), want (9, 3)", repo.hiddenFor, repo.hiddenPeer)
 }
 
 // ---------------- MessageListView ----------------
@@ -259,8 +253,9 @@ func TestMessageListViewRequiresLogin(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MessageListView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != "请先登录" {
-		t.Fatalf("body = %+v", body)
+	{
+		body := decodeResponse(t, recorder)
+		require.Equal(t, testLoginRequired, body.Msg, "body = %+v", body)
 	}
 }
 
@@ -280,41 +275,32 @@ func TestMessageListViewReturnsCursorEnvelope(t *testing.T) {
 	newHandler(&stubRepository{available: true}, query).MessageListView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.SuccessCode {
-		t.Fatalf("body = %+v", body)
-	}
+	require.EqualValues(t, res.SuccessCode, body.Code, "body = %+v", body)
 
 	data, ok := body.Data.(map[string]any)
-	if !ok {
-		t.Fatalf("data = %T, want object", body.Data)
-	}
+	require.True(t, ok, "data = %T, want object", body.Data)
 
-	if data["hasMore"] != false {
-		t.Fatalf("hasMore = %v, want false", data["hasMore"])
-	}
+	require.EqualValues(t, false, data["hasMore"], "hasMore = %v, want false", data["hasMore"])
 
-	if _, exists := data["nextBefore"]; exists {
-		t.Fatalf("nextBefore must be omitted when there is no more data: %v", data)
+	{
+		_, exists := data["nextBefore"]
+		require.False(t, exists, "nextBefore must be omitted when there is no more data: %v", data)
 	}
 
 	list, ok := data["list"].([]any)
-	if !ok || len(list) != 2 {
-		t.Fatalf("list = %v", data["list"])
-	}
+	require.True(t, ok, "list = %v", data["list"])
+	require.Len(t, list, 2, "list = %v", data["list"])
 
 	// 返回倒序（旧→新）：最早的一条在前。
 	first, ok := list[0].(map[string]any)
-	if !ok {
-		t.Fatalf("list[0] = %T", list[0])
-	}
+	require.True(t, ok, "list[0] = %T", list[0])
 
-	if first["text"] != "a" {
-		t.Fatalf("messages must be oldest-first, got %v", first["text"])
-	}
+	require.EqualValues(t, "a", first["text"], "messages must be oldest-first, got %v", first["text"])
 
 	for _, key := range []string{"id", "conversationId", "senderId", "receiverId", "type", "createdAt"} {
-		if _, exists := first[key]; !exists {
-			t.Fatalf("missing field %q in %v", key, first)
+		{
+			_, exists := first[key]
+			require.True(t, exists, "missing field %q in %v", key, first)
 		}
 	}
 }
@@ -329,8 +315,9 @@ func TestMessageListViewRejectsInvalidCursor(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MessageListView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != domain.ErrInvalidCursor.Error() {
-		t.Fatalf("body = %+v", body)
+	{
+		body := decodeResponse(t, recorder)
+		require.Equal(t, body.Msg, domain.ErrInvalidCursor.Error(), "body = %+v", body)
 	}
 }
 
@@ -344,8 +331,9 @@ func TestMarkReadViewRequiresLogin(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MarkReadView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != "请先登录" {
-		t.Fatalf("body = %+v", body)
+	{
+		body := decodeResponse(t, recorder)
+		require.Equal(t, testLoginRequired, body.Msg, "body = %+v", body)
 	}
 }
 
@@ -361,13 +349,11 @@ func TestMarkReadViewReturnsSuccessMessage(t *testing.T) {
 	newHandler(repo, &stubQuery{}).MarkReadView(ctx)
 
 	body := decodeResponse(t, recorder)
-	if body.Code != res.SuccessCode || body.Msg != "标记成功" {
-		t.Fatalf("body = %+v", body)
-	}
+	require.EqualValues(t, res.SuccessCode, body.Code, "body = %+v", body)
+	require.Equal(t, "标记成功", body.Msg, "body = %+v", body)
 
-	if repo.readFor != 7 || repo.readPeer != 3 {
-		t.Fatalf("marked read for (%d, %d), want (7, 3)", repo.readFor, repo.readPeer)
-	}
+	require.EqualValues(t, 7, repo.readFor, "marked read for (%d, %d), want (7, 3)", repo.readFor, repo.readPeer)
+	require.EqualValues(t, 3, repo.readPeer, "marked read for (%d, %d), want (7, 3)", repo.readFor, repo.readPeer)
 }
 
 // TestMarkReadViewRejectsSelfPeer 已读路径的自发文案是「peerId 无效」。
@@ -380,8 +366,9 @@ func TestMarkReadViewRejectsSelfPeer(t *testing.T) {
 
 	newHandler(&stubRepository{available: true}, &stubQuery{}).MarkReadView(ctx)
 
-	if body := decodeResponse(t, recorder); body.Msg != domain.ErrInvalidPeerID.Error() {
-		t.Fatalf("body = %+v", body)
+	{
+		body := decodeResponse(t, recorder)
+		require.Equal(t, body.Msg, domain.ErrInvalidPeerID.Error(), "body = %+v", body)
 	}
 }
 
@@ -414,8 +401,9 @@ func TestWSViewRequiresLogin(t *testing.T) {
 
 			newHandler(&stubRepository{available: true}, &stubQuery{}).WSView(ctx)
 
-			if body := decodeResponse(t, recorder); body.Msg != "请先登录" {
-				t.Fatalf("body = %+v", body)
+			{
+				body := decodeResponse(t, recorder)
+				require.Equal(t, testLoginRequired, body.Msg, "body = %+v", body)
 			}
 		})
 	}
@@ -452,6 +440,7 @@ func (s *stubRepository) SendMessage(ctx context.Context, msg *domain.Message, p
 	if err := s.InsertMessage(ctx, msg); err != nil {
 		return err
 	}
+
 	return s.ApplySend(ctx, msg, preview)
 }
 

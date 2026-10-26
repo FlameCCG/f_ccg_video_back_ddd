@@ -2,7 +2,6 @@ package video
 
 import (
 	"context"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 )
@@ -64,8 +63,8 @@ func (s *VectorSyncService) SyncBatchAsync(parent context.Context, videoIDs []ui
 }
 
 // StartRebuild 触发向量索引全量重建；已有任务在跑时返回 ErrVectorRebuildInProgress。
-func (s *VectorSyncService) StartRebuild(opts VectorRebuildOptions) (any, error) {
-	started, err := s.rebuilder.StartRebuild(opts)
+func (s *VectorSyncService) StartRebuild(ctx context.Context, opts VectorRebuildOptions) (any, error) {
+	started, err := s.rebuilder.StartRebuild(ctx, opts)
 	if err != nil {
 		return nil, err
 	}

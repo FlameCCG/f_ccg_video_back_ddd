@@ -13,13 +13,13 @@ import (
 // 字段名、boost 权重与 `_source` 白名单都属于检索契约，改动会直接改变命中与响应内容。
 var (
 	videoHighlightFields = []string{"title", "tags"}
-	userHighlightFields  = []string{"username"}
+	userHighlightFields  = []string{fieldUsername}
 
 	videoSourceIncludes = []string{
 		"id", "title", "cover", "author_username", "created_at",
 		"views", "danmu_count", "duration", "tags",
 	}
-	userSourceIncludes = []string{"id", "username", "avatar", "level", "follower_count"}
+	userSourceIncludes = []string{"id", fieldUsername, "avatar", "level", "follower_count"}
 )
 
 func buildVideoQuery(keyword string) elastic.Query {
@@ -57,7 +57,7 @@ func buildUserQuery(keyword string) elastic.Query {
 	should := []elastic.Query{
 		elastic.NewTermQuery("username.keyword", lower).Boost(10),
 		elastic.NewPrefixQuery("username.keyword", lower).Boost(8),
-		elastic.NewMatchQuery("username", keyword).Boost(6),
+		elastic.NewMatchQuery(fieldUsername, keyword).Boost(6),
 		elastic.NewMatchQuery("username.pinyin", keyword).Boost(5),
 	}
 
@@ -181,7 +181,7 @@ func suggestPublishedOnly(docType string) bool {
 func suggestSourceFields(docType string) []string {
 	switch docType {
 	case domain.DocTypeUser:
-		return []string{"username"}
+		return []string{fieldUsername}
 	case domain.DocTypeTag:
 		return []string{"tags"}
 	default:
@@ -194,7 +194,7 @@ func suggestSourceFields(docType string) []string {
 func buildSuggestQuery(docType, keyword string) elastic.Query {
 	switch docType {
 	case domain.DocTypeUser:
-		return buildSuggestFieldQuery(keyword, "username", "username.keyword", "username.pinyin")
+		return buildSuggestFieldQuery(keyword, fieldUsername, "username.keyword", "username.pinyin")
 	case domain.DocTypeTag:
 		return buildSuggestFieldQuery(keyword, "tags", "tags.keyword", "tags.pinyin")
 	default:

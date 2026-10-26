@@ -2,13 +2,15 @@ package identity
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"fmt"
 	"strings"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/pkg/constants"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
@@ -80,10 +82,10 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 
 	if ok, err := s.allowSend(ctx, in); err != nil || !ok {
 		if err != nil {
-			s.logger.Warn("email captcha send rate limit failed", zap.Error(err))
+			logctx.With(ctx, s.logger).Warn("email captcha send rate limit failed", zap.String("event", "identity.email_captcha_send_service.send.degraded"), zap.String("operation", "identity.email_captcha_send_service.send"), zap.Error(err))
 		}
 
-		return nil, ErrEmailCaptchaRateLimited
+		return nil, apperr.Wrap("application/identity/email_captcha_send_service", ErrEmailCaptchaRateLimited, err)
 	}
 
 	if err := s.verifyEmailAddress(in.Email); err != nil {
@@ -101,20 +103,18 @@ func (s *EmailCaptchaSendService) Send(ctx context.Context, in EmailCaptchaSendI
 	}
 
 	if err := s.captcha.StoreEmailCaptcha(ctx, id, in.Email, code); err != nil {
-		s.logger.Error("验证码保存失败", zap.Int("type", in.Type), zap.String("emailID", id), zap.Error(err))
-
-		return nil, ErrEmailCaptchaStoreFailed
+		return nil, apperr.Wrap("application/identity/email_captcha_send_service", ErrEmailCaptchaStoreFailed, err)
 	}
 
 	s.queueDelivery(ctx, in.Type, in.Email, id, code)
 
 	cost := time.Since(startAt)
 
-	s.logger.Info("邮箱验证码异步发送已提交",
+	logctx.With(ctx, s.logger).Info("邮箱验证码异步发送已提交", zap.String("event", "identity.email_captcha_send_service.send.diagnostic"), zap.String("operation", "identity.email_captcha_send_service.send"),
 		zap.Int("type", in.Type),
 		zap.String("email", in.Email),
-		zap.String("emailID", id),
-		zap.Duration("cost", cost),
+		zap.String("email_id", id),
+		zap.Duration("duration_ms", cost),
 	)
 
 	return &EmailCaptchaSendResult{EmailID: id, Cost: cost}, nil
@@ -151,26 +151,18 @@ func (s *EmailCaptchaSendService) allowSend(ctx context.Context, in EmailCaptcha
 func (s *EmailCaptchaSendService) verifyEmailAddress(email string) error {
 	ret, err := s.verifier.Verify(email)
 	if err != nil {
-		s.logger.Error("验证邮箱失败", zap.Error(err))
-
-		return ErrEmailVerifyFailed
+		return apperr.Wrap("application/identity/email_captcha_send_service", ErrEmailVerifyFailed, err)
 	}
 
 	if !ret.SyntaxValid {
-		s.logger.Error("邮箱格式错误")
-
 		return ErrEmailSyntaxInvalid
 	}
 
 	if ret.HasSMTPResult && !ret.SMTPHostExists {
-		s.logger.Error("邮箱服务器不存在")
-
 		return ErrEmailHostNotExists
 	}
 
 	if !ret.HasMXRecords {
-		s.logger.Error("邮箱服务器无MX记录")
-
 		return ErrEmailNoMXRecords
 	}
 
@@ -187,20 +179,14 @@ func (s *EmailCaptchaSendService) checkBusinessPrecondition(ctx context.Context,
 	switch in.Type {
 	case EmailCaptchaTypeRegister:
 		if err == nil && user != nil {
-			s.logger.Error("该邮箱已注册")
-
 			return ErrEmailAlreadyRegistered
 		}
 	case EmailCaptchaTypeResetPassword:
 		if err != nil || user == nil {
-			s.logger.Error("该邮箱未注册", zap.Error(err))
-
-			return ErrEmailCaptchaEmailNotRegistered
+			return apperr.Wrap("application/identity/email_captcha_send_service", ErrEmailCaptchaEmailNotRegistered, err)
 		}
 	case EmailCaptchaTypeBindEmail:
 		if err == nil && user != nil {
-			s.logger.Error("该邮箱已被绑定")
-
 			return ErrEmailAlreadyBound
 		}
 	}
@@ -214,12 +200,12 @@ func (s *EmailCaptchaSendService) queueDelivery(ctx context.Context, captchaType
 		return
 	}
 
-	s.tasks.Go(ctx, ctxutil.AsyncLongTimeout, func(_ context.Context) {
+	s.tasks.Go(ctx, ctxutil.AsyncLongTimeout, func(ctx context.Context) {
 		if err := s.sender.SendEmailCaptcha(captchaType, email, code); err != nil {
-			s.logger.Warn("异步发送邮箱验证码失败",
+			logctx.With(ctx, s.logger).Warn("异步发送邮箱验证码失败", zap.String("event", "identity.email_captcha_send_service.queue_delivery.degraded"), zap.String("operation", "identity.email_captcha_send_service.queue_delivery"),
 				zap.Int("type", captchaType),
 				zap.String("email", email),
-				zap.String("emailID", id),
+				zap.String("email_id", id),
 				zap.Error(err),
 			)
 		}

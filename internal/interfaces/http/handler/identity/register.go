@@ -31,7 +31,7 @@ func (h *Handler) EmailRegisterView(c *gin.Context) {
 		RegisterIP:   ip,
 		RegisterAddr: addr,
 	}); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

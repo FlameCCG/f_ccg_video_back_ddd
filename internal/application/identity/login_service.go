@@ -2,12 +2,16 @@ package identity
 
 import (
 	"context"
-
+	"errors"
 	"f_ccg_video_back_ddd/internal/application/shared"
-	domain "f_ccg_video_back_ddd/internal/domain/identity"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/constants"
 	"f_ccg_video_back_ddd/pkg/ctxutil"
 	"f_ccg_video_back_ddd/pkg/encrypt"
+	"f_ccg_video_back_ddd/pkg/logctx"
+
+	domain "f_ccg_video_back_ddd/internal/domain/identity"
+
 	jwts "f_ccg_video_back_ddd/pkg/jwt"
 
 	"go.uber.org/zap"
@@ -82,16 +86,12 @@ func (s *LoginService) AdminPwdLogin(ctx context.Context, in PwdLoginInput) (*jw
 
 	adminRoleID, err := s.roles.RoleIDByName(ctx, constants.AdminUserRole)
 	if err != nil {
-		s.logger.Error("query admin role error", zap.Error(err))
-
-		return nil, ErrAdminRoleMissing
+		return nil, apperr.Wrap("application/identity/login_service", ErrAdminRoleMissing, err)
 	}
 
 	hasRole, err := s.roles.HasRole(ctx, user.ID, adminRoleID)
 	if err != nil {
-		s.logger.Error("check admin role error", zap.Error(err))
-
-		return nil, ErrRoleCheckFailed
+		return nil, apperr.Wrap("application/identity/login_service", ErrRoleCheckFailed, err)
 	}
 
 	if !hasRole {
@@ -110,9 +110,7 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil {
-		s.logger.Error("query refresh-token user error", zap.Uint("user_id", userID), zap.Error(err))
-
-		return nil, ErrQueryUserFailed
+		return nil, apperr.Wrap("application/identity/login_service", ErrQueryUserFailed, err)
 	}
 
 	if user == nil {
@@ -125,38 +123,24 @@ func (s *LoginService) RefreshToken(ctx context.Context, refreshToken string) (*
 
 	token, err := s.tokens.Rotate(ctx, user, refreshToken, s.users)
 	if err != nil {
-		if err == ErrRefreshTokenReused {
-			s.logger.Warn("refresh token reuse or credential change detected", zap.Uint("user_id", user.ID))
-			if user.RefreshTokenHash != "" {
-				if _, revokeErr := s.users.RotateRefreshToken(ctx, user.ID, user.Password, user.RefreshTokenHash, ""); revokeErr != nil {
-					s.logger.Error("revoke refresh session after reuse failed", zap.Error(revokeErr))
-				}
-			}
-		}
-		return nil, ErrRefreshTokenFailed
+		return nil, s.refreshFailure(ctx, user, err)
 	}
 
 	return token, nil
 }
 
 // authenticate 校验账号密码与封禁状态；logScope 用于区分前台/后台登录日志。
-func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, logScope string) (*domain.User, error) {
+func (s *LoginService) authenticate(ctx context.Context, in PwdLoginInput, _ string) (*domain.User, error) {
 	user, err := s.users.FindByUsernameOrEmail(ctx, in.Identifier)
 	if err != nil {
-		s.logger.Error("query user error", zap.Error(err))
-
-		return nil, ErrQueryUserFailed
+		return nil, apperr.Wrap("application/identity/login_service", ErrQueryUserFailed, err)
 	}
 
 	if user == nil {
-		s.logger.Warn(logScope+" user not found", zap.String("username", in.Identifier))
-
 		return nil, domain.ErrCredentialsInvalid
 	}
 
 	if !encrypt.ValidatePasswordHash(in.Password, user.Password) {
-		s.logger.Warn(logScope+" password error", zap.String("username", in.Identifier))
-
 		return nil, domain.ErrCredentialsInvalid
 	}
 
@@ -183,9 +167,7 @@ func (s *LoginService) finishLogin(
 
 	token, err := s.tokens.IssueForUser(ctx, user, s.users)
 	if err != nil {
-		s.logger.Error("create jwt token failed", zap.Error(err))
-
-		return nil, ErrLoginFailed
+		return nil, apperr.Wrap("application/identity/login_service", ErrLoginFailed, err)
 	}
 
 	return token, nil
@@ -213,7 +195,7 @@ func recordLoginAsync(
 
 	tasks.Go(ctx, ctxutil.AsyncQuickTimeout, func(taskCtx context.Context) {
 		if err := records.Record(taskCtx, userID, ip, addr, userAgent, loginType); err != nil {
-			logger.Warn("记录登录IP失败", zap.Error(err))
+			logctx.With(taskCtx, logger).Warn("identity.login_record.failed", zap.Error(err))
 		}
 	})
 }
@@ -222,4 +204,18 @@ func (s *LoginService) usernamePwdLoginEnabled() bool {
 	cfg := s.cfgProvider.Get()
 
 	return cfg != nil && cfg.Site != nil && cfg.Site.Login != nil && cfg.Site.Login.UsernamePwdLogin
+}
+
+func (s *LoginService) refreshFailure(ctx context.Context, user *domain.User, cause error) error {
+	if !errors.Is(cause, ErrRefreshTokenReused) {
+		return apperr.Wrap("identity.refresh", ErrRefreshTokenFailed, cause)
+	}
+
+	if user.RefreshTokenHash != "" {
+		if _, err := s.users.RotateRefreshToken(ctx, user.ID, user.Password, user.RefreshTokenHash, ""); err != nil {
+			return apperr.Wrap("identity.refresh.revoke", ErrRefreshTokenFailed, errors.Join(cause, err), apperr.Internal)
+		}
+	}
+
+	return apperr.Wrap("identity.refresh", ErrRefreshTokenFailed, cause, apperr.Security)
 }

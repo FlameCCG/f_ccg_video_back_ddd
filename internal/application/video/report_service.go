@@ -2,11 +2,12 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"time"
 
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	domain "f_ccg_video_back_ddd/internal/domain/video"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 )
@@ -259,7 +260,7 @@ func (s *ReportService) notifyReportHandled(
 
 	usernames, err := s.reports.ReporterUsernames(ctx, handleType, reportIDs)
 	if err != nil {
-		s.logger.Warn("load report reporters failed", zap.Error(err), zap.String("type", string(handleType)))
+		logctx.With(ctx, s.logger).Warn("load report reporters failed", zap.String("event", "video.report_service.notify_report_handled.degraded"), zap.String("operation", "video.report_service.notify_report_handled"), zap.Error(err), zap.String("type", string(handleType)))
 
 		return
 	}
@@ -286,9 +287,27 @@ func (s *ReportService) notifyReportHandled(
 		unique = append(unique, name)
 	}
 
+	finishReportServiceNotifyReportHandled(ctx, s, handlerID, text, unique)
+}
+
+func normalizeReportPage(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+
+	return page, pageSize
+}
+
+func finishReportServiceNotifyReportHandled(ctx context.Context, s *ReportService, handlerID uint, text domain.ReportHandledNotification, unique []string) {
+	var err error
+
 	userIDMap, err := s.notify.UserIDsByUsernames(ctx, unique)
 	if err != nil {
-		s.logger.Warn("load report users failed", zap.Error(err))
+		logctx.With(ctx, s.logger).Warn("load report users failed", zap.String("event", "video.report_service.notify_report_handled.degraded"), zap.String("operation", "video.report_service.notify_report_handled"), zap.Error(err))
 
 		return
 	}
@@ -335,16 +354,4 @@ func (s *ReportService) notifyReportHandled(
 	}
 
 	s.notifier.NotifySystemBatch(ctx, notices)
-}
-
-func normalizeReportPage(page, pageSize int) (int, int) {
-	if page <= 0 {
-		page = 1
-	}
-
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 20
-	}
-
-	return page, pageSize
 }

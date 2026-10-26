@@ -2,10 +2,10 @@ package identity
 
 import (
 	"encoding/json"
+	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 
 	app "f_ccg_video_back_ddd/internal/application/identity"
 	domain "f_ccg_video_back_ddd/internal/domain/identity"
-	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
 )
 
 // toPOUser 把用户领域实体转为 PO（逐字段显式映射，注册/OAuth 创建路径使用）。

@@ -2,11 +2,10 @@ package rbac
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-	"strconv"
-	"strings"
-
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,7 +21,7 @@ func (h *Handler) AssignRoleInheritView(c *gin.Context) {
 	req := middlewares.GetBound[RoleInheritReq](c)
 
 	if err := h.inherits.Assign(c.Request.Context(), req.RoleID, req.ParentRoleID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -34,7 +33,7 @@ func (h *Handler) RemoveRoleInheritView(c *gin.Context) {
 	req := middlewares.GetBound[RoleInheritReq](c)
 
 	if err := h.inherits.Remove(c.Request.Context(), req.RoleID, req.ParentRoleID); err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -42,35 +41,15 @@ func (h *Handler) RemoveRoleInheritView(c *gin.Context) {
 }
 
 // RoleInheritListView 获取角色继承列表（直接 + 间接）.
-// Query: roleId
-func (h *Handler) RoleInheritListView(c *gin.Context) {
-	roleIDStr := c.Query("roleId")
-	if roleIDStr == "" {
-		res.FailWithMsg("roleId 不能为空", c)
-		return
-	}
-
-	roleID, err := strconv.Atoi(roleIDStr)
-	if err != nil || roleID <= 0 {
-		res.FailWithMsg("roleId 非法", c)
-		return
-	}
-
-	resp, err := h.inherits.List(c.Request.Context(), uint(roleID))
-	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
-		return
-	}
-
-	res.OkWithData(resp, c)
-}
+// Query: roleId.
+func (h *Handler) RoleInheritListView(c *gin.Context) { serveIDLookup(c, "roleId", h.inherits.List) }
 
 // RoleInheritTreeView 获取角色继承树.
-// Query: roleId（可选；有值时只返回该角色相关的子树）
+// Query: roleId（可选；有值时只返回该角色相关的子树）.
 func (h *Handler) RoleInheritTreeView(c *gin.Context) {
 	tree, err := h.inherits.Tree(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 
@@ -88,7 +67,7 @@ func (h *Handler) RoleInheritTreeView(c *gin.Context) {
 
 	filtered, err := h.inherits.FilterTree(c.Request.Context(), tree, uint(roleID))
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 		return
 	}
 

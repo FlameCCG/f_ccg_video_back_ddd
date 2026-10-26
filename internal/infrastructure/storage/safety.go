@@ -91,9 +91,13 @@ func safeJoinLocal(base string, elems ...string) (string, error) {
 	}
 
 	rel, err := filepath.Rel(baseAbs, fullPath)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if safeJoinLocalCondition(err, rel) {
 		return "", fmt.Errorf("relative path %q outside of base dir", relative)
 	}
 
 	return fullPath, nil
+}
+
+func safeJoinLocalCondition(err error, rel string) bool {
+	return err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

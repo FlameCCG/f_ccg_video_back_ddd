@@ -2,6 +2,7 @@ package social
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/apperr"
 
 	domain "f_ccg_video_back_ddd/internal/domain/social"
 )
@@ -78,45 +79,28 @@ func (s *RelationService) FocusStatus(ctx context.Context, viewerID uint, target
 }
 
 // FocusList 关注列表用例：隐私与翻页校验 + 分页查询（原 ListFocusUsers 的调用流程）。
-func (s *RelationService) FocusList(
-	ctx context.Context,
-	params ListParams,
-) ([]ListUser, int64, error) {
-	privacy, err := s.FollowPrivacy(ctx, uint(params.OwnerID))
-	if err != nil {
-		// 与原实现一致：读取隐私配置失败一律按「用户不存在」对外呈现。
-		return nil, 0, domain.ErrUserNotFound
-	}
-
-	if err := domain.EnsureFollowListVisible(privacy, params.ViewerID, params.OwnerID, params.Page); err != nil {
-		return nil, 0, err
-	}
-
-	rows, total, err := s.query.ListFocus(ctx, uint(params.OwnerID), params.Page, params.PageSize, params.Keyword)
-	if err != nil {
-		return nil, 0, domain.ErrListQueryFailed
-	}
-
-	return rows, total, nil
+func (s *RelationService) FocusList(ctx context.Context, params ListParams) ([]ListUser, int64, error) {
+	return s.visibleRelationList(ctx, params, domain.EnsureFollowListVisible, s.query.ListFocus)
 }
 
 // FansList 粉丝列表用例：隐私与翻页校验 + 分页查询（原 ListFansUsers 的调用流程）。
-func (s *RelationService) FansList(
-	ctx context.Context,
-	params ListParams,
-) ([]ListUser, int64, error) {
+func (s *RelationService) FansList(ctx context.Context, params ListParams) ([]ListUser, int64, error) {
+	return s.visibleRelationList(ctx, params, domain.EnsureFansListVisible, s.query.ListFans)
+}
+
+func (s *RelationService) visibleRelationList(ctx context.Context, params ListParams, visible func(domain.FollowPrivacy, int, int, int) error, query func(context.Context, uint, int, int, string) ([]ListUser, int64, error)) ([]ListUser, int64, error) {
 	privacy, err := s.FollowPrivacy(ctx, uint(params.OwnerID))
 	if err != nil {
-		return nil, 0, domain.ErrUserNotFound
+		return nil, 0, apperr.Wrap("application/social/relation_service", domain.ErrUserNotFound, err)
 	}
 
-	if err := domain.EnsureFansListVisible(privacy, params.ViewerID, params.OwnerID, params.Page); err != nil {
+	if err := visible(privacy, params.ViewerID, params.OwnerID, params.Page); err != nil {
 		return nil, 0, err
 	}
 
-	rows, total, err := s.query.ListFans(ctx, uint(params.OwnerID), params.Page, params.PageSize, params.Keyword)
+	rows, total, err := query(ctx, uint(params.OwnerID), params.Page, params.PageSize, params.Keyword)
 	if err != nil {
-		return nil, 0, domain.ErrListQueryFailed
+		return nil, 0, apperr.Wrap("application/social/relation_service", domain.ErrListQueryFailed, err)
 	}
 
 	return rows, total, nil

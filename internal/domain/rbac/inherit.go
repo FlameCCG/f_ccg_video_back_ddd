@@ -49,6 +49,8 @@ func FormatAlreadyInheritedMsg(targetRole string, kind InheritKind, topParent st
 		}
 
 		return fmt.Sprintf("角色「%s」已通过继承链间接获得，无需重复继承", targetRole)
+	case InheritKindNone:
+		fallthrough
 	default:
 		return fmt.Sprintf("已继承角色「%s」", targetRole)
 	}
@@ -93,20 +95,7 @@ func BuildRoleInheritTree(roles []*Role, groupingPolicies [][]string) []*RoleInh
 		return []*RoleInheritTreeNode{}
 	}
 
-	nodeInfo := make(map[string]roleNodeInfo, len(roles))
-
-	for _, role := range roles {
-		if role == nil {
-			continue
-		}
-
-		name := strings.TrimSpace(role.Name)
-		if name == "" {
-			continue
-		}
-
-		nodeInfo[name] = roleNodeInfo{ID: role.ID, Name: name, Desc: role.Desc}
-	}
+	nodeInfo := roleTreeNodeInfo(roles)
 
 	childrenMap := make(map[string][]string)
 	childSet := make(map[string]struct{})
@@ -153,80 +142,7 @@ func BuildRoleInheritTree(roles []*Role, groupingPolicies [][]string) []*RoleInh
 		roots = append(roots, name)
 	}
 
-	sort.Strings(roots)
-
-	if len(roots) == 0 {
-		for name := range nodeInfo {
-			roots = append(roots, name)
-		}
-
-		sort.Strings(roots)
-	}
-
-	visited := make(map[string]struct{})
-
-	var build func(name string, path map[string]struct{}) *RoleInheritTreeNode
-
-	build = func(name string, path map[string]struct{}) *RoleInheritTreeNode {
-		info, ok := nodeInfo[name]
-		if !ok {
-			return nil
-		}
-		// 防止继承环导致递归死循环
-		if _, ok := path[name]; ok {
-			return nil
-		}
-
-		visited[name] = struct{}{}
-		node := &RoleInheritTreeNode{
-			ID:   info.ID,
-			Name: info.Name,
-			Desc: info.Desc,
-		}
-
-		path[name] = struct{}{}
-		if children, ok := childrenMap[name]; ok {
-			for _, child := range children {
-				if childNode := build(child, path); childNode != nil {
-					node.Children = append(node.Children, childNode)
-				}
-			}
-		}
-
-		delete(path, name)
-
-		return node
-	}
-
-	result := make([]*RoleInheritTreeNode, 0, len(roots))
-	for _, root := range roots {
-		if node := build(root, map[string]struct{}{}); node != nil {
-			result = append(result, node)
-		}
-	}
-
-	if len(visited) < len(nodeInfo) {
-		// 存在继承环或无根组件时，补齐不可达角色，确保全量输出
-		missing := make([]string, 0)
-
-		for name := range nodeInfo {
-			if _, ok := visited[name]; ok {
-				continue
-			}
-
-			missing = append(missing, name)
-		}
-
-		sort.Strings(missing)
-
-		for _, name := range missing {
-			if node := build(name, map[string]struct{}{}); node != nil {
-				result = append(result, node)
-			}
-		}
-	}
-
-	return result
+	return finishBuildRoleInheritTree(nodeInfo, childrenMap, &roots)
 }
 
 // FilterRoleInheritTree 只保留包含 target 的子树（target 自身及其后代全量保留）。
@@ -280,4 +196,102 @@ func pruneRoleInheritTree(node *RoleInheritTreeNode, target string) (*RoleInheri
 	copied.Children = kept
 
 	return &copied, true
+}
+
+func finishBuildRoleInheritTree(nodeInfo map[string]roleNodeInfo, childrenMap map[string][]string, roots *[]string) []*RoleInheritTreeNode {
+	sort.Strings((*roots))
+
+	if len((*roots)) == 0 {
+		for name := range nodeInfo {
+			(*roots) = append((*roots), name)
+		}
+
+		sort.Strings((*roots))
+	}
+
+	visited := make(map[string]struct{})
+
+	build := func(name string, path map[string]struct{}) *RoleInheritTreeNode {
+		return buildRoleInheritBranch(name, path, nodeInfo, childrenMap, visited)
+	}
+
+	result := make([]*RoleInheritTreeNode, 0, len((*roots)))
+	for _, root := range *roots {
+		if node := build(root, map[string]struct{}{}); node != nil {
+			result = append(result, node)
+		}
+	}
+
+	if len(visited) < len(nodeInfo) {
+		// 存在继承环或无根组件时，补齐不可达角色，确保全量输出
+		missing := make([]string, 0)
+
+		for name := range nodeInfo {
+			if _, ok := visited[name]; ok {
+				continue
+			}
+
+			missing = append(missing, name)
+		}
+
+		sort.Strings(missing)
+
+		for _, name := range missing {
+			if node := build(name, map[string]struct{}{}); node != nil {
+				result = append(result, node)
+			}
+		}
+	}
+
+	return result
+}
+
+func roleTreeNodeInfo(roles []*Role) map[string]roleNodeInfo {
+	nodeInfo := make(map[string]roleNodeInfo, len(roles))
+
+	for _, role := range roles {
+		if role == nil {
+			continue
+		}
+
+		name := strings.TrimSpace(role.Name)
+		if name == "" {
+			continue
+		}
+
+		nodeInfo[name] = roleNodeInfo{ID: role.ID, Name: name, Desc: role.Desc}
+	}
+
+	return nodeInfo
+}
+
+func buildRoleInheritBranch(name string, path map[string]struct{}, nodeInfo map[string]roleNodeInfo, childrenMap map[string][]string, visited map[string]struct{}) *RoleInheritTreeNode {
+	info, ok := nodeInfo[name]
+	if !ok {
+		return nil
+	}
+	// 防止继承环导致递归死循环
+	if _, ok := path[name]; ok {
+		return nil
+	}
+
+	visited[name] = struct{}{}
+	node := &RoleInheritTreeNode{
+		ID:   info.ID,
+		Name: info.Name,
+		Desc: info.Desc,
+	}
+
+	path[name] = struct{}{}
+	if children, ok := childrenMap[name]; ok {
+		for _, child := range children {
+			if childNode := buildRoleInheritBranch(child, path, nodeInfo, childrenMap, visited); childNode != nil {
+				node.Children = append(node.Children, childNode)
+			}
+		}
+	}
+
+	delete(path, name)
+
+	return node
 }

@@ -63,12 +63,10 @@ func (m *IndexManager) CreateIndex(index, mapping string) error {
 
 	_, err := m.client.CreateIndex(index).BodyString(mapping).Do(m.rootContext())
 	if err != nil {
-		m.logger.Error("创建索引失败", zap.Error(err), zap.String("index", index))
-
 		return fmt.Errorf("创建索引失败 %s: %w", index, err)
 	}
 
-	m.logger.Info("创建索引成功", zap.String("index", index))
+	m.logger.Info("创建索引成功", zap.String("event", "search.index_manager.create_index.diagnostic"), zap.String("operation", "search.index_manager.create_index"), zap.String("index", index))
 
 	return nil
 }
@@ -81,8 +79,6 @@ func (m *IndexManager) ExistsIndex(index string) (bool, error) {
 
 	exists, err := m.client.IndexExists(index).Do(m.rootContext())
 	if err != nil {
-		m.logger.Error("判断索引是否存在失败", zap.Error(err), zap.String("index", index))
-
 		return false, fmt.Errorf("判断索引是否存在失败 %s: %w", index, err)
 	}
 
@@ -97,12 +93,10 @@ func (m *IndexManager) DeleteIndex(index string) error {
 
 	_, err := m.client.DeleteIndex(index).Do(m.rootContext())
 	if err != nil {
-		m.logger.Error("删除索引失败", zap.Error(err), zap.String("index", index))
-
 		return fmt.Errorf("删除索引失败 %s: %w", index, err)
 	}
 
-	m.logger.Info("删除索引成功", zap.String("index", index))
+	m.logger.Info("删除索引成功", zap.String("event", "search.index_manager.delete_index.diagnostic"), zap.String("operation", "search.index_manager.delete_index"), zap.String("index", index))
 
 	return nil
 }

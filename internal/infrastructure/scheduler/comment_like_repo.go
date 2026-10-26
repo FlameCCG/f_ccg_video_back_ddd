@@ -2,10 +2,10 @@ package scheduler
 
 import (
 	"context"
-
-	app "f_ccg_video_back_ddd/internal/application/platform"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/platform"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

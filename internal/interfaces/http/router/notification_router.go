@@ -20,8 +20,8 @@ func registerNotificationCommonRoutes(
 	{
 		notificationGroup.GET("", middlewares.BindQueryParams[notificationhandler.ListNotificationReq], handler.List)
 		notificationGroup.GET("/counts", handler.Counts)
-		notificationGroup.PUT("/read", middlewares.JsonBindParams[notificationhandler.MarkReadReq], handler.MarkRead)
-		notificationGroup.DELETE("", middlewares.JsonBindParams[notificationhandler.DeleteNotificationReq], handler.Delete)
+		notificationGroup.PUT("/read", middlewares.JSONBindParams[notificationhandler.MarkReadReq], handler.MarkRead)
+		notificationGroup.DELETE("", middlewares.JSONBindParams[notificationhandler.DeleteNotificationReq], handler.Delete)
 	}
 }
 
@@ -35,9 +35,9 @@ func registerNotificationAdminRoutes(
 	notificationGroup := group.Group("/notification")
 	notificationGroup.Use(middlewares.RequestTimeout(ctxutil.RequestSlowTimeout), mw.AuthAll())
 	{
-		notificationGroup.POST("", middlewares.JsonBindParams[notificationhandler.CreateNotificationReq], handler.Create)
-		notificationGroup.PUT("", middlewares.JsonBindParams[notificationhandler.AdminUpdateReq], handler.AdminUpdate)
+		notificationGroup.POST("", middlewares.JSONBindParams[notificationhandler.CreateNotificationReq], handler.Create)
+		notificationGroup.PUT("", middlewares.JSONBindParams[notificationhandler.AdminUpdateReq], handler.AdminUpdate)
 		notificationGroup.GET("", middlewares.BindQueryParams[notificationhandler.AdminListReq], handler.AdminList)
-		notificationGroup.DELETE("", middlewares.JsonBindParams[notificationhandler.DeleteNotificationReq], handler.AdminDelete)
+		notificationGroup.DELETE("", middlewares.JSONBindParams[notificationhandler.DeleteNotificationReq], handler.AdminDelete)
 	}
 }

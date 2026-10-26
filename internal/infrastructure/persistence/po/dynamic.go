@@ -11,7 +11,7 @@ type Dynamic struct {
 	LikeCount int64      `gorm:"default:0;comment:点赞数" json:"likeCount"`
 	IsPinned  bool       `gorm:"default:false;index;comment:是否置顶" json:"isPinned"`
 	PinnedAt  *time.Time `gorm:"comment:置顶时间" json:"pinnedAt,omitempty"`
-	User      User       `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	User      User       `gorm:"foreignKey:UserID" json:"user"`
 }
 
 // TableName 显式绑定表名 dynamics，保持迁移与仓储 SQL 使用同一张表。

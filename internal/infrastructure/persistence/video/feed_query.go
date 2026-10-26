@@ -2,12 +2,12 @@ package video
 
 import (
 	"context"
-	"fmt"
-
-	app "f_ccg_video_back_ddd/internal/application/video"
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+	"fmt"
+
+	app "f_ccg_video_back_ddd/internal/application/video"
 
 	"gorm.io/gorm"
 )

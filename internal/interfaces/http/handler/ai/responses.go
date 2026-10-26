@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
+	"f_ccg_video_back_ddd/pkg/res"
 	"io"
 	"strings"
 
@@ -11,7 +13,6 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // ResponsesView 聊天生成（POST，请求体为 ResponsesRequest；响应为 SSE 流）.
@@ -49,7 +50,7 @@ func buildResponsesStreamRequest(req ResponsesStreamReq) (aiapp.ResponsesRequest
 	if input := strings.TrimSpace(req.Input); input != "" {
 		raw := json.RawMessage(input)
 		if !json.Valid(raw) {
-			return aiapp.ResponsesRequest{}, errors.New("input 不是合法 JSON")
+			return aiapp.ResponsesRequest{}, apperr.Wrap("ai.input", nil, errors.New("input 不是合法 JSON"), apperr.Validation)
 		}
 
 		return aiapp.ResponsesRequest{
@@ -62,7 +63,7 @@ func buildResponsesStreamRequest(req ResponsesStreamReq) (aiapp.ResponsesRequest
 
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
-		return aiapp.ResponsesRequest{}, errors.New("text 不能为空")
+		return aiapp.ResponsesRequest{}, apperr.Wrap("ai.input", nil, errors.New("text 不能为空"), apperr.Validation)
 	}
 
 	raw, err := json.Marshal([]map[string]any{
@@ -70,8 +71,8 @@ func buildResponsesStreamRequest(req ResponsesStreamReq) (aiapp.ResponsesRequest
 			"role": "user",
 			"content": []map[string]any{
 				{
-					"type": "input_text",
-					"text": text,
+					eventTypeField: "input_text",
+					"text":         text,
 				},
 			},
 		},
@@ -92,6 +93,7 @@ func buildResponsesStreamRequest(req ResponsesStreamReq) (aiapp.ResponsesRequest
 func (h *Handler) streamResponses(c *gin.Context, req aiapp.ResponsesRequest) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+
 	stream, err := h.service.OpenResponseStream(ctx, req)
 	if err != nil {
 		h.failWithAIError(c, "open AI response stream failed", err)
@@ -99,6 +101,7 @@ func (h *Handler) streamResponses(c *gin.Context, req aiapp.ResponsesRequest) {
 		return
 	}
 	defer stream.Close()
+
 	h.forwardResponsesStream(c, stream)
 }
 
@@ -112,41 +115,51 @@ func (h *Handler) forwardResponsesStream(c *gin.Context, stream *schema.StreamRe
 	c.Status(200)
 
 	for {
-		if c.Request.Context().Err() != nil {
+		if err := c.Request.Context().Err(); err != nil {
+			res.RecordFailure(err, c)
 			return
 		}
+
 		chunk, receiveErr := stream.Recv()
 		if errors.Is(receiveErr, io.EOF) {
 			if err := writeResponsesCompleted(c.Writer); err != nil {
-				h.log().Warn("write AI response completion failed", zap.Error(err))
+				res.RecordFailure(apperr.Wrap("handler/ai/responses", nil, err), c)
 
 				return
 			}
+
 			c.Writer.Flush()
+			res.SetSuccess(c, true)
 
 			return
 		}
+
 		if receiveErr != nil {
-			if c.Request.Context().Err() != nil {
+			if err := c.Request.Context().Err(); err != nil {
+				res.RecordFailure(err, c)
 				return
 			}
-			h.log().Warn("receive Eino AI response stream failed", zap.Error(receiveErr))
+
+			res.RecordFailure(apperr.Private("ai.stream.receive", receiveErr), c)
 			// 已发送 SSE 响应头，必须用流内错误通知客户端，避免半截回答被当作成功。
 			if err := writeResponsesEvent(c.Writer, map[string]any{
-				"type":    "response.failed",
-				"message": "AI 回答中断，请稍后重试",
+				eventTypeField: "response.failed",
+				"message":      "AI 回答中断，请稍后重试",
 			}); err != nil {
-				h.log().Warn("write AI response failure failed", zap.Error(err))
+				res.RecordFailure(apperr.Wrap("handler/ai/responses", nil, err), c)
 			}
+
 			c.Writer.Flush()
 
 			return
 		}
+
 		if err := writeResponsesChunk(c.Writer, chunk); err != nil {
-			h.log().Warn("write AI response stream failed", zap.Error(err))
+			res.RecordFailure(apperr.Wrap("handler/ai/responses", nil, err), c)
 
 			return
 		}
+
 		c.Writer.Flush()
 	}
 }
@@ -158,24 +171,25 @@ func writeResponsesChunk(writer io.Writer, chunk *schema.Message) error {
 
 	if chunk.ReasoningContent != "" {
 		if err := writeResponsesEvent(writer, map[string]any{
-			"type":  "response.reasoning_summary_text.delta",
-			"delta": chunk.ReasoningContent,
+			eventTypeField: "response.reasoning_summary_text.delta",
+			"delta":        chunk.ReasoningContent,
 		}); err != nil {
 			return err
 		}
 	}
+
 	if chunk.Content == "" {
 		return nil
 	}
 
 	return writeResponsesEvent(writer, map[string]any{
-		"type":  "response.output_text.delta",
-		"delta": chunk.Content,
+		eventTypeField: "response.output_text.delta",
+		"delta":        chunk.Content,
 	})
 }
 
 func writeResponsesCompleted(writer io.Writer) error {
-	if err := writeResponsesEvent(writer, map[string]any{"type": "response.completed"}); err != nil {
+	if err := writeResponsesEvent(writer, map[string]any{eventTypeField: "response.completed"}); err != nil {
 		return err
 	}
 
@@ -189,12 +203,15 @@ func writeResponsesEvent(writer io.Writer, payload any) error {
 	if err != nil {
 		return err
 	}
+
 	if _, err = io.WriteString(writer, "data: "); err != nil {
 		return err
 	}
+
 	if _, err = writer.Write(raw); err != nil {
 		return err
 	}
+
 	_, err = io.WriteString(writer, "\n\n")
 
 	return err

@@ -2,14 +2,15 @@ package dynamic
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/constants"
+	"f_ccg_video_back_ddd/pkg/ctxutil"
+	"f_ccg_video_back_ddd/pkg/logctx"
 	"sort"
 	"strconv"
 	"time"
 
 	domain "f_ccg_video_back_ddd/internal/domain/dynamic"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/pkg/constants"
-	"f_ccg_video_back_ddd/pkg/ctxutil"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -218,7 +219,7 @@ func (s *FollowService) refreshUnreadCount(ctx context.Context, userID uint) (in
 func (s *FollowService) refreshUnreadCountAsync(userID uint) {
 	s.tasks.Go(context.TODO(), ctxutil.AsyncQuickTimeout, func(bg context.Context) {
 		if _, err := s.refreshUnreadCount(bg, userID); err != nil {
-			s.logger.Warn("refresh unread follow count failed", zap.Uint("userId", userID), zap.Error(err))
+			logctx.With(bg, s.logger).Warn("refresh unread follow count failed", zap.String("event", "dynamic.follow_service.refresh_unread_count_async.degraded"), zap.String("operation", "dynamic.follow_service.refresh_unread_count_async"), zap.Uint("user_id", userID), zap.Error(err))
 		}
 	})
 }

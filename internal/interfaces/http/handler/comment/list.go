@@ -41,7 +41,7 @@ func (h *Handler) ListView(c *gin.Context) {
 		SortBy:    req.SortBy,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

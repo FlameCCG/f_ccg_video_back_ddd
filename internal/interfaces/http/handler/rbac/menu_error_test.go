@@ -3,13 +3,16 @@ package rbac
 import (
 	"encoding/json"
 	"errors"
+	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/res"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
-	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -20,17 +23,13 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		wantMsg    string
-		wantLogMsg string
-		wantFields map[string]string
-		respond    func(*Handler, *gin.Context, error)
+		name    string
+		wantMsg string
+		respond func(*Handler, *gin.Context, error)
 	}{
 		{
-			name:       "create",
-			wantMsg:    domain.ErrCreateFailed.Error(),
-			wantLogMsg: "menu mutation failed",
-			wantFields: map[string]string{"operation": "create", "creatorId": "9", "parentMenuId": "3"},
+			name:    "create",
+			wantMsg: domain.ErrCreateFailed.Error(),
 			respond: func(h *Handler, c *gin.Context, err error) {
 				parentID := uint(3)
 				h.respondMenuMutationError(
@@ -44,10 +43,8 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 			},
 		},
 		{
-			name:       "update",
-			wantMsg:    domain.ErrUpdateFailed.Error(),
-			wantLogMsg: "menu mutation failed",
-			wantFields: map[string]string{"operation": "update", "menuId": "11"},
+			name:    "update",
+			wantMsg: domain.ErrUpdateFailed.Error(),
 			respond: func(h *Handler, c *gin.Context, err error) {
 				h.respondMenuMutationError(
 					c,
@@ -59,10 +56,8 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 			},
 		},
 		{
-			name:       "move",
-			wantMsg:    domain.ErrSortFailed.Error(),
-			wantLogMsg: "menu mutation failed",
-			wantFields: map[string]string{"operation": "move", "menuId": "11", "targetMenuId": "12"},
+			name:    "move",
+			wantMsg: domain.ErrSortFailed.Error(),
 			respond: func(h *Handler, c *gin.Context, err error) {
 				h.respondMenuMutationError(
 					c,
@@ -75,10 +70,8 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 			},
 		},
 		{
-			name:       "generate",
-			wantMsg:    domain.ErrReadMenuDataFailed.Error(),
-			wantLogMsg: "menu generation failed",
-			wantFields: map[string]string{"operation": "generate", "parentMenuId": "3"},
+			name:    "generate",
+			wantMsg: domain.ErrReadMenuDataFailed.Error(),
 			respond: func(h *Handler, c *gin.Context, err error) {
 				parentID := uint(3)
 				h.respondMenuGenerationError(c, err, &parentID)
@@ -92,32 +85,36 @@ func TestRespondMenuErrorsLogsUnknownFailuresAndPreservesFallbacks(t *testing.T)
 
 			core, logs := observer.New(zap.DebugLevel)
 			handler := NewHandler(nil, nil, nil, nil, zap.New(core))
-			ctx, recorder := testMenuContext()
+			recorder := httptest.NewRecorder()
 			cause := errors.New("database unavailable")
+
 			err := cause
 			if tt.name == "generate" {
 				err = fmt.Errorf("%w: %w", domain.ErrReadMenuDataFailed, cause)
 			}
 
-			tt.respond(handler, ctx, err)
+			engine := gin.New()
+			engine.Use(middlewares.RequestContext(), middlewares.GinLogger(zap.New(core)), middlewares.GinRecovery(zap.New(core), true))
+			engine.POST("/menu", func(ctx *gin.Context) { tt.respond(handler, ctx, err) })
+			engine.ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/menu", nil))
 			assertMenuFailureResponse(t, recorder, tt.wantMsg)
 
-			entries := logs.FilterMessage(tt.wantLogMsg).All()
-			if len(entries) != 1 {
-				t.Fatalf("error log count = %d, want 1", len(entries))
-			}
-			if entries[0].Level != zap.ErrorLevel {
-				t.Fatalf("log level = %s, want error", entries[0].Level)
-			}
+			entries := logs.FilterMessage("http.request.failed").All()
+			require.Len(t, entries, 1, "error log count = %d, want 1", len(entries))
+
+			require.Equal(t, zap.ErrorLevel, entries[0].Level, "log level = %s, want error", entries[0].Level)
 
 			fields := entries[0].ContextMap()
-			for key, want := range tt.wantFields {
-				if got := fmt.Sprint(fields[key]); got != want {
-					t.Fatalf("field %q = %q, want %q; fields=%#v", key, got, want, fields)
-				}
+			{
+				got := fields["operation"]
+				require.EqualValues(t, "POST /menu", got, "operation=%v", got)
 			}
-			if got := fmt.Sprint(fields["error"]); !strings.Contains(got, cause.Error()) {
-				t.Fatalf("error field = %q, want cause %q", got, cause)
+
+			require.Equal(t, 1, logs.FilterMessage("http.request").Len(), "missing request summary")
+
+			{
+				got := fmt.Sprint(fields["error"])
+				require.Contains(t, got, cause.Error(), "error field = %q, want cause %q", got, cause)
 			}
 		})
 	}
@@ -176,9 +173,8 @@ func TestRespondMenuErrorsDoNotErrorLogKnownDomainFailures(t *testing.T) {
 
 			tt.respond(handler, ctx)
 			assertMenuFailureResponse(t, recorder, tt.wantMsg)
-			if logs.Len() != 0 {
-				t.Fatalf("known domain failure logged: %#v", logs.All())
-			}
+
+			require.Equal(t, 0, logs.Len(), "known domain failure logged: %#v", logs.All())
 		})
 	}
 }
@@ -209,15 +205,14 @@ func testMenuContext() (*gin.Context, *httptest.ResponseRecorder) {
 func assertMenuFailureResponse(t *testing.T, recorder *httptest.ResponseRecorder, wantMsg string) {
 	t.Helper()
 
-	if recorder.Code != 200 {
-		t.Fatalf("HTTP status = %d, want 200", recorder.Code)
-	}
+	require.Equal(t, 200, recorder.Code, "HTTP status = %d, want 200", recorder.Code)
 
 	var response res.Response
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode response: %v", err)
+	{
+		err := json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err, "decode response: %v", err)
 	}
-	if response.Code != res.FailServiceCode || response.Msg != wantMsg {
-		t.Fatalf("response = %#v, want code=%d msg=%q", response, res.FailServiceCode, wantMsg)
-	}
+
+	require.EqualValues(t, res.FailServiceCode, response.Code, "response = %#v, want code=%d msg=%q", response, res.FailServiceCode, wantMsg)
+	require.Equal(t, wantMsg, response.Msg, "response = %#v, want code=%d msg=%q", response, res.FailServiceCode, wantMsg)
 }

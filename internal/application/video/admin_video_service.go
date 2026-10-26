@@ -2,10 +2,10 @@ package video
 
 import (
 	"context"
-	"time"
-
 	"f_ccg_video_back_ddd/internal/domain/shared/enum"
 	"f_ccg_video_back_ddd/internal/domain/shared/tx"
+	"time"
+
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
 	"go.uber.org/zap"
@@ -157,6 +157,7 @@ func (s *AdminVideoService) finalizeReviewRejection(
 	status enum.VideoStatus,
 ) (int64, error) {
 	var affected int64
+
 	for _, id := range reviewIDs {
 		if id == 0 {
 			continue
@@ -166,13 +167,17 @@ func (s *AdminVideoService) finalizeReviewRejection(
 		if err != nil {
 			return affected, err
 		}
+
 		if rows == 0 {
 			continue
 		}
+
 		affected += rows
+
 		s.invalidateReviewCaches(ctx, id)
 		s.vectors.SyncAsync(ctx, id, status)
 	}
+
 	return affected, nil
 }
 
@@ -200,6 +205,7 @@ func (s *AdminVideoService) finalizeReviewApproval(ctx context.Context, reviewID
 		}
 
 		affected += rows
+
 		s.invalidateReviewCaches(ctx, id)
 
 		if target == enum.VideoStatusScheduled {
@@ -229,37 +235,46 @@ func (s *AdminVideoService) applyReview(ctx context.Context, id uint, target enu
 // 审核与作者改期、到期发布使用同一视频行锁；计划读取失败时禁止提前发布。
 func (s *AdminVideoService) applyReviewTarget(ctx context.Context, id uint, target *enum.VideoStatus) (int64, error) {
 	var rows int64
+
 	approval := *target == enum.VideoStatusPublished
+
 	err := s.txm.Do(ctx, func(txCtx context.Context) error {
 		video, err := s.videos.FindByIDForUpdate(txCtx, id)
 		if err != nil || video == nil || video.Status != enum.VideoStatusReview {
 			return err
 		}
+
 		if *target == enum.VideoStatusPublished {
 			publishAt, err := s.schedule.PublishTime(txCtx, id)
 			if err != nil {
 				return err
 			}
+
 			if publishAt != nil && publishAt.After(time.Now()) {
 				*target = enum.VideoStatusScheduled
 			}
 		}
+
 		if approval {
 			rows, err = s.videos.Approve(txCtx, id, *target, time.Now())
 		} else {
 			rows, err = s.videos.UpdateStatusFrom(txCtx, id, enum.VideoStatusReview, *target)
 		}
+
 		if err != nil || rows == 0 {
 			return err
 		}
+
 		if !approval {
 			return s.schedule.Remove(txCtx, id)
 		}
+
 		return nil
 	})
 	if err != nil {
 		return 0, err
 	}
+
 	return rows, nil
 }
 

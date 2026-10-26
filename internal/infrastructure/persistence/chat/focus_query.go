@@ -3,10 +3,10 @@ package chat
 import (
 	"context"
 	"errors"
-
-	app "f_ccg_video_back_ddd/internal/application/chat"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/gormx"
 	"f_ccg_video_back_ddd/internal/infrastructure/persistence/po"
+
+	app "f_ccg_video_back_ddd/internal/application/chat"
 
 	"gorm.io/gorm"
 )

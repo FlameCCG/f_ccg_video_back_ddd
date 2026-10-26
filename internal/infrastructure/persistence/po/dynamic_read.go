@@ -17,8 +17,8 @@ type DynamicRead struct {
 	LastReadWorkID   uint          `gorm:"not null;comment:最后已读作品ID" json:"lastReadWorkId"`
 	LastReadWorkAt   time.Time     `gorm:"not null;index;comment:最后已读作品发布时间" json:"lastReadWorkAt"`
 
-	Author User `gorm:"foreignKey:AuthorID" json:"author,omitempty"`
-	User   User `gorm:"foreignKey:UserID" json:"user,omitempty"`
+	Author User `gorm:"foreignKey:AuthorID" json:"author"`
+	User   User `gorm:"foreignKey:UserID" json:"user"`
 }
 
 // TableName 显式绑定表名 dynamic_reads，保持迁移与仓储 SQL 使用同一张表。

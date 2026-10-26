@@ -22,12 +22,12 @@ func (h *AdminHandler) AdminDetailView(c *gin.Context) {
 	detail, err := h.detail.GetVideoDetailAdmin(c.Request.Context(), req.VideoID)
 	if err != nil {
 		if isRecordNotFound(err) {
-			res.FailWithMsg("视频不存在", c)
+			res.FailWithCause(err, "视频不存在", c)
 
 			return
 		}
 
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -62,7 +62,7 @@ func (h *AdminHandler) AdminListView(c *gin.Context) {
 		PageSize:    req.PageSize,
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -85,7 +85,7 @@ func (h *AdminHandler) AdminReviewView(c *gin.Context) {
 		Status:   enum.VideoStatus(req.Status),
 	})
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -104,7 +104,7 @@ func (h *AdminHandler) AdminRestoreVideoView(c *gin.Context) {
 
 	affected, err := h.admin.Restore(c.Request.Context(), req.VideoIDs)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -124,7 +124,7 @@ func (h *AdminHandler) AdminDeleteVideoView(c *gin.Context) {
 
 	result, err := h.admin.Delete(c.Request.Context(), req.VideoIDs, req.HardDelete)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

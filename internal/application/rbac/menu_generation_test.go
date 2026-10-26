@@ -46,6 +46,7 @@ func TestParseMenuSuggestion(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseMenuSuggestion() error = %v", err)
 			}
+
 			if suggestion.SortOrder != 2 || suggestion.Name != "Users" {
 				t.Fatalf("unexpected suggestion: %#v", suggestion)
 			}

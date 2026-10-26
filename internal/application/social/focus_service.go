@@ -3,6 +3,7 @@ package social
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
 
 	domain "f_ccg_video_back_ddd/internal/domain/social"
 
@@ -43,7 +44,7 @@ func (s *FocusService) Focus(ctx context.Context, userID, focusUserID uint) erro
 	// 与原实现一致：存在性查询报错也按「目标用户不存在」对外呈现。
 	exists, err := s.users.Exists(ctx, focusUserID)
 	if err != nil || !exists {
-		return domain.ErrTargetUserNotFound
+		return apperr.Wrap("application/social/focus_service", domain.ErrTargetUserNotFound, err)
 	}
 
 	if err := s.repo.Create(ctx, focus); err != nil {
@@ -51,9 +52,7 @@ func (s *FocusService) Focus(ctx context.Context, userID, focusUserID uint) erro
 			return domain.ErrAlreadyFocused
 		}
 
-		s.logger.Error("关注用户失败", zap.Error(err))
-
-		return domain.ErrFocusFailed
+		return apperr.Wrap("application/social/focus_service", domain.ErrFocusFailed, err)
 	}
 
 	s.updateFansMetric(ctx, focusUserID, 1)
@@ -68,9 +67,7 @@ func (s *FocusService) Focus(ctx context.Context, userID, focusUserID uint) erro
 func (s *FocusService) Unfocus(ctx context.Context, userID, focusUserID uint) error {
 	affected, err := s.repo.Delete(ctx, userID, focusUserID)
 	if err != nil {
-		s.logger.Error("取消关注失败", zap.Error(err))
-
-		return domain.ErrUnfocusFailed
+		return apperr.Wrap("application/social/focus_service", domain.ErrUnfocusFailed, err)
 	}
 
 	if affected == 0 {

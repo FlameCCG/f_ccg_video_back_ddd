@@ -51,7 +51,7 @@ func (h *AdminHandler) CreatePartitionView(c *gin.Context) {
 		IsSubmittable: req.IsSubmittable,
 	}
 	if err := h.partition.Create(c.Request.Context(), &p); err != nil {
-		res.FailWithMsg("创建失败", c)
+		res.FailWithCause(err, "创建失败", c)
 
 		return
 	}
@@ -79,7 +79,7 @@ func (h *AdminHandler) UpdatePartitionView(c *gin.Context) {
 		IsSubmittable: req.IsSubmittable,
 	}
 	if err := h.partition.Update(c.Request.Context(), &p); err != nil {
-		res.FailWithMsg("更新失败", c)
+		res.FailWithCause(err, "更新失败", c)
 
 		return
 	}
@@ -91,7 +91,7 @@ func (h *AdminHandler) UpdatePartitionView(c *gin.Context) {
 func (h *AdminHandler) DeletePartitionView(c *gin.Context) {
 	req := middlewares.GetBound[DeletePartitionReq](c)
 	if err := h.partition.Delete(c.Request.Context(), req.ID); err != nil {
-		res.FailWithMsg("删除失败", c)
+		res.FailWithCause(err, "删除失败", c)
 
 		return
 	}
@@ -105,7 +105,7 @@ func (h *AdminHandler) ListPartitionView(c *gin.Context) {
 
 	list, total, err := h.partition.List(c.Request.Context(), req.Page, req.PageSize)
 	if err != nil {
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}

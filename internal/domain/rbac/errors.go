@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"errors"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"fmt"
 )
 
@@ -182,15 +183,15 @@ var (
 
 // DuplicateRoleAssignedError 部分角色已分配（携带首个重复角色名，文案与原实现一致）。
 func DuplicateRoleAssignedError(roleName string) error {
-	return fmt.Errorf("部分角色已分配: %s", roleName)
+	return apperr.Wrap("", nil, fmt.Errorf("部分角色已分配: %s", roleName), apperr.Conflict)
 }
 
 // AlreadyInheritedError 已直接/间接继承目标角色时的业务错误。
 func AlreadyInheritedError(targetRole string, kind InheritKind, topParent string) error {
-	return errors.New(FormatAlreadyInheritedMsg(targetRole, kind, topParent))
+	return apperr.Wrap("", nil, errors.New(FormatAlreadyInheritedMsg(targetRole, kind, topParent)), apperr.Conflict)
 }
 
 // IndirectUnlinkError 尝试解除间接继承时的业务错误。
 func IndirectUnlinkError(targetRole, topParent string) error {
-	return errors.New(FormatIndirectUnlinkMsg(targetRole, topParent))
+	return apperr.Wrap("", nil, errors.New(FormatIndirectUnlinkMsg(targetRole, topParent)), apperr.Rejected)
 }

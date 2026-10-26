@@ -2,10 +2,9 @@ package identity
 
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
-	"strconv"
-
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
 	"f_ccg_video_back_ddd/pkg/res"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,7 +20,7 @@ func (h *Handler) RecentLikedView(c *gin.Context) {
 
 	list, total, err := h.activity.RecentLiked(c.Request.Context(), targetID, viewerID)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -40,7 +39,7 @@ func (h *Handler) RecentCoinedView(c *gin.Context) {
 
 	list, total, err := h.activity.RecentCoined(c.Request.Context(), targetID, viewerID)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}

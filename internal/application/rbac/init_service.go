@@ -2,9 +2,9 @@ package rbac
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/constants"
 
 	domain "f_ccg_video_back_ddd/internal/domain/rbac"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"go.uber.org/zap"
 )
@@ -49,8 +49,6 @@ func (s *InitService) InitDefaultRBAC(ctx context.Context) error {
 		count, _ := s.roles.CountByName(ctx, role.Name)
 		if count == 0 {
 			if err := s.roles.Create(ctx, role); err != nil {
-				s.logger.Error("create role failed", zap.Error(err))
-
 				return err
 			}
 		}
@@ -117,71 +115,7 @@ func (s *InitService) seedMenus(ctx context.Context, adminRoleID, vipRoleID, use
 		return &pid, nil
 	}
 
-	for _, seed := range buildMenuSeeds() {
-		pid, err := parentID(seed.ParentTitle)
-		if err != nil {
-			s.logger.Error("query parent menu failed", zap.Error(err),
-				zap.String("title", seed.Title), zap.String("parent", seed.ParentTitle))
-
-			return err
-		}
-
-		menuModel, err := s.menus.FindByTitle(ctx, seed.Title)
-		if err != nil {
-			s.logger.Error("query menu failed", zap.Error(err))
-
-			return err
-		}
-
-		if menuModel == nil {
-			menu := domain.NewMenu(
-				seed.Title, seed.TitleEn, seed.TitleJa, seed.Icon,
-				seed.Path, seed.Name, seed.Component, seed.KeepAlive, pid, seed.SortOrder,
-			)
-			if err := s.menus.Create(ctx, menu); err != nil {
-				s.logger.Error("create menu failed", zap.Error(err))
-
-				return err
-			}
-
-			menuModel = menu
-		}
-
-		update := seedMenuUpdate(seed, menuModel, pid)
-		if !update.IsEmpty() {
-			if err := s.menus.UpdateFields(ctx, menuModel.ID, update); err != nil {
-				s.logger.Error("update menu failed", zap.Error(err))
-
-				return err
-			}
-		}
-
-		menuIDByTitle[seed.Title] = menuModel.ID
-
-		if err := s.roleMenus.EnsureRoleMenu(ctx, adminRoleID, menuModel.ID); err != nil {
-			s.logger.Error("bind admin menu failed", zap.Error(err))
-
-			return err
-		}
-
-		if commonRoleMenuTitle(menuModel.Title) {
-			if err := s.roleMenus.EnsureRoleMenu(ctx, userRoleID, menuModel.ID); err != nil {
-				s.logger.Error("bind user menu failed", zap.Error(err))
-
-				return err
-			}
-		}
-
-		if vipRoleMenuTitle(menuModel.Title) {
-			if err := s.roleMenus.EnsureRoleMenu(ctx, vipRoleID, menuModel.ID); err != nil {
-				s.logger.Error("bind vip menu failed", zap.Error(err))
-
-				return err
-			}
-		}
-	}
-
-	return nil
+	return finishInitServiceSeedMenus(ctx, s, adminRoleID, vipRoleID, userRoleID, menuIDByTitle, parentID)
 }
 
 // seedMenuUpdate 计算既有菜单相对种子定义需要补齐的字段（只补空、不覆盖已有值）。
@@ -213,6 +147,63 @@ func seedMenuUpdate(seed menuSeed, current *domain.Menu, pid *uint) domain.MenuF
 		update.Name = &name
 	}
 
+	return finishSeedMenuUpdate(seed, current, pid, &update)
+}
+
+func finishInitServiceSeedMenus(ctx context.Context, s *InitService, adminRoleID, vipRoleID, userRoleID uint, menuIDByTitle map[string]uint, parentID func(title string) (*uint, error)) error {
+	for _, seed := range buildMenuSeeds() {
+		pid, err := parentID(seed.ParentTitle)
+		if err != nil {
+			return err
+		}
+
+		menuModel, err := s.menus.FindByTitle(ctx, seed.Title)
+		if err != nil {
+			return err
+		}
+
+		if menuModel == nil {
+			menu := domain.NewMenu(
+				seed.Title, seed.TitleEn, seed.TitleJa, seed.Icon,
+				seed.Path, seed.Name, seed.Component, seed.KeepAlive, pid, seed.SortOrder,
+			)
+			if err := s.menus.Create(ctx, menu); err != nil {
+				return err
+			}
+
+			menuModel = menu
+		}
+
+		update := seedMenuUpdate(seed, menuModel, pid)
+		if !update.IsEmpty() {
+			if err := s.menus.UpdateFields(ctx, menuModel.ID, update); err != nil {
+				return err
+			}
+		}
+
+		menuIDByTitle[seed.Title] = menuModel.ID
+
+		if err := s.roleMenus.EnsureRoleMenu(ctx, adminRoleID, menuModel.ID); err != nil {
+			return err
+		}
+
+		if commonRoleMenuTitle(menuModel.Title) {
+			if err := s.roleMenus.EnsureRoleMenu(ctx, userRoleID, menuModel.ID); err != nil {
+				return err
+			}
+		}
+
+		if vipRoleMenuTitle(menuModel.Title) {
+			if err := s.roleMenus.EnsureRoleMenu(ctx, vipRoleID, menuModel.ID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func finishSeedMenuUpdate(seed menuSeed, current *domain.Menu, pid *uint, update *domain.MenuFieldUpdate) domain.MenuFieldUpdate {
 	if current.Component == "" && seed.Component != "" {
 		component := seed.Component
 		update.Component = &component
@@ -238,5 +229,5 @@ func seedMenuUpdate(seed menuSeed, current *domain.Menu, pid *uint) domain.MenuF
 		update.ParentID = &zero
 	}
 
-	return update
+	return (*update)
 }

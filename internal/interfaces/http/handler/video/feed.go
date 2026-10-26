@@ -3,10 +3,10 @@ package video
 import (
 	"f_ccg_video_back_ddd/internal/interfaces/clienterror"
 	"f_ccg_video_back_ddd/internal/interfaces/http/middlewares"
+	"f_ccg_video_back_ddd/pkg/apperr"
 	"f_ccg_video_back_ddd/pkg/res"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // HomeFeedReq 描述首页视频流分页与可选分区过滤。
@@ -25,8 +25,8 @@ func (h *Handler) HomeFeedView(c *gin.Context) {
 
 	list, total, err := h.feed.HomepageFeed(ctx, uid, req.PartitionID, req.Page, req.PageSize)
 	if err != nil {
-		h.log().Error("get homepage feed failed", zap.Error(err), zap.Uint("uid", uid))
-		res.FailWithMsg("获取首页推荐失败", c)
+		res.RecordFailure(apperr.Wrap("handler/video/feed", nil, err), c)
+		res.FailWithCause(err, "获取首页推荐失败", c)
 
 		return
 	}
@@ -46,7 +46,7 @@ func (h *Handler) HotView(c *gin.Context) {
 
 	list, total, err := h.feed.HotFeed(c.Request.Context(), req.Page, req.PageSize)
 	if err != nil {
-		res.FailWithMsg("获取综合热门失败", c)
+		res.FailWithCause(err, "获取综合热门失败", c)
 
 		return
 	}
@@ -66,7 +66,7 @@ func (h *Handler) RankView(c *gin.Context) {
 
 	list, total, err := h.feed.RankTop(c.Request.Context(), req.Page, req.PageSize)
 	if err != nil {
-		res.FailWithMsg("获取排行榜失败", c)
+		res.FailWithCause(err, "获取排行榜失败", c)
 
 		return
 	}
@@ -86,7 +86,7 @@ func (h *Handler) RecommendView(c *gin.Context) {
 
 	list, err := h.recommend.RelatedVideos(c.Request.Context(), req.VideoID, req.Size)
 	if err != nil {
-		res.FailWithMsg(clienterror.Message(err), c)
+		res.FailWithCause(err, clienterror.Message(err), c)
 
 		return
 	}
@@ -98,7 +98,7 @@ func (h *Handler) RecommendView(c *gin.Context) {
 func (h *Handler) ListSubmittablePartitionsView(c *gin.Context) {
 	list, err := h.partitions.ListSubmittable(c.Request.Context())
 	if err != nil {
-		res.FailWithMsg("获取失败", c)
+		res.FailWithCause(err, "获取失败", c)
 
 		return
 	}

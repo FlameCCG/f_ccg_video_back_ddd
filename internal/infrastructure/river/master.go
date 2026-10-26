@@ -9,7 +9,6 @@ import (
 
 	"github.com/BurntSushi/toml"           // TOML 编解码（master.info 的存储格式）
 	"github.com/juju/errors"               // 错误包装（带 Cause/Stack）
-	"github.com/siddontang/go-log/log"     // 日志
 	"github.com/siddontang/go-mysql/mysql" // mysql.Position 类型（Name+Pos）
 	"github.com/siddontang/go/ioutil2"     // WriteFileAtomic：原子写文件，防止部分写入
 )
@@ -35,7 +34,7 @@ func loadMasterInfo(dataDir string) (*masterInfo, error) {
 	m.filePath = path.Join(dataDir, masterInfoFileName) // 约定的位点文件名
 	// lastSaveTime 保持零值：保证首次 Save 一定落盘；之后才启用 1s 节流。
 
-	if err := os.MkdirAll(dataDir, 0o755); err != nil { // 确保目录存在（幂等）
+	if err := os.MkdirAll(dataDir, 0o750); err != nil { // 确保目录存在（幂等）
 		return nil, errors.Trace(err)
 	}
 
@@ -59,8 +58,6 @@ func (m *masterInfo) Save(pos mysql.Position) error {
 
 // save 持久化位点。force=true 时忽略 1s 节流（用于 Close 兜底刷盘）。
 func (m *masterInfo) save(pos mysql.Position, force bool) error {
-	log.Infof("save position %s", pos) // 打日志：可观测位点前进
-
 	m.Lock()         // 写锁：防止并发读写引起数据竞争
 	defer m.Unlock() // 函数返回时释放锁
 
@@ -86,9 +83,7 @@ func (m *masterInfo) save(pos mysql.Position, force bool) error {
 		return errors.Trace(err)
 	}
 
-	if err := ioutil2.WriteFileAtomic(m.filePath, buf.Bytes(), 0o644); err != nil { // 原子写：写临时文件后 rename 覆盖，防止崩溃留下半文件
-		log.Errorf("canal save master info to file %s err %v", m.filePath, err) // 写盘失败记录错误
-
+	if err := ioutil2.WriteFileAtomic(m.filePath, buf.Bytes(), 0o600); err != nil { // 原子写：写临时文件后 rename 覆盖，防止崩溃留下半文件
 		return errors.Trace(err)
 	}
 

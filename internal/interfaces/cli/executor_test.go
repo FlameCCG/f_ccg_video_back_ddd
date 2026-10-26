@@ -3,16 +3,18 @@ package cli
 import (
 	"context"
 	"errors"
+	"f_ccg_video_back_ddd/internal/domain/shared/enum"
+	"f_ccg_video_back_ddd/pkg/constants"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	provisioningapp "f_ccg_video_back_ddd/internal/application/provisioning"
+
 	rbacapp "f_ccg_video_back_ddd/internal/application/rbac"
-	"f_ccg_video_back_ddd/internal/domain/shared/enum"
-	"f_ccg_video_back_ddd/pkg/constants"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
@@ -21,8 +23,9 @@ import (
 func TestExecutorWithoutTaskReturnsError(t *testing.T) {
 	t.Parallel()
 
-	if err := (*Executor)(nil).Execute(context.Background(), nil); err == nil {
-		t.Fatal("nil executor should fail")
+	{
+		err := (*Executor)(nil).Execute(context.Background(), nil)
+		require.Error(t, err, "nil executor should fail")
 	}
 }
 
@@ -33,12 +36,9 @@ func TestMigrateDBExecutorForwardsResult(t *testing.T) {
 	migrator := &fakeMigrator{err: wantErr}
 
 	err := NewMigrateDBExecutor(migrator).Execute(context.Background(), nil)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
-	}
-	if migrator.calls != 1 {
-		t.Fatalf("AutoMigrate calls = %d, want 1", migrator.calls)
-	}
+	require.ErrorIs(t, err, wantErr, "Execute() error = %v, want %v", err, wantErr)
+
+	require.Equal(t, 1, migrator.calls, "AutoMigrate calls = %d, want 1", migrator.calls)
 }
 
 func TestVideoPartitionsExecutorLogsOriginalResult(t *testing.T) {
@@ -47,24 +47,20 @@ func TestVideoPartitionsExecutorLogsOriginalResult(t *testing.T) {
 	logger, logs := observedLogger()
 	seeder := &fakePartitionSeeder{imported: 12, normalized: 3, source: "seed.sql"}
 
-	if err := NewVideoPartitionsExecutor(seeder, logger).Execute(context.Background(), nil); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	{
+		err := NewVideoPartitionsExecutor(seeder, logger).Execute(context.Background(), nil)
+		require.NoError(t, err, "Execute() error = %v", err)
 	}
 
-	if seeder.path != videoPartitionsSQLFile {
-		t.Fatalf("seed path = %q, want %q", seeder.path, videoPartitionsSQLFile)
-	}
+	require.Equal(t, videoPartitionsSQLFile, seeder.path, "seed path = %q, want %q", seeder.path, videoPartitionsSQLFile)
 
 	entries := logs.FilterMessage("video partitions init success").All()
-	if len(entries) != 1 {
-		t.Fatalf("success log count = %d, want 1", len(entries))
-	}
+	require.Len(t, entries, 1, "success log count = %d, want 1", len(entries))
 
 	fields := entries[0].ContextMap()
-	if fields["source"] != "seed.sql" || fields["imported"] != int64(12) ||
-		fields["normalizedExtras"] != int64(3) {
-		t.Fatalf("unexpected log fields: %#v", fields)
-	}
+	require.EqualValues(t, "seed.sql", fields["source"], "unexpected log fields: %#v", fields)
+	require.EqualValues(t, int64(12), fields["imported"], "unexpected log fields: %#v", fields)
+	require.EqualValues(t, int64(3), fields["normalizedExtras"], "unexpected log fields: %#v", fields)
 }
 
 func TestBannerExecutorRunsRealProvisioningUseCase(t *testing.T) {
@@ -73,43 +69,34 @@ func TestBannerExecutorRunsRealProvisioningUseCase(t *testing.T) {
 	resolver := &fakeBannerResolver{driver: driver}
 	repo := &fakeBannerRepository{}
 
-	workingDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	tempDir := t.TempDir()
+
 	imagesDir := filepath.Join(tempDir, "init_resource", "images")
-	if err := os.MkdirAll(imagesDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(imagesDir, "首页轮播-1.png"), []byte("image"), 0o644); err != nil {
-		t.Fatal(err)
+	{
+		err := os.MkdirAll(imagesDir, 0o750)
+		require.NoError(t, err)
 	}
 
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(workingDir); err != nil {
-			t.Errorf("restore working directory: %v", err)
-		}
-	})
-
-	if err := NewBannerExecutor(resolver, repo, logger).Execute(context.Background(), nil); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	{
+		err := os.WriteFile(filepath.Join(imagesDir, "首页轮播-1.png"), []byte("image"), 0o600)
+		require.NoError(t, err)
 	}
 
-	if resolver.calls != 1 || driver.calls != 1 || repo.migrateCalls != 1 || repo.upsertCalls != 1 {
-		t.Fatalf("unexpected calls: resolver=%d driver=%d migrate=%d upsert=%d",
-			resolver.calls, driver.calls, repo.migrateCalls, repo.upsertCalls)
+	t.Chdir(tempDir)
+
+	{
+		err := NewBannerExecutor(resolver, repo, logger).Execute(context.Background(), nil)
+		require.NoError(t, err, "Execute() error = %v", err)
 	}
-	if repo.bannerType != enum.BannerTypeHome {
-		t.Fatalf("banner type = %v, want home", repo.bannerType)
-	}
-	if logs.FilterMessage("Banner migration completed successfully").Len() != 1 {
-		t.Fatal("missing Banner completion log")
-	}
+
+	require.Equal(t, 1, resolver.calls, "unexpected calls: resolver=%d driver=%d migrate=%d upsert=%d", resolver.calls, driver.calls, repo.migrateCalls, repo.upsertCalls)
+	require.Equal(t, 1, driver.calls, "unexpected calls: resolver=%d driver=%d migrate=%d upsert=%d", resolver.calls, driver.calls, repo.migrateCalls, repo.upsertCalls)
+	require.Equal(t, 1, repo.migrateCalls, "unexpected calls: resolver=%d driver=%d migrate=%d upsert=%d", resolver.calls, driver.calls, repo.migrateCalls, repo.upsertCalls)
+	require.Equal(t, 1, repo.upsertCalls, "unexpected calls: resolver=%d driver=%d migrate=%d upsert=%d", resolver.calls, driver.calls, repo.migrateCalls, repo.upsertCalls)
+
+	require.Equal(t, enum.BannerTypeHome, repo.bannerType, "banner type = %v, want home", repo.bannerType)
+
+	require.Equal(t, 1, logs.FilterMessage("Banner migration completed successfully").Len(), "missing Banner completion log")
 }
 
 func TestBannerExecutorLogsResolveFailure(t *testing.T) {
@@ -119,12 +106,12 @@ func TestBannerExecutorLogsResolveFailure(t *testing.T) {
 	logger, logs := observedLogger()
 	executor := NewBannerExecutor(&fakeBannerResolver{err: wantErr}, &fakeBannerRepository{}, logger)
 
-	if err := executor.Execute(context.Background(), nil); !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+	{
+		err := executor.Execute(context.Background(), nil)
+		require.ErrorIs(t, err, wantErr, "Execute() error = %v, want %v", err, wantErr)
 	}
-	if logs.FilterMessage("Failed to resolve storage driver").Len() != 1 {
-		t.Fatal("missing original storage resolution error log")
-	}
+
+	require.Equal(t, 1, logs.FilterMessage("Failed to resolve storage driver").Len(), "missing original storage resolution error log")
 }
 
 func TestSuperUserExecutorForwardsArgsAndLogsResult(t *testing.T) {
@@ -140,16 +127,17 @@ func TestSuperUserExecutorForwardsArgsAndLogsResult(t *testing.T) {
 	}}
 	args := []string{"admin", "secret"}
 
-	if err := NewSuperUserExecutor(service, logger).Execute(context.Background(), args); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	{
+		err := NewSuperUserExecutor(service, logger).Execute(context.Background(), args)
+		require.NoError(t, err, "Execute() error = %v", err)
 	}
-	if len(service.args) != 2 || service.args[0] != "admin" || service.args[1] != "secret" {
-		t.Fatalf("forwarded args = %#v", service.args)
-	}
-	if logs.FilterMessage("创建超级管理员用户成功").Len() != 1 ||
-		logs.FilterMessage("绑定管理员角色成功").Len() != 1 {
-		t.Fatal("missing original super-user success logs")
-	}
+
+	require.Len(t, service.args, 2, "forwarded args = %#v", service.args)
+	require.Equal(t, "admin", service.args[0], "forwarded args = %#v", service.args)
+	require.Equal(t, "secret", service.args[1], "forwarded args = %#v", service.args)
+
+	require.Equal(t, 1, logs.FilterMessage("创建超级管理员用户成功").Len(), "missing original super-user success logs")
+	require.Equal(t, 1, logs.FilterMessage("绑定管理员角色成功").Len(), "missing original super-user success logs")
 }
 
 func TestSuperUserExecutorLogsMissingArgs(t *testing.T) {
@@ -159,33 +147,27 @@ func TestSuperUserExecutorLogsMissingArgs(t *testing.T) {
 	service := &fakeSuperUserProvisioner{err: provisioningapp.ErrSuperUserArgsRequired}
 
 	err := NewSuperUserExecutor(service, logger).Execute(context.Background(), nil)
-	if !errors.Is(err, provisioningapp.ErrSuperUserArgsRequired) {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if logs.FilterMessage(provisioningapp.ErrSuperUserArgsRequired.Error()).Len() != 1 {
-		t.Fatal("missing original missing-arguments log")
-	}
+	require.ErrorIs(t, err, provisioningapp.ErrSuperUserArgsRequired, "Execute() error = %v", err)
+
+	require.Equal(t, 1, logs.FilterMessage(provisioningapp.ErrSuperUserArgsRequired.Error()).Len(), "missing original missing-arguments log")
 }
 
 func TestESIndexExecutorUsesEmbeddedMappingsInOrder(t *testing.T) {
 	t.Parallel()
 
 	indexer := &fakeIndexCreator{}
-	if err := NewESIndexExecutor(indexer, zap.NewNop()).Execute(context.Background(), nil); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	{
+		err := NewESIndexExecutor(indexer, zap.NewNop()).Execute(context.Background(), nil)
+		require.NoError(t, err, "Execute() error = %v", err)
 	}
 
-	if len(indexer.calls) != 2 {
-		t.Fatalf("CreateIndexV2 calls = %d, want 2", len(indexer.calls))
-	}
-	if indexer.calls[0].index != constants.VideoSearchIndex ||
-		indexer.calls[1].index != constants.UserSearchIndex {
-		t.Fatalf("index order = %#v", indexer.calls)
-	}
+	require.Len(t, indexer.calls, 2, "CreateIndexV2 calls = %d, want 2", len(indexer.calls))
+
+	require.Equal(t, constants.VideoSearchIndex, indexer.calls[0].index, "index order = %#v", indexer.calls)
+	require.Equal(t, constants.UserSearchIndex, indexer.calls[1].index, "index order = %#v", indexer.calls)
+
 	for _, call := range indexer.calls {
-		if !strings.Contains(call.mapping, "mappings") {
-			t.Fatalf("mapping for %s was not embedded", call.index)
-		}
+		require.Contains(t, call.mapping, "mappings", "mapping for %s was not embedded", call.index)
 	}
 }
 
@@ -197,15 +179,11 @@ func TestESIndexExecutorStopsOnFailure(t *testing.T) {
 	indexer := &fakeIndexCreator{err: wantErr}
 
 	err := NewESIndexExecutor(indexer, logger).Execute(context.Background(), nil)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
-	}
-	if len(indexer.calls) != 1 {
-		t.Fatalf("CreateIndexV2 calls = %d, want 1", len(indexer.calls))
-	}
-	if logs.FilterMessage("es index task failed").Len() != 1 {
-		t.Fatal("missing original ES task failure log")
-	}
+	require.ErrorIs(t, err, wantErr, "Execute() error = %v, want %v", err, wantErr)
+
+	require.Len(t, indexer.calls, 1, "CreateIndexV2 calls = %d, want 1", len(indexer.calls))
+
+	require.Equal(t, 1, logs.FilterMessage("es index task failed").Len(), "missing original ES task failure log")
 }
 
 func TestResourceSyncExecutorLogsCounts(t *testing.T) {
@@ -216,19 +194,19 @@ func TestResourceSyncExecutorLogsCounts(t *testing.T) {
 		Total: 10, Created: 2, Updated: 3, Deleted: 1,
 	}}
 
-	if err := NewResourceSyncExecutor(syncer, logger).Execute(context.Background(), nil); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	{
+		err := NewResourceSyncExecutor(syncer, logger).Execute(context.Background(), nil)
+		require.NoError(t, err, "Execute() error = %v", err)
 	}
 
 	entries := logs.FilterMessage("resource sync success").All()
-	if len(entries) != 1 {
-		t.Fatalf("success log count = %d, want 1", len(entries))
-	}
+	require.Len(t, entries, 1, "success log count = %d, want 1", len(entries))
+
 	fields := entries[0].ContextMap()
-	if fields["total"] != int64(10) || fields["created"] != int64(2) ||
-		fields["updated"] != int64(3) || fields["deleted"] != int64(1) {
-		t.Fatalf("unexpected log fields: %#v", fields)
-	}
+	require.EqualValues(t, int64(10), fields["total"], "unexpected log fields: %#v", fields)
+	require.EqualValues(t, int64(2), fields["created"], "unexpected log fields: %#v", fields)
+	require.EqualValues(t, int64(3), fields["updated"], "unexpected log fields: %#v", fields)
+	require.EqualValues(t, int64(1), fields["deleted"], "unexpected log fields: %#v", fields)
 }
 
 func TestRBACInitExecutorReturnsFailure(t *testing.T) {
@@ -239,12 +217,9 @@ func TestRBACInitExecutorReturnsFailure(t *testing.T) {
 	initializer := &fakeRBACInitializer{err: wantErr}
 
 	err := NewRBACInitExecutor(initializer, logger).Execute(context.Background(), nil)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
-	}
-	if logs.FilterMessage("rbac init failed").Len() != 1 {
-		t.Fatal("missing original RBAC failure log")
-	}
+	require.ErrorIs(t, err, wantErr, "Execute() error = %v, want %v", err, wantErr)
+
+	require.Equal(t, 1, logs.FilterMessage("rbac init failed").Len(), "missing original RBAC failure log")
 }
 
 func observedLogger() (*zap.Logger, *observer.ObservedLogs) {
@@ -369,7 +344,7 @@ type fakeResourceSynchronizer struct {
 	err    error
 }
 
-func (f *fakeResourceSynchronizer) SyncApiResources(
+func (f *fakeResourceSynchronizer) SyncAPIResources(
 	context.Context,
 ) (rbacapp.ResourceSyncResult, error) {
 	return f.result, f.err

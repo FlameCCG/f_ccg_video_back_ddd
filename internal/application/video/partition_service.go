@@ -2,6 +2,7 @@ package video
 
 import (
 	"context"
+	"f_ccg_video_back_ddd/pkg/logctx"
 
 	domain "f_ccg_video_back_ddd/internal/domain/video"
 
@@ -81,7 +82,7 @@ func (s *PartitionService) Delete(ctx context.Context, id uint) error {
 	}
 
 	s.cache.Invalidate()
-	s.logger.Info("delete partition ok", zap.Uint("partitionId", id), zap.Int64("rows", rows))
+	logctx.With(ctx, s.logger).Info("delete partition ok", zap.String("event", "video.partition_service.delete.diagnostic"), zap.String("operation", "video.partition_service.delete"), zap.Uint("partition_id", id), zap.Int64("rows", rows))
 
 	return nil
 }
