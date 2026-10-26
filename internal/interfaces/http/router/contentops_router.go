@@ -24,8 +24,7 @@ func registerContentOpsCommonRoutes(
 		siteRouter.GET("google-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.GoogleUrlView)
 		siteRouter.GET("github-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			middlewares.BindQueryParams[contentopshandler.GitHubURLReq], h.GitHubUrlView)
-		siteRouter.GET("linuxdo-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
-			middlewares.BindQueryParams[contentopshandler.LinuxDoURLReq], h.LinuxDoUrlView)
+		siteRouter.GET("linuxdo-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.LinuxDoUrlView)
 		siteRouter.GET("x-url", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout),
 			middlewares.BindQueryParams[contentopshandler.XURLReq], h.XUrlView)
 		siteRouter.GET("config", middlewares.RequestTimeout(ctxutil.RequestDefaultTimeout), h.CommonConfigView)

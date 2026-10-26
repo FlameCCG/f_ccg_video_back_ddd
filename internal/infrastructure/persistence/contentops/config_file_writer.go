@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	app "f_ccg_video_back_ddd/internal/application/contentops"
-	infraconfig "f_ccg_video_back_ddd/internal/infrastructure/config"
 
 	"github.com/spf13/viper"
 )
@@ -23,11 +22,6 @@ var _ app.ConfigFileWriter = (*ConfigFileWriter)(nil)
 // NewConfigFileWriter 用显式配置文件路径构造写回器（测试可指向临时文件）。
 func NewConfigFileWriter(path string) *ConfigFileWriter {
 	return &ConfigFileWriter{path: path}
-}
-
-// ProvideConfigFileWriter 供 wire 使用：从配置 Provider 取配置文件路径。
-func ProvideConfigFileWriter(provider *infraconfig.Provider) *ConfigFileWriter {
-	return NewConfigFileWriter(provider.Path())
 }
 
 // Write 把 item 写入配置文件的 name 配置段。

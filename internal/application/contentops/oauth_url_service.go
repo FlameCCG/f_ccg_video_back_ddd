@@ -21,8 +21,6 @@ const (
 
 // GitHubURLParams GitHub 授权链接参数。
 type GitHubURLParams struct {
-	// State 一次性防重放随机串。
-	State string
 	// CodeChallenge PKCE 校验串（可选）。
 	CodeChallenge string
 	// CodeChallengeMethod PKCE 算法（可选，默认 S256）。
@@ -31,8 +29,6 @@ type GitHubURLParams struct {
 
 // XURLParams X（Twitter）授权链接参数。
 type XURLParams struct {
-	// State 一次性防重放随机串。
-	State string
 	// CodeChallenge PKCE 校验串。
 	CodeChallenge string
 	// CodeChallengeMethod PKCE 算法（默认 S256）。
@@ -75,8 +71,8 @@ func (s *OAuthURLService) QQURL(ctx context.Context) (string, error) {
 	return "https://graph.qq.com/oauth2.0/show?" + params.Encode(), nil
 }
 
-// GoogleURL 保存 state 并生成 Google 授权链接；state 为空时自动生成 UUID。
-func (s *OAuthURLService) GoogleURL(ctx context.Context, state string) (string, error) {
+// GoogleURL 保存服务端生成的一次性 state 并生成 Google 授权链接。
+func (s *OAuthURLService) GoogleURL(ctx context.Context) (string, error) {
 	cfg := s.provider.Get()
 	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.Google == nil || strings.TrimSpace(cfg.ThirdLogin.Google.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.Google.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.Google.Redirect) == "" {
 		return "", nil
@@ -110,16 +106,13 @@ func (s *OAuthURLService) GitHubURL(ctx context.Context, params GitHubURLParams)
 	if err != nil {
 		return "", err
 	}
-	params.State = state
 
 	query := url.Values{}
 	query.Set("client_id", cfg.ThirdLogin.GitHub.ClientID)
 	query.Set("redirect_uri", cfg.ThirdLogin.GitHub.Redirect)
 	query.Set("scope", "read:user user:email")
 
-	if state := strings.TrimSpace(params.State); state != "" {
-		query.Set("state", state)
-	}
+	query.Set("state", state)
 
 	if challenge := strings.TrimSpace(params.CodeChallenge); challenge != "" {
 		query.Set("code_challenge", challenge)
@@ -136,7 +129,7 @@ func (s *OAuthURLService) GitHubURL(ctx context.Context, params GitHubURLParams)
 }
 
 // LinuxDoURL 保存 state 并生成 Linux.do 授权链接。
-func (s *OAuthURLService) LinuxDoURL(ctx context.Context, state string) (string, error) {
+func (s *OAuthURLService) LinuxDoURL(ctx context.Context) (string, error) {
 	cfg := s.provider.Get()
 	if cfg == nil || cfg.ThirdLogin == nil || cfg.ThirdLogin.LinuxDo == nil || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.ClientID) == "" || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.ClientSecret) == "" || strings.TrimSpace(cfg.ThirdLogin.LinuxDo.Redirect) == "" {
 		return "", nil
@@ -169,7 +162,6 @@ func (s *OAuthURLService) XURL(ctx context.Context, params XURLParams) (string, 
 	if err != nil {
 		return "", err
 	}
-	params.State = state
 
 	query := url.Values{}
 	query.Set("response_type", "code")
@@ -185,9 +177,7 @@ func (s *OAuthURLService) XURL(ctx context.Context, params XURLParams) (string, 
 
 	query.Set("code_challenge_method", method)
 
-	if state := strings.TrimSpace(params.State); state != "" {
-		query.Set("state", state)
-	}
+	query.Set("state", state)
 
 	return "https://x.com/i/oauth2/authorize?" + query.Encode(), nil
 }
