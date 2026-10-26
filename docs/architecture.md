@@ -201,9 +201,9 @@ go run ./cmd/server -all myadmin mypassword
 | `-vp` | `InitializeVideoPartitionsTask` | config + logger + MySQL |
 | `-br` | `InitializeBannerTask` | config + logger + MySQL + storage |
 | `-su` | `InitializeSuperUserTask` | config + logger + MySQL + Casbin |
-| `-es` | `InitializeESIndexTask` | config + logger + MySQL + ES |
-| `-rs` | `InitializeResourceSyncTask` | 原执行点前完整基础设施 + 真实 Router 路由清单 |
-| `-rbac` | `InitializeRBACInitTask` | 原执行点前完整基础设施 + RBAC 初始化用例 |
+| `-es` | `InitializeESIndexTask` | config + logger + ES |
+| `-rs` | `InitializeResourceSyncTask` | config + logger + MySQL + 真实 Router 路由清单 |
+| `-rbac` | `InitializeRBACInitTask` | config + logger + MySQL + Casbin + RBAC 初始化用例 |
 
 `-rs` 复用生产 Router 的注册代码并由 Gin 实测当前全部路由（金丝雀现为 193 条），但使用不会处理请求的空 handler 壳，
 因此不构造完整 App、Kafka、对象存储或后台组件。各 Executor 只返回 `error`，不在用例内调用
@@ -211,7 +211,7 @@ go run ./cmd/server -all myadmin mypassword
 
 ### 6.2 配置快照与热更新
 
-`internal/config` 定义配置树，`internal/infrastructure/config.Provider` 使用 Viper 读取 YAML/环境变量、监听文件并以 `atomic.Pointer` 发布当前快照。应用层通过 `shared.ConfigReader/ConfigStore` 端口访问；一次用例操作先 `Get()` 一份快照再读字段，避免同次操作跨版本读取。热更新读取或校验失败保留上一份有效配置。管理端写配置则**先发布内存快照、再写文件**；写文件失败时内存可能已变，这一步没有事务回滚语义。见[Provider](../internal/infrastructure/config/provider.go)、[管理端配置用例](../internal/application/contentops/site_config_service.go)及[配置示例](../config.example.yaml)。
+`internal/config` 定义配置树，`internal/infrastructure/config.Provider` 使用 Viper 读取 YAML/环境变量、监听文件并以 `atomic.Pointer` 发布当前快照。配置加载分为面向长期服务的 `Load`（开启文件监听与完整必填校验）、面向 CLI 运维任务的 `LoadOnce`（加载静态快照、不启 fsnotify 监听、仅校验维护用基础项）以及面向转码节点的 `LoadTranscodeWorker`（松绑 Web 端 JWT 密钥要求）。加载或解析失败向上层返回 `error`，由入口决定退出策略，不再直接 panic。应用层通过 `shared.ConfigReader/ConfigStore` 端口访问；一次用例操作先 `Get()` 一份快照再读字段，避免同次操作跨版本读取。热更新读取或校验失败保留上一份有效配置。管理端写配置则**先发布内存快照、再写文件**；写文件失败时内存可能已变，这一步没有事务回滚语义。见[Provider](../internal/infrastructure/config/provider.go)、[管理端配置用例](../internal/application/contentops/site_config_service.go)及[配置示例](../config.example.yaml)。
 
 ### 6.3 独立转码入口与节点角色
 
@@ -233,15 +233,14 @@ Kafka 的 bootstrap 地址和 broker 宣告的对外地址都必须能从消费�
 
 默认 HTTP 服务的 `*App` 聚合 HTTP 服务、后台组件、detached 任务组与基础设施句柄。下列顺序针对 `cmd/server`；本机消费关闭时转码组件的启动会跳过消费，独立入口的生命周期见第 6.3 节。启动和关闭均由组合根显式控制：
 
-1. `App.Start(ctx)` 启动 River → 视频调度器 → 转码消费者 → cron → Chat Hub → Danmu Hub；
-   单个后台组件启动失败记录到注入日志器并继续，保持 HTTP 仍可提供服务的既有语义。
+1. `App.Start(ctx)` 先初始化聊天索引（`IndexInitializer`），再按序启动 River → 视频调度器 → 转码消费者 → cron。WebSocket Hub（Chat / Danmu）按首个连接懒启动，不在此阶段初始化；单个后台组件启动失败记录到注入日志器并继续，保持 HTTP 仍可提供服务的既有语义。
 2. `App.Serve()` 启动 HTTP，并等待 SIGINT/SIGTERM 或监听错误；停止阶段首先执行 HTTP
    graceful shutdown，确保不再接收会产生新后台工作的请求。
 3. HTTP 停止后，`App.Stop(ctx)` 保持原 `core.GracefulStop` 的相对停序：转码消费者 →
    视频调度器 → River → cron；随后关闭 Chat Hub → Danmu Hub，再停止并等待 detached 任务。
 4. 后台工作全部退出后关闭 Mongo → MySQL → Redis → ES → IPDB，最后 Sync/关闭 Logger。
 
-HTTP 监听/关闭错误返回入口并影响退出码；后台组件的启动错误仅记日志并继续，`RuntimeComponents.Stop` 的组件停止错误也仅记告警，`App.Stop` 当前返回 `nil`。因此“HTTP 仍启动”只表示服务监听策略，**不保证转码、River、搜索等依赖能力可用**。入口保留 Wire `cleanup` 的 defer，正常停序仍由 `App.Stop` 显式执行。配置加载会 `panic`，见[配置 Provider](../internal/infrastructure/config/provider.go)，不属于这里的逐层错误返回路径。
+HTTP 监听/关闭错误返回入口并影响退出码；后台组件启动失败或停止失败仅记日志，`App.Start` 与 `App.Stop` 为无返回值方法。因此“HTTP 仍启动”只表示服务监听策略，**不保证转码、River、搜索等依赖能力可用**。入口保留 Wire `cleanup` 的 defer，正常停序仍由 `App.Stop` 显式执行。配置加载错误会返回到入口退出，见[配置 Provider](../internal/infrastructure/config/provider.go)。
 
 ## 8. 测试策略
 
