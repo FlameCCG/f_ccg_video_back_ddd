@@ -506,6 +506,11 @@ func (l *LocalStorage) ResolveSource(_ context.Context, storedPath string) (stri
 		return "", nil
 	}
 
+	publicRoot := "/" + strings.Trim(filepath.ToSlash(l.cfg.Local.Path), "/")
+	if strings.HasPrefix(trimmed, publicRoot+"/") || trimmed == publicRoot {
+		return l.resolveStoredFilePath(trimmed)
+	}
+
 	if filepath.IsAbs(trimmed) {
 		return trimmed, nil
 	}
