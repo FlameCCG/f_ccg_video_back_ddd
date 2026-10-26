@@ -38,9 +38,7 @@ type Provider struct {
 // NewProvider 用给定配置快照构造 Provider（测试与 CLI 可直接使用）。
 func NewProvider(c *config.Config) *Provider {
 	p := new(Provider)
-	p.SetLogger(nil)
 	p.Set(c)
-
 	return p
 }
 
@@ -103,9 +101,22 @@ func (p *Provider) Path() string {
 
 // Load 读取配置文件、校验必填项并开启热更新监听，返回可注入的 Provider。
 //
-// 语义与原 core.InitConf 完全一致：读取失败/映射失败/校验失败均 panic；
-// 热更新读取或校验失败时保留上一份有效配置并打日志。
+// 读取、映射或校验失败时返回错误；热更新失败时保留上一份有效配置并打日志。
 func Load(filePath string) (*Provider, error) {
+	return load(filePath, true, config.ValidateRequired)
+}
+
+// LoadOnce 为一次性运维任务加载配置，不创建热更新监听。
+func LoadOnce(filePath string) (*Provider, error) {
+	return load(filePath, false, config.ValidateMaintenance)
+}
+
+// LoadTranscodeWorker uses the same role validation on initial load and reload.
+func LoadTranscodeWorker(filePath string) (*Provider, error) {
+	return load(filePath, true, config.ValidateTranscodeWorker)
+}
+
+func load(filePath string, watch bool, validate func(*config.Config) error) (*Provider, error) {
 	v := viper.New()
 	// 缺少新增字段时使用独立默认值；显式配置的 0 边距仍会保留。
 	for _, scene := range []string{"login", "register"} {
@@ -115,31 +126,32 @@ func Load(filePath string) (*Provider, error) {
 		v.SetDefault("site."+scene+".textClickCaptchaPadding", 20)
 	}
 	v.SetConfigFile(filePath)
+	// 设置环境变量键名替换规则，最好用大写的环境变量名（linux区分大小写），比如 SITE_CAPTCHA_TTL
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
 	// 读取配置文件
 	if err := v.ReadInConfig(); err != nil {
-		panic(fmt.Errorf("fatal error config file: %w", err))
+		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
 	// 映射到结构体
 	c := new(config.Config)
 	if err := v.Unmarshal(c); err != nil {
-		panic(fmt.Errorf("config unmarshal error: %w", err))
+		return nil, fmt.Errorf("config unmarshal error: %w", err)
 	}
 
-	c.Normalize()
-
-	if err := config.ValidateRequired(c); err != nil {
-		panic(fmt.Errorf("config validation error: %w", err))
+	if err := validate(c); err != nil {
+		return nil, fmt.Errorf("config validation error: %w", err)
 	}
 
 	provider := NewProvider(c)
 	provider.path = filePath
+	if !watch {
+		return provider, nil
+	}
 
 	// 开启热更新监听
-	v.WatchConfig()
 	v.OnConfigChange(func(e fsnotify.Event) {
 		// 稍微等待一下，确保文件写入完成
 		time.Sleep(500 * time.Millisecond)
@@ -160,10 +172,7 @@ func Load(filePath string) (*Provider, error) {
 
 			return
 		}
-
-		newConf.Normalize()
-
-		if err := config.ValidateRequired(newConf); err != nil {
+		if err := validate(newConf); err != nil {
 			provider.log().Error("配置文件热更新校验失败，继续使用上一份有效配置", zap.Error(err))
 
 			return
@@ -171,5 +180,6 @@ func Load(filePath string) (*Provider, error) {
 		provider.Set(newConf)
 		provider.log().Info("配置文件热更新成功!")
 	})
+	v.WatchConfig()
 	return provider, nil
 }

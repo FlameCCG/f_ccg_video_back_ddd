@@ -9,16 +9,6 @@ import "f_ccg_video_back_ddd/internal/config"
 //   - 启动期一次性读取的组件（数据库/缓存/搜索/消息队列客户端等）注入窄配置值或指针；
 //   - 需要读取运行期热更新配置的组件（站点配置、三方登录、AI、邮件等）注入 *Provider。
 
-// ProvideServerConf 返回 HTTP 服务配置。
-func ProvideServerConf(p *Provider) *config.Server {
-	cfg := p.Get()
-	if cfg == nil {
-		return nil
-	}
-
-	return cfg.Server
-}
-
 // ProvideLoggerConf 返回日志配置。
 func ProvideLoggerConf(p *Provider) *config.Logger {
 	cfg := p.Get()
@@ -85,24 +75,4 @@ func ProvideRiverConf(p *Provider) *config.River {
 	}
 
 	return cfg.River
-}
-
-// ProvideTranscodeConf 返回转码配置。
-func ProvideTranscodeConf(p *Provider) *config.Transcode {
-	cfg := p.Get()
-	if cfg == nil {
-		return nil
-	}
-
-	return cfg.Transcode
-}
-
-// ProvideJwtConf 返回 JWT 配置。
-func ProvideJwtConf(p *Provider) *config.Jwt {
-	cfg := p.Get()
-	if cfg == nil {
-		return nil
-	}
-
-	return cfg.Jwt
 }
