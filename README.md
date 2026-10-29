@@ -89,7 +89,7 @@ flowchart TB
 
 ### 1. 准备环境
 
-- **Go**：版本要求见 [go.mod](go.mod)，当前为 `1.24.9`。
+- **Go**：版本要求见 [go.mod](go.mod)，安全基线为 `1.27.3`；生产构建与开发验证均使用该版本或更新的安全补丁版本。
 - **数据与消息服务**：MySQL、Redis、MongoDB、Elasticsearch 和 Kafka。Compose 中的参考版本分别为 MySQL 8.0、Redis 7.0、MongoDB 8.0、Elasticsearch 8.12.2 和 Kafka 3.9.0。私信发送需要支持事务的 MongoDB 副本集；Compose 提供单节点 `rs0` 及初始化服务，不能用普通 standalone MongoDB 替代。
 - **搜索插件**：Elasticsearch 需安装与其版本匹配的 IK 与 Pinyin 插件，供[关键词索引映射](internal/interfaces/cli/mappings/videos_mapping.json)使用。
 - **媒体工具**：安装 `ffmpeg` 和 `ffprobe` 并加入 `PATH`；CPU 转码需支持 `libx264`，GPU 转码需具备 NVIDIA 驱动及 NVENC 支持。
@@ -200,6 +200,15 @@ go vet ./...
 测试包含领域规则、应用用例、路由清单、架构依赖和媒体封装等检查。涉及 FFmpeg 或其他环境依赖的测试，请同时查看运行结果中的跳过项。
 
 真实 MongoDB 事务测试需设置 `CHAT_TEST_MONGO_URI`，指向可创建和删除测试数据库的副本集测试实例，再运行 `go test -count=1 ./internal/infrastructure/persistence/chat -run TestSendMessageRealMongoTransaction`。未设置时该用例跳过；它使用独立随机数据库并在结束时删除，不读取应用的本地配置。
+
+安全检查与 CI 使用同一命令：
+
+```sh
+go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+govulncheck ./cmd/server ./cmd/transcode-consumer
+```
+
+2026-10-26 在 Go 1.27.3 下扫描两个入口：静态可达漏洞 0 项、已导入包漏洞 0 项。模块级仍会提示 [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932)：`x/crypto/openpgp` 无修复版本。两个入口的依赖图均未导入该包；本项目使用同模块的 `bcrypt`，保留此提示且不屏蔽后续扫描。
 
 修改 Wire provider 或接口绑定后，重新生成装配代码：
 
