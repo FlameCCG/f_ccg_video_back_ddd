@@ -452,6 +452,21 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 	if l.cfg == nil || l.cfg.Local == nil || l.cfg.Local.Path == "" {
 		return "", errors.New("local storage not configured")
 	}
+	base, err := filepath.Abs(filepath.Clean(l.cfg.Local.Path))
+	if err != nil {
+		return "", err
+	}
+
+	// 若入参已是本地绝对路径且确实位于 base 目录内，规范化后直接返回。
+	// 在类 Unix 系统中 /uploads/... 等根相对路径也会被 filepath.IsAbs 判定为 true，
+	// 因此需额外校验是否在 base 根目录内，避免将 URL 路径误判为本机根目录绝对路径。
+	if filepath.IsAbs(trimmed) {
+		cleanTrimmed := filepath.Clean(trimmed)
+		if rel, err := filepath.Rel(base, cleanTrimmed); err == nil && !strings.HasPrefix(rel, "..") && rel != "." && rel != ".." {
+			return cleanTrimmed, nil
+		}
+	}
+
 	// 如果是 URL，提取 path 部分
 	if u, err := url.Parse(trimmed); err == nil && u.Scheme != "" && u.Host != "" {
 		trimmed = u.Path
@@ -473,11 +488,6 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 		return "", nil
 	}
 
-	base, err := filepath.Abs(filepath.Clean(l.cfg.Local.Path))
-	if err != nil {
-		return "", err
-	}
-
 	fullPath := cleaned
 	if !filepath.IsAbs(cleaned) {
 		fullPath = filepath.Join(base, cleaned)
@@ -497,17 +507,10 @@ func (l *LocalStorage) resolveStoredFilePath(storedPath string) (string, error) 
 }
 
 // ResolveSource 把根相对路径解析为本地绝对路径；已是绝对路径时原样返回。
-//
-// 此入口面向仓储保存的源路径和内部绝对路径；当前实现先判断 filepath.IsAbs。
-// 在类 Unix 系统中 /uploads/... 同样会被视为绝对路径，不能仅凭浏览器 URL 形式推断一定经过存储根目录拼接。
 func (l *LocalStorage) ResolveSource(_ context.Context, storedPath string) (string, error) {
 	trimmed := strings.TrimSpace(storedPath)
 	if trimmed == "" {
 		return "", nil
-	}
-
-	if filepath.IsAbs(trimmed) {
-		return trimmed, nil
 	}
 
 	return l.resolveStoredFilePath(trimmed)
