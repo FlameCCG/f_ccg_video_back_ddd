@@ -6,7 +6,9 @@ info:
 
     说明：
 
-    - 普通 JSON 业务响应使用 HTTP 200，通过 code 判断成功/失败（0=成功，1=失败），错误信息在 msg。AI 额度耗尽返回 429（Retry-After=60）；WebSocket 升级返回 101；CORS 拒绝/预检可返回 403/204。SSE、静态文件与 AI 资源代理按各自协议处理。
+    - 普通 JSON 业务响应使用 HTTP 200，通过 code 判断成功/失败（0=成功，1=失败），错误信息在 msg。登录会话签发、刷新及受保护请求的鉴权依赖故障返回 503，超时返回 504，应保留令牌并重试。AI 额度耗尽返回 429（Retry-After=60）；WebSocket 升级返回 101；CORS 拒绝/预检可返回 403/204。SSE、静态文件与 AI 资源代理按各自协议处理。
+
+    - 验证码中间件失败返回 HTTP 200、code=1，data.captchaType 为 graphic/slide/click/interactive，captchaReason 为 required/invalid/expired/unavailable。先校验交互验证码，通过后才消费图形验证码；交互失败时重新获取挑战，图形码失败时返回表单刷新图形码。
 
     - 管理后台接口除登录鉴权外还会经过 RBAC（Casbin）权限校验。"
   version: 1.0.0
@@ -52,6 +54,19 @@ tags:
   - name: 后台-动态管理
     description: 动态管理
 components:
+  responses:
+    AuthUnavailable:
+      description: 身份验证依赖暂时不可用；已有令牌应保留，稍后重试
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/BusinessFailureResponse"
+    AuthTimeout:
+      description: 身份验证超时；已有令牌应保留，稍后重试
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/BusinessFailureResponse"
   schemas:
     VectorRebuildStatus:
       type: object
@@ -118,7 +133,8 @@ components:
           example: 成功
     JwtToken:
       type: object
-      description: JWT令牌
+      description: 登录或刷新返回的令牌对；每次成功刷新后保存整组新值，到期时间为 Unix 秒数
+      required: [accessToken, refreshToken, accessExp, refreshExp]
       properties:
         accessToken:
           type: string
@@ -126,6 +142,44 @@ components:
         refreshToken:
           type: string
           description: 刷新令牌
+        accessExp:
+          type: integer
+          format: int64
+          description: 访问令牌到期时间（Unix 秒数，非剩余秒数）
+        refreshExp:
+          type: integer
+          format: int64
+          description: 刷新令牌到期时间（Unix 秒数，非剩余秒数）
+    JwtTokenResponse:
+      allOf:
+        - $ref: "#/components/schemas/Response"
+        - type: object
+          properties:
+            code:
+              type: integer
+              enum: [0]
+            data:
+              $ref: "#/components/schemas/JwtToken"
+    BusinessFailureResponse:
+      description: 业务或鉴权失败；普通失败的 data 为空对象，验证码中间件失败时包含 captchaType 和 captchaReason
+      allOf:
+        - $ref: "#/components/schemas/Response"
+        - type: object
+          properties:
+            code:
+              type: integer
+              enum: [1]
+            data:
+              type: object
+              properties:
+                captchaType:
+                  type: string
+                  enum: [graphic, slide, click, interactive]
+                  description: 仅验证码中间件失败时返回；interactive 表示无法判定具体交互类型
+                captchaReason:
+                  type: string
+                  enum: [required, invalid, expired, unavailable]
+                  description: 缺少或混交凭证、参数或答案错误、交互挑战过期或不存在、交互校验依赖暂时不可用；图形码错误与过期统一为 invalid
     ClickCaptchaPoint:
       type: object
       description: 点击验证码坐标点
@@ -3461,6 +3515,7 @@ paths:
         仅提交一种已开启的交互验证码：点选提交captchaToken和captchaDots，滑块提交slideCaptchaToken、slideCaptchaX、slideCaptchaY；
         两种类型都关闭时无需交互凭证。不能同时提交两种token，也不能使用register场景签发的token。
         site.login.textGraphicCaptcha开启时，还须提交图形验证码captchaID和captchaCode；关闭时不校验，独立于注册场景开关。
+        交互校验失败不消费图形码，按data.captchaType与captchaReason重新获取挑战；图形码失败时返回表单刷新图形码。
       requestBody:
         required: true
         content:
@@ -3505,16 +3560,17 @@ paths:
                   description: 滑块类型时提交的Y坐标
       responses:
         "200":
-          description: 登录成功
+          description: 登录成功（code=0）；凭据、账号或验证码校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
+        "503":
+          $ref: "#/components/responses/AuthUnavailable"
+        "504":
+          $ref: "#/components/responses/AuthTimeout"
   /common/user/login/qq:
     post:
       tags:
@@ -3534,16 +3590,17 @@ paths:
                   example: abc123
       responses:
         "200":
-          description: 登录成功
+          description: 登录成功（code=0）或业务校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
+        "503":
+          $ref: "#/components/responses/AuthUnavailable"
+        "504":
+          $ref: "#/components/responses/AuthTimeout"
   /common/user/login/google:
     post:
       tags:
@@ -3563,16 +3620,17 @@ paths:
                   example: abc123
       responses:
         "200":
-          description: 登录成功
+          description: 登录成功（code=0）或业务校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
+        "503":
+          $ref: "#/components/responses/AuthUnavailable"
+        "504":
+          $ref: "#/components/responses/AuthTimeout"
   /common/user/login/github:
     post:
       tags:
@@ -3603,16 +3661,17 @@ paths:
                   example: verifier123
       responses:
         "200":
-          description: 登录成功
+          description: 登录成功（code=0）或业务校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
+        "503":
+          $ref: "#/components/responses/AuthUnavailable"
+        "504":
+          $ref: "#/components/responses/AuthTimeout"
   /common/user/login/linuxdo:
     post:
       tags:
@@ -3639,16 +3698,17 @@ paths:
                   example: linuxdo-state
       responses:
         "200":
-          description: 登录成功
+          description: 登录成功（code=0）或业务校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
+        "503":
+          $ref: "#/components/responses/AuthUnavailable"
+        "504":
+          $ref: "#/components/responses/AuthTimeout"
   /common/user/login/x:
     post:
       tags:
@@ -3680,22 +3740,26 @@ paths:
                   example: verifier123
       responses:
         "200":
-          description: 登录成功
+          description: 登录成功（code=0）或业务校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
+        "503":
+          $ref: "#/components/responses/AuthUnavailable"
+        "504":
+          $ref: "#/components/responses/AuthTimeout"
   /common/user/login/refresh:
     post:
       tags:
         - 用户管理
       summary: 刷新访问令牌
-      description: 使用一次性 refreshToken 换取新令牌对。凭据无效、用户不存在或封禁时返回 HTTP 200 和 code=1；依赖不可用或超时返回 503/504，客户端应保留令牌供稍后重试。
+      description: >-
+        使用refreshToken轮换当前设备会话的令牌对，成功后保存accessToken、refreshToken及两项到期时间。
+        已消费摘要有固定30秒重试宽限，重试不延长宽限，也不保证返回相同令牌对；宽限期外重放撤销该设备会话，不影响其他设备。
+        凭据无效、用户不存在或封禁时返回HTTP 200和code=1；依赖不可用或超时返回503/504，客户端保留原令牌并尽快重试。
       requestBody:
         required: true
         content:
@@ -3714,24 +3778,13 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
         "503":
-          description: 身份验证依赖暂时不可用，应保留令牌稍后重试
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Response"
+          $ref: "#/components/responses/AuthUnavailable"
         "504":
-          description: 身份验证超时，应保留令牌稍后重试
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Response"
+          $ref: "#/components/responses/AuthTimeout"
   /common/user/search:
     get:
       tags:
@@ -4571,6 +4624,7 @@ paths:
         发送邮箱验证码，用于注册、重置密码、绑定邮箱。三种用途均按register场景校验。
         先调用/common/captcha/type?scene=register，再获取同一场景的点选或滑块挑战并只提交一种凭证。
         site.register.textGraphicCaptcha开启时还需图形验证码；交互类型为none不免除图形校验。
+        先校验交互验证码，通过后才消费图形码；校验失败返回data.captchaType与captchaReason，供客户端按类型恢复。
       requestBody:
         required: true
         content:
@@ -4582,20 +4636,25 @@ paths:
               $ref: "#/components/schemas/EmailCaptchaSendRequest"
       responses:
         "200":
-          description: 发送成功
+          description: 发送成功（code=0），或验证码及业务校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        type: object
+                oneOf:
+                  - allOf:
+                      - $ref: "#/components/schemas/Response"
+                      - type: object
                         properties:
-                          emailID:
-                            type: string
-                            description: 邮箱验证码ID，后续验证时需要
+                          code:
+                            type: integer
+                            enum: [0]
+                          data:
+                            type: object
+                            properties:
+                              emailID:
+                                type: string
+                                description: 邮箱验证码ID，后续验证时需要
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
   /common/captcha/graphics-text:
     get:
       tags:
@@ -9721,6 +9780,7 @@ paths:
         仅提交一种已开启的交互验证码：点选提交captchaToken和captchaDots，滑块提交slideCaptchaToken、slideCaptchaX、slideCaptchaY；
         两种类型都关闭时无需交互凭证。不能同时提交两种token，也不能使用register场景签发的token。
         site.login.textGraphicCaptcha开启时还须提交captchaID和captchaCode，前台与后台共享此开关。
+        交互校验失败不消费图形码，按data.captchaType与captchaReason重新获取挑战；图形码失败时返回表单刷新图形码。
       requestBody:
         required: true
         content:
@@ -9763,16 +9823,17 @@ paths:
                   description: 滑块类型时提交的Y坐标
       responses:
         "200":
-          description: 登录成功
+          description: 登录成功（code=0）；凭据、账号或验证码校验失败（code=1）
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Response"
-                  - type: object
-                    properties:
-                      data:
-                        $ref: "#/components/schemas/JwtToken"
+                oneOf:
+                  - $ref: "#/components/schemas/JwtTokenResponse"
+                  - $ref: "#/components/schemas/BusinessFailureResponse"
+        "503":
+          $ref: "#/components/responses/AuthUnavailable"
+        "504":
+          $ref: "#/components/responses/AuthTimeout"
   /admin/user/role/switch:
     put:
       tags:

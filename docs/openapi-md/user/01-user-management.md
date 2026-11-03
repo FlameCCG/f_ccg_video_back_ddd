@@ -4,6 +4,8 @@
 
 Base URL：/v1
 
+登录与刷新返回完整令牌对及 Unix 秒级到期时间。每次登录创建独立设备会话；密码修改或重置会使旧凭据失效。鉴权故障的状态码与客户端恢复规则见[登录会话与错误处理](../index.md#登录会话与错误处理)。
+
 ## [POST] 邮箱注册
 
 - 接口路径: POST /common/user/register/email
@@ -38,7 +40,7 @@ Base URL：/v1
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: [交互验证码类型及挑战接口](02-captcha-management.md#交互验证码调用顺序)（`scene=login`）
 - 接口说明: 使用用户名/邮箱和密码登录；按 `login` 场景提交一种已开启的交互验证码，全部关闭时无需交互凭证
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -77,6 +79,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 
@@ -85,7 +89,9 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "登录成功"
 }
@@ -97,7 +103,7 @@ Base URL：/v1
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
 - 接口说明: 使用QQ授权码登录，未注册用户会自动注册
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -111,6 +117,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 
@@ -119,7 +127,9 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "登录成功"
 }
@@ -131,7 +141,7 @@ Base URL：/v1
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
 - 接口说明: 使用Google授权码登录，未注册用户会自动注册
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -145,6 +155,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 
@@ -153,7 +165,9 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "登录成功"
 }
@@ -165,7 +179,7 @@ Base URL：/v1
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
 - 接口说明: 使用GitHub授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state，支持可选 PKCE codeVerifier
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -181,6 +195,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 
@@ -189,7 +205,9 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "登录成功"
 }
@@ -201,7 +219,7 @@ Base URL：/v1
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
 - 接口说明: 使用 LinuxDo 授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -216,6 +234,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 
@@ -224,7 +244,9 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "登录成功"
 }
@@ -236,7 +258,7 @@ Base URL：/v1
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
 - 接口说明: 使用X授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state，并配合 PKCE 的 codeVerifier
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -252,6 +274,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 
@@ -260,13 +284,13 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "登录成功"
 }
 ```
-
-密码登录（前台/管理端）及 OAuth 签发会话时，依赖故障返回 HTTP 503，超时返回 HTTP 504；响应仍使用 `code=1` 与公开提示文案。
 
 ## [POST] 刷新访问令牌
 
@@ -274,7 +298,7 @@ Base URL：/v1
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 登录接口获取 refreshToken
 - 接口说明: 使用 refreshToken 刷新访问令牌；轮换成功后必须保存新令牌对。已消费令牌有固定 30 秒重试宽限，超出宽限的重放撤销该设备会话。503/504 表示临时依赖故障或超时，应保留原 refreshToken 并尽快重试。
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -288,6 +312,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 
@@ -296,7 +322,9 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "刷新成功"
 }

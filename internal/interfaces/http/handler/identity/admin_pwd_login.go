@@ -30,7 +30,6 @@ func (h *AdminHandler) AdminPwdLoginView(c *gin.Context) {
 	})
 	if err != nil {
 		writeLoginError(c, err)
-
 		return
 	}
 

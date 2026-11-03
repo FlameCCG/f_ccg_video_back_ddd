@@ -86,13 +86,10 @@ func (s *Service) ListConversations(
 	if !s.repo.Available() {
 		return nil, 0, chatdomain.ErrStoreUnavailable
 	}
-
 	if err := (chatdomain.Conversation{}).RequireLoggedIn(userID); err != nil {
 		return nil, 0, err
 	}
-
 	page, pageSize = s.pages.NormalizeConversationPage(page, pageSize)
-
 	return s.query.ListConversations(ctx, userID, page, pageSize)
 }
 

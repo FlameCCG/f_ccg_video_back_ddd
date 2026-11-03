@@ -4,6 +4,8 @@
 
 Base URL：/v1
 
+管理员登录与普通用户使用相同的设备会话及令牌轮换机制；会话依赖故障或超时返回 HTTP 503/504。通用规则见[登录会话与错误处理](../index.md#登录会话与错误处理)。
+
 ## [GET] 用户列表
 
 - 接口路径: GET /admin/user/list
@@ -238,7 +240,7 @@ Base URL：/v1
 - 权限: 无需RBAC权限
 - 依赖接口: [交互验证码类型及挑战接口](../user/02-captcha-management.md#交互验证码调用顺序)（`scene=login`）
 - 接口说明: 管理员用户名密码登录；与普通用户共享 `site.login` 的点选/滑块开关，按当前展示类型提交一种凭证
-- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）；会话依赖故障 503，超时 504
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
@@ -262,6 +264,8 @@ Base URL：/v1
 | data | JwtToken | - |
 | data.accessToken | string | 访问令牌 |
 | data.refreshToken | string | 刷新令牌 |
+| data.accessExp | integer(int64) | 访问令牌到期时间（Unix 秒数） |
+| data.refreshExp | integer(int64) | 刷新令牌到期时间（Unix 秒数） |
 
 响应示例:
 ```json
@@ -269,7 +273,9 @@ Base URL：/v1
   "code": 0,
   "data": {
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessExp": 1793664000,
+    "refreshExp": 1794182400
   },
   "msg": "登录成功"
 }

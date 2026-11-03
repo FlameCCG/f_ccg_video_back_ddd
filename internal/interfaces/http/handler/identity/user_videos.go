@@ -33,7 +33,6 @@ func (h *Handler) UserVideosView(c *gin.Context) {
 	)
 	if err != nil {
 		res.FailWithMsg(clienterror.Message(err), c)
-
 		return
 	}
 

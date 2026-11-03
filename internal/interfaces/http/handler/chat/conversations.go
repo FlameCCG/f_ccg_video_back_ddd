@@ -17,20 +17,16 @@ type ConversationListReq struct {
 // ConversationListView 会话列表（pageSize 最大 50，service 层二次 clamp）.
 func (h *Handler) ConversationListView(c *gin.Context) {
 	req := middlewares.GetBound[ConversationListReq](c)
-
 	uid, ok := middlewares.GetUID(c)
 	if !ok {
 		res.FailWithMsg("请先登录", c)
-
 		return
 	}
-
 	list, total, err := h.service.ListConversations(c.Request.Context(), uid, req.Page, req.PageSize)
 	if err != nil {
 		res.FailWithMsg(clienterror.Message(err), c)
 
 		return
 	}
-
 	res.OkWithList(list, total, c)
 }

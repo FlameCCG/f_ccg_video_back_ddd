@@ -27,7 +27,7 @@ Gin 路由与中间件 → handler → application 用例 → domain 规则/端�
                    └─ binlog → River → ES       └→ 转码消费者（同进程或独立进程）→ FFmpeg
 ```
 
-`bootstrap` 是构造时的连接点，不是每个请求经过的网络服务。MySQL 承载主要业务记录及 `videos.publish_at` 定时发布计划；Redis 支持缓存、计数、转码进度和上传协调。MongoDB 保存聊天会话与消息，发送时通过同一 MongoDB 事务提交；Kafka 承载转码任务，River 从 MySQL binlog 同步部分数据到 Elasticsearch。搜索是异步读侧，可能落后于 MySQL。证据入口：[进程入口](../cmd/server/main.go)、[组合根](../internal/bootstrap/app.go)、[River](../internal/infrastructure/river/river.go)。
+`bootstrap` 是构造时的连接点，不是每个请求经过的网络服务。MySQL 承载主要业务记录及 `videos.publish_at` 定时发布计划；Redis 保存登录会话，并支持缓存、计数、转码进度和上传协调。MongoDB 保存聊天会话与消息，发送时通过同一 MongoDB 事务提交；Kafka 承载转码任务，River 从 MySQL binlog 同步部分数据到 Elasticsearch。搜索是异步读侧，可能落后于 MySQL。证据入口：[进程入口](../cmd/server/main.go)、[组合根](../internal/bootstrap/app.go)、[River](../internal/infrastructure/river/river.go)。
 
 当前 [路由金丝雀](../internal/interfaces/http/router/testdata/routes_golden.txt) 有 **193 条** `method + path`，包含 `POST /v1/common/image/upload` 与 `/uploads` GET/HEAD。联调应以现行路由代码和金丝雀为准。[路由测试](../internal/interfaces/http/router/routes_test.go)校验注册清单，不能代替请求和响应的端到端验证。
 
@@ -262,6 +262,18 @@ Kafka 的 bootstrap 地址和 broker 宣告的对外地址都必须能从消费�
 ### 6.4 登录会话
 
 登录凭据按会话保存在 Redis：每次密码/OAuth 登录生成独立 `sid`，access 与 refresh JWT 同时携带 `sid`、`pwdVer`，`jti` 在令牌轮换时更新。Redis 为每个会话保存 refresh token 的 SHA-256 摘要并设置与令牌一致的到期时间；每用户的有序索引支持改密码后的会话清理。刷新通过 Lua 原子校验并替换摘要，同一参数重试幂等；已消费摘要保留固定 30 秒宽限，允许丢失回复后的重试及并发请求，重试不延长原摘要的宽限。宽限期外重放仅撤销同一会话，不影响其他设备。受保护请求同时校验数据库最新密码版本和 Redis 会话；Redis 错误或会话缺失时拒绝鉴权。修改/重置密码先提交数据库，再清理旧会话；清理失败时数据库密码版本仍拒绝全部旧 token。不再使用 `users.refresh_token_hash`、`users.must_change_password`，也没有初始密码强制修改流程。部署本次改动后，不含 `sid` 的既有令牌需重新登录；Redis 会话数据丢失同样需要重新登录，应启用合适的持久化与容量策略。
+
+登录与刷新响应包含 `accessToken`、`refreshToken`、`accessExp`、`refreshExp`，后两个字段为 Unix 秒级到期时间；配置 `jwt.accessExp` / `jwt.refreshExp` 的单位则是天。刷新成功后客户端保存整组新值；每个 HTTP 刷新请求可能签发不同的新令牌对，30 秒宽限不保证返回与上次完全相同的令牌。会话缺失、密码版本变化或封禁属于凭据拒绝；数据库/Redis 错误返回 HTTP 503，截止时间耗尽返回 504，客户端保留令牌并重试。WebSocket 后续校验失败时，关闭码 1008 表示凭据失效，1013 表示暂时无法校验。
+
+密码登录与邮件发送按“交互验证码 → 图形验证码 → 业务处理”顺序执行；交互失败不消费图形码。验证码中间件返回 HTTP 200、`code=1`，并通过 `data.captchaType` / `data.captchaReason` 区分恢复流程，详见[验证码接口](openapi-md/user/02-captcha-management.md#验证失败与客户端恢复)。源码入口：[令牌用例](../internal/application/identity/token_service.go)、[鉴权用例](../internal/application/identity/user_status_service.go)、[Redis 会话适配器](../internal/infrastructure/cache/identity/session_store.go)。
+
+### 6.5 AI 对话与搜索工具
+
+[对话用例](../internal/application/ai/conversation_service.go)取得配置快照、选择历史窗口、校验模型与字符预算，再通过 `TextGenerator` 端口调用[会话 Agent 适配器](../internal/infrastructure/external/ark/conversation_agent.go)。站内候选查询可用时，应用注册 [search_videos 工具](../internal/application/ai/video_search_tool.go)；模型按需发起工具调用，工具复用向量/全文召回、RRF、MySQL 回退及发布状态回查，结果交回模型继续回答。普通聊天直接回答，旧 `analysisModel` 配置已不再使用。
+
+每轮最多两次搜索、三次聊天模型调用，单次搜索最多 8 秒。`ai.timeoutSec` 为完整用例预算，默认 90 秒，更短的父请求截止时间仍有效；客户端取消沿 context 传到 Agent、搜索和上游请求。`inputMaxChars` 默认 24000，限制单条消息；`contextMaxChars` 默认 48000，限制包含系统提示与工具结果的完整上下文，工具结果裁剪后仍会重新校验。
+
+应用的 `MessageStream` 管理取消和关闭；HTTP Handler 将文本、思考与工具事件编码为 SSE，工具完成不表示整轮回答完成。只有最终 `response.completed` 表示成功；输出截断、缺少正常结束原因或超时使用 `response.failed`，部分完成的回答不发送成功终态。客户端解析及完整事件示例见 [AI 接口文档](openapi-md/user/11-ai-management.md)。
 
 ## 7. 生命周期与停序
 

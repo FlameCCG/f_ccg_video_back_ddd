@@ -22,6 +22,16 @@ Base URL：/v1
 
 `data.captchaType` 为 `graphic`、`slide`、`click` 或无法判定具体类型时的 `interactive`；`data.captchaReason` 为 `required`、`invalid`、`expired`、`unavailable`。该结构用于选择恢复流程，不替代服务器校验。
 
+```json
+{
+  "code": 1,
+  "data": {"captchaType": "slide", "captchaReason": "expired"},
+  "msg": "滑块验证码已过期或不存在，请重新验证"
+}
+```
+
+`required` 表示缺少凭证、混交 token 或提交了未开启的类型；`invalid` 表示参数或答案错误；`expired` 表示交互挑战过期或不存在；`unavailable` 表示交互校验依赖暂时不可用。图形验证码无法区分答案错误与过期，统一返回 `graphic + invalid`；验证码的 `unavailable` 仍使用 HTTP 200、`code=1`，与登录会话依赖故障的 HTTP 503/504 不同。
+
 - 先校验交互验证码，通过后才校验并消费图形码。滑块/点选错误、过期或暂时不可用时，不消费图形码。
 - `slide`/`click`/`interactive` 失败：保留弹窗和已填图形码，展示具体原因，重新获取类型及挑战，在弹窗内切换；不重放失败的交互 token。
 - `graphic` 失败：关闭交互弹窗，提示并刷新图形码，保留用户名密码；重新填写后再获取交互挑战。
